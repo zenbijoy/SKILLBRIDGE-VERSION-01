@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { router } from "expo-router";
 import {
   Alert,
@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Button, Field, H1, Muted } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { colors, radius, spacing } from "@/theme";
+import { colors, spacing } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function SignUp() {
@@ -21,7 +21,7 @@ export default function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [fadeAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -29,7 +29,7 @@ export default function SignUp() {
       duration: 800,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   async function submit() {
     try {

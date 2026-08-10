@@ -4,7 +4,7 @@ import { api, qs } from "@/lib/api";
 import type { Profile } from "@/types";
 import { Button, Card, Field, H1, H2, Muted, Pill, Row, Screen } from "@/components/ui";
 import { ProfileCard } from "@/components/ProfileCard";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 import { colors } from "@/theme";
 
 type ResearchProject = {

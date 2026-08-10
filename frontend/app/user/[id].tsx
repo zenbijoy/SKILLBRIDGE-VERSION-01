@@ -47,7 +47,7 @@ export default function UserProfile() {
   
   const [showReport, setShowReport] = useState(false);
   const [reportReason, setReportReason] = useState("spam");
-  const [reportDetails, setReportDetails] = useState("");
+  const [reportDetails] = useState("");
   
   const report = useMutation({
     mutationFn: () => api(`/moderation`, { method: "POST", body: JSON.stringify({ target_type: "user", target_id: id, reason: reportReason, details: reportDetails }) }),

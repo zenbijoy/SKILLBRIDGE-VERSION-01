@@ -1,4 +1,4 @@
-import type { PropsWithChildren, ReactNode } from "react";
+import { ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,

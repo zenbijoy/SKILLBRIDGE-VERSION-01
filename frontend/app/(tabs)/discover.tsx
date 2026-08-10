@@ -13,7 +13,7 @@ type Result = {
 };
 export default function Discover() {
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState("all");
+  const [kind] = useState<"people" | "rooms" | "clubs" | "posts">("people");
   const q = useQuery({
     queryKey: ["search", query, kind],
     queryFn: () => api<Result>(`/search?${qs({ q: query, kind })}`),

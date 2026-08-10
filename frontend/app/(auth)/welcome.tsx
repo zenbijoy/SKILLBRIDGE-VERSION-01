@@ -1,13 +1,13 @@
 import { router } from "expo-router";
 import { StyleSheet, Text, View, Animated } from "react-native";
-import { Button, H1, Muted, Screen } from "@/components/ui";
-import { colors, radius, spacing } from "@/theme";
+import { Button, H1 } from "@/components/ui";
+import { colors, spacing } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 
 export default function Welcome() {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [floatAnim] = useState(() => new Animated.Value(0));
+  const [fadeAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     Animated.timing(fadeAnim, {

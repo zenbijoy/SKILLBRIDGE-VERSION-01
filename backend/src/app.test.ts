@@ -217,7 +217,6 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
     assert.strictEqual(rpcCalls.length, 1);
     assert.strictEqual(rpcCalls[0].name, "submit_review_atomic");
     assert.strictEqual(rpcCalls[0].args.p_rating, 5);
-    assert.strictEqual(rpcCalls[0].args.p_points_awarded, 5);
   });
 
   await t.test("RESOURCE - member can request signed download", async () => {

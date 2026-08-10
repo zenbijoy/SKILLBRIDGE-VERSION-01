@@ -3,11 +3,11 @@ import { useLocalSearchParams, router } from "expo-router";
 import { Alert } from "react-native";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Button, Field, H1, Muted, Pill, Row, Screen } from "@/components/ui";
+import { Button, Field, H1, Muted, Row, Screen } from "@/components/ui";
 export default function ScheduleRoom() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [starts, setStarts] = useState(
-    new Date(Date.now() + 86400000).toISOString(),
+    () => new Date(Date.now() + 86400000).toISOString(),
   );
   const [mode, setMode] = useState<"online" | "offline" | "hybrid">("online");
   const [location, setLocation] = useState("");

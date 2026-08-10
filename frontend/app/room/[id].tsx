@@ -16,6 +16,8 @@ import {
   Screen,
 } from "@/components/ui";
 import { colors } from "@/theme";
+import { supabase } from "@/lib/supabase";
+
 type Detail = {
   room: Room;
   members: Profile[];
@@ -24,7 +26,6 @@ type Detail = {
   resources: { id: string; title: string; url: string }[];
   myMembership?: { role: string; user_id: string } | null;
 };
-import { supabase } from "@/lib/supabase";
 
 export default function RoomDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -98,8 +99,20 @@ export default function RoomDetail() {
         ) : null}
       </Card>
       {!d.myMembership ? (
-        <Button title="Join room" onPress={() => join.mutate()} />
+        <Button
+          title={join.isPending ? "Joining..." : "Join room"}
+          onPress={() => join.mutate()}
+          disabled={join.isPending}
+        />
       ) : (
+        <Button
+          title={leave.isPending ? "Leaving..." : "Leave room"}
+          variant="danger"
+          onPress={() => leave.mutate()}
+          disabled={leave.isPending}
+        />
+      )}
+      {!d.myMembership ? null : (
         <>
           {!showVolunteerForm ? (
             <Button

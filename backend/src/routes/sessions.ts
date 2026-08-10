@@ -146,15 +146,12 @@ sessions.post(
       return res.status(400).json({ error: "Cannot review yourself" });
     }
 
-    const points = b.rating >= 4 ? 5 : (b.rating <= 2 ? -2 : 1);
-    
     const { data, error } = await admin.rpc("submit_review_atomic", {
       p_reviewer_id: req.userId!,
       p_reviewee_id: session.teacher_id,
       p_session_id: id,
       p_rating: b.rating,
-      p_comment: b.comment || "",
-      p_points_awarded: points
+      p_comment: b.comment || ""
     });
     
     if (error) {

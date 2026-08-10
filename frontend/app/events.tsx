@@ -6,7 +6,6 @@ import {
   Button,
   Card,
   H1,
-  H2,
   Muted,
   Pill,
   Row,

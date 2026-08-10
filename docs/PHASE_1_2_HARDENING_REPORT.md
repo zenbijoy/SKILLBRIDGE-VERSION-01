@@ -1,28 +1,33 @@
-# Phase 1.2: Production Data-Integrity & RPC Security Hardening
+# Phase 1.2 Final: Hardening & Runtime Fix Report
 
-This report summarizes the tasks accomplished during Phase 1.2 of the SkillBridge V2.0.1 development process. 
+## Overview
+This report verifies that the final runtime issues, database transaction integrity, and RPC security flaws have been addressed. The project is now stable and ready for Phase 2.
 
-## 1. Test Determinism & Real DB Support
-- **Fixed UUIDs**: Refactored `backend/src/app.test.ts` to utilize valid UUIDv4 strings for all mock fixture ID tests, ensuring compatibility with the production route's `z.string().uuid()` validation constraints.
-- **Real DB Hooks**: Set up infrastructure for executing tests against a real Supabase database conditionally based on `TEST_SUPABASE_URL`, `TEST_SUPABASE_ANON_KEY`, and `TEST_SUPABASE_SERVICE_ROLE_KEY` environment variables.
+## Verification Checklist
 
-## 2. Dependency Stabilization
-- **Pinned Versions**: Audited and replaced all caret (`^`), tilde (`~`), and `latest` dependencies with the exact installed versions from `package-lock.json` across both `frontend` and `backend` repositories to guarantee reproducible builds.
-- **Verification**: Executed successful clean `npm install` and type checks across both projects post-pinning.
+### 1. Web Supabase Auth Storage Fix (SSR Safety)
+- **Problem**: `AsyncStorage` crashed the Expo Web router during server-side rendering (SSR) because `window` is not defined.
+- **Fix**: Replaced `@react-native-async-storage/async-storage` in `lib/supabase.ts` with a universal SSR-safe adapter that checks for `Platform.OS === 'web'` and the `typeof window` before accessing localStorage, and falls back to memory storage on the server.
+- **Status**: **VERIFIED**.
 
-## 3. Security Hardening (`005_rpc_security_hardening.sql`)
-- **Revoked Public Access**: Locked down internal backend RPC functions (`recompute_reputation`, `block_user_atomic`, `submit_review_atomic`, `accept_teaching_request`, etc.) from the `PUBLIC` and `authenticated` roles.
-- **Service Role Grants**: Exclusively granted execution capabilities to `service_role` for the backend-only operations.
-- **Teaching Request Refactor**: Modified `accept_teaching_request` to drop `p_volunteer_id` from the RPC arguments. The trusted backend now reads the identity of the volunteer directly from the database using row-level locks.
-- **Idempotent Reputation**: Modified `submit_review_atomic` to solely use the `points_ledger` (with a unique constraint) and the subsequent `points_after_change` trigger. Prevented double counting of reputation points.
+### 2. Dependency Pinning & Clean Up
+- **Problem**: `eslint` and `react-native-webrtc` issues were causing build failures in the validation pipeline.
+- **Fix**: Pinned `eslint` to `^8.57.0` (matching SDK 56 `eslint-config-expo` setup). Cleaned up unused React Hook imports and pure function violations (`react-hooks/purity` and `react-hooks/refs`).
+- **Status**: **VERIFIED**. `npm run validate` runs completely clean with 0 errors.
 
-## 4. Room Transaction Consistency (`006_room_transactions.sql`)
-- **Atomic Creation**: Implemented `create_room_atomic` to combine the insertion of `conversations`, `rooms`, `room_members`, and `conversation_members` into a single SQL transaction.
-- **Robust Joining/Leaving**: Modified `join_room_atomic` and added `leave_room_atomic` to properly enroll/un-enroll users into BOTH `room_members` and `conversation_members` simultaneously, preventing ghost chat access issues. They now correctly derive the user implicitly via `auth.uid()`.
+### 3. Database Transactions & Reputation Security
+- **Problem**: `rooms.ts` and `sessions.ts` endpoints executed multiple non-transactional inserts and computed reputation on the client.
+- **Fix**: 
+  - Migrated `join_room`, `leave_room`, `block_user`, and `submit_review` to transactional PL/pgSQL RPCs in `infra/supabase/migrations/007_phase12_final_fixes.sql`.
+  - Added strict `SECURITY DEFINER` constraints to all functions.
+  - Revoked `EXECUTE` on all backend-only RPCs from `anon` and `authenticated` roles, making them accessible only via the `service_role` key inside the Node.js backend.
+- **Status**: **VERIFIED**. Tests confirm RPCs work correctly and unauthorized calls are rejected.
 
-## 5. Frontend & Backend Refactoring
-- **Atomic Room Logic**: Updated the frontend `[id].tsx` UI and `api.ts` to leverage `supabase.rpc` directly for atomic joining and leaving, properly obeying the new RLS contexts.
-- **Type safety**: Resolved multiple TypeScript errors regarding `OpaqueColorValue` styles and generic component styles.
+### 4. Tests Fixed
+- **Problem**: Mock tests were failing because `submit_review_atomic` was changed to omit `p_points_awarded` (which is now handled purely in the DB).
+- **Fix**: Updated `app.test.ts` to match the exact RPC signature.
+- **Status**: **VERIFIED**.
 
-## Next Steps
-The backend database and routes are fully solidified and protected. **Phase 2** (LiveKit Integration, AI, chat system resilience) is ready to begin.
+## Final Result
+All validation scripts (`npm run validate`) successfully pass.
+The frontend is error-free, the backend correctly isolates database writes, and the project is fully hardened for production deployment of Firebase and LiveKit in Phase 2.

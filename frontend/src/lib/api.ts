@@ -26,7 +26,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
         refreshPromise = null;
       });
     }
-    const { data: refreshData, error: refreshError } = await refreshPromise;
+    const { data: refreshData } = await refreshPromise;
     
     if (refreshData?.session?.access_token) {
       // Retry request with new token

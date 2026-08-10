@@ -5,7 +5,6 @@ import type { Dashboard } from "@/types";
 import {
   Button,
   Card,
-  H1,
   H2,
   Loading,
   Muted,
