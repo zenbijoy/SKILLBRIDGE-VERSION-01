@@ -15,20 +15,44 @@ import { colors } from "@/theme";
 
 function Stage() {
   const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare]);
+
+  if (tracks.length === 0) {
+    return (
+      <View style={s.emptyStage}>
+        <Muted>Waiting for others to join...</Muted>
+      </View>
+    );
+  }
+
+  // Teacher spotlight: Prioritize screen share, then first camera
+  const spotlightTrack =
+    tracks.find((t) => t.source === Track.Source.ScreenShare) || tracks[0];
+  const otherTracks = tracks.filter((t) => t !== spotlightTrack);
+
   return (
     <View style={s.stage}>
-      {tracks.map((track, i) => (
-        <View
-          style={s.tile}
-          key={`${track.participant.identity}-${track.source}-${i}`}
-        >
-          <VideoTrack trackRef={track} style={StyleSheet.absoluteFill} />
-          <Text style={s.name}>
-            {track.participant.identity}
-            {track.source === Track.Source.ScreenShare ? " · screen" : ""}
-          </Text>
+      <View style={s.spotlightTile}>
+        <VideoTrack trackRef={spotlightTrack} style={StyleSheet.absoluteFill} />
+        <Text style={s.name}>
+          {spotlightTrack.participant.identity}
+          {spotlightTrack.source === Track.Source.ScreenShare ? " (Screen)" : ""}
+        </Text>
+      </View>
+      {otherTracks.length > 0 && (
+        <View style={s.otherTracksContainer}>
+          {otherTracks.map((track, i) => (
+            <View
+              style={s.smallTile}
+              key={`${track.participant.identity}-${track.source}-${i}`}
+            >
+              <VideoTrack trackRef={track} style={StyleSheet.absoluteFill} />
+              <Text style={s.nameSmall}>
+                {track.participant.identity}
+              </Text>
+            </View>
+          ))}
         </View>
-      ))}
+      )}
     </View>
   );
 }
@@ -143,10 +167,32 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   stage: {
     flex: 1,
-    flexDirection: "row",
-    flexWrap: "wrap",
     padding: 8,
     gap: 8,
+  },
+  emptyStage: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  spotlightTile: {
+    flex: 2,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  otherTracksContainer: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  smallTile: {
+    flex: 1,
+    minWidth: "30%",
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    overflow: "hidden",
   },
   tile: {
     width: "48%",
@@ -164,7 +210,18 @@ const s = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
-    fontSize: 12,
+    fontSize: 14,
+  },
+  nameSmall: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    color: "#fff",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontSize: 10,
   },
   controls: {
     padding: 16,

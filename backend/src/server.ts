@@ -92,6 +92,14 @@ io.use(async (socket, next) => {
   }
 });
 io.on("connection", (socket) => {
+  const userId = socket.data.userId;
+  socket.join(`user:${userId}`);
+  socket.broadcast.emit("user:online", { userId });
+
+  socket.on("disconnect", () => {
+    socket.broadcast.emit("user:offline", { userId });
+  });
+
   socket.on("conversation:join", async ({ conversationId }) => {
     if (typeof conversationId !== "string") return;
     const { data } = await admin

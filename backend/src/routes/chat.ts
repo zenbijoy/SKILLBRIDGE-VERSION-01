@@ -3,6 +3,8 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import type { Server } from "socket.io";
+import { PushService } from "../services/PushService.js";
+
 export function chat(io: Server) {
   const r = Router();
   r.get(
@@ -111,9 +113,26 @@ export function chat(io: Server) {
     "/conversations/:id/messages",
     wrap(async (req, res) => {
       const id = z.string().uuid().parse(req.params.id);
-      const { body } = z
-        .object({ body: z.string().trim().min(1).max(5000) })
+      const { body, client_message_id, reply_to_message_id } = z
+        .object({ 
+          body: z.string().trim().min(1).max(5000),
+          client_message_id: z.string().uuid().optional(),
+          reply_to_message_id: z.string().uuid().optional()
+        })
         .parse(req.body);
+
+      if (client_message_id) {
+        const { data: existing } = await admin
+          .from("messages")
+          .select()
+          .eq("sender_id", req.userId!)
+          .eq("client_message_id", client_message_id)
+          .maybeSingle();
+        if (existing) {
+          return res.status(200).json(existing);
+        }
+      }
+
       const { data: m } = await admin
         .from("conversation_members")
         .select("role")
@@ -121,9 +140,32 @@ export function chat(io: Server) {
         .eq("user_id", req.userId!)
         .maybeSingle();
       if (!m) return res.status(403).json({ error: "Not a member" });
+
+      const { data: conv } = await admin
+        .from("conversations")
+        .select("kind, conversation_members(user_id)")
+        .eq("id", id)
+        .single();
+      
+      if (conv?.kind === "dm") {
+        const otherUserId = conv.conversation_members.find((cm: any) => cm.user_id !== req.userId!)?.user_id;
+        if (otherUserId) {
+          const { data: block } = await admin
+            .from("blocks")
+            .select("id")
+            .or(
+              `and(blocker_id.eq.${req.userId},blocked_id.eq.${otherUserId}),and(blocker_id.eq.${otherUserId},blocked_id.eq.${req.userId})`,
+            )
+            .limit(1);
+          if (block?.length) {
+            return res.status(403).json({ error: "Messaging unavailable" });
+          }
+        }
+      }
+
       const { data, error } = await admin
         .from("messages")
-        .insert({ conversation_id: id, sender_id: req.userId!, body })
+        .insert({ conversation_id: id, sender_id: req.userId!, body, client_message_id, reply_to_message_id })
         .select()
         .single();
       if (error) throw error;
@@ -131,7 +173,23 @@ export function chat(io: Server) {
         .from("conversations")
         .update({ updated_at: new Date().toISOString() })
         .eq("id", id);
+      
       io.to(`conversation:${id}`).emit("message:new", data);
+
+      if (conv) {
+        const otherMembers = conv.conversation_members.filter((cm: any) => cm.user_id !== req.userId!);
+        for (const member of otherMembers) {
+          const sockets = await io.in(`user:${member.user_id}`).fetchSockets();
+          if (sockets.length === 0) {
+            await PushService.sendNotification(member.user_id, {
+              title: "New Message",
+              body: body.length > 50 ? body.substring(0, 47) + "..." : body,
+              data: { conversationId: id, messageId: data.id }
+            });
+          }
+        }
+      }
+
       res.status(201).json(data);
     }),
   );
