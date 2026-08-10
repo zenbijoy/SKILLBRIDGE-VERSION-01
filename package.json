@@ -10,6 +10,7 @@
     "test": "npm run test --prefix backend",
     "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix backend",
     "lint": "npm run lint --prefix frontend",
-    "validate": "npm run typecheck && npm run lint && npm run test"
+    "validate": "npm run typecheck && npm run lint && npm run test",
+    "seed:demo": "node scripts/seed-demo.mjs"
   }
 }

@@ -43,12 +43,15 @@ echo.
 echo Creating .env files if missing...
 if not exist "frontend\.env" (
     copy "frontend\.env.example" "frontend\.env"
+    echo [WARNING] Created frontend\.env. You MUST set EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, and EXPO_PUBLIC_API_URL.
 )
 if not exist "backend\.env" (
     copy "backend\.env.example" "backend\.env"
+    echo [WARNING] Created backend\.env. You MUST set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.
 )
 
 echo.
 echo Setup completed successfully.
-echo Next: edit frontend/.env and backend/.env, configure Supabase, then run START_DEV_WINDOWS.cmd.
+echo Next: Make sure all REQUIRED_CORE variables in docs\ENVIRONMENT_REFERENCE.md are set in your .env files.
+echo Then run START_DEV_WINDOWS.cmd.
 exit /b 0
