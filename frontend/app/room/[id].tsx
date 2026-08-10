@@ -24,6 +24,8 @@ type Detail = {
   resources: { id: string; title: string; url: string }[];
   myMembership?: { role: string; user_id: string } | null;
 };
+import { supabase } from "@/lib/supabase";
+
 export default function RoomDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const qc = useQueryClient();
@@ -33,9 +35,22 @@ export default function RoomDetail() {
     enabled: !!id,
   });
   const join = useMutation({
-    mutationFn: () => api(`/rooms/${id}/join`, { method: "POST" }),
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc("join_room_atomic", { p_room_id: id });
+      if (error) throw error;
+      return data;
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["room", id] }),
     onError: (e) => Alert.alert("Join failed", e.message),
+  });
+  const leave = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc("leave_room_atomic", { p_room_id: id });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["room", id] }),
+    onError: (e) => Alert.alert("Leave failed", e.message),
   });
   const [volunteerNote, setVolunteerNote] = useState("");
   const [showVolunteerForm, setShowVolunteerForm] = useState(false);
@@ -188,7 +203,7 @@ export default function RoomDetail() {
               onPress={() => {
                 Alert.prompt("Review", "Enter rating (1-5):", [
                   { text: "Cancel", style: "cancel" },
-                  { text: "Submit", onPress: (val) => {
+                  { text: "Submit", onPress: (val?: string) => {
                      const rating = parseInt(val || "0");
                      if (rating < 1 || rating > 5) return Alert.alert("Error", "Rating must be between 1 and 5");
                      api(`/sessions/${x.id}/review`, {
@@ -224,7 +239,7 @@ export default function RoomDetail() {
           onPress={() => {
             Alert.prompt("Upload Resource", "Enter URL or text (File upload requires native picker)", [
               { text: "Cancel", style: "cancel" },
-              { text: "Submit", onPress: (url) => {
+              { text: "Submit", onPress: (url?: string) => {
                 if (!url) return;
                 api("/resources", {
                   method: "POST",

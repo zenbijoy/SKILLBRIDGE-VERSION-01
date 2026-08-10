@@ -46,14 +46,14 @@ export function Card({
 }) {
   return <View style={[s.card, style]}>{children}</View>;
 }
-export function H1({ children }: { children: ReactNode }) {
-  return <Text style={s.h1}>{children}</Text>;
+export function H1({ children, style }: { children: ReactNode; style?: StyleProp<any> }) {
+  return <Text style={[s.h1, style]}>{children}</Text>;
 }
-export function H2({ children }: { children: ReactNode }) {
-  return <Text style={s.h2}>{children}</Text>;
+export function H2({ children, style }: { children: ReactNode; style?: StyleProp<any> }) {
+  return <Text style={[s.h2, style]}>{children}</Text>;
 }
-export function Muted({ children }: { children: ReactNode }) {
-  return <Text style={s.muted}>{children}</Text>;
+export function Muted({ children, style, numberOfLines }: { children: ReactNode; style?: StyleProp<any>; numberOfLines?: number }) {
+  return <Text style={[s.muted, style]} numberOfLines={numberOfLines}>{children}</Text>;
 }
 export function Pill({
   children,
@@ -127,8 +127,8 @@ export function Empty({ title, detail }: { title: string; detail: string }) {
     </Card>
   );
 }
-export function Row({ children }: { children: ReactNode }) {
-  return <View style={s.row}>{children}</View>;
+export function Row({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  return <View style={[s.row, style]}>{children}</View>;
 }
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },

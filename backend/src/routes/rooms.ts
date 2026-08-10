@@ -12,6 +12,7 @@ const createSchema = z.object({
   mode: z.enum(["online", "offline", "hybrid"]).default("hybrid"),
   capacity: z.number().int().min(2).max(250).default(30),
   tags: z.array(z.string().max(40)).max(10).default([]),
+  rules: z.string().max(1000).optional().default(""),
   campus_location: z.string().max(200).optional(),
 });
 rooms.get(
@@ -32,34 +33,18 @@ rooms.post(
   "/",
   wrap(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const { data: conversation, error: ce } = await admin
-      .from("conversations")
-      .insert({ kind: "room", title: body.title, created_by: req.userId! })
-      .select()
-      .single();
-    if (ce) throw ce;
-    const { data, error } = await admin
-      .from("rooms")
-      .insert({
-        ...body,
-        owner_id: req.userId!,
-        member_count: 1,
-        conversation_id: conversation.id,
-      })
-      .select()
-      .single();
+    const { data: v_room_id, error } = await admin.rpc("create_room_atomic", {
+      p_title: body.title,
+      p_description: body.description,
+      p_visibility: body.visibility,
+      p_capacity: body.capacity,
+      p_rules: body.rules,
+      p_tags: body.tags,
+      p_owner_id: req.userId!,
+    });
     if (error) throw error;
-    await admin
-      .from("room_members")
-      .insert({ room_id: data.id, user_id: req.userId!, role: "owner" });
-    await admin
-      .from("conversation_members")
-      .insert({
-        conversation_id: conversation.id,
-        user_id: req.userId!,
-        role: "owner",
-      });
-    res.status(201).json(data);
+    const { data: room } = await admin.from("rooms").select().eq("id", v_room_id).single();
+    res.status(201).json(room);
   }),
 );
 rooms.get(
@@ -112,34 +97,6 @@ rooms.get(
   }),
 );
 rooms.post(
-  "/:id/join",
-  wrap(async (req, res) => {
-    const id = z.string().uuid().parse(req.params.id);
-    const { data, error } = await admin.rpc("join_room_atomic", {
-      p_room_id: id,
-      p_user_id: req.userId!,
-    });
-    if (error) throw error;
-    const { data: room } = await admin
-      .from("rooms")
-      .select("conversation_id")
-      .eq("id", id)
-      .single();
-    if (room?.conversation_id)
-      await admin
-        .from("conversation_members")
-        .upsert(
-          {
-            conversation_id: room.conversation_id,
-            user_id: req.userId!,
-            role: "member",
-          },
-          { onConflict: "conversation_id,user_id" },
-        );
-    res.json({ joined: true, result: data });
-  }),
-);
-rooms.post(
   "/:id/teach",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
@@ -187,30 +144,19 @@ rooms.patch(
     if (room?.owner_id !== req.userId)
       return res.status(403).json({ error: "Only room owner can decide" });
     if (status === "accepted") {
-      const { data: request } = await admin
-        .from("teaching_requests")
-        .select("volunteer_id")
-        .eq("id", requestId)
-        .single();
-      if (!request) return res.status(404).json({ error: "Not found" });
-      
       const { error } = await admin.rpc("accept_teaching_request", {
         p_room_id: roomId,
         p_request_id: requestId,
-        p_volunteer_id: request.volunteer_id,
       });
       if (error) throw error;
-      res.json({ id: requestId, status: "accepted" });
+      res.json({ status: "accepted" });
     } else {
-      const { data, error } = await admin
+      const { error } = await admin
         .from("teaching_requests")
-        .update({ status, decided_at: new Date().toISOString() })
-        .eq("id", requestId)
-        .eq("room_id", roomId)
-        .select()
-        .single();
+        .update({ status: "rejected", decided_at: new Date().toISOString() })
+        .eq("id", requestId);
       if (error) throw error;
-      res.json(data);
+      res.json({ status: "rejected" });
     }
   }),
 );

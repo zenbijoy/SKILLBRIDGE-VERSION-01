@@ -1,7 +1,7 @@
 import { Tabs } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors } from "@/theme";
-const Icon = ({ name, color }: { name: any; color: string }) => (
+const Icon = ({ name, color }: { name: any; color: any }) => (
   <MaterialCommunityIcons name={name} size={23} color={color} />
 );
 export default function TabsLayout() {

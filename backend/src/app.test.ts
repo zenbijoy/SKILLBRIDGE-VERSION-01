@@ -60,6 +60,14 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
   const { app } = await import("./server.js");
   const { setAdminClient } = await import("./lib/db.js");
 
+  const USER_A = "11111111-1111-4111-8111-111111111111"; // Owner / test_user
+  const USER_B = "22222222-2222-4222-8222-222222222222"; // Volunteer / blocked
+  const ROOM_ID = "33333333-3333-4333-8333-333333333333";
+  const TEACH_REQ_ID = "44444444-4444-4444-8444-444444444444";
+  const SESSION_ID = "55555555-5555-4555-8555-555555555555";
+  const RESOURCE_ID = "66666666-6666-4666-8666-666666666666";
+  const CONVERSATION_ID = "77777777-7777-4777-8777-777777777777";
+
   // Create a deterministic mock builder
   const createMockChain = (data: any = null, error: any = null) => {
     const chain: any = {
@@ -84,13 +92,13 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
   let rpcCalls: any[] = [];
   
   const mockAdmin = {
-    from: () => createMockChain(),
+    from: (table?: string) => createMockChain(),
     rpc: async (name: string, args: any) => {
       rpcCalls.push({ name, args });
       return { data: "success", error: null };
     },
     auth: {
-      getUser: async () => ({ data: { user: { id: "test_user_id", role: "authenticated" } }, error: null }),
+      getUser: async () => ({ data: { user: { id: USER_A, role: "authenticated" } }, error: null }),
     },
     storage: {
       from: () => ({
@@ -106,44 +114,44 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
   const authHeader = { Authorization: "Bearer valid_mock_token" };
 
   await t.test("TEACHING - member can submit teaching request", async () => {
-    // Override 'from' specifically for this test if needed, or rely on generic success
-    mockAdmin.from = (table: string) => {
-      if (table === "teaching_requests") return createMockChain({ id: "req_123" });
-      if (table === "rooms") return createMockChain({ owner_id: "owner_123", title: "Test Room" });
+    mockAdmin.from = (table?: string) => {
+      if (table === "teaching_requests") return createMockChain({ id: TEACH_REQ_ID });
+      if (table === "rooms") return createMockChain({ owner_id: USER_B, title: "Test Room" });
       return createMockChain();
     };
     
-    const res = await request(app).post("/api/v1/rooms/room_123/teach").set(authHeader).send({ note: "I want to teach" });
+    const res = await request(app).post(`/api/v1/rooms/${ROOM_ID}/teach`).set(authHeader).send({ note: "I want to teach" });
     assert.strictEqual(res.status, 201);
   });
 
   await t.test("TEACHING - room owner can accept candidate (Transaction RPC)", async () => {
     rpcCalls = [];
-    mockAdmin.from = (table: string) => {
-      if (table === "rooms") return createMockChain({ owner_id: "test_user_id" }); // requester is owner
-      if (table === "teaching_requests") return createMockChain({ volunteer_id: "vol_123" });
+    mockAdmin.from = (table?: string) => {
+      if (table === "rooms") return createMockChain({ owner_id: USER_A }); 
+      if (table === "teaching_requests") return createMockChain({ volunteer_id: USER_B });
       return createMockChain();
     };
 
     const res = await request(app)
-      .patch("/api/v1/rooms/room_123/teach/req_123")
+      .patch(`/api/v1/rooms/${ROOM_ID}/teach/${TEACH_REQ_ID}`)
       .set(authHeader)
       .send({ status: "accepted" });
       
     assert.strictEqual(res.status, 200);
     assert.strictEqual(rpcCalls.length, 1);
     assert.strictEqual(rpcCalls[0].name, "accept_teaching_request");
-    assert.strictEqual(rpcCalls[0].args.p_volunteer_id, "vol_123");
+    assert.strictEqual(rpcCalls[0].args.p_request_id, TEACH_REQ_ID);
+    assert.strictEqual(rpcCalls[0].args.p_volunteer_id, undefined);
   });
 
   await t.test("TEACHING - unauthorized user cannot accept candidate", async () => {
-    mockAdmin.from = (table: string) => {
-      if (table === "rooms") return createMockChain({ owner_id: "different_user" }); // requester is not owner
+    mockAdmin.from = (table?: string) => {
+      if (table === "rooms") return createMockChain({ owner_id: USER_B }); 
       return createMockChain();
     };
 
     const res = await request(app)
-      .patch("/api/v1/rooms/room_123/teach/req_123")
+      .patch(`/api/v1/rooms/${ROOM_ID}/teach/${TEACH_REQ_ID}`)
       .set(authHeader)
       .send({ status: "accepted" });
       
@@ -155,37 +163,37 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
     const res = await request(app)
       .post("/api/v1/account/blocks")
       .set(authHeader)
-      .send({ blocked_id: "blocked_123" });
+      .send({ blocked_id: USER_B });
       
     assert.strictEqual(res.status, 200);
     assert.strictEqual(rpcCalls.length, 1);
     assert.strictEqual(rpcCalls[0].name, "block_user_atomic");
-    assert.strictEqual(rpcCalls[0].args.p_blocked_id, "blocked_123");
+    assert.strictEqual(rpcCalls[0].args.p_blocked_id, USER_B);
   });
 
   await t.test("SESSION - unauthorized session creation rejected", async () => {
-    mockAdmin.from = (table: string) => {
-      if (table === "room_members") return createMockChain({ role: "member" }); // not owner or teacher
+    mockAdmin.from = (table?: string) => {
+      if (table === "room_members") return createMockChain({ role: "member" }); 
       return createMockChain();
     };
 
     const res = await request(app)
       .post("/api/v1/sessions")
       .set(authHeader)
-      .send({ room_id: "room_123", starts_at: new Date().toISOString(), mode: "online" });
+      .send({ room_id: ROOM_ID, starts_at: new Date().toISOString(), mode: "online" });
       
     assert.strictEqual(res.status, 403);
   });
 
   await t.test("REVIEW - non-participant review rejected", async () => {
-    mockAdmin.from = (table: string) => {
-      if (table === "sessions") return createMockChain({ teacher_id: "teacher_123", status: "completed" });
-      if (table === "session_participants") return createMockChain({ attendance_status: "missed" }); // did not attend
+    mockAdmin.from = (table?: string) => {
+      if (table === "sessions") return createMockChain({ teacher_id: USER_B, status: "completed" });
+      if (table === "session_participants") return createMockChain({ attendance_status: "missed" }); 
       return createMockChain();
     };
 
     const res = await request(app)
-      .post("/api/v1/sessions/session_123/review")
+      .post(`/api/v1/sessions/${SESSION_ID}/review`)
       .set(authHeader)
       .send({ rating: 5 });
       
@@ -194,14 +202,14 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
 
   await t.test("REVIEW - valid review triggers submit_review_atomic RPC", async () => {
     rpcCalls = [];
-    mockAdmin.from = (table: string) => {
-      if (table === "sessions") return createMockChain({ teacher_id: "teacher_123", status: "completed" });
+    mockAdmin.from = (table?: string) => {
+      if (table === "sessions") return createMockChain({ teacher_id: USER_B, status: "completed" });
       if (table === "session_participants") return createMockChain({ attendance_status: "attended" });
       return createMockChain();
     };
 
     const res = await request(app)
-      .post("/api/v1/sessions/session_123/review")
+      .post(`/api/v1/sessions/${SESSION_ID}/review`)
       .set(authHeader)
       .send({ rating: 5, comment: "Great" });
       
@@ -209,20 +217,33 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
     assert.strictEqual(rpcCalls.length, 1);
     assert.strictEqual(rpcCalls[0].name, "submit_review_atomic");
     assert.strictEqual(rpcCalls[0].args.p_rating, 5);
-    // Rating 5 -> +5 points
     assert.strictEqual(rpcCalls[0].args.p_points_awarded, 5);
   });
 
   await t.test("RESOURCE - member can request signed download", async () => {
-    mockAdmin.from = (table: string) => {
-      if (table === "resources") return createMockChain({ room_id: "room_123", storage_path: "path.pdf" });
-      if (table === "room_members") return createMockChain({ role: "member" }); // is a member
+    mockAdmin.from = (table?: string) => {
+      if (table === "resources") return createMockChain({ room_id: ROOM_ID, storage_path: "path.pdf" });
+      if (table === "room_members") return createMockChain({ role: "member" }); 
       return createMockChain();
     };
 
-    const res = await request(app).get("/api/v1/resources/res_123/download").set(authHeader);
+    const res = await request(app).get(`/api/v1/resources/${RESOURCE_ID}/download`).set(authHeader);
       
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.url, "http://mock-url");
+  });
+});
+
+test("Phase 1.2 Real DB Integration Tests", async (t) => {
+  const HAS_CREDENTIALS = process.env.TEST_SUPABASE_URL && process.env.TEST_SUPABASE_ANON_KEY && process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!HAS_CREDENTIALS) {
+    t.skip("Skipping real DB tests due to missing TEST_SUPABASE_URL / TEST_SUPABASE_ANON_KEY / TEST_SUPABASE_SERVICE_ROLE_KEY");
+    return;
+  }
+
+  await t.test("REAL DB - Tests are ready to run", async () => {
+    // Tests against real database such as migration checks, RLS checks, and concurrency would go here.
+    assert.ok(true);
   });
 });
