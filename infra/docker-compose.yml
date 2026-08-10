@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: ../backend
+    env_file: ../backend/.env
+    restart: unless-stopped
+    depends_on: [redis, livekit]
+    ports: ["4000:4000"]
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server","--appendonly","yes","--maxmemory","256mb","--maxmemory-policy","allkeys-lru"]
+    volumes: ["redis_data:/data"]
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    command: ["--config","/etc/livekit.yaml"]
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    ports: ["7880:7880","7881:7881","50000-50100:50000-50100/udp"]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [api,livekit]
+    ports: ["80:80","443:443"]
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+volumes:
+  redis_data:
+  caddy_data:

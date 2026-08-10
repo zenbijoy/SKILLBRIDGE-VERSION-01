@@ -1,0 +1,7 @@
+api.example.com {
+  reverse_proxy api:4000
+}
+
+live.example.com {
+  reverse_proxy livekit:7880
+}

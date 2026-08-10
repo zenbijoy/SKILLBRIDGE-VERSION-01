@@ -1,0 +1,12 @@
+{
+  "name": "skillbridge-root",
+  "private": true,
+  "scripts": {
+    "frontend": "npm run start --prefix frontend",
+    "backend": "npm run dev --prefix backend",
+    "web": "npm run web --prefix frontend",
+    "test": "npm run test --prefix backend",
+    "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix backend",
+    "lint": "npm run lint --prefix frontend && npm run lint --prefix backend"
+  }
+}

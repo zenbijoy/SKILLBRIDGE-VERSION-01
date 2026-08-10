@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "SkillBridge",
+    "slug": "skillbridge",
+    "scheme": "skillbridge",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.skillbridge.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SkillBridge requires camera access so you can participate in live peer learning rooms and video classes.",
+        "NSMicrophoneUsageDescription": "SkillBridge requires microphone access to let you speak in live audio and video learning sessions."
+      }
+    },
+    "android": {
+      "package": "com.skillbridge.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#08101E"
+      },
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
+          }
+        }
+      ],
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "@livekit/react-native-expo-plugin",
+        {
+          "cameraPermission": "Allow SkillBridge to use your camera for classes.",
+          "microphonePermission": "Allow SkillBridge to use your microphone for classes."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_EAS_PROJECT_ID"
+      },
+      "apiUrl": "http://localhost:4000/api/v1",
+      "supabaseUrl": "REPLACE_SUPABASE_URL",
+      "supabaseAnonKey": "REPLACE_SUPABASE_ANON_KEY"
+    }
+  }
+}
