@@ -1,0 +1,182 @@
+﻿diff --git a/infra/supabase/migrations/001_schema.sql b/infra/supabase/migrations/001_schema.sql
+index 8f9047f..e19b660 100644
+--- a/infra/supabase/migrations/001_schema.sql
++++ b/infra/supabase/migrations/001_schema.sql
+@@ -67,7 +67,7 @@ create index messages_conv_created_idx on public.messages(conversation_id,create
+ create table public.rooms (
+   id uuid primary key default gen_random_uuid(), owner_id uuid not null references public.profiles(id) on delete cascade,
+   conversation_id uuid references public.conversations(id) on delete set null,
+-  title text not null, description text not null default '', topic text not null, tags text[] not null default '{}',
++  title text not null, description text not null default '', topic text not null, rules text not null default '', tags text[] not null default '{}',
+   visibility text not null default 'public' check(visibility in ('public','private','invite_only')),
+   mode text not null default 'hybrid' check(mode in ('online','offline','hybrid')),
+   capacity int not null default 30 check(capacity between 2 and 250), member_count int not null default 1 check(member_count>=0),
+diff --git a/infra/supabase/migrations/005_rpc_security_hardening.sql b/infra/supabase/migrations/005_rpc_security_hardening.sql
+index 826ab96..f325ee5 100644
+--- a/infra/supabase/migrations/005_rpc_security_hardening.sql
++++ b/infra/supabase/migrations/005_rpc_security_hardening.sql
+@@ -1,8 +1,8 @@
+ -- 005_rpc_security_hardening.sql
+ 
+ -- 1. REVOKE EXECUTE FROM PUBLIC on Backend-only functions
+-REVOKE EXECUTE ON FUNCTION public.recompute_reputation() FROM PUBLIC, anon, authenticated;
+-GRANT EXECUTE ON FUNCTION public.recompute_reputation() TO service_role;
++REVOKE EXECUTE ON FUNCTION public.recompute_reputation(uuid) FROM PUBLIC, anon, authenticated;
++GRANT EXECUTE ON FUNCTION public.recompute_reputation(uuid) TO service_role;
+ 
+ REVOKE EXECUTE ON FUNCTION public.block_user_atomic(uuid, uuid) FROM PUBLIC, anon, authenticated;
+ GRANT EXECUTE ON FUNCTION public.block_user_atomic(uuid, uuid) TO service_role;
+diff --git a/infra/supabase/migrations/006_room_transactions.sql b/infra/supabase/migrations/006_room_transactions.sql
+index 43e19df..d8854b6 100644
+--- a/infra/supabase/migrations/006_room_transactions.sql
++++ b/infra/supabase/migrations/006_room_transactions.sql
+@@ -4,55 +4,67 @@
+ CREATE OR REPLACE FUNCTION public.create_room_atomic(
+     p_title text,
+     p_description text,
++    p_topic text,
+     p_visibility text,
++    p_mode text,
+     p_capacity int,
+     p_rules text,
+     p_tags text[],
++    p_campus_location text,
+     p_owner_id uuid
+ ) RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
++SET search_path = public
+ AS $$
+ DECLARE
+     v_conversation_id uuid;
+     v_room_id uuid;
+ BEGIN
+-    -- Create conversation
++    IF p_visibility NOT IN ('public','private','invite_only') THEN
++        RAISE EXCEPTION 'Invalid room visibility';
++    END IF;
++
++    IF p_mode NOT IN ('online','offline','hybrid') THEN
++        RAISE EXCEPTION 'Invalid room mode';
++    END IF;
++
++    IF p_capacity < 2 OR p_capacity > 250 THEN
++        RAISE EXCEPTION 'Invalid room capacity';
++    END IF;
++
+     INSERT INTO public.conversations (kind, title, created_by)
+     VALUES ('room', p_title, p_owner_id)
+     RETURNING id INTO v_conversation_id;
+ 
+-    -- Create room
+     INSERT INTO public.rooms (
+-        title, description, visibility, capacity, rules, tags, 
+-        owner_id, conversation_id, member_count
++        title, description, topic, visibility, mode, capacity, rules, tags,
++        campus_location, owner_id, conversation_id, member_count
+     )
+     VALUES (
+-        p_title, p_description, p_visibility::public.room_visibility, p_capacity, p_rules, p_tags, 
++        p_title, p_description, p_topic, p_visibility, p_mode, p_capacity,
++        COALESCE(p_rules, ''), COALESCE(p_tags, '{}'), p_campus_location,
+         p_owner_id, v_conversation_id, 1
+     )
+     RETURNING id INTO v_room_id;
+ 
+-    -- Add owner to room_members
+     INSERT INTO public.room_members (room_id, user_id, role)
+     VALUES (v_room_id, p_owner_id, 'owner');
+ 
+-    -- Add owner to conversation_members
+     INSERT INTO public.conversation_members (conversation_id, user_id, role)
+     VALUES (v_conversation_id, p_owner_id, 'owner');
+ 
+     RETURN v_room_id;
+-EXCEPTION WHEN OTHERS THEN
+-    -- Transaction implicitly rolls back
+-    RAISE;
+ END;
+ $$;
+ 
+--- Secure create_room_atomic
+-REVOKE EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) FROM PUBLIC, anon, authenticated;
+-GRANT EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) TO service_role;
+-
++REVOKE ALL ON FUNCTION public.create_room_atomic(
++    text, text, text, text, text, int, text, text[], text, uuid
++) FROM PUBLIC, anon, authenticated;
+ 
++GRANT EXECUTE ON FUNCTION public.create_room_atomic(
++    text, text, text, text, text, int, text, text[], text, uuid
++) TO service_role;
+ -- 2. Modify join_room_atomic to use auth.uid() and handle conversation_members
+ DROP FUNCTION IF EXISTS public.join_room_atomic(uuid, uuid);
+ 
+diff --git a/infra/supabase/migrations/007_phase12_final_fixes.sql b/infra/supabase/migrations/007_phase12_final_fixes.sql
+index 5fafb03..2ae73a1 100644
+--- a/infra/supabase/migrations/007_phase12_final_fixes.sql
++++ b/infra/supabase/migrations/007_phase12_final_fixes.sql
+@@ -99,10 +99,13 @@ GRANT EXECUTE ON FUNCTION public.submit_review_atomic(uuid, uuid, uuid, int, tex
+ CREATE OR REPLACE FUNCTION public.create_room_atomic(
+     p_title text,
+     p_description text,
++    p_topic text,
+     p_visibility text,
++    p_mode text,
+     p_capacity int,
+     p_rules text,
+     p_tags text[],
++    p_campus_location text,
+     p_owner_id uuid
+ ) RETURNS uuid
+ LANGUAGE plpgsql
+@@ -113,16 +116,29 @@ DECLARE
+     v_conversation_id uuid;
+     v_room_id uuid;
+ BEGIN
++    IF p_visibility NOT IN ('public','private','invite_only') THEN
++        RAISE EXCEPTION 'Invalid room visibility';
++    END IF;
++
++    IF p_mode NOT IN ('online','offline','hybrid') THEN
++        RAISE EXCEPTION 'Invalid room mode';
++    END IF;
++
++    IF p_capacity < 2 OR p_capacity > 250 THEN
++        RAISE EXCEPTION 'Invalid room capacity';
++    END IF;
++
+     INSERT INTO public.conversations (kind, title, created_by)
+     VALUES ('room', p_title, p_owner_id)
+     RETURNING id INTO v_conversation_id;
+ 
+     INSERT INTO public.rooms (
+-        title, description, visibility, capacity, rules, tags, 
+-        owner_id, conversation_id, member_count
++        title, description, topic, visibility, mode, capacity, rules, tags,
++        campus_location, owner_id, conversation_id, member_count
+     )
+     VALUES (
+-        p_title, p_description, p_visibility::public.room_visibility, p_capacity, p_rules, p_tags, 
++        p_title, p_description, p_topic, p_visibility, p_mode, p_capacity,
++        COALESCE(p_rules, ''), COALESCE(p_tags, '{}'), p_campus_location,
+         p_owner_id, v_conversation_id, 1
+     )
+     RETURNING id INTO v_room_id;
+@@ -137,10 +153,13 @@ BEGIN
+ END;
+ $$;
+ 
+-REVOKE ALL ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) FROM PUBLIC, anon, authenticated;
+-GRANT EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) TO service_role;
+-
++REVOKE ALL ON FUNCTION public.create_room_atomic(
++    text, text, text, text, text, int, text, text[], text, uuid
++) FROM PUBLIC, anon, authenticated;
+ 
++GRANT EXECUTE ON FUNCTION public.create_room_atomic(
++    text, text, text, text, text, int, text, text[], text, uuid
++) TO service_role;
+ -- accept_teaching_request
+ CREATE OR REPLACE FUNCTION public.accept_teaching_request(
+     p_room_id uuid,

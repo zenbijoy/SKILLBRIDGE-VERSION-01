@@ -1,0 +1,1536 @@
+-- 001_schema.sql
+create extension if not exists pgcrypto;
+create extension if not exists pg_trgm;
+
+create table public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text not null default 'New member', username text unique,
+  avatar_url text, bio text, university text, department text, batch text,
+  roles text[] not null default array['student']::text[],
+  research_interests text[] not null default '{}',
+  reputation int not null default 0 check (reputation >= 0),
+  profile_visibility text not null default 'public' check (profile_visibility in ('public','connections','private')),
+  account_status text not null default 'active' check (account_status in ('active','suspended','banned')),
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create index profiles_name_trgm on public.profiles using gin (full_name gin_trgm_ops);
+create index profiles_username_trgm on public.profiles using gin (username gin_trgm_ops);
+
+create table public.skills (
+  id uuid primary key default gen_random_uuid(), name text unique not null, category text not null default 'general', created_at timestamptz not null default now()
+);
+create index skills_name_trgm on public.skills using gin (name gin_trgm_ops);
+create table public.user_skills (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  skill_id uuid not null references public.skills(id) on delete cascade,
+  kind text not null check (kind in ('known','wanted','research')),
+  proficiency int not null default 1 check (proficiency between 1 and 5), verified boolean not null default false,
+  created_at timestamptz not null default now(), primary key(user_id,skill_id,kind)
+);
+
+create table public.connection_requests (
+  id uuid primary key default gen_random_uuid(), requester_id uuid not null references public.profiles(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'pending' check(status in ('pending','accepted','declined','cancelled')),
+  created_at timestamptz not null default now(), responded_at timestamptz,
+  unique(requester_id,recipient_id), check(requester_id<>recipient_id)
+);
+create table public.connections (
+  id uuid primary key default gen_random_uuid(), user_a uuid not null references public.profiles(id) on delete cascade,
+  user_b uuid not null references public.profiles(id) on delete cascade, user_ids uuid[] not null,
+  created_at timestamptz not null default now(), unique(user_a,user_b), check(user_a<>user_b)
+);
+create index connections_users_idx on public.connections using gin(user_ids);
+create table public.blocks (
+  id uuid primary key default gen_random_uuid(), blocker_id uuid not null references public.profiles(id) on delete cascade,
+  blocked_id uuid not null references public.profiles(id) on delete cascade, created_at timestamptz not null default now(),
+  unique(blocker_id,blocked_id), check(blocker_id<>blocked_id)
+);
+
+create table public.conversations (
+  id uuid primary key default gen_random_uuid(), kind text not null check(kind in ('dm','group','room')), title text,
+  created_by uuid references public.profiles(id) on delete set null, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create table public.conversation_members (
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  role text not null default 'member', last_read_at timestamptz, created_at timestamptz not null default now(),
+  primary key(conversation_id,user_id)
+);
+create table public.messages (
+  id uuid primary key default gen_random_uuid(), conversation_id uuid not null references public.conversations(id) on delete cascade,
+  sender_id uuid not null references public.profiles(id) on delete cascade, body text not null check(char_length(body)<=5000),
+  reply_to uuid references public.messages(id) on delete set null, attachment jsonb,
+  created_at timestamptz not null default now(), edited_at timestamptz, deleted_at timestamptz
+);
+create index messages_conv_created_idx on public.messages(conversation_id,created_at desc);
+
+create table public.rooms (
+  id uuid primary key default gen_random_uuid(), owner_id uuid not null references public.profiles(id) on delete cascade,
+  conversation_id uuid references public.conversations(id) on delete set null,
+  title text not null, description text not null default '', topic text not null, tags text[] not null default '{}',
+  visibility text not null default 'public' check(visibility in ('public','private','invite_only')),
+  mode text not null default 'hybrid' check(mode in ('online','offline','hybrid')),
+  capacity int not null default 30 check(capacity between 2 and 250), member_count int not null default 1 check(member_count>=0),
+  scheduled_at timestamptz, campus_location text,
+  status text not null default 'open' check(status in ('open','scheduled','live','completed','cancelled')),
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create index rooms_search_title on public.rooms using gin(title gin_trgm_ops);
+create index rooms_tags_idx on public.rooms using gin(tags);
+create table public.room_members (
+  room_id uuid not null references public.rooms(id) on delete cascade, user_id uuid not null references public.profiles(id) on delete cascade,
+  role text not null default 'member' check(role in ('owner','teacher','moderator','member')),
+  joined_at timestamptz not null default now(), primary key(room_id,user_id)
+);
+create table public.teaching_requests (
+  id uuid primary key default gen_random_uuid(), room_id uuid not null references public.rooms(id) on delete cascade,
+  volunteer_id uuid not null references public.profiles(id) on delete cascade, note text,
+  status text not null default 'pending' check(status in ('pending','accepted','rejected','withdrawn')),
+  created_at timestamptz not null default now(), decided_at timestamptz, unique(room_id,volunteer_id)
+);
+
+create table public.sessions (
+  id uuid primary key default gen_random_uuid(), room_id uuid not null references public.rooms(id) on delete cascade,
+  teacher_id uuid not null references public.profiles(id) on delete cascade,
+  starts_at timestamptz not null, ends_at timestamptz,
+  mode text not null check(mode in ('online','offline','hybrid')), meeting_url text, campus_location text,
+  status text not null default 'scheduled' check(status in ('draft','scheduled','live','completed','cancelled')),
+  created_at timestamptz not null default now()
+);
+create index sessions_starts_idx on public.sessions(starts_at);
+create table public.session_participants (
+  session_id uuid not null references public.sessions(id) on delete cascade, user_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'invited', attendance_status text, created_at timestamptz not null default now(), primary key(session_id,user_id)
+);
+create table public.reviews (
+  id uuid primary key default gen_random_uuid(), session_id uuid not null references public.sessions(id) on delete cascade,
+  reviewer_id uuid not null references public.profiles(id) on delete cascade, reviewee_id uuid not null references public.profiles(id) on delete cascade,
+  rating int not null check(rating between 1 and 5), comment text, created_at timestamptz not null default now(), unique(session_id,reviewer_id)
+);
+
+create table public.clubs (
+  id uuid primary key default gen_random_uuid(), name text unique not null, description text, university text,
+  verified boolean not null default false, logo_url text, created_by uuid references public.profiles(id) on delete set null, created_at timestamptz not null default now()
+);
+create table public.club_members (
+  club_id uuid not null references public.clubs(id) on delete cascade, user_id uuid not null references public.profiles(id) on delete cascade,
+  role text not null default 'member' check(role in ('owner','admin','member')), joined_at timestamptz not null default now(), primary key(club_id,user_id)
+);
+create table public.events (
+  id uuid primary key default gen_random_uuid(), club_id uuid not null references public.clubs(id) on delete cascade,
+  title text not null, description text not null default '', starts_at timestamptz not null, ends_at timestamptz,
+  location text, online_url text, capacity int, application_required boolean not null default true,
+  status text not null default 'published' check(status in ('draft','published','open','closed','completed','cancelled')),
+  form_schema jsonb not null default '{}'::jsonb, created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create table public.event_applications (
+  id uuid primary key default gen_random_uuid(), event_id uuid not null references public.events(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade, answers jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check(status in ('pending','approved','rejected','waitlisted','cancelled')),
+  reviewed_by uuid references public.profiles(id) on delete set null, reviewed_at timestamptz, created_at timestamptz not null default now(), unique(event_id,user_id)
+);
+
+create table public.resources (
+  id uuid primary key default gen_random_uuid(), room_id uuid references public.rooms(id) on delete cascade,
+  uploader_id uuid not null references public.profiles(id) on delete cascade, title text not null, url text not null, storage_path text,
+  kind text not null default 'file' check(kind in ('note','slide','link','file','image')), created_at timestamptz not null default now()
+);
+create table public.saved_items (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles(id) on delete cascade,
+  entity_type text not null check(entity_type in ('room','event','resource','profile')), entity_id uuid not null,
+  created_at timestamptz not null default now(), unique(user_id,entity_type,entity_id)
+);
+
+create table public.points_ledger (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles(id) on delete cascade,
+  event_type text not null, points int not null check(points between -500 and 500), reference_type text, reference_id uuid,
+  metadata jsonb not null default '{}'::jsonb, created_at timestamptz not null default now()
+);
+create index points_ledger_user_idx on public.points_ledger(user_id,created_at desc);
+create table public.achievements (
+  id uuid primary key default gen_random_uuid(), code text unique not null, title text not null, description text not null, icon text,
+  created_at timestamptz not null default now()
+);
+create table public.user_achievements (
+  user_id uuid not null references public.profiles(id) on delete cascade, achievement_id uuid not null references public.achievements(id) on delete cascade,
+  earned_at timestamptz not null default now(), primary key(user_id,achievement_id)
+);
+
+create table public.quizzes (
+  id uuid primary key default gen_random_uuid(), skill_id uuid references public.skills(id) on delete set null, title text not null,
+  active boolean not null default true, created_at timestamptz not null default now()
+);
+create table public.quiz_questions (
+  id uuid primary key default gen_random_uuid(), quiz_id uuid not null references public.quizzes(id) on delete cascade,
+  prompt text not null, options jsonb not null, correct_answer int not null, explanation text, position int not null default 0
+);
+create table public.quiz_attempts (
+  id uuid primary key default gen_random_uuid(), quiz_id uuid not null references public.quizzes(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade, answers jsonb not null, score int not null check(score between 0 and 100),
+  passed boolean not null, created_at timestamptz not null default now()
+);
+
+create table public.notifications (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles(id) on delete cascade,
+  kind text not null default 'general', title text not null, body text not null, data jsonb not null default '{}'::jsonb,
+  read_at timestamptz, created_at timestamptz not null default now()
+);
+create index notifications_user_idx on public.notifications(user_id,created_at desc);
+create table public.device_tokens (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles(id) on delete cascade,
+  token text not null, token_fingerprint text not null, platform text, enabled boolean not null default true,
+  last_seen_at timestamptz not null default now(), created_at timestamptz not null default now(), unique(user_id,token_fingerprint)
+);
+create table public.reports (
+  id uuid primary key default gen_random_uuid(), reporter_id uuid not null references public.profiles(id) on delete cascade,
+  target_type text not null check(target_type in ('user','message','room','event','resource')), target_id uuid not null,
+  target_user_id uuid references public.profiles(id) on delete set null, reason text not null, details text,
+  status text not null default 'open' check(status in ('open','reviewing','resolved','dismissed')), action text,
+  reviewed_by uuid references public.profiles(id) on delete set null, reviewed_at timestamptz, created_at timestamptz not null default now()
+);
+
+
+-- 002_functions_rls.sql
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  insert into public.profiles(id,full_name,username)
+  values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New member'),'user_'||substr(replace(new.id::text,'-',''),1,10));
+  return new;
+end $$;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
+
+create or replace function public.join_room_atomic(p_room_id uuid,p_user_id uuid) returns jsonb language plpgsql security definer set search_path=public as $$
+declare r public.rooms; existing boolean;
+begin
+  select * into r from public.rooms where id=p_room_id for update;
+  if not found then raise exception 'Room not found'; end if;
+  if r.status not in ('open','scheduled','live') then raise exception 'Room closed'; end if;
+  select exists(select 1 from public.room_members where room_id=p_room_id and user_id=p_user_id) into existing;
+  if existing then return jsonb_build_object('already_member',true,'member_count',r.member_count); end if;
+  if r.member_count>=r.capacity then raise exception 'Room full'; end if;
+  if r.visibility='invite_only' then raise exception 'Invite required'; end if;
+  insert into public.room_members(room_id,user_id,role) values(p_room_id,p_user_id,'member');
+  update public.rooms set member_count=member_count+1,updated_at=now() where id=p_room_id;
+  return jsonb_build_object('joined',true,'member_count',r.member_count+1);
+end $$;
+
+create or replace function public.recompute_reputation(p_user_id uuid) returns void language sql security definer set search_path=public as $$
+  update public.profiles set reputation=greatest(0,coalesce((select sum(points) from public.points_ledger where user_id=p_user_id),0)) where id=p_user_id;
+$$;
+create or replace function public.points_after_change() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  if TG_OP='DELETE' then perform public.recompute_reputation(old.user_id); return old; end if;
+  perform public.recompute_reputation(new.user_id); return new;
+end $$;
+create trigger points_reputation_after after insert or update or delete on public.points_ledger for each row execute procedure public.points_after_change();
+
+create or replace function public.find_dm_conversation(p_user_a uuid,p_user_b uuid)
+returns table(id uuid,title text,kind text,updated_at timestamptz) language sql security definer set search_path=public as $$
+select c.id,c.title,c.kind,c.updated_at from public.conversations c
+where c.kind='dm' and exists(select 1 from public.conversation_members m where m.conversation_id=c.id and m.user_id=p_user_a)
+and exists(select 1 from public.conversation_members m where m.conversation_id=c.id and m.user_id=p_user_b)
+and (select count(*) from public.conversation_members m where m.conversation_id=c.id)=2 limit 1;
+$$;
+
+create or replace function public.recommend_people(p_user_id uuid,p_limit int default 20)
+returns setof public.profiles language sql stable security definer set search_path=public as $$
+with mine as (select skill_id,kind from public.user_skills where user_id=p_user_id), scored as (
+ select p.id,
+   count(*) filter(where us.skill_id in(select skill_id from mine where kind in ('wanted','research'))) * 3 +
+   count(*) filter(where us.skill_id in(select skill_id from mine where kind='known')) as score
+ from public.profiles p left join public.user_skills us on us.user_id=p.id
+ where p.id<>p_user_id and p.profile_visibility<>'private' and p.account_status='active'
+ and not exists(select 1 from public.blocks b where (b.blocker_id=p_user_id and b.blocked_id=p.id) or (b.blocker_id=p.id and b.blocked_id=p_user_id))
+ group by p.id
+)
+select p.* from scored s join public.profiles p on p.id=s.id order by s.score desc,p.reputation desc limit greatest(1,least(p_limit,50));
+$$;
+create or replace function public.suggest_connections(p_user_id uuid,p_limit int default 10)
+returns setof public.profiles language sql stable security definer set search_path=public as $$
+select p.* from public.recommend_people(p_user_id,p_limit*3) p
+where not exists(select 1 from public.connections c where (c.user_a=p_user_id and c.user_b=p.id) or (c.user_b=p_user_id and c.user_a=p.id))
+limit greatest(1,least(p_limit,30));
+$$;
+
+alter table public.profiles enable row level security;
+alter table public.skills enable row level security;
+alter table public.user_skills enable row level security;
+alter table public.connection_requests enable row level security;
+alter table public.connections enable row level security;
+alter table public.blocks enable row level security;
+alter table public.conversations enable row level security;
+alter table public.conversation_members enable row level security;
+alter table public.messages enable row level security;
+alter table public.rooms enable row level security;
+alter table public.room_members enable row level security;
+alter table public.teaching_requests enable row level security;
+alter table public.sessions enable row level security;
+alter table public.session_participants enable row level security;
+alter table public.reviews enable row level security;
+alter table public.clubs enable row level security;
+alter table public.club_members enable row level security;
+alter table public.events enable row level security;
+alter table public.event_applications enable row level security;
+alter table public.resources enable row level security;
+alter table public.saved_items enable row level security;
+alter table public.points_ledger enable row level security;
+alter table public.achievements enable row level security;
+alter table public.user_achievements enable row level security;
+alter table public.quizzes enable row level security;
+alter table public.quiz_questions enable row level security;
+alter table public.quiz_attempts enable row level security;
+alter table public.notifications enable row level security;
+alter table public.device_tokens enable row level security;
+alter table public.reports enable row level security;
+
+create policy profile_public_read on public.profiles for select using (profile_visibility='public' or id=auth.uid());
+create policy profile_self_update on public.profiles for update using(id=auth.uid()) with check(id=auth.uid());
+create policy skills_read on public.skills for select using(true);
+create policy user_skills_read on public.user_skills for select using(user_id=auth.uid() or exists(select 1 from public.profiles p where p.id=user_id and p.profile_visibility='public'));
+create policy user_skills_self on public.user_skills for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+create policy connection_request_involved on public.connection_requests for select using(auth.uid() in(requester_id,recipient_id));
+create policy connections_involved on public.connections for select using(auth.uid() in(user_a,user_b));
+create policy blocks_owner on public.blocks for all using(blocker_id=auth.uid()) with check(blocker_id=auth.uid());
+create policy room_public_read on public.rooms for select using(visibility='public' or owner_id=auth.uid() or exists(select 1 from public.room_members rm where rm.room_id=id and rm.user_id=auth.uid()));
+create policy room_members_self_read on public.room_members for select using(user_id=auth.uid());
+create policy sessions_member_read on public.sessions for select using(teacher_id=auth.uid() or exists(select 1 from public.session_participants sp where sp.session_id=id and sp.user_id=auth.uid()));
+create policy reviews_public_read on public.reviews for select using(true);
+create policy clubs_public_read on public.clubs for select using(true);
+create policy club_members_public_read on public.club_members for select using(true);
+create policy events_public_read on public.events for select using(status in ('published','open','completed'));
+create policy applications_self_read on public.event_applications for select using(user_id=auth.uid());
+create policy resources_room_read on public.resources for select using(room_id is null or exists(select 1 from public.room_members rm where rm.room_id=room_id and rm.user_id=auth.uid()));
+create policy saved_self on public.saved_items for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+create policy ledger_self_read on public.points_ledger for select using(user_id=auth.uid());
+create policy achievements_read on public.achievements for select using(true);
+create policy user_achievements_read on public.user_achievements for select using(true);
+create policy quizzes_read on public.quizzes for select using(active=true);
+-- Intentionally no client SELECT policy on quiz_questions: correct_answer must never be exposed. API service role returns safe fields only.
+create policy attempts_self_read on public.quiz_attempts for select using(user_id=auth.uid());
+create policy notifications_self on public.notifications for select using(user_id=auth.uid());
+create policy device_tokens_self on public.device_tokens for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+create policy reports_self_insert on public.reports for insert with check(reporter_id=auth.uid());
+create policy reports_self_read on public.reports for select using(reporter_id=auth.uid());
+
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values
+ ('avatars','avatars',true,5242880,array['image/jpeg','image/png','image/webp']),
+ ('resources','resources',false,26214400,array['application/pdf','image/jpeg','image/png','image/webp','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
+on conflict(id) do nothing;
+create policy avatars_public_read on storage.objects for select using(bucket_id='avatars');
+create policy avatars_self_insert on storage.objects for insert to authenticated with check(bucket_id='avatars' and (storage.foldername(name))[1]=auth.uid()::text);
+create policy avatars_self_update on storage.objects for update to authenticated using(bucket_id='avatars' and (storage.foldername(name))[1]=auth.uid()::text);
+create policy resources_member_read on storage.objects for select to authenticated using(bucket_id='resources' and exists(select 1 from public.room_members rm where rm.user_id=auth.uid() and rm.room_id::text=(storage.foldername(name))[2]));
+create policy resources_member_write on storage.objects for insert to authenticated with check(bucket_id='resources' and (storage.foldername(name))[1]=auth.uid()::text and exists(select 1 from public.room_members rm where rm.user_id=auth.uid() and rm.room_id::text=(storage.foldername(name))[2]));
+
+
+-- 003_research.sql
+create table public.research_projects (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  owner_id uuid references public.profiles(id) on delete cascade not null,
+  status text not null check (status in ('draft', 'active', 'completed', 'archived')) default 'active',
+  research_areas text[] not null default '{}',
+  methods text[] not null default '{}',
+  tools text[] not null default '{}',
+  looking_for_collaborators boolean default false,
+  collaboration_requirements text,
+  visibility text not null check (visibility in ('public', 'private')) default 'public',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create table public.research_collaboration_requests (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references public.research_projects(id) on delete cascade not null,
+  requester_id uuid references public.profiles(id) on delete cascade not null,
+  message text,
+  status text not null check (status in ('pending', 'accepted', 'rejected', 'cancelled')) default 'pending',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(project_id, requester_id)
+);
+
+alter table public.research_projects enable row level security;
+alter table public.research_collaboration_requests enable row level security;
+
+-- Only owner can manage projects, public can read public projects
+create policy "Public projects are visible to all" on public.research_projects for select using (visibility = 'public');
+create policy "Owners can manage their projects" on public.research_projects using (auth.uid() = owner_id);
+
+-- Collaboration requests
+create policy "Users can see their own requests" on public.research_collaboration_requests for select using (auth.uid() = requester_id);
+create policy "Project owners can see requests for their project" on public.research_collaboration_requests for select using (
+  exists (select 1 from public.research_projects p where p.id = project_id and p.owner_id = auth.uid())
+);
+-- Backend handles creation and updates
+
+
+-- 003_seed.sql
+insert into public.skills(name,category) values
+('Calculus','Mathematics'),('Linear Algebra','Mathematics'),('Physics','Science'),('Chemistry','Science'),('Programming','CSE'),('Data Structures','CSE'),('Algorithms','CSE'),('Machine Learning','Research'),('Deep Learning','Research'),('Thermodynamics','Engineering'),('CAD','Engineering'),('Public Speaking','Professional'),('Research Writing','Research')
+on conflict(name) do nothing;
+insert into public.achievements(code,title,description,icon) values
+('first_help','First Bridge','Complete your first peer-learning session','bridge'),
+('teacher_5','Campus Mentor','Teach five completed sessions','school'),
+('verified_skill','Verified Skill','Pass a server-scored skill verification','verified')
+on conflict(code) do nothing;
+
+
+-- 004_hardening.sql
+create table if not exists public.user_settings (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  notification_preferences jsonb not null default '{"messages":true,"connections":true,"sessions":true,"events":true}'::jsonb,
+  locale text not null default 'en', theme text not null default 'system', updated_at timestamptz not null default now()
+);
+create table if not exists public.audit_logs (
+  id bigint generated always as identity primary key,
+  actor_id uuid references public.profiles(id) on delete set null,
+  action text not null, target_type text not null, target_id text,
+  metadata jsonb not null default '{}'::jsonb, created_at timestamptz not null default now()
+);
+alter table public.user_settings enable row level security;
+alter table public.audit_logs enable row level security;
+create policy settings_self on public.user_settings for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+-- Audit logs are service-role/admin only; no direct client policy.
+
+create or replace function public.mutual_connection_count(p_user_a uuid,p_user_b uuid)
+returns int language sql stable security definer set search_path=public as $$
+with a as (
+ select case when user_a=p_user_a then user_b else user_a end u from public.connections where p_user_a in(user_a,user_b)
+), b as (
+ select case when user_a=p_user_b then user_b else user_a end u from public.connections where p_user_b in(user_a,user_b)
+)
+select count(*)::int from a join b using(u);
+$$;
+
+
+-- 004_transactions.sql
+-- 004_transactions.sql
+
+-- 1. Idempotency Constraint on points_ledger
+ALTER TABLE public.points_ledger 
+ADD CONSTRAINT points_ledger_unique_event UNIQUE (user_id, event_type, reference_type, reference_id);
+
+-- 2. Transaction for accepting a teaching request
+CREATE OR REPLACE FUNCTION accept_teaching_request(
+    p_room_id uuid,
+    p_request_id uuid,
+    p_volunteer_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    -- Update the teaching request status
+    UPDATE public.teaching_requests
+    SET status = 'accepted', decided_at = now()
+    WHERE id = p_request_id AND room_id = p_room_id;
+
+    -- Upsert the room_members role to 'teacher'
+    INSERT INTO public.room_members (room_id, user_id, role)
+    VALUES (p_room_id, p_volunteer_id, 'teacher')
+    ON CONFLICT (room_id, user_id) 
+    DO UPDATE SET role = 'teacher';
+END;
+$$;
+
+-- 3. Transaction for blocking a user
+CREATE OR REPLACE FUNCTION block_user_atomic(
+    p_blocker_id uuid,
+    p_blocked_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    -- Insert into blocks
+    INSERT INTO public.blocks (blocker_id, blocked_id)
+    VALUES (p_blocker_id, p_blocked_id)
+    ON CONFLICT (blocker_id, blocked_id) DO NOTHING;
+
+    -- Delete connections between the two users
+    DELETE FROM public.connections
+    WHERE (user_a = p_blocker_id AND user_b = p_blocked_id)
+       OR (user_a = p_blocked_id AND user_b = p_blocker_id);
+
+    -- Delete pending connection requests between the two users
+    DELETE FROM public.connection_requests
+    WHERE (requester_id = p_blocker_id AND recipient_id = p_blocked_id)
+       OR (requester_id = p_blocked_id AND recipient_id = p_blocker_id);
+END;
+$$;
+
+-- 4. Transaction for submitting a review and awarding reputation
+CREATE OR REPLACE FUNCTION submit_review_atomic(
+    p_reviewer_id uuid,
+    p_reviewee_id uuid,
+    p_session_id uuid,
+    p_rating int,
+    p_comment text,
+    p_points_awarded int
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_review_id uuid;
+BEGIN
+    -- Insert the review
+    INSERT INTO public.reviews (session_id, reviewer_id, reviewee_id, rating, comment)
+    VALUES (p_session_id, p_reviewer_id, p_reviewee_id, p_rating, p_comment)
+    RETURNING id INTO v_review_id;
+
+    -- If points should be awarded, add to ledger. 
+    -- The unique constraint will prevent duplicate awards for the same session/reviewee.
+    IF p_points_awarded <> 0 THEN
+        INSERT INTO public.points_ledger (user_id, event_type, points, reference_type, reference_id)
+        VALUES (p_reviewee_id, 'received_review', p_points_awarded, 'session', p_session_id)
+        ON CONFLICT ON CONSTRAINT points_ledger_unique_event DO NOTHING;
+
+        -- Update the materialized reputation on the profile
+        -- Note: in a high-scale environment this would be done via triggers or batch jobs
+        UPDATE public.profiles
+        SET reputation = reputation + p_points_awarded
+        WHERE id = p_reviewee_id;
+    END IF;
+
+    RETURN v_review_id;
+END;
+$$;
+
+
+-- 005_rpc_security_hardening.sql
+-- 005_rpc_security_hardening.sql
+
+-- 1. REVOKE EXECUTE FROM PUBLIC on Backend-only functions
+REVOKE EXECUTE ON FUNCTION public.recompute_reputation() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.recompute_reputation() TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.block_user_atomic(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.block_user_atomic(uuid, uuid) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.submit_review_atomic(uuid, uuid, uuid, int, text, int) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_review_atomic(uuid, uuid, uuid, int, text, int) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.accept_teaching_request(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.accept_teaching_request(uuid, uuid, uuid) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.find_dm_conversation(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.find_dm_conversation(uuid, uuid) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.recommend_people(uuid, int) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.recommend_people(uuid, int) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.suggest_connections(uuid, int) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.suggest_connections(uuid, int) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.mutual_connection_count(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.mutual_connection_count(uuid, uuid) TO service_role;
+
+
+-- 2. Harden accept_teaching_request by dropping p_volunteer_id and reading from DB
+-- First, drop the old function to avoid overload conflicts if signature changes
+DROP FUNCTION IF EXISTS public.accept_teaching_request(uuid, uuid, uuid);
+
+CREATE OR REPLACE FUNCTION public.accept_teaching_request(
+    p_room_id uuid,
+    p_request_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_volunteer_id uuid;
+BEGIN
+    -- Read volunteer_id with row-level lock
+    SELECT volunteer_id INTO v_volunteer_id
+    FROM public.teaching_requests
+    WHERE id = p_request_id 
+      AND room_id = p_room_id 
+      AND status = 'pending'
+    FOR UPDATE;
+
+    IF v_volunteer_id IS NULL THEN
+        RAISE EXCEPTION 'Teaching request not found or already decided';
+    END IF;
+
+    -- Update the teaching request status
+    UPDATE public.teaching_requests
+    SET status = 'accepted', decided_at = now()
+    WHERE id = p_request_id;
+
+    -- Upsert the room_members role to 'teacher'
+    INSERT INTO public.room_members (room_id, user_id, role)
+    VALUES (p_room_id, v_volunteer_id, 'teacher')
+    ON CONFLICT (room_id, user_id) 
+    DO UPDATE SET role = 'teacher';
+END;
+$$;
+
+-- Secure the new accept_teaching_request
+REVOKE EXECUTE ON FUNCTION public.accept_teaching_request(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.accept_teaching_request(uuid, uuid) TO service_role;
+
+
+-- 3. Redefine submit_review_atomic to remove duplicate reputation points update
+CREATE OR REPLACE FUNCTION submit_review_atomic(
+    p_reviewer_id uuid,
+    p_reviewee_id uuid,
+    p_session_id uuid,
+    p_rating int,
+    p_comment text,
+    p_points_awarded int
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_review_id uuid;
+BEGIN
+    -- Insert the review
+    INSERT INTO public.reviews (session_id, reviewer_id, reviewee_id, rating, comment)
+    VALUES (p_session_id, p_reviewer_id, p_reviewee_id, p_rating, p_comment)
+    RETURNING id INTO v_review_id;
+
+    -- If points should be awarded, add to ledger. 
+    -- The unique constraint will prevent duplicate awards for the same session/reviewee.
+    IF p_points_awarded <> 0 THEN
+        INSERT INTO public.points_ledger (user_id, event_type, points, reference_type, reference_id)
+        VALUES (p_reviewee_id, 'received_review', p_points_awarded, 'session', p_session_id)
+        ON CONFLICT ON CONSTRAINT points_ledger_unique_event DO NOTHING;
+        
+        -- REMOVED: UPDATE public.profiles SET reputation = reputation + p_points_awarded ...
+        -- This is now exclusively handled by the `points_after_change` trigger to prevent double-counting.
+    END IF;
+
+    RETURN v_review_id;
+END;
+$$;
+
+
+-- 006_room_transactions.sql
+-- 006_room_transactions.sql
+
+-- 1. create_room_atomic
+CREATE OR REPLACE FUNCTION public.create_room_atomic(
+    p_title text,
+    p_description text,
+    p_visibility text,
+    p_capacity int,
+    p_rules text,
+    p_tags text[],
+    p_owner_id uuid
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_conversation_id uuid;
+    v_room_id uuid;
+BEGIN
+    -- Create conversation
+    INSERT INTO public.conversations (kind, title, created_by)
+    VALUES ('room', p_title, p_owner_id)
+    RETURNING id INTO v_conversation_id;
+
+    -- Create room
+    INSERT INTO public.rooms (
+        title, description, visibility, capacity, rules, tags, 
+        owner_id, conversation_id, member_count
+    )
+    VALUES (
+        p_title, p_description, p_visibility::public.room_visibility, p_capacity, p_rules, p_tags, 
+        p_owner_id, v_conversation_id, 1
+    )
+    RETURNING id INTO v_room_id;
+
+    -- Add owner to room_members
+    INSERT INTO public.room_members (room_id, user_id, role)
+    VALUES (v_room_id, p_owner_id, 'owner');
+
+    -- Add owner to conversation_members
+    INSERT INTO public.conversation_members (conversation_id, user_id, role)
+    VALUES (v_conversation_id, p_owner_id, 'owner');
+
+    RETURN v_room_id;
+EXCEPTION WHEN OTHERS THEN
+    -- Transaction implicitly rolls back
+    RAISE;
+END;
+$$;
+
+-- Secure create_room_atomic
+REVOKE EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) TO service_role;
+
+
+-- 2. Modify join_room_atomic to use auth.uid() and handle conversation_members
+DROP FUNCTION IF EXISTS public.join_room_atomic(uuid, uuid);
+
+CREATE OR REPLACE FUNCTION public.join_room_atomic(
+    p_room_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    r public.rooms;
+    existing boolean;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    SELECT * INTO r FROM public.rooms WHERE id = p_room_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Room not found'; END IF;
+    IF r.status NOT IN ('open','scheduled','live') THEN RAISE EXCEPTION 'Room closed'; END IF;
+    
+    SELECT EXISTS(SELECT 1 FROM public.room_members WHERE room_id = p_room_id AND user_id = v_user_id) INTO existing;
+    IF existing THEN 
+        RETURN jsonb_build_object('already_member', true, 'member_count', r.member_count); 
+    END IF;
+    
+    IF r.member_count >= r.capacity THEN RAISE EXCEPTION 'Room full'; END IF;
+    IF r.visibility = 'invite_only' THEN RAISE EXCEPTION 'Invite required'; END IF;
+    
+    -- Insert into room_members
+    INSERT INTO public.room_members(room_id, user_id, role) 
+    VALUES (p_room_id, v_user_id, 'member');
+
+    -- Upsert into conversation_members
+    INSERT INTO public.conversation_members(conversation_id, user_id, role)
+    VALUES (r.conversation_id, v_user_id, 'member')
+    ON CONFLICT (conversation_id, user_id) DO NOTHING;
+    
+    UPDATE public.rooms SET member_count = member_count + 1, updated_at = now() WHERE id = p_room_id;
+    RETURN jsonb_build_object('joined', true, 'member_count', r.member_count + 1);
+END;
+$$;
+
+-- Secure join_room_atomic (client-callable)
+GRANT EXECUTE ON FUNCTION public.join_room_atomic(uuid) TO authenticated;
+
+
+-- 3. create leave_room_atomic
+CREATE OR REPLACE FUNCTION public.leave_room_atomic(
+    p_room_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    r public.rooms;
+    v_role text;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    SELECT * INTO r FROM public.rooms WHERE id = p_room_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Room not found'; END IF;
+
+    SELECT role INTO v_role FROM public.room_members WHERE room_id = p_room_id AND user_id = v_user_id;
+    IF NOT FOUND THEN 
+        RETURN jsonb_build_object('already_left', true, 'member_count', r.member_count); 
+    END IF;
+
+    IF v_role = 'owner' THEN
+        RAISE EXCEPTION 'Owner cannot simply leave. Must transfer ownership or archive/delete room.';
+    END IF;
+
+    -- Remove room membership
+    DELETE FROM public.room_members WHERE room_id = p_room_id AND user_id = v_user_id;
+    
+    -- Remove conversation membership
+    DELETE FROM public.conversation_members WHERE conversation_id = r.conversation_id AND user_id = v_user_id;
+
+    -- Decrement member count safely
+    UPDATE public.rooms 
+    SET member_count = GREATEST(0, member_count - 1), updated_at = now() 
+    WHERE id = p_room_id;
+
+    RETURN jsonb_build_object('left', true, 'member_count', GREATEST(0, r.member_count - 1));
+END;
+$$;
+
+-- Secure leave_room_atomic (client-callable)
+GRANT EXECUTE ON FUNCTION public.leave_room_atomic(uuid) TO authenticated;
+
+
+-- 007_phase12_final_fixes.sql
+-- 007_phase12_final_fixes.sql
+
+-- A. Account Deactivation Semantics
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_account_status_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_account_status_check CHECK (account_status in ('active','deactivated','suspended','banned'));
+
+-- B. Block Transaction Security
+CREATE OR REPLACE FUNCTION public.block_user_atomic(
+    p_blocker_id uuid,
+    p_blocked_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF p_blocker_id = p_blocked_id THEN
+        RAISE EXCEPTION 'Cannot block yourself';
+    END IF;
+
+    -- Insert block
+    INSERT INTO public.blocks(blocker_id, blocked_id)
+    VALUES (p_blocker_id, p_blocked_id)
+    ON CONFLICT DO NOTHING;
+
+    -- Delete connections between these two users
+    DELETE FROM public.connections
+    WHERE (user_a = p_blocker_id AND user_b = p_blocked_id)
+       OR (user_a = p_blocked_id AND user_b = p_blocker_id);
+
+    -- Delete pending requests between these two users
+    DELETE FROM public.connection_requests
+    WHERE (requester_id = p_blocker_id AND recipient_id = p_blocked_id)
+       OR (requester_id = p_blocked_id AND recipient_id = p_blocker_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.block_user_atomic(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.block_user_atomic(uuid, uuid) TO service_role;
+
+
+-- C. Review Transaction Validation
+-- Drop previous versions with different signatures
+DROP FUNCTION IF EXISTS public.submit_review_atomic(uuid, uuid, uuid, int, text, int);
+
+CREATE OR REPLACE FUNCTION public.submit_review_atomic(
+    p_reviewer_id uuid,
+    p_reviewee_id uuid,
+    p_session_id uuid,
+    p_rating int,
+    p_comment text
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_review_id uuid;
+    v_session public.sessions;
+    v_reviewer_part boolean;
+    v_reviewee_part boolean;
+BEGIN
+    IF p_reviewer_id = p_reviewee_id THEN
+        RAISE EXCEPTION 'Reviewer cannot be the same as reviewee';
+    END IF;
+
+    SELECT * INTO v_session FROM public.sessions WHERE id = p_session_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Session not found'; END IF;
+    IF v_session.status <> 'completed' THEN RAISE EXCEPTION 'Session is not completed'; END IF;
+
+    -- Check participation
+    SELECT EXISTS(SELECT 1 FROM public.session_participants WHERE session_id = p_session_id AND user_id = p_reviewer_id AND attendance_status = 'attended') OR v_session.teacher_id = p_reviewer_id INTO v_reviewer_part;
+    IF NOT v_reviewer_part THEN RAISE EXCEPTION 'Reviewer did not participate in this session'; END IF;
+
+    SELECT EXISTS(SELECT 1 FROM public.session_participants WHERE session_id = p_session_id AND user_id = p_reviewee_id) OR v_session.teacher_id = p_reviewee_id INTO v_reviewee_part;
+    IF NOT v_reviewee_part THEN RAISE EXCEPTION 'Reviewee did not participate in this session'; END IF;
+
+    -- Insert the review
+    INSERT INTO public.reviews (session_id, reviewer_id, reviewee_id, rating, comment)
+    VALUES (p_session_id, p_reviewer_id, p_reviewee_id, p_rating, p_comment)
+    RETURNING id INTO v_review_id;
+
+    -- Calculate reward inside trusted backend (e.g. 5 points per review received)
+    INSERT INTO public.points_ledger (user_id, event_type, points, reference_type, reference_id)
+    VALUES (p_reviewee_id, 'received_review', 5, 'session', p_session_id)
+    ON CONFLICT ON CONSTRAINT points_ledger_unique_event DO NOTHING;
+
+    RETURN v_review_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_review_atomic(uuid, uuid, uuid, int, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_review_atomic(uuid, uuid, uuid, int, text) TO service_role;
+
+
+-- D. Secure other functions properly with SET search_path = public and REVOKE ALL
+
+-- create_room_atomic
+CREATE OR REPLACE FUNCTION public.create_room_atomic(
+    p_title text,
+    p_description text,
+    p_visibility text,
+    p_capacity int,
+    p_rules text,
+    p_tags text[],
+    p_owner_id uuid
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_conversation_id uuid;
+    v_room_id uuid;
+BEGIN
+    INSERT INTO public.conversations (kind, title, created_by)
+    VALUES ('room', p_title, p_owner_id)
+    RETURNING id INTO v_conversation_id;
+
+    INSERT INTO public.rooms (
+        title, description, visibility, capacity, rules, tags, 
+        owner_id, conversation_id, member_count
+    )
+    VALUES (
+        p_title, p_description, p_visibility::public.room_visibility, p_capacity, p_rules, p_tags, 
+        p_owner_id, v_conversation_id, 1
+    )
+    RETURNING id INTO v_room_id;
+
+    INSERT INTO public.room_members (room_id, user_id, role)
+    VALUES (v_room_id, p_owner_id, 'owner');
+
+    INSERT INTO public.conversation_members (conversation_id, user_id, role)
+    VALUES (v_conversation_id, p_owner_id, 'owner');
+
+    RETURN v_room_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) TO service_role;
+
+
+-- accept_teaching_request
+CREATE OR REPLACE FUNCTION public.accept_teaching_request(
+    p_room_id uuid,
+    p_request_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_volunteer_id uuid;
+BEGIN
+    SELECT volunteer_id INTO v_volunteer_id
+    FROM public.teaching_requests
+    WHERE id = p_request_id 
+      AND room_id = p_room_id 
+      AND status = 'pending'
+    FOR UPDATE;
+
+    IF v_volunteer_id IS NULL THEN
+        RAISE EXCEPTION 'Teaching request not found or already decided';
+    END IF;
+
+    UPDATE public.teaching_requests
+    SET status = 'accepted', decided_at = now()
+    WHERE id = p_request_id;
+
+    INSERT INTO public.room_members (room_id, user_id, role)
+    VALUES (p_room_id, v_volunteer_id, 'teacher')
+    ON CONFLICT (room_id, user_id) 
+    DO UPDATE SET role = 'teacher';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.accept_teaching_request(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.accept_teaching_request(uuid, uuid) TO service_role;
+
+
+-- E. Client-callable atomic room joins and leaves
+-- join_room_atomic
+CREATE OR REPLACE FUNCTION public.join_room_atomic(
+    p_room_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    r public.rooms;
+    existing boolean;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    SELECT * INTO r FROM public.rooms WHERE id = p_room_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Room not found'; END IF;
+    IF r.status NOT IN ('open','scheduled','live') THEN RAISE EXCEPTION 'Room closed'; END IF;
+    
+    SELECT EXISTS(SELECT 1 FROM public.room_members WHERE room_id = p_room_id AND user_id = v_user_id) INTO existing;
+    IF existing THEN 
+        RETURN jsonb_build_object('already_member', true, 'member_count', r.member_count); 
+    END IF;
+    
+    IF r.member_count >= r.capacity THEN RAISE EXCEPTION 'Room full'; END IF;
+    IF r.visibility = 'invite_only' THEN RAISE EXCEPTION 'Invite required'; END IF;
+    
+    INSERT INTO public.room_members(room_id, user_id, role) 
+    VALUES (p_room_id, v_user_id, 'member');
+
+    INSERT INTO public.conversation_members(conversation_id, user_id, role)
+    VALUES (r.conversation_id, v_user_id, 'member')
+    ON CONFLICT (conversation_id, user_id) DO NOTHING;
+    
+    UPDATE public.rooms SET member_count = member_count + 1, updated_at = now() WHERE id = p_room_id;
+    RETURN jsonb_build_object('joined', true, 'member_count', r.member_count + 1);
+END;
+$$;
+
+-- leave_room_atomic
+CREATE OR REPLACE FUNCTION public.leave_room_atomic(
+    p_room_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    r public.rooms;
+    v_role text;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    SELECT * INTO r FROM public.rooms WHERE id = p_room_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Room not found'; END IF;
+
+    SELECT role INTO v_role FROM public.room_members WHERE room_id = p_room_id AND user_id = v_user_id;
+    IF NOT FOUND THEN 
+        RETURN jsonb_build_object('already_left', true, 'member_count', r.member_count); 
+    END IF;
+
+    IF v_role = 'owner' THEN
+        RAISE EXCEPTION 'Owner cannot simply leave. Must transfer ownership or archive/delete room.';
+    END IF;
+
+    DELETE FROM public.room_members WHERE room_id = p_room_id AND user_id = v_user_id;
+    DELETE FROM public.conversation_members WHERE conversation_id = r.conversation_id AND user_id = v_user_id;
+
+    UPDATE public.rooms 
+    SET member_count = GREATEST(0, member_count - 1), updated_at = now() 
+    WHERE id = p_room_id;
+
+    RETURN jsonb_build_object('left', true, 'member_count', GREATEST(0, r.member_count - 1));
+END;
+$$;
+
+
+-- 008_phase_2_realtime.sql
+-- Phase 2 Realtime Schema Migrations
+
+-- 1. Idempotency and Reference for Messages
+ALTER TABLE messages
+ADD COLUMN IF NOT EXISTS client_message_id UUID,
+ADD COLUMN IF NOT EXISTS reply_to_message_id UUID REFERENCES messages(id) ON DELETE SET NULL;
+
+-- Make client_message_id unique per sender to prevent duplicate sends on retry
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_client_message_id_sender_id_key;
+ALTER TABLE messages ADD CONSTRAINT messages_client_message_id_sender_id_key UNIQUE (sender_id, client_message_id);
+
+-- 2. Message Reactions
+CREATE TABLE IF NOT EXISTS message_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    reaction TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (message_id, user_id, reaction)
+);
+
+ALTER TABLE message_reactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can see reactions in their conversations"
+ON message_reactions FOR SELECT
+USING (
+    EXISTS (
+        SELECT 1 FROM messages m
+        JOIN conversation_members cm ON cm.conversation_id = m.conversation_id
+        WHERE m.id = message_reactions.message_id
+        AND cm.user_id = auth.uid()
+    )
+);
+
+-- Note: In this architecture, all inserts to message_reactions will be handled via RPC or backend API to ensure strict validation.
+
+-- 3. Notification Preferences
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    user_id UUID PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+    messages BOOLEAN NOT NULL DEFAULT true,
+    connections BOOLEAN NOT NULL DEFAULT true,
+    rooms BOOLEAN NOT NULL DEFAULT true,
+    sessions BOOLEAN NOT NULL DEFAULT true,
+    teaching BOOLEAN NOT NULL DEFAULT true,
+    system BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE notification_preferences ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read their own notification preferences"
+ON notification_preferences FOR SELECT
+USING (auth.uid() = user_id);
+
+-- 4. LiveKit Attendance
+CREATE TABLE IF NOT EXISTS livekit_attendance (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    left_at TIMESTAMPTZ,
+    duration_seconds INTEGER DEFAULT 0
+);
+
+ALTER TABLE livekit_attendance ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view attendance for their sessions"
+ON livekit_attendance FOR SELECT
+USING (
+    EXISTS (
+        SELECT 1 FROM sessions s
+        JOIN room_members rm ON rm.room_id = s.room_id
+        WHERE s.id = livekit_attendance.session_id
+        AND rm.user_id = auth.uid()
+    )
+);
+
+
+-- 009_phase_2_1_completion.sql
+-- Phase 2.1 Schema Additions
+
+-- 1. Push Tokens enhancements
+-- Current table is:
+-- create table public.device_tokens (
+--   user_id uuid references public.profiles(id) on delete cascade not null,
+--   token text not null,
+--   token_fingerprint text not null,
+--   platform text,
+--   enabled boolean default true,
+--   last_seen_at timestamptz default now(),
+--   created_at timestamptz default now(),
+--   primary key (user_id, token_fingerprint)
+-- );
+
+ALTER TABLE public.device_tokens 
+ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'expo',
+ADD COLUMN IF NOT EXISTS device_id TEXT,
+ADD COLUMN IF NOT EXISTS app_version TEXT;
+
+-- 2. Message Delivery States
+ALTER TABLE public.messages
+ADD COLUMN IF NOT EXISTS delivery_status TEXT DEFAULT 'sent',
+ADD COLUMN IF NOT EXISTS soft_deleted BOOLEAN DEFAULT false;
+
+-- 3. Conversation Read State (Scalable)
+ALTER TABLE public.conversation_members
+ADD COLUMN IF NOT EXISTS last_read_message_id UUID REFERENCES messages(id) ON DELETE SET NULL;
+
+-- 4. Push Receipts Table
+CREATE TABLE IF NOT EXISTS public.push_receipts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_id TEXT NOT NULL,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    device_token TEXT NOT NULL,
+    status TEXT NOT NULL, -- 'pending', 'delivered', 'error'
+    error_details JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Note: No RLS needed for push_receipts since it's backend-only
+
+-- 5. Add idempotency and soft-delete policies for messages
+DROP POLICY IF EXISTS "Users can read conversation messages" ON messages;
+CREATE POLICY "Users can read conversation messages"
+ON messages FOR SELECT
+USING (
+    soft_deleted = false AND
+    EXISTS (
+        SELECT 1 FROM conversation_members cm 
+        WHERE cm.conversation_id = messages.conversation_id 
+        AND cm.user_id = auth.uid()
+    )
+);
+
+-- Allow senders to see their soft_deleted messages (to show "Message deleted")
+CREATE POLICY "Senders can see their soft_deleted messages"
+ON messages FOR SELECT
+USING (
+    soft_deleted = true AND sender_id = auth.uid()
+);
+
+
+-- 010_critical_security_consistency.sql
+-- 010_critical_security_consistency.sql
+
+ALTER TABLE public.rooms
+ADD COLUMN IF NOT EXISTS rules text NOT NULL DEFAULT '';
+
+REVOKE UPDATE ON TABLE public.profiles FROM authenticated;
+
+GRANT UPDATE (
+  full_name,
+  username,
+  avatar_url,
+  bio,
+  university,
+  department,
+  batch,
+  research_interests,
+  profile_visibility,
+  updated_at
+) ON TABLE public.profiles TO authenticated;
+
+CREATE UNIQUE INDEX IF NOT EXISTS livekit_attendance_one_open_segment
+ON public.livekit_attendance(session_id,user_id)
+WHERE left_at IS NULL;
+
+CREATE OR REPLACE FUNCTION public.record_livekit_join(
+  p_session_id uuid,
+  p_user_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public
+AS $$
+BEGIN
+  INSERT INTO public.livekit_attendance(session_id,user_id,joined_at)
+  SELECT p_session_id,p_user_id,now()
+  WHERE NOT EXISTS(
+    SELECT 1 FROM public.livekit_attendance
+    WHERE session_id=p_session_id
+      AND user_id=p_user_id
+      AND left_at IS NULL
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_livekit_leave(
+  p_session_id uuid,
+  p_user_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public
+AS $$
+DECLARE
+  v_id uuid;
+  v_joined timestamptz;
+BEGIN
+  SELECT id,joined_at INTO v_id,v_joined
+  FROM public.livekit_attendance
+  WHERE session_id=p_session_id
+    AND user_id=p_user_id
+    AND left_at IS NULL
+  ORDER BY joined_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF v_id IS NULL THEN RETURN; END IF;
+
+  UPDATE public.livekit_attendance
+  SET left_at=now(),
+      duration_seconds=GREATEST(
+        0,
+        FLOOR(EXTRACT(EPOCH FROM(now()-v_joined)))::int
+      )
+  WHERE id=v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.record_livekit_join(uuid,uuid)
+FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.record_livekit_leave(uuid,uuid)
+FROM PUBLIC,anon,authenticated;
+
+GRANT EXECUTE ON FUNCTION public.record_livekit_join(uuid,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_livekit_leave(uuid,uuid) TO service_role;
+
+CREATE TABLE IF NOT EXISTS public.message_delivery_receipts (
+  message_id uuid NOT NULL REFERENCES public.messages(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  delivered_at timestamptz,
+  read_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(message_id,user_id)
+);
+
+ALTER TABLE public.message_delivery_receipts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS message_delivery_receipts_self_read
+ON public.message_delivery_receipts;
+
+CREATE POLICY message_delivery_receipts_self_read
+ON public.message_delivery_receipts
+FOR SELECT
+USING(user_id=auth.uid());
+
+REVOKE INSERT,UPDATE,DELETE
+ON TABLE public.message_delivery_receipts
+FROM anon,authenticated;
+
+-- RBAC Tables
+CREATE TABLE IF NOT EXISTS public.admin_roles (
+    id text PRIMARY KEY,
+    description text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.admin_permissions (
+    id text PRIMARY KEY,
+    description text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.admin_role_permissions (
+    role_id text NOT NULL REFERENCES public.admin_roles(id) ON DELETE CASCADE,
+    permission_id text NOT NULL REFERENCES public.admin_permissions(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY(role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.admin_assignments (
+    user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    role_id text NOT NULL REFERENCES public.admin_roles(id) ON DELETE CASCADE,
+    assigned_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY(user_id, role_id)
+);
+
+-- Basic Seed for RBAC
+INSERT INTO public.admin_roles (id, description) VALUES
+('SUPER_ADMIN', 'Super Administrator'),
+('PLATFORM_ADMIN', 'Platform Administrator'),
+('SECURITY_ADMIN', 'Security Administrator'),
+('SUPPORT_MANAGER', 'Support Manager'),
+('SUPPORT_AGENT', 'Support Agent'),
+('MODERATION_MANAGER', 'Moderation Manager'),
+('MODERATOR', 'Moderator'),
+('CONTENT_MANAGER', 'Content Manager'),
+('INSTITUTION_MANAGER', 'Institution Manager'),
+('DATABASE_OPERATOR', 'Database Operator'),
+('API_OPERATOR', 'API Operator'),
+('ANALYST', 'Analyst'),
+('AUDITOR', 'Auditor'),
+('READ_ONLY_ADMIN', 'Read-Only Admin')
+ON CONFLICT (id) DO NOTHING;
+
+-- RLS for RBAC Tables
+ALTER TABLE public.admin_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_role_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_assignments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_roles_read ON public.admin_roles FOR SELECT USING (true);
+CREATE POLICY admin_permissions_read ON public.admin_permissions FOR SELECT USING (true);
+CREATE POLICY admin_role_permissions_read ON public.admin_role_permissions FOR SELECT USING (true);
+CREATE POLICY admin_assignments_read ON public.admin_assignments FOR SELECT USING (true);
+
+REVOKE ALL ON TABLE public.admin_roles FROM anon,authenticated;
+REVOKE ALL ON TABLE public.admin_permissions FROM anon,authenticated;
+REVOKE ALL ON TABLE public.admin_role_permissions FROM anon,authenticated;
+REVOKE ALL ON TABLE public.admin_assignments FROM anon,authenticated;
+GRANT SELECT ON TABLE public.admin_roles TO authenticated;
+GRANT SELECT ON TABLE public.admin_permissions TO authenticated;
+GRANT SELECT ON TABLE public.admin_role_permissions TO authenticated;
+GRANT SELECT ON TABLE public.admin_assignments TO authenticated;
+
+
+-- 011_product_features.sql
+-- 011_product_features.sql
+
+-- 12. Search Upgrade (deterministic FTS via RPC or views, wait, we can do FTS in backend query with `to_tsvector` or just create indexes)
+-- Let's just create an RPC for unified search or create indexes for it.
+-- Actually, the backend can just use `.textSearch()` from Supabase, which uses `@@ to_tsquery`.
+-- We should add tsvector indexes to tables to support it efficiently.
+
+-- Indexes for profiles FTS
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
+  to_tsvector('english', coalesce(full_name, '') || ' ' || coalesce(username, '') || ' ' || coalesce(bio, ''))
+) STORED;
+CREATE INDEX IF NOT EXISTS profiles_fts_idx ON public.profiles USING GIN (fts);
+
+-- Indexes for rooms FTS
+ALTER TABLE public.rooms ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
+  to_tsvector('english', coalesce(title, '') || ' ' || coalesce(topic, '') || ' ' || coalesce(description, ''))
+) STORED;
+CREATE INDEX IF NOT EXISTS rooms_fts_idx ON public.rooms USING GIN (fts);
+
+-- Indexes for events FTS
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
+  to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, ''))
+) STORED;
+CREATE INDEX IF NOT EXISTS events_fts_idx ON public.events USING GIN (fts);
+
+-- Indexes for skills FTS
+ALTER TABLE public.skills ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
+  to_tsvector('english', coalesce(name, ''))
+) STORED;
+CREATE INDEX IF NOT EXISTS skills_fts_idx ON public.skills USING GIN (fts);
+
+-- Indexes for clubs FTS
+ALTER TABLE public.clubs ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
+  to_tsvector('english', coalesce(name, '') || ' ' || coalesce(description, ''))
+) STORED;
+CREATE INDEX IF NOT EXISTS clubs_fts_idx ON public.clubs USING GIN (fts);
+
+-- Indexes for research_projects FTS
+ALTER TABLE public.research_projects ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
+  to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, ''))
+) STORED;
+CREATE INDEX IF NOT EXISTS research_fts_idx ON public.research_projects USING GIN (fts);
+
+-- Indexes for resources FTS
+ALTER TABLE public.resources ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
+  to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, ''))
+) STORED;
+CREATE INDEX IF NOT EXISTS resources_fts_idx ON public.resources USING GIN (fts);
+
+-- 13. Event Capacity Transaction
+CREATE OR REPLACE FUNCTION public.decide_event_application_atomic(
+    p_application_id uuid,
+    p_decision text, -- 'approved', 'rejected', 'waitlisted'
+    p_reviewer_id uuid
+) RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event_id uuid;
+    v_capacity int;
+    v_approved_count int;
+    v_current_status text;
+BEGIN
+    IF p_decision NOT IN ('approved', 'rejected', 'waitlisted') THEN
+        RAISE EXCEPTION 'Invalid decision';
+    END IF;
+
+    -- Lock the event row via application
+    SELECT e.id, e.capacity, a.status 
+    INTO v_event_id, v_capacity, v_current_status
+    FROM public.event_applications a
+    JOIN public.events e ON e.id = a.event_id
+    WHERE a.id = p_application_id
+    FOR UPDATE OF e;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Application not found';
+    END IF;
+
+    IF v_current_status != 'pending' AND v_current_status != 'waitlisted' THEN
+        RAISE EXCEPTION 'Application is already processed';
+    END IF;
+
+    IF p_decision = 'approved' THEN
+        -- Check current approved count
+        SELECT COUNT(*) INTO v_approved_count
+        FROM public.event_applications
+        WHERE event_id = v_event_id AND status = 'approved';
+
+        IF v_approved_count >= v_capacity THEN
+            -- Cannot approve, fallback to waitlisted if they tried to approve?
+            -- Or just raise an error
+            RAISE EXCEPTION 'Event capacity reached';
+        END IF;
+    END IF;
+
+    UPDATE public.event_applications
+    SET status = p_decision,
+        updated_at = now()
+    WHERE id = p_application_id;
+
+    RETURN true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.decide_event_application_atomic(uuid, text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.decide_event_application_atomic(uuid, text, uuid) TO service_role;
+
+-- 14. Club Create Transaction
+CREATE OR REPLACE FUNCTION public.create_club_atomic(
+    p_name text,
+    p_description text,
+    p_university text,
+    p_owner_id uuid
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_club_id uuid;
+BEGIN
+    INSERT INTO public.clubs(name, description, university, created_by)
+    VALUES(p_name, p_description, p_university, p_owner_id)
+    RETURNING id INTO v_club_id;
+
+    INSERT INTO public.club_members(club_id, user_id, role, status)
+    VALUES(v_club_id, p_owner_id, 'owner', 'approved');
+
+    RETURN v_club_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_club_atomic(text, text, text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_club_atomic(text, text, text, uuid) TO service_role;
+
+-- 15. Research / Resources product completion
+CREATE TABLE IF NOT EXISTS public.research_members (
+  project_id uuid REFERENCES public.research_projects(id) ON DELETE CASCADE,
+  user_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE,
+  role text NOT NULL CHECK (role IN ('owner', 'collaborator')),
+  joined_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_id, user_id)
+);
+ALTER TABLE public.research_members ENABLE ROW LEVEL SECURITY;
+CREATE POLICY research_members_select ON public.research_members FOR SELECT USING (true);
+CREATE POLICY research_members_insert ON public.research_members FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid())
+);
+CREATE POLICY research_members_delete ON public.research_members FOR DELETE USING (
+  EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid()) OR auth.uid() = user_id
+);
+
+CREATE TABLE IF NOT EXISTS public.saved_research_projects (
+  project_id uuid REFERENCES public.research_projects(id) ON DELETE CASCADE,
+  user_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE,
+  saved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_id, user_id)
+);
+ALTER TABLE public.saved_research_projects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY saved_research_projects_select ON public.saved_research_projects FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY saved_research_projects_insert ON public.saved_research_projects FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY saved_research_projects_delete ON public.saved_research_projects FOR DELETE USING (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS public.research_publications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES public.research_projects(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  url text,
+  published_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.research_publications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY research_publications_select ON public.research_publications FOR SELECT USING (true);
+CREATE POLICY research_publications_insert ON public.research_publications FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid())
+);
+CREATE POLICY research_publications_delete ON public.research_publications FOR DELETE USING (
+  EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid())
+);
+
+

@@ -1,8 +1,8 @@
 -- 005_rpc_security_hardening.sql
 
 -- 1. REVOKE EXECUTE FROM PUBLIC on Backend-only functions
-REVOKE EXECUTE ON FUNCTION public.recompute_reputation(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.recompute_reputation(uuid) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.recompute_reputation() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.recompute_reputation() TO service_role;
 
 REVOKE EXECUTE ON FUNCTION public.block_user_atomic(uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.block_user_atomic(uuid, uuid) TO service_role;

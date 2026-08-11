@@ -67,7 +67,7 @@ create index messages_conv_created_idx on public.messages(conversation_id,create
 create table public.rooms (
   id uuid primary key default gen_random_uuid(), owner_id uuid not null references public.profiles(id) on delete cascade,
   conversation_id uuid references public.conversations(id) on delete set null,
-  title text not null, description text not null default '', topic text not null, rules text not null default '', tags text[] not null default '{}',
+  title text not null, description text not null default '', topic text not null, tags text[] not null default '{}',
   visibility text not null default 'public' check(visibility in ('public','private','invite_only')),
   mode text not null default 'hybrid' check(mode in ('online','offline','hybrid')),
   capacity int not null default 30 check(capacity between 2 and 250), member_count int not null default 1 check(member_count>=0),

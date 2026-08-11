@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 export default function User360() {
   const [activeTab, setActiveTab] = useState('profile');
