@@ -3,3 +3,7 @@ export async function registerPush(): Promise<string | null> {
   console.log("Push notifications skipped on web platform.");
   return null;
 }
+
+export function useNotificationRouting(router: any) {
+  // No-op on web for Phase 1.3.1
+}

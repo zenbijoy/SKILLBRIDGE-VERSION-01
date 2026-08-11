@@ -20,8 +20,14 @@ notifications.get(
 notifications.post(
   "/devices",
   wrap(async (req, res) => {
-    const { token, platform } = z
-      .object({ token: z.string().min(10), platform: z.string().max(30) })
+    const { token, platform, provider = "expo", device_id, app_version } = z
+      .object({ 
+        token: z.string().min(10), 
+        platform: z.string().max(30).optional(),
+        provider: z.string().optional(),
+        device_id: z.string().optional(),
+        app_version: z.string().optional()
+      })
       .parse(req.body);
     const fp = createHash("sha256").update(token).digest("hex");
     const { data, error } = await admin
@@ -32,6 +38,9 @@ notifications.post(
           token,
           token_fingerprint: fp,
           platform,
+          provider,
+          device_id,
+          app_version,
           enabled: true,
           last_seen_at: new Date().toISOString(),
         },
@@ -42,6 +51,19 @@ notifications.post(
     if (error) throw error;
     res.status(201).json(data);
   }),
+);
+
+notifications.delete(
+  "/devices/:fingerprint",
+  wrap(async (req, res) => {
+    const { error } = await admin
+      .from("device_tokens")
+      .delete()
+      .eq("user_id", req.userId!)
+      .eq("token_fingerprint", req.params.fingerprint);
+    if (error) throw error;
+    res.status(204).end();
+  })
 );
 notifications.patch(
   "/:id/read",

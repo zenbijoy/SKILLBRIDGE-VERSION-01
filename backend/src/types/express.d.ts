@@ -4,6 +4,7 @@ declare global {
       userId?: string;
       userRoles?: string[];
       accessToken?: string;
+      rawBody?: string;
     }
   }
 }

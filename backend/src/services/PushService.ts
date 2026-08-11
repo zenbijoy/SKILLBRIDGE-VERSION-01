@@ -1,15 +1,17 @@
 import { admin } from "../lib/db.js";
 
-export class PushService {
-  static async sendNotification(
-    userId: string,
-    message: { title: string; body: string; data?: Record<string, any> }
-  ) {
+export interface PushProvider {
+  sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }): Promise<void>;
+}
+
+export class ExpoPushProvider implements PushProvider {
+  async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }) {
     const { data: tokens } = await admin
       .from("device_tokens")
       .select("token")
       .eq("user_id", userId)
-      .eq("is_active", true);
+      .eq("provider", "expo")
+      .eq("enabled", true);
 
     if (!tokens || tokens.length === 0) return;
 
@@ -43,21 +45,58 @@ export class PushService {
       const receipts = result.data || [];
       
       const invalidTokens: string[] = [];
+      const receiptInserts: any[] = [];
+      
       for (let i = 0; i < receipts.length; i++) {
         const receipt = receipts[i];
+        const token = expoTokens[i];
+        
+        receiptInserts.push({
+          ticket_id: receipt.id || "error",
+          user_id: userId,
+          device_token: token,
+          status: receipt.status,
+          error_details: receipt.details || null
+        });
+        
         if (receipt.status === "error" && receipt.details?.error === "DeviceNotRegistered") {
-          invalidTokens.push(expoTokens[i]);
+          invalidTokens.push(token);
         }
+      }
+
+      if (receiptInserts.length > 0) {
+        await admin.from("push_receipts").insert(receiptInserts);
       }
 
       if (invalidTokens.length > 0) {
         await admin
           .from("device_tokens")
-          .update({ is_active: false })
+          .update({ enabled: false })
           .in("token", invalidTokens);
       }
     } catch (err) {
       console.error("Error sending push notification:", err);
     }
+  }
+}
+
+export class MockPushProvider implements PushProvider {
+  async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }) {
+    console.log(`[MOCK PUSH] To: ${userId}, Title: ${message.title}`);
+  }
+}
+
+export class PushService {
+  private static provider: PushProvider = process.env.NODE_ENV === "test" ? new MockPushProvider() : new ExpoPushProvider();
+  
+  static setProvider(provider: PushProvider) {
+    this.provider = provider;
+  }
+  
+  static async sendNotification(
+    userId: string,
+    message: { title: string; body: string; data?: Record<string, any> }
+  ) {
+    return this.provider.sendNotification(userId, message);
   }
 }

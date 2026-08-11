@@ -1,17 +1,14 @@
-# Phase 2 Tasks
+# Phase 2.1 Tasks
 
-- [x] Phase 2 Baseline Audit
+- [x] Audit Phase 2 against requirements
 - [x] Implementation Plan Approval
-- [x] Database Schema Migration (`008_phase_2_realtime.sql`)
-- [x] Backend Socket & Push Service (Delegated to Subagent)
-  - [x] Update `server.ts` for socket.io rooms
-  - [x] Implement `PushService.ts`
-  - [x] Update `chat.ts` for message idempotency
-  - [x] Update `live.ts` for token mapping and role grants
-- [x] Frontend Realtime & LiveKit UI (Delegated to Subagent)
-  - [x] Create centralized `socket.ts`
-  - [x] Update `app/chat/[id].tsx` (outbox, idempotency)
-  - [x] Update `LiveRoomScreen.web.tsx`
-  - [x] Update `LiveRoomScreen.native.tsx`
-- [x] E2E Testing & Validation
-- [x] Commit & Push
+- [ ] Database Schema Migration (`009_phase_2_1_completion.sql`)
+- [x] Backend: Push Provider Architecture (`PushProvider.ts`, `ExpoPushProvider.ts`, `MockPushProvider.ts`)
+- [x] Backend: Realtime features (Presence, Read Receipts, Typing expiration, Delivery States)
+- [x] Frontend: Offline Outbox persistence (`AsyncStorage`) and message reconciliation
+- [x] Frontend: Native Push Registration (`notifications.native.ts` proper EAS integration)
+- [x] LiveKit: Backend token constraints (Self-hosted security)
+- [x] LiveKit: Frontend controls (Raise hand, Low Data mode, Screen Share)
+- [ ] Write Phase 2.1 Proof Report (`docs/PHASE_2_1_REALTIME_PROOF_REPORT.md`)
+- [ ] E2E and Real Device Testing
+- [ ] Commit and Push

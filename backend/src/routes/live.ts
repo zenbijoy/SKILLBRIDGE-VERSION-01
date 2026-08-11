@@ -1,10 +1,43 @@
 import { Router } from "express";
 import { z } from "zod";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, WebhookReceiver } from "livekit-server-sdk";
 import { env } from "../config/env.js";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 export const live = Router();
+export const liveWebhooks = Router();
+
+const receiver = new WebhookReceiver(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+
+liveWebhooks.post("/", wrap(async (req, res) => {
+  if (!req.rawBody) {
+    return res.status(400).send("Missing raw body");
+  }
+  
+  const event = receiver.receive(req.rawBody, req.get("Authorization") || "");
+  
+  if (event.event === "participant_joined") {
+    let meta: any = {};
+    try { meta = JSON.parse(event.participant?.metadata || "{}"); } catch(e){}
+    
+    if (meta.sessionId && event.participant?.identity) {
+      await admin.from("session_participants").update({ attendance_status: "joined" })
+        .eq("session_id", meta.sessionId)
+        .eq("user_id", event.participant.identity);
+    }
+  } else if (event.event === "participant_left") {
+    let meta: any = {};
+    try { meta = JSON.parse(event.participant?.metadata || "{}"); } catch(e){}
+    
+    if (meta.sessionId && event.participant?.identity) {
+      await admin.from("session_participants").update({ attendance_status: "left" })
+        .eq("session_id", meta.sessionId)
+        .eq("user_id", event.participant.identity);
+    }
+  }
+  
+  res.status(200).send();
+}));
 live.post(
   "/token/:sessionId",
   wrap(async (req, res) => {

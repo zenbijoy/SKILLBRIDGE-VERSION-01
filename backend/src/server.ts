@@ -23,7 +23,7 @@ import { gamification } from "./routes/gamification.js";
 import { quiz } from "./routes/quiz.js";
 import { notifications } from "./routes/notifications.js";
 import { moderation } from "./routes/moderation.js";
-import { live } from "./routes/live.js";
+import { live, liveWebhooks } from "./routes/live.js";
 import { account } from "./routes/account.js";
 import { adminRoutes } from "./routes/admin.js";
 import { ai } from "./routes/ai.js";
@@ -42,7 +42,12 @@ app.set("trust proxy", 1);
 app.use(helmet());
 app.use(compression());
 app.use(cors({ origin: origins, credentials: true }));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ 
+  limit: "1mb",
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
 app.use(
   rateLimit({
     windowMs: 60_000,
@@ -52,6 +57,7 @@ app.use(
   }),
 );
 app.use("/health", health);
+app.use("/webhooks/live", liveWebhooks);
 const api = express.Router();
 api.use(auth);
 api.use("/dashboard", dashboard);
@@ -91,13 +97,27 @@ io.use(async (socket, next) => {
     next(e as Error);
   }
 });
+const userConnections = new Map<string, number>();
+
 io.on("connection", (socket) => {
   const userId = socket.data.userId;
   socket.join(`user:${userId}`);
-  socket.broadcast.emit("user:online", { userId });
+  
+  const count = (userConnections.get(userId) || 0) + 1;
+  userConnections.set(userId, count);
+  
+  if (count === 1) {
+    socket.broadcast.emit("user:online", { userId });
+  }
 
   socket.on("disconnect", () => {
-    socket.broadcast.emit("user:offline", { userId });
+    const newCount = (userConnections.get(userId) || 1) - 1;
+    if (newCount === 0) {
+      userConnections.delete(userId);
+      socket.broadcast.emit("user:offline", { userId });
+    } else {
+      userConnections.set(userId, newCount);
+    }
   });
 
   socket.on("conversation:join", async ({ conversationId }) => {
@@ -110,9 +130,24 @@ io.on("connection", (socket) => {
       .maybeSingle();
     if (data) socket.join(`conversation:${conversationId}`);
   });
+  
   socket.on("conversation:leave", ({ conversationId }) =>
     socket.leave(`conversation:${conversationId}`),
   );
+
+  socket.on("typing:start", ({ conversationId }) => {
+    if (typeof conversationId !== "string") return;
+    if (socket.rooms.has(`conversation:${conversationId}`)) {
+      socket.to(`conversation:${conversationId}`).emit("typing:start", { userId, conversationId });
+    }
+  });
+
+  socket.on("typing:stop", ({ conversationId }) => {
+    if (typeof conversationId !== "string") return;
+    if (socket.rooms.has(`conversation:${conversationId}`)) {
+      socket.to(`conversation:${conversationId}`).emit("typing:stop", { userId, conversationId });
+    }
+  });
 });
 export { app };
 if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_ENV !== "test") {

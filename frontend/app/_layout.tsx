@@ -3,7 +3,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { useSession } from "@/hooks/useSession";
-import { registerPush } from "@/lib/notifications";
+import { registerPush, useNotificationRouting } from "@/lib/notifications";
 import { colors } from "@/theme";
 const client = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
@@ -12,6 +12,9 @@ function Gate() {
   const { session, loading } = useSession();
   const segments = useSegments();
   const router = useRouter();
+  
+  useNotificationRouting(router);
+
   useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === "(auth)";
