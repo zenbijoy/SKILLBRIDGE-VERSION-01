@@ -13,7 +13,7 @@ export function chat(io: Server) {
       const { data, error } = await admin
         .from("conversation_members")
         .select(
-          "conversation_id,last_read_at,conversations(id,title,kind,updated_at)",
+          "conversation_id,last_read_at,last_read_message_id,conversations(id,title,kind,updated_at)",
         )
         .eq("user_id", req.userId!)
         .order("created_at", { ascending: false });
@@ -226,37 +226,5 @@ export function chat(io: Server) {
     }),
   );
 
-  r.patch(
-    "/messages/:id/status",
-    wrap(async (req, res) => {
-      const id = z.string().uuid().parse(req.params.id);
-      const { status } = z.object({ 
-        status: z.enum(["queued", "sending", "sent", "delivered", "read", "failed"]) 
-      }).parse(req.body);
-
-      const { data: msg } = await admin.from("messages").select("sender_id, conversation_id").eq("id", id).single();
-      if (!msg) return res.status(404).json({ error: "Not found" });
-
-      const { data: m } = await admin
-        .from("conversation_members")
-        .select("role")
-        .eq("conversation_id", msg.conversation_id)
-        .eq("user_id", req.userId!)
-        .maybeSingle();
-      if (!m) return res.status(403).json({ error: "Not a member" });
-
-      const { data, error } = await admin
-        .from("messages")
-        .update({ delivery_status: status })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      
-      io.to(`conversation:${msg.conversation_id}`).emit("message:update", data);
-      res.json(data);
-    })
-  );
   return r;
 }

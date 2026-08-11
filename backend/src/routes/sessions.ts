@@ -90,7 +90,7 @@ sessions.patch(
     const id = z.string().uuid().parse(req.params.id);
     const { status } = z
       .object({
-        status: z.enum(["confirmed", "declined", "attended", "missed"]),
+        status: z.enum(["confirmed", "declined"]),
       })
       .parse(req.body);
     const { data, error } = await admin
@@ -100,9 +100,7 @@ sessions.patch(
           session_id: id,
           user_id: req.userId!,
           status,
-          attendance_status: ["attended", "missed"].includes(status)
-            ? status
-            : null,
+          attendance_status: null,
         },
         { onConflict: "session_id,user_id" },
       )
@@ -168,7 +166,7 @@ sessions.patch(
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
     const { status } = z
-      .object({ status: z.enum(["scheduled", "in_progress", "completed", "cancelled"]) })
+      .object({ status: z.enum(["scheduled", "live", "completed", "cancelled"]) })
       .parse(req.body);
 
     const { data: session } = await admin
@@ -183,8 +181,8 @@ sessions.patch(
     // Enforce valid transitions
     const validTransitions: Record<string, string[]> = {
       "draft": ["scheduled"],
-      "scheduled": ["in_progress", "cancelled"],
-      "in_progress": ["completed"],
+      "scheduled": ["live", "cancelled"],
+      "live": ["completed"],
       "completed": [],
       "cancelled": []
     };

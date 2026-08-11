@@ -26,11 +26,23 @@ account.patch(
     const uid = req.userId!;
     const { error } = await admin
       .from("profiles")
-      .update({ account_status: "suspended" })
+      .update({ account_status: "deactivated" })
       .eq("id", uid);
     if (error) throw error;
-    // We could also ban the user via Supabase Auth Admin to prevent sign in
-    await admin.auth.admin.updateUserById(uid, { ban_duration: "876000h" });
+    res.json({ success: true });
+  }),
+);
+
+account.patch(
+  "/reactivate",
+  wrap(async (req, res) => {
+    const uid = req.userId!;
+    const { error } = await admin
+      .from("profiles")
+      .update({ account_status: "active" })
+      .eq("id", uid)
+      .eq("account_status", "deactivated");
+    if (error) throw error;
     res.json({ success: true });
   }),
 );

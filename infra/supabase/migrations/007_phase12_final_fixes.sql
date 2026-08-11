@@ -99,10 +99,13 @@ GRANT EXECUTE ON FUNCTION public.submit_review_atomic(uuid, uuid, uuid, int, tex
 CREATE OR REPLACE FUNCTION public.create_room_atomic(
     p_title text,
     p_description text,
+    p_topic text,
     p_visibility text,
+    p_mode text,
     p_capacity int,
     p_rules text,
     p_tags text[],
+    p_campus_location text,
     p_owner_id uuid
 ) RETURNS uuid
 LANGUAGE plpgsql
@@ -113,16 +116,29 @@ DECLARE
     v_conversation_id uuid;
     v_room_id uuid;
 BEGIN
+    IF p_visibility NOT IN ('public','private','invite_only') THEN
+        RAISE EXCEPTION 'Invalid room visibility';
+    END IF;
+
+    IF p_mode NOT IN ('online','offline','hybrid') THEN
+        RAISE EXCEPTION 'Invalid room mode';
+    END IF;
+
+    IF p_capacity < 2 OR p_capacity > 250 THEN
+        RAISE EXCEPTION 'Invalid room capacity';
+    END IF;
+
     INSERT INTO public.conversations (kind, title, created_by)
     VALUES ('room', p_title, p_owner_id)
     RETURNING id INTO v_conversation_id;
 
     INSERT INTO public.rooms (
-        title, description, visibility, capacity, rules, tags, 
-        owner_id, conversation_id, member_count
+        title, description, topic, visibility, mode, capacity, rules, tags,
+        campus_location, owner_id, conversation_id, member_count
     )
     VALUES (
-        p_title, p_description, p_visibility::public.room_visibility, p_capacity, p_rules, p_tags, 
+        p_title, p_description, p_topic, p_visibility, p_mode, p_capacity,
+        COALESCE(p_rules, ''), COALESCE(p_tags, '{}'), p_campus_location,
         p_owner_id, v_conversation_id, 1
     )
     RETURNING id INTO v_room_id;
@@ -137,10 +153,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, int, text, text[], uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.create_room_atomic(
+    text, text, text, text, text, int, text, text[], text, uuid
+) FROM PUBLIC, anon, authenticated;
 
-
+GRANT EXECUTE ON FUNCTION public.create_room_atomic(
+    text, text, text, text, text, int, text, text[], text, uuid
+) TO service_role;
 -- accept_teaching_request
 CREATE OR REPLACE FUNCTION public.accept_teaching_request(
     p_room_id uuid,

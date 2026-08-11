@@ -12,9 +12,21 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
   req.accessToken = token;
   const { data: p } = await admin
     .from("profiles")
-    .select("roles")
+    .select("roles, account_status")
     .eq("id", data.user.id)
     .maybeSingle();
+
+  if (p) {
+    if (p.account_status === "suspended" || p.account_status === "banned") {
+      return res.status(403).json({ error: `Account is ${p.account_status}` });
+    }
+    if (p.account_status === "deactivated") {
+      if (!req.originalUrl.endsWith("/account/reactivate")) {
+        return res.status(403).json({ error: "Account is deactivated. Reactivation required." });
+      }
+    }
+  }
+
   req.userRoles = p?.roles ?? ["student"];
   next();
 }

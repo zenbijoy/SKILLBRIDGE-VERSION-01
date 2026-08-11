@@ -1,63 +1,85 @@
-$ErrorActionPreference = "Stop"
+param(
+  [switch]$AllowProduction,
+  [switch]$AllowChecksumMismatch
+)
 
+$ErrorActionPreference = "Stop"
 Write-Host "=== SKILLBRIDGE DATABASE SETUP ===" -ForegroundColor Cyan
 
-if (-not $env:SUPABASE_URL -or -not $env:SUPABASE_SERVICE_ROLE_KEY) {
-    Write-Host "[ERROR] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables are required." -ForegroundColor Red
-    Write-Host "Please set them or run this script from a context where they are loaded." -ForegroundColor Yellow
-    exit 1
+if (-not $env:DATABASE_URL) {
+  Write-Host "[ERROR] DATABASE_URL is required." -ForegroundColor Red
+  exit 1
 }
 
-Write-Host "Target Database: $env:SUPABASE_URL"
+if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
+  Write-Host "[ERROR] psql is required." -ForegroundColor Red
+  exit 1
+}
 
-if ($env:SUPABASE_URL -match "supabase\.co" -and $env:ALLOW_PRODUCTION_MIGRATION -ne "true") {
-    Write-Host "[ERROR] Detected production Supabase URL. Refusing to run migrations." -ForegroundColor Red
-    Write-Host "If you REALLY mean to do this, set ALLOW_PRODUCTION_MIGRATION=true" -ForegroundColor Yellow
-    exit 1
+if (($env:NODE_ENV -eq "production" -or $env:APP_ENV -eq "production") -and
+    -not $AllowProduction -and
+    $env:ALLOW_PRODUCTION_MIGRATION -ne "true") {
+  Write-Host "[ERROR] Refusing production migration without explicit approval." -ForegroundColor Red
+  exit 1
 }
 
 $migrations = @(
-    "001_schema.sql",
-    "002_functions_rls.sql",
-    "003_research.sql",
-    "003_seed.sql",
-    "004_hardening.sql",
-    "004_transactions.sql",
-    "005_rpc_security_hardening.sql",
-    "006_room_transactions.sql",
-    "007_phase12_final_fixes.sql"
+  "001_schema.sql",
+  "002_functions_rls.sql",
+  "003_research.sql",
+  "003_seed.sql",
+  "004_hardening.sql",
+  "004_transactions.sql",
+  "005_rpc_security_hardening.sql",
+  "006_room_transactions.sql",
+  "007_phase12_final_fixes.sql",
+  "008_phase_2_realtime.sql",
+  "009_phase_2_1_completion.sql",
+  "010_critical_security_consistency.sql", "011_product_features.sql"
 )
 
-# Extract project ID from URL if using Supabase CLI or just use Postgres connection string if psql is preferred.
-# For simplicity without assuming supabase CLI is authenticated, we can assume the user has psql or we just instruct them.
-# The prompt asks for a safe script that reads env vars and applies migrations. 
-# However, connecting to Supabase programmatically from a script without the Postgres connection string requires either:
-# 1) supabase-cli (`supabase db push --db-url ...`)
-# 2) psql (`psql $env:DATABASE_URL -f ...`)
-# We will check for DATABASE_URL.
+$root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$migrationDir = Join-Path $root "infra\supabase\migrations"
 
-if (-not $env:DATABASE_URL) {
-    Write-Host "[ERROR] DATABASE_URL (PostgreSQL connection string) is required to run SQL files." -ForegroundColor Red
-    Write-Host "Example: postgresql://postgres:password@127.0.0.1:54322/postgres" -ForegroundColor Yellow
-    exit 1
-}
-
-Write-Host "Executing migrations in explicit order..." -ForegroundColor Cyan
+& psql $env:DATABASE_URL -v ON_ERROR_STOP=1 -c @"
+CREATE SCHEMA IF NOT EXISTS skillbridge_meta;
+CREATE TABLE IF NOT EXISTS skillbridge_meta.schema_migrations (
+  filename text PRIMARY KEY,
+  checksum_sha256 text NOT NULL,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);
+"@
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 foreach ($file in $migrations) {
-    $path = "infra\supabase\migrations\$file"
-    if (Test-Path $path) {
-        Write-Host "Applying $file ..." -ForegroundColor Green
-        # Execute using psql
-        psql $env:DATABASE_URL -v ON_ERROR_STOP=1 -f $path
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[ERROR] Failed applying $file. Stopping." -ForegroundColor Red
-            exit 1
-        }
-    } else {
-        Write-Host "[ERROR] Migration file $path not found!" -ForegroundColor Red
-        exit 1
+  $path = Join-Path $migrationDir $file
+  if (-not (Test-Path $path)) {
+    Write-Host "[ERROR] Missing migration: $path" -ForegroundColor Red
+    exit 1
+  }
+
+  $checksum = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+  $existing = (& psql $env:DATABASE_URL -tA -v ON_ERROR_STOP=1 -c "SELECT checksum_sha256 FROM skillbridge_meta.schema_migrations WHERE filename='$file';").Trim()
+
+  if ($existing) {
+    if ($existing -eq $checksum) {
+      Write-Host "[SKIP] $file" -ForegroundColor DarkGray
+      continue
     }
+
+    Write-Host "[ERROR] Applied migration changed: $file" -ForegroundColor Red
+    if (-not $AllowChecksumMismatch) {
+      Write-Host "Create a NEW corrective migration instead." -ForegroundColor Yellow
+      exit 1
+    }
+  }
+
+  Write-Host "[APPLY] $file" -ForegroundColor Green
+  & psql $env:DATABASE_URL -v ON_ERROR_STOP=1 -1 -f $path
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  & psql $env:DATABASE_URL -v ON_ERROR_STOP=1 -c "INSERT INTO skillbridge_meta.schema_migrations(filename,checksum_sha256) VALUES('$file','$checksum') ON CONFLICT(filename) DO UPDATE SET checksum_sha256=EXCLUDED.checksum_sha256, applied_at=now();"
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-Write-Host "All migrations applied successfully!" -ForegroundColor Green
+Write-Host "[PASS] Migration chain applied." -ForegroundColor Green

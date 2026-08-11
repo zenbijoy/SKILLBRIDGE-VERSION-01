@@ -98,18 +98,19 @@ events.patch(
       : { data: null };
     if (!m || !["owner", "admin"].includes(m.role))
       return res.status(403).json({ error: "Club admin required" });
-    const { data, error } = await admin
-      .from("event_applications")
-      .update({
-        status,
-        reviewed_by: req.userId!,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .eq("event_id", eventId)
-      .select()
-      .single();
+    const { error } = await admin.rpc("decide_event_application_atomic", {
+      p_application_id: id,
+      p_decision: status,
+      p_reviewer_id: req.userId!
+    });
+    
     if (error) throw error;
+    
+    const { data } = await admin
+      .from("event_applications")
+      .select("*")
+      .eq("id", id)
+      .single();
     await notifyUser(
       data.user_id,
       `Event application ${status}`,

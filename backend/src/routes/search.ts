@@ -2,64 +2,104 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+
 export const search = Router();
+
 search.get(
   "/",
   wrap(async (req, res) => {
     const q = z.string().min(2).max(80).parse(req.query.q);
     const kind = String(req.query.kind ?? "all");
+    const cursor = parseInt(String(req.query.cursor ?? "0"), 10) || 0;
+    const limit = 20;
+
     const uid = req.userId!;
-    const safe = q
-      .replace(/[,%_()"']/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const pattern = `%${safe}%`;
+    
+    // Fetch blocks
     const { data: blocks } = await admin
       .from("blocks")
       .select("blocker_id,blocked_id")
       .or(`blocker_id.eq.${uid},blocked_id.eq.${uid}`);
+
     const blocked = new Set(
       (blocks ?? []).map((x) =>
         x.blocker_id === uid ? x.blocked_id : x.blocker_id,
       ),
     );
-    const [people, rooms, events, skills] = await Promise.all([
+
+    const [people, rooms, events, skills, clubs, research, resources] = await Promise.all([
       ["all", "people"].includes(kind)
         ? admin
             .from("profiles")
             .select("*")
-            .or(
-              `full_name.ilike.${pattern},username.ilike.${pattern},bio.ilike.${pattern}`,
-            )
+            .textSearch("fts", q, { type: "websearch" })
             .neq("profile_visibility", "private")
-            .limit(20)
+            .range(cursor, cursor + limit - 1)
         : Promise.resolve({ data: [] }),
       ["all", "rooms"].includes(kind)
         ? admin
             .from("rooms")
             .select("*")
             .eq("visibility", "public")
-            .or(
-              `title.ilike.${pattern},topic.ilike.${pattern},description.ilike.${pattern}`,
-            )
-            .limit(20)
+            .textSearch("fts", q, { type: "websearch" })
+            .range(cursor, cursor + limit - 1)
         : Promise.resolve({ data: [] }),
       ["all", "events"].includes(kind)
         ? admin
             .from("events")
             .select("*")
-            .or(`title.ilike.${pattern},description.ilike.${pattern}`)
-            .limit(20)
+            .textSearch("fts", q, { type: "websearch" })
+            .range(cursor, cursor + limit - 1)
         : Promise.resolve({ data: [] }),
       ["all", "skills"].includes(kind)
-        ? admin.from("skills").select("*").ilike("name", pattern).limit(20)
+        ? admin
+            .from("skills")
+            .select("*")
+            .textSearch("fts", q, { type: "websearch" })
+            .range(cursor, cursor + limit - 1)
+        : Promise.resolve({ data: [] }),
+      ["all", "clubs"].includes(kind)
+        ? admin
+            .from("clubs")
+            .select("*")
+            .textSearch("fts", q, { type: "websearch" })
+            .range(cursor, cursor + limit - 1)
+        : Promise.resolve({ data: [] }),
+      ["all", "research"].includes(kind)
+        ? admin
+            .from("research_projects")
+            .select("*")
+            .textSearch("fts", q, { type: "websearch" })
+            .range(cursor, cursor + limit - 1)
+        : Promise.resolve({ data: [] }),
+      ["all", "resources"].includes(kind)
+        ? admin
+            .from("resources")
+            .select("*")
+            .textSearch("fts", q, { type: "websearch" })
+            .range(cursor, cursor + limit - 1)
         : Promise.resolve({ data: [] }),
     ]);
+
+    const filteredPeople = (people.data ?? []).filter((p: any) => !blocked.has(p.id));
+
     res.json({
-      people: (people.data ?? []).filter((p: any) => !blocked.has(p.id)),
+      people: filteredPeople,
       rooms: rooms.data ?? [],
       events: events.data ?? [],
       skills: skills.data ?? [],
+      clubs: clubs.data ?? [],
+      research: research.data ?? [],
+      resources: resources.data ?? [],
+      nextCursor: [
+        filteredPeople.length,
+        (rooms.data ?? []).length,
+        (events.data ?? []).length,
+        (skills.data ?? []).length,
+        (clubs.data ?? []).length,
+        (research.data ?? []).length,
+        (resources.data ?? []).length
+      ].some(l => l === limit) ? cursor + limit : null
     });
   }),
 );

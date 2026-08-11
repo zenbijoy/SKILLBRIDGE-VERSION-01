@@ -1,0 +1,1197 @@
+SKILLBRIDGE MASTER REPAIR + BACKEND + ADMIN CONTROL PLANE
+========================================================
+
+TARGET
+Repository: https://github.com/zenbijoy/SKILLBRIDGE-VERSION-01
+
+Audited source:
+SKILLBRIDGE-LATEST.zip
+SHA256:
+1f80955e709d4fd3f77f0bed1bd8b4c4900a6e6a6b576c56885b646d506bf1a8
+
+EXECUTION CONTRACT
+==================
+Do NOT stop after another plan. Inspect the current repository and IMPLEMENT.
+
+If a shared/staging/production DB has already applied 001-009, do not rewrite
+applied migration history; add corrective migrations 010+.
+
+If no shared DB has applied 001-009 yet, repair the broken historical files so
+a fresh database can build, then also add a 010 backstop migration.
+
+Never expose:
+SUPABASE_SERVICE_ROLE_KEY
+Postgres password
+LiveKit secret
+Firebase private key
+access/refresh tokens
+user passwords
+
+Do not claim PASS for a check you did not execute.
+
+======================================================================
+1. CRITICAL ROOM DATABASE/RPC REPAIR
+======================================================================
+
+Actual base schema:
+infra/supabase/migrations/001_schema.sql
+
+rooms requires `topic`, has text/check `visibility`, has `mode` and
+`campus_location`, but has no `rules`.
+
+Actual:
+infra/supabase/migrations/006_room_transactions.sql
+infra/supabase/migrations/007_phase12_final_fixes.sql
+
+both:
+- insert a nonexistent `rules` column
+- use nonexistent `public.room_visibility`
+- omit required `topic`
+- omit `mode`
+- omit `campus_location`
+
+Actual backend:
+backend/src/routes/rooms.ts
+
+accepts topic/mode/campus_location/rules but fails to pass topic/mode/location
+to the RPC.
+
+Fix the whole contract.
+
+For fresh schema:
+ALTER/define rooms with:
+  rules text not null default ''
+
+Do not invent an enum just to preserve the bad old cast. Keep the existing
+text/check model unless doing a deliberate full conversion.
+
+Canonical function:
+
+CREATE OR REPLACE FUNCTION public.create_room_atomic(
+    p_title text,
+    p_description text,
+    p_topic text,
+    p_visibility text,
+    p_mode text,
+    p_capacity int,
+    p_rules text,
+    p_tags text[],
+    p_campus_location text,
+    p_owner_id uuid
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_conversation_id uuid;
+    v_room_id uuid;
+BEGIN
+    IF p_visibility NOT IN ('public','private','invite_only') THEN
+        RAISE EXCEPTION 'Invalid room visibility';
+    END IF;
+
+    IF p_mode NOT IN ('online','offline','hybrid') THEN
+        RAISE EXCEPTION 'Invalid room mode';
+    END IF;
+
+    IF p_capacity < 2 OR p_capacity > 250 THEN
+        RAISE EXCEPTION 'Invalid room capacity';
+    END IF;
+
+    INSERT INTO public.conversations(kind,title,created_by)
+    VALUES('room',p_title,p_owner_id)
+    RETURNING id INTO v_conversation_id;
+
+    INSERT INTO public.rooms(
+        owner_id,conversation_id,title,description,topic,tags,
+        visibility,mode,capacity,member_count,rules,campus_location
+    )
+    VALUES(
+        p_owner_id,v_conversation_id,p_title,p_description,p_topic,
+        COALESCE(p_tags,'{}'),p_visibility,p_mode,p_capacity,1,
+        COALESCE(p_rules,''),p_campus_location
+    )
+    RETURNING id INTO v_room_id;
+
+    INSERT INTO public.room_members(room_id,user_id,role)
+    VALUES(v_room_id,p_owner_id,'owner');
+
+    INSERT INTO public.conversation_members(conversation_id,user_id,role)
+    VALUES(v_conversation_id,p_owner_id,'owner');
+
+    RETURN v_room_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_room_atomic(
+ text,text,text,text,text,int,text,text[],text,uuid
+) FROM PUBLIC,anon,authenticated;
+
+GRANT EXECUTE ON FUNCTION public.create_room_atomic(
+ text,text,text,text,text,int,text,text[],text,uuid
+) TO service_role;
+
+Backend RPC args must include:
+p_title: body.title
+p_description: body.description
+p_topic: body.topic
+p_visibility: body.visibility
+p_mode: body.mode
+p_capacity: body.capacity
+p_rules: body.rules
+p_tags: body.tags
+p_campus_location: body.campus_location ?? null
+p_owner_id: req.userId
+
+Real DB test:
+room created
+topic/mode/rules/location preserved
+owner room membership
+owner conversation membership
+no orphan conversation on failure
+
+======================================================================
+2. FIX 005 POSTGRES SIGNATURE
+======================================================================
+
+infra/supabase/migrations/005_rpc_security_hardening.sql
+
+Wrong:
+public.recompute_reputation()
+
+Actual:
+public.recompute_reputation(uuid)
+
+Fix REVOKE and GRANT to exact `(uuid)`.
+
+Audit every function GRANT/REVOKE signature.
+
+Every SECURITY DEFINER function must use an explicit safe search_path.
+
+======================================================================
+3. CLOSE PROFILE PRIVILEGE ESCALATION
+======================================================================
+
+profiles contains:
+roles
+reputation
+account_status
+
+Current self-update RLS only verifies row ownership. It does not restrict
+which columns changed.
+
+Lock database privileges:
+
+REVOKE UPDATE ON TABLE public.profiles FROM authenticated;
+
+GRANT UPDATE (
+ full_name,
+ username,
+ avatar_url,
+ bio,
+ university,
+ department,
+ batch,
+ research_interests,
+ profile_visibility,
+ updated_at
+) ON TABLE public.profiles TO authenticated;
+
+Never grant an ordinary user direct UPDATE on:
+roles
+reputation
+account_status
+admin roles
+verification overrides
+
+Then replace profiles.roles as final platform-admin authorization with
+server-controlled RBAC:
+
+admin_roles
+admin_permissions
+admin_role_permissions
+admin_assignments
+
+Roles:
+SUPER_ADMIN
+PLATFORM_ADMIN
+SECURITY_ADMIN
+SUPPORT_MANAGER
+SUPPORT_AGENT
+MODERATION_MANAGER
+MODERATOR
+CONTENT_MANAGER
+INSTITUTION_MANAGER
+DATABASE_OPERATOR
+API_OPERATOR
+ANALYST
+AUDITOR
+READ_ONLY_ADMIN
+
+Permission examples:
+users.read
+users.update
+users.suspend
+users.ban
+users.delete
+users.sessions.revoke
+users.verification.override
+rooms.manage
+sessions.manage
+moderation.read
+moderation.action
+resources.manage
+clubs.manage
+events.manage
+research.manage
+settings.read
+settings.update
+rules.read
+rules.update
+feature_flags.manage
+api.read
+api.manage
+database.read
+database.export
+audit.read
+admins.manage
+
+Create:
+requireAdminPermission("users.ban")
+
+Do not rely only on requireRole("admin").
+
+======================================================================
+4. ACCOUNT STATE FIX
+======================================================================
+
+backend/src/routes/account.ts currently deactivates by:
+account_status = suspended
+plus an extreme auth ban.
+
+Correct:
+active = normal
+deactivated = voluntary
+suspended = moderation
+banned = moderation
+
+/deactivate:
+set deactivated
+do not simulate moderation ban
+
+Add:
+PATCH /account/reactivate
+
+Enforce account status globally:
+active -> normal
+deactivated -> recovery/reactivation only
+suspended -> reject normal app
+banned -> reject normal app
+
+======================================================================
+5. SESSION STATE / ATTENDANCE FIX
+======================================================================
+
+DB sessions.status:
+draft
+scheduled
+live
+completed
+cancelled
+
+backend currently uses:
+in_progress
+
+Canonical:
+draft -> scheduled -> live -> completed
+scheduled -> cancelled
+
+Remove in_progress across code/tests/docs.
+
+Current participant endpoint allows self-mark:
+attended
+missed
+
+This is not trustworthy.
+
+Ordinary participant may only self-set:
+confirmed
+declined
+
+Trusted final attendance comes from:
+LiveKit participation
+teacher/moderator
+secure offline attendance
+
+Review/reputation eligibility must use trusted attendance.
+
+======================================================================
+6. LIVEKIT ATTENDANCE INTEGRATION
+======================================================================
+
+008 created livekit_attendance but webhook currently writes
+session_participants.attendance_status = joined/left.
+
+Implement reconnect-safe segments.
+
+CREATE UNIQUE INDEX IF NOT EXISTS livekit_attendance_one_open_segment
+ON public.livekit_attendance(session_id,user_id)
+WHERE left_at IS NULL;
+
+CREATE OR REPLACE FUNCTION public.record_livekit_join(
+ p_session_id uuid,
+ p_user_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public
+AS $$
+BEGIN
+ INSERT INTO public.livekit_attendance(session_id,user_id,joined_at)
+ SELECT p_session_id,p_user_id,now()
+ WHERE NOT EXISTS(
+   SELECT 1 FROM public.livekit_attendance
+   WHERE session_id=p_session_id
+     AND user_id=p_user_id
+     AND left_at IS NULL
+ );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_livekit_leave(
+ p_session_id uuid,
+ p_user_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public
+AS $$
+DECLARE
+ v_id uuid;
+ v_joined timestamptz;
+BEGIN
+ SELECT id,joined_at INTO v_id,v_joined
+ FROM public.livekit_attendance
+ WHERE session_id=p_session_id
+   AND user_id=p_user_id
+   AND left_at IS NULL
+ ORDER BY joined_at DESC
+ LIMIT 1
+ FOR UPDATE;
+
+ IF v_id IS NULL THEN RETURN; END IF;
+
+ UPDATE public.livekit_attendance
+ SET left_at=now(),
+     duration_seconds=GREATEST(
+       0,FLOOR(EXTRACT(EPOCH FROM(now()-v_joined)))::int
+     )
+ WHERE id=v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.record_livekit_join(uuid,uuid)
+FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.record_livekit_leave(uuid,uuid)
+FROM PUBLIC,anon,authenticated;
+
+GRANT EXECUTE ON FUNCTION public.record_livekit_join(uuid,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_livekit_leave(uuid,uuid) TO service_role;
+
+Webhook:
+participant_joined -> record_livekit_join
+participant_left -> record_livekit_leave
+
+At session completion:
+aggregate duration
+apply configurable threshold
+set attended/missed
+
+Never accept duration from client.
+
+======================================================================
+7. LIVEKIT TOKEN ROLE FIX
+======================================================================
+
+room_members roles:
+owner
+teacher
+moderator
+member
+
+Token route currently includes invalid `student`.
+
+Use actual roles.
+
+Backend derives grants.
+Select session.status.
+Do not issue token for draft/completed/cancelled.
+
+Keep trusted room:
+skillbridge-session-<session UUID>
+
+Make LiveKit optional config safe: missing credentials must not crash core API.
+
+======================================================================
+8. CONSOLIDATE PUSH
+======================================================================
+
+Actual duplicate implementations:
+backend/src/services/PushService.ts
+backend/src/services/push.ts
+
+Chat uses new service.
+Rooms/events/sessions/research use old direct Expo fetch.
+
+Use one provider implementation.
+
+notifyUser may remain as domain helper:
+insert durable notification
+check preferences
+call PushService
+
+But one network implementation only.
+
+======================================================================
+9. PUSH TICKET / RECEIPT CORRECTION
+======================================================================
+
+Immediate Expo send response is a ticket, not final delivery proof.
+
+Correct:
+send
+-> persist pending ticket_id
+-> delayed getReceipts query
+-> delivered/error
+-> DeviceNotRegistered disables token
+
+Implement:
+PushService.checkPendingReceipts()
+
+Add worker/job.
+Never claim real device delivery without a real device.
+
+======================================================================
+10. CHAT READ / DELIVERY MODEL
+======================================================================
+
+One global messages.delivery_status is not valid for group recipients.
+
+Canonical:
+messages = persisted server message
+
+local outbox:
+queued/sending/failed
+
+conversation_members:
+last_read_message_id
+last_read_at
+
+If exact delivery needed:
+message_delivery_receipts(
+ message_id,
+ user_id,
+ delivered_at,
+ read_at,
+ primary key(message_id,user_id)
+)
+
+Do not let arbitrary member set global message status to failed/read.
+
+Validate read pointer message belongs to same conversation.
+
+Complete chat UI:
+reply
+reactions
+edit
+soft delete
+attachments
+retry
+read/delivery UI
+message menu
+pagination
+search
+offline status
+
+======================================================================
+11. DISCOVER FIX
+======================================================================
+
+frontend/app/(tabs)/discover.tsx has no setKind and non-interactive filters.
+
+Use:
+const [kind,setKind] = useState<
+ "all"|"people"|"rooms"|"events"|"skills"
+>("all");
+
+Make filter controls pressable.
+
+Add:
+debounce
+loading
+error
+empty
+pagination
+stale request cancellation
+
+======================================================================
+12. SEARCH UPGRADE
+======================================================================
+
+Current search is ILIKE across people/rooms/events/skills.
+
+Add:
+clubs
+research
+resources
+institutions/departments later
+
+Use deterministic Postgres first:
+tsvector / FTS
+pg_trgm
+weighted ranking
+filters
+cursor pagination
+autocomplete
+search history
+
+Do not call pg_trgm vector search.
+
+======================================================================
+13. EVENT CAPACITY TRANSACTION
+======================================================================
+
+Current event application approval is a plain update.
+
+Build trusted atomic decision:
+lock event
+check approved count
+enforce capacity
+approve OR waitlist
+audit
+notify
+
+Concurrency test:
+approved count never exceeds capacity.
+
+Promote waitlist when approved attendee cancels.
+
+======================================================================
+14. CLUB CREATE TRANSACTION
+======================================================================
+
+Current:
+insert club
+then separate owner membership
+
+Create one atomic club+owner operation.
+
+Then complete:
+applications
+invites
+roles
+verification
+announcements
+followers
+analytics
+
+======================================================================
+15. RESEARCH / RESOURCE PRODUCT COMPLETION
+======================================================================
+
+Research:
+collaborator memberships
+request lifecycle
+duplicate protection
+visibility
+saved researchers/projects
+publication entries
+matching reasons
+pagination
+
+Resources:
+private signed URLs
+MIME/size validation
+save
+report
+search
+versioning
+copyright/IP report reason
+
+======================================================================
+16. DATABASE SETUP SCRIPT REPAIR
+======================================================================
+
+scripts/setup-database.ps1 currently stops at 007.
+
+Repo includes 008 and 009.
+
+Make migration setup:
+exact documented order
+001 through current latest
+migration tracking
+SHA256 checksum
+skip identical applied migration
+abort modified applied migration
+ON_ERROR_STOP
+stop on first failure
+production safety gate
+never false-success
+
+Update MIGRATION_ORDER.
+
+======================================================================
+17. DATABASE VERIFIER REPAIR
+======================================================================
+
+Do not say "assuming RPCs exist".
+
+Verify actual current tables including:
+profiles
+skills
+user_skills
+connection_requests
+connections
+blocks
+conversations
+conversation_members
+messages
+rooms
+room_members
+teaching_requests
+sessions
+session_participants
+reviews
+clubs
+club_members
+events
+event_applications
+resources
+saved_items
+points_ledger
+achievements
+user_achievements
+quizzes
+quiz_questions
+quiz_attempts
+notifications
+device_tokens
+reports
+user_settings
+audit_logs
+research_projects
+research_collaboration_requests
+message_reactions
+notification_preferences
+livekit_attendance
+push_receipts
+new 010+ tables
+
+If DATABASE_URL/psql exists:
+query pg_proc
+verify function signatures
+verify SECURITY DEFINER
+verify execute grants
+
+Verification must be read-only.
+Do not auto-create buckets while "verifying".
+
+======================================================================
+18. INFRA HARDENING
+======================================================================
+
+Current:
+infra/livekit/livekit.yaml has devkey: secret
+docker compose uses livekit-server:latest
+
+Do not use those in production.
+
+Use secret injection/secret manager.
+Pin production images.
+Keep dev and prod config separate.
+
+Do not publicly expose Postgres/Redis/internal service ports.
+
+Remove stale frontend/lint_out.txt.
+Run current lint.
+
+======================================================================
+19. ADD 010 CRITICAL SECURITY CONSISTENCY MIGRATION
+======================================================================
+
+Even after historical repair, add a new backstop migration:
+010_critical_security_consistency.sql
+
+At minimum:
+rooms.rules if missing
+profile sensitive column lock
+LiveKit attendance functions/index
+message delivery receipt structure if used
+supporting indexes
+explicit RPC privilege hardening
+
+======================================================================
+20. BUILD FULL ADMIN WEB CONTROL PLANE
+======================================================================
+
+After DB/backend critical fixes PASS, create dedicated:
+admin/
+
+Do not rely only on frontend/app/admin.tsx.
+
+Admin browser:
+Supabase Auth user token
+-> /api/v1/admin/*
+-> backend RBAC
+-> service-role trusted operations
+
+Never put service-role in browser.
+
+Modules:
+Dashboard
+Users
+Institutions
+Admins & Roles
+Support
+Moderation
+Rooms
+Sessions
+Reported Chat
+Skills
+Quiz
+Resources
+Research
+Clubs
+Events
+Reputation
+Achievements
+Notifications
+Verification
+Feature Flags
+System Config
+Rules & Policies
+API Management
+Database
+Storage
+Realtime
+LiveKit
+Push
+Jobs
+Logs
+Security
+Audit Logs
+Analytics
+Health
+Backups
+Maintenance
+
+USER 360:
+Overview
+Profile
+Skills
+Connections
+Rooms
+Sessions
+Teaching
+Research
+Resources
+Clubs
+Events
+Reviews
+Reputation
+Achievements
+Notifications
+Reports
+Moderation
+Devices
+Sessions
+Security/Login Events
+Activity
+Support Cases
+Audit
+
+Admin may:
+edit permitted profile fields
+assign institution
+verification override
+restrict feature
+suspend/unsuspend
+ban/unban
+deactivate/reactivate
+revoke sessions
+password reset flow
+export
+delete/anonymize
+
+Never show:
+password
+access token
+refresh token
+service-role key
+private keys
+
+======================================================================
+21. VERIFICATION OVERRIDE
+======================================================================
+
+Create audited verification_overrides.
+
+Fields:
+id
+target user/entity
+verification_type
+action
+reason
+created_by
+approved_by
+expires_at
+revoked_at
+revoked_by
+created_at
+
+Actions:
+APPROVE_OVERRIDE
+REJECT_OVERRIDE
+BYPASS_REQUIRED_STEP
+
+Specific-user bypass is allowed but must be:
+scoped
+reasoned
+audited
+revocable
+optionally expirable
+
+======================================================================
+22. SUPPORT IMPERSONATION
+======================================================================
+
+Do not retrieve password.
+
+Short-lived delegation:
+actor_admin_id
+target_user_id
+scope
+reason
+support_case_id
+expires_at
+
+Modes:
+READ_ONLY
+SUPPORT
+ELEVATED_SUPPORT
+
+Always preserve true actor in audit logs.
+
+Block high-risk actions in ordinary impersonation.
+
+======================================================================
+23. RULE ENGINE / FEATURE FLAGS / CONFIG
+======================================================================
+
+Typed, validated, versioned, rollbackable config.
+
+No arbitrary SQL/JS for support users.
+
+Rule categories:
+APP
+AUTH
+PROFILE
+ROOMS
+SESSIONS
+CHAT
+RESEARCH
+CLUBS
+EVENTS
+RESOURCES
+UPLOADS
+NOTIFICATIONS
+REPUTATION
+RECOMMENDATION
+MODERATION
+SECURITY
+
+Examples:
+max rooms
+room capacity
+teacher approval
+attendance threshold
+event capacity
+upload limits
+MIME types
+reputation awards
+recommendation weights
+verification requirements
+rate limits
+
+Feature flags:
+global
+platform
+institution
+user
+percentage rollout
+
+Backend enforce sensitive flags.
+
+======================================================================
+24. API / DATABASE / BACKUP MANAGEMENT
+======================================================================
+
+API admin:
+health
+request volume
+errors
+latency
+P95/P99
+rate-limit events
+provider health
+
+API client secret:
+show once
+store hash/encrypted reference
+scope
+rotate
+revoke
+audit
+
+Database admin:
+health
+connections
+pool
+DB size
+table/index size
+migration state
+backup state
+
+Support must NOT get arbitrary SQL console.
+
+Safe data browser:
+whitelisted entities
+search/filter
+pagination
+export
+approved edits
+
+Backups:
+database
+storage
+offsite
+retention
+last success
+failure
+restore-test history
+
+Restore:
+elevated permission
+strong confirmation
+optional second approver
+
+======================================================================
+25. INSTITUTIONAL / NATIONAL FOUNDATION
+======================================================================
+
+After admin control plane:
+institutions
+faculty/school
+department
+program
+batch/cohort
+institution membership
+institution admin scopes
+verification
+
+Then:
+advanced discovery
+recommendations
+clubs/events
+research
+resources
+English/Bangla i18n
+
+======================================================================
+26. REQUIRED SETUP DOCS
+======================================================================
+
+Create/update:
+docs/DATABASE_SETUP_CURRENT.md
+docs/BACKEND_SETUP_CURRENT.md
+docs/ADMIN_SETUP.md
+docs/MASTER_REPAIR_REPORT.md
+
+Root commands:
+npm run setup
+npm run validate
+npm run backend
+npm run web
+npm run db:verify
+npm run db:migrate
+npm run smoke
+
+Windows support is mandatory.
+
+Never overwrite .env.
+
+Core required:
+SUPABASE_URL
+SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+
+Capability-gated:
+REDIS_URL
+LIVEKIT_URL
+LIVEKIT_API_KEY
+LIVEKIT_API_SECRET
+EXPO_PUSH_ACCESS_TOKEN
+AI_PROVIDER_URL
+AI_PROVIDER_API_KEY
+
+Do not hardcode.
+
+======================================================================
+27. MANDATORY TEST GATES
+======================================================================
+
+FRESH DB:
+Create completely empty TEST DB.
+Apply entire migration chain from zero.
+Must pass.
+
+Verify:
+tables
+constraints
+RLS
+functions
+signatures
+grants
+storage
+
+SECURITY:
+ordinary user must fail direct updates to:
+roles
+reputation
+account_status
+admin role
+verification override
+points ledger
+
+ROOM:
+real DB create/join/leave/capacity
+all fields preserved
+
+SESSION:
+scheduled -> live -> completed
+participant cannot self-mark attended
+trusted attendance controls review
+
+PUSH:
+single provider
+ticket persistence
+receipt processing
+invalid token disabling
+preferences
+
+CHAT:
+idempotent send
+blocked DM
+group-safe read
+read pointer validation
+edit/delete authorization
+attachment authorization
+
+EVENT:
+concurrent capacity
+waitlist
+
+ADMIN:
+RBAC
+permission revoke
+impersonation
+verification override
+audit
+rules
+flags
+session revoke
+data-browser authorization
+
+FRONTEND:
+npm install
+npm ls
+npx expo install --check
+npx expo-doctor
+npm run typecheck
+npm run lint
+npx expo export --platform web
+npx expo prebuild --clean
+
+BACKEND:
+npm install
+npm ls
+npm run typecheck
+npm run lint
+npm test
+npm run build
+
+If backend has no lint script, add one.
+
+======================================================================
+28. REPORT TRUTH
+======================================================================
+
+Create:
+docs/MASTER_REPAIR_REPORT.md
+
+Separate:
+IMPLEMENTED
+AUTOMATED TESTED
+REAL DATABASE TESTED
+REAL SERVICE TESTED
+REAL DEVICE TESTED
+
+Statuses:
+PASS
+PASS WITH WARNING
+PARTIAL
+FAIL
+NOT TESTED
+BLOCKED BY CREDENTIAL
+BLOCKED BY DEVICE
+
+Do not call production-ready from mock tests alone.
+
+======================================================================
+29. GIT
+======================================================================
+
+Use reviewable commits, for example:
+
+fix(db): repair fresh migration chain and room contracts
+fix(security): lock profile fields and authorization boundaries
+fix(sessions): canonicalize session and attendance lifecycle
+fix(realtime): consolidate push and group-safe read state
+feat(admin): RBAC and control plane foundation
+feat(admin): support moderation configuration operations
+feat(platform): search clubs events research resources
+test: DB and authorization integration coverage
+docs: current setup and verification evidence
+
+Before push:
+git status
+git diff --check
+git diff --stat
+secret scan
+
+DO NOT START AI.
+
+FINAL RETURN:
+commit hashes
+files changed
+migrations
+fresh DB result
+security tests
+backend tests
+frontend tests
+web export
+native prebuild
+admin build
+external blockers
+remaining risks

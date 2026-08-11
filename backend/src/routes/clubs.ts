@@ -36,15 +36,20 @@ clubs.post(
         university: z.string().max(150).optional(),
       })
       .parse(req.body);
-    const { data, error } = await admin
-      .from("clubs")
-      .insert({ ...b, created_by: req.userId!, verified: false })
-      .select()
-      .single();
+    const { data: clubId, error } = await admin.rpc("create_club_atomic", {
+      p_name: b.name,
+      p_description: b.description ?? "",
+      p_university: b.university ?? "",
+      p_owner_id: req.userId!
+    });
     if (error) throw error;
-    await admin
-      .from("club_members")
-      .insert({ club_id: data.id, user_id: req.userId!, role: "owner" });
+    
+    const { data } = await admin
+      .from("clubs")
+      .select("*")
+      .eq("id", clubId)
+      .single();
+      
     res.status(201).json(data);
   }),
 );

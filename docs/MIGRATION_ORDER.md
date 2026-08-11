@@ -18,3 +18,4 @@ All future migrations **MUST** use a strictly increasing numerical prefix (e.g.,
 9. `007_phase12_final_fixes.sql` - Final Phase 1.2 transaction and security fixes, idempotency constraint for points_ledger, and reputation aggregation updates.
 10. `008_phase_2_realtime.sql` - Phase 2 realtime schema (message idempotency, reactions, push tokens, attendance, notification preferences).
 11. `009_phase_2_1_completion.sql` - Phase 2.1 schema additions (delivery status, device token enhancements, push receipts).
+12. `010_critical_security_consistency.sql` - Critical security and consistency backstop.

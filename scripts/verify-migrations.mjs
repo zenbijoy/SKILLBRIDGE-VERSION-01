@@ -1,47 +1,114 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'infra/supabase/migrations');
 const ORDER_FILE = path.join(process.cwd(), 'docs/MIGRATION_ORDER.md');
 
-console.log("=== MIGRATION VERIFICATION ===");
+console.log("=== SKILLBRIDGE DATABASE VERIFIER ===");
 
-let orderText = "";
+const requiredTables = [
+  "profiles", "skills", "user_skills", "connection_requests", "connections",
+  "blocks", "conversations", "conversation_members", "messages", "rooms",
+  "room_members", "teaching_requests", "sessions", "session_participants",
+  "reviews", "clubs", "club_members", "events", "event_applications",
+  "resources", "saved_items", "points_ledger", "achievements", "user_achievements",
+  "quizzes", "quiz_questions", "quiz_attempts", "notifications", "device_tokens",
+  "reports", "user_settings", "audit_logs", "research_projects",
+  "research_collaboration_requests", "message_reactions", "notification_preferences",
+  "livekit_attendance", "push_receipts", "admin_roles", "admin_permissions",
+  "admin_role_permissions", "admin_assignments"
+];
+
+let dbUrl = process.env.DATABASE_URL;
+
+if (!dbUrl) {
+  console.log("[SKIP] DATABASE_URL not set. Skipping live DB verification.");
+  process.exit(0);
+}
+
 try {
-  orderText = fs.readFileSync(ORDER_FILE, 'utf-8');
+  // Test psql
+  execSync('psql --version', { stdio: 'ignore' });
 } catch (e) {
-  console.error(`Warning: Could not read ${ORDER_FILE}`);
+  console.log("[SKIP] psql not found in PATH. Skipping live DB verification.");
+  process.exit(0);
 }
 
-const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql'));
+console.log("[INFO] Verifying live database state...");
 
-// Extract prefixes
-const prefixes = files.map(f => {
-  const match = f.match(/^(\d+)_/);
-  return match ? { file: f, prefix: match[1] } : null;
-}).filter(x => x !== null);
+try {
+  let psqlCmd = (query) => {
+    return execSync(`psql "${dbUrl}" -tA -c "${query}"`, { encoding: 'utf-8' }).trim();
+  };
 
-const prefixCounts = {};
-prefixes.forEach(p => {
-  prefixCounts[p.prefix] = (prefixCounts[p.prefix] || 0) + 1;
-});
-
-let duplicatesFound = false;
-for (const [prefix, count] of Object.entries(prefixCounts)) {
-  if (count > 1) {
-    duplicatesFound = true;
-    console.warn(`[WARNING] Duplicate migration prefix found: ${prefix}_`);
-    const duplicateFiles = prefixes.filter(p => p.prefix === prefix).map(p => p.file);
-    duplicateFiles.forEach(f => console.warn(`  - ${f}`));
+  // 1. Verify tables
+  const tablesResult = psqlCmd(`
+    SELECT tablename 
+    FROM pg_tables 
+    WHERE schemaname = 'public';
+  `);
+  const actualTables = tablesResult.split('\n').map(t => t.trim());
+  let missingTables = [];
+  for (const t of requiredTables) {
+    if (!actualTables.includes(t)) {
+      missingTables.push(t);
+    }
   }
+
+  if (missingTables.length > 0) {
+    console.error(`[ERROR] Missing tables: ${missingTables.join(', ')}`);
+    process.exit(1);
+  } else {
+    console.log("[PASS] All required tables exist.");
+  }
+
+  // 2. Verify functions (SECURITY DEFINER, explicit parameters)
+  const functionsResult = psqlCmd(`
+    SELECT p.proname, pg_get_function_identity_arguments(p.oid) as args, p.prosecdef 
+    FROM pg_proc p 
+    JOIN pg_namespace n ON p.pronamespace = n.oid 
+    WHERE n.nspname = 'public';
+  `);
+  
+  const actualFunctions = functionsResult.split('\n').filter(l => l.trim().length > 0).map(l => {
+    const parts = l.split('|');
+    return { name: parts[0], args: parts[1], secDef: parts[2] === 't' };
+  });
+
+  const requiredFunctions = [
+    { name: "record_livekit_join", args: "p_session_id uuid, p_user_id uuid" },
+    { name: "record_livekit_leave", args: "p_session_id uuid, p_user_id uuid" },
+    { name: "recompute_reputation", args: "p_user_id uuid" }
+  ];
+
+  let functionError = false;
+  for (const rf of requiredFunctions) {
+    const f = actualFunctions.find(af => af.name === rf.name);
+    if (!f) {
+      console.error(`[ERROR] Missing function: ${rf.name}`);
+      functionError = true;
+      continue;
+    }
+    // Very basic signature check
+    if (f.args.toLowerCase().replace(/\\s+/g, '') !== rf.args.toLowerCase().replace(/\\s+/g, '')) {
+      console.warn(`[WARN] Function signature mismatch for ${rf.name}: expected '${rf.args}', got '${f.args}'`);
+    }
+    if (!f.secDef) {
+      console.warn(`[WARN] Function ${rf.name} should be SECURITY DEFINER`);
+    }
+  }
+
+  if (functionError) {
+    process.exit(1);
+  }
+
+  console.log("[PASS] Required RPCs verified.");
+  
+} catch (e) {
+  console.error(`[ERROR] Verification failed: ${e.message}`);
+  process.exit(1);
 }
 
-console.log("\n=== DOCUMENTED EXECUTION ORDER ===");
-const orderLines = orderText.split('\n').filter(l => l.match(/^\d+\.\s+`.*\.sql`/));
-orderLines.forEach(l => console.log(l.trim()));
+console.log("=== VERIFICATION COMPLETE ===");
 
-if (duplicatesFound) {
-  console.log("\n[ACTION REQUIRED] Ensure you apply migrations EXACTLY in the order defined in docs/MIGRATION_ORDER.md because alphanumeric sorting will execute them out of order!");
-} else {
-  console.log("\n[OK] No duplicate migration prefixes detected.");
-}

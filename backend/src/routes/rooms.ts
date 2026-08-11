@@ -36,10 +36,13 @@ rooms.post(
     const { data: v_room_id, error } = await admin.rpc("create_room_atomic", {
       p_title: body.title,
       p_description: body.description,
+      p_topic: body.topic,
       p_visibility: body.visibility,
+      p_mode: body.mode,
       p_capacity: body.capacity,
       p_rules: body.rules,
       p_tags: body.tags,
+      p_campus_location: body.campus_location ?? null,
       p_owner_id: req.userId!,
     });
     if (error) throw error;

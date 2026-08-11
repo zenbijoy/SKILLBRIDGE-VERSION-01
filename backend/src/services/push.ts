@@ -1,5 +1,6 @@
 import { admin } from "../lib/db.js";
-import { env } from "../config/env.js";
+import { PushService } from "./PushService.js";
+
 export async function notifyUser(
   userId: string,
   title: string,
@@ -7,30 +8,15 @@ export async function notifyUser(
   kind = "general",
   data: Record<string, string> = {},
 ) {
-  await admin
+  const { error } = await admin
     .from("notifications")
     .insert({ user_id: userId, title, body, kind, data });
-  const { data: tokens } = await admin
-    .from("device_tokens")
-    .select("token")
-    .eq("user_id", userId)
-    .eq("enabled", true);
-  if (!tokens?.length) return;
-  const messages = tokens.map((t) => ({
-    to: t.token,
-    sound: "default",
+
+  if (error) throw error;
+
+  await PushService.sendNotification(userId, {
     title,
     body,
     data,
-  }));
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (env.EXPO_PUSH_ACCESS_TOKEN)
-    headers.Authorization = `Bearer ${env.EXPO_PUSH_ACCESS_TOKEN}`;
-  await fetch("https://exp.host/--/api/v2/push/send", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(messages),
-  }).catch(() => undefined);
+  });
 }
