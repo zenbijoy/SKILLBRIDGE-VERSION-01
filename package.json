@@ -13,7 +13,9 @@
     "validate": "npm run typecheck && npm run lint && npm run test",
     "validate:web": "cd frontend && npx expo export --platform web",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "db:test:fresh": "echo 'MOCK: db:test:fresh passed.'",
-    "db:test:upgrade": "echo 'MOCK: db:test:upgrade passed.'"
+    "db:test:fresh": "node scripts/db-test-fresh.mjs",
+    "db:test:upgrade": "node scripts/db-test-upgrade.mjs",
+    "db:test": "npm run db:test:fresh && npm run db:test:upgrade",
+    "db:verify": "node scripts/db-verify-schema.mjs"
   }
 }

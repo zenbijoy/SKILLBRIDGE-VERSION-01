@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { useRouter } from "expo-router";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
@@ -21,31 +23,20 @@ export async function registerPush() {
       current.status === "granted"
         ? current
         : await Notifications.requestPermissionsAsync();
-        
     if (perm.status !== "granted") return null;
-    
-    if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync("default", {
-        name: "SkillBridge",
-        importance: Notifications.AndroidImportance.HIGH,
-      });
-    }
 
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    if (!projectId) {
-      console.warn("EAS Project ID is missing.");
-    }
-    
-    const tokenResponse = await Notifications.getExpoPushTokenAsync({
-      projectId: projectId || undefined,
-    });
-    const token = tokenResponse.data;
-    
-    await api("/notifications/devices", {
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      Constants.easConfig?.projectId;
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    const token = tokenData.data;
+
+    await api("/account/device-token", {
       method: "POST",
       body: JSON.stringify({ token, platform: Platform.OS }),
     });
-    
+
     return token;
   } catch (error) {
     console.error("Failed to register push token:", error);
@@ -53,12 +44,9 @@ export async function registerPush() {
   }
 }
 
-import { useEffect } from "react";
-import { useRouter } from "expo-router";
-
 export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
-  
+
   useEffect(() => {
     const url = lastNotificationResponse?.notification?.request?.content?.data?.url;
     if (url) {
@@ -66,5 +54,3 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
     }
   }, [lastNotificationResponse, router]);
 }
-
-

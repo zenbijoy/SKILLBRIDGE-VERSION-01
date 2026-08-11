@@ -1,15 +1,12 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { determineState } from './verify-database.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const MIGRATIONS_DIR = path.resolve(__dirname, '../infra/supabase/migrations');
-
-console.log("=== SKILLBRIDGE DATABASE SETUP ===");
 
 // parse args
 const args = process.argv.slice(2);
@@ -17,6 +14,30 @@ const isFresh = args.includes('--fresh') || args.includes('-Fresh');
 const isUpgrade = args.includes('--upgrade') || args.includes('-Upgrade');
 const allowChecksumMismatch = args.includes('--allow-checksum-mismatch') || args.includes('-AllowChecksumMismatch');
 const allowProduction = args.includes('--allow-production') || args.includes('-AllowProduction');
+
+let executor = 'external';
+const executorIdx = args.indexOf('--executor');
+if (executorIdx !== -1 && args[executorIdx + 1]) {
+    executor = args[executorIdx + 1].toLowerCase();
+}
+
+let containerName = process.env.DB_CONTAINER_NAME || null;
+const containerIdx = args.indexOf('--container');
+if (containerIdx !== -1 && args[containerIdx + 1]) {
+    containerName = args[containerIdx + 1];
+}
+
+if (executor === 'docker') {
+    if (!containerName) {
+        console.error("[ERROR] --executor docker requires --container <container_name> or DB_CONTAINER_NAME env.");
+        process.exit(1);
+    }
+    process.env.DB_CONTAINER_NAME = containerName;
+}
+
+const MIGRATIONS_DIR = isFresh
+    ? path.resolve(__dirname, '../infra/supabase/baseline')
+    : path.resolve(__dirname, '../infra/supabase/migrations');
 
 if (!isFresh && !isUpgrade) {
     console.error("[ERROR] Must specify either --fresh or --upgrade mode.");
@@ -41,7 +62,7 @@ if (fs.existsSync(envPath)) {
 }
 
 const dbUrl = process.env.DATABASE_URL;
-if (!dbUrl) {
+if (!dbUrl && !containerName) {
     console.error("[ERROR] DATABASE_URL is required.");
     process.exit(1);
 }
@@ -52,11 +73,13 @@ if ((env === 'production') && !allowProduction && process.env.ALLOW_PRODUCTION_M
     process.exit(1);
 }
 
-try {
-    execSync('psql --version', { stdio: 'ignore' });
-} catch (e) {
-    console.error("[ERROR] psql is required.");
-    process.exit(1);
+if (!containerName && executor !== 'docker') {
+    try {
+        execFileSync('psql', ['--version'], { stdio: 'ignore' });
+    } catch {
+        console.error("[ERROR] psql is required for external execution mode.");
+        process.exit(1);
+    }
 }
 
 const state = determineState(dbUrl);
@@ -84,12 +107,53 @@ if (isUpgrade && state === 'CURRENT') {
 
 function psqlCmdExec(query, ignoreError = false) {
     try {
-        execSync(`psql "${dbUrl}" -v ON_ERROR_STOP=1 -c "${query}"`, { stdio: 'inherit' });
+        if (containerName) {
+            execFileSync('docker', [
+                'exec',
+                '-i',
+                containerName,
+                'psql',
+                '-U',
+                'postgres',
+                '-d',
+                'postgres',
+                '-v',
+                'ON_ERROR_STOP=1',
+                '-c',
+                query
+            ], { stdio: 'inherit' });
+        } else {
+            execFileSync('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-c', query], { stdio: 'inherit' });
+        }
     } catch (e) {
         if (!ignoreError) {
             console.error(`[ERROR] Execution failed: ${e.message}`);
             process.exit(1);
         }
+    }
+}
+
+function psqlFileExec(filePath) {
+    if (containerName) {
+        const sql = fs.readFileSync(filePath);
+        const res = spawnSync('docker', [
+            'exec',
+            '-i',
+            containerName,
+            'psql',
+            '-U',
+            'postgres',
+            '-d',
+            'postgres',
+            '-v',
+            'ON_ERROR_STOP=1'
+        ], { input: sql, stdio: ['pipe', 'inherit', 'inherit'] });
+
+        if (res.status !== 0) {
+            throw new Error(`Failed to apply SQL file: ${filePath}`);
+        }
+    } else {
+        execFileSync('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-1', '-f', filePath], { stdio: 'inherit' });
     }
 }
 
@@ -104,7 +168,7 @@ CREATE TABLE IF NOT EXISTS skillbridge_meta.schema_migrations (
 );
 `);
 
-// Add migration_type column if it doesn't exist (for upgrading from older meta)
+// Add migration_type column if it doesn't exist
 psqlCmdExec(`
 DO $$
 BEGIN
@@ -128,10 +192,32 @@ for (const file of files) {
     const checksum = crypto.createHash('sha256').update(content).digest('hex').toLowerCase();
 
     // Check existing
-    let existing;
+    let existing = '';
     try {
-        existing = execSync(`psql "${dbUrl}" -tA -v ON_ERROR_STOP=1 -c "SELECT checksum_sha256 FROM skillbridge_meta.schema_migrations WHERE filename='${file}';"`, { encoding: 'utf-8' }).trim();
-    } catch (e) {
+        if (containerName) {
+            const out = execFileSync('docker', [
+                'exec',
+                containerName,
+                'psql',
+                '-U',
+                'postgres',
+                '-d',
+                'postgres',
+                '-tA',
+                '-c',
+                `SELECT checksum_sha256 FROM skillbridge_meta.schema_migrations WHERE filename='${file}';`
+            ], { encoding: 'utf8' }).trim();
+            existing = out;
+        } else {
+            const out = execFileSync('psql', [
+                dbUrl,
+                '-tA',
+                '-c',
+                `SELECT checksum_sha256 FROM skillbridge_meta.schema_migrations WHERE filename='${file}';`
+            ], { encoding: 'utf8' }).trim();
+            existing = out;
+        }
+    } catch {
         existing = '';
     }
 
@@ -146,21 +232,33 @@ for (const file of files) {
             console.log("Create a NEW corrective migration instead.");
             process.exit(1);
         }
+    } else if (state === 'LEGACY') {
+        const num = parseInt(file.split('_')[0], 10);
+        if (num <= 11) {
+            console.log(`[ASSUMED APPLIED] ${file}`);
+            psqlCmdExec(`
+                INSERT INTO skillbridge_meta.schema_migrations(filename, checksum_sha256, migration_type)
+                VALUES('${file}', '${checksum}', 'LEGACY_IMPORT')
+                ON CONFLICT(filename)
+                DO UPDATE SET checksum_sha256 = EXCLUDED.checksum_sha256, migration_type = EXCLUDED.migration_type;
+            `);
+            continue;
+        }
     }
 
     console.log(`[APPLY] ${file}`);
     try {
-        execSync(`psql "${dbUrl}" -v ON_ERROR_STOP=1 -1 -f "${pathSql}"`, { stdio: 'inherit' });
+        psqlFileExec(pathSql);
     } catch (e) {
-        console.error(`[ERROR] Failed to apply ${file}`);
+        console.error(`[ERROR] Failed to apply ${file}: ${e.message}`);
         process.exit(1);
     }
 
     const migrationType = isFresh ? 'BASELINE' : 'UPGRADE';
     psqlCmdExec(`
-        INSERT INTO skillbridge_meta.schema_migrations(filename, checksum_sha256, migration_type) 
-        VALUES('${file}', '${checksum}', '${migrationType}') 
-        ON CONFLICT(filename) 
+        INSERT INTO skillbridge_meta.schema_migrations(filename, checksum_sha256, migration_type)
+        VALUES('${file}', '${checksum}', '${migrationType}')
+        ON CONFLICT(filename)
         DO UPDATE SET checksum_sha256 = EXCLUDED.checksum_sha256, applied_at = now(), migration_type = EXCLUDED.migration_type;
     `);
 }

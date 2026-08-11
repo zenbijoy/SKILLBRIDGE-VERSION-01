@@ -42,7 +42,7 @@ app.set("trust proxy", 1);
 app.use(helmet());
 app.use(compression());
 app.use(cors({ origin: origins, credentials: true }));
-app.use(express.json({ 
+app.use(express.json({
   limit: "1mb",
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -97,15 +97,15 @@ io.use(async (socket, next) => {
     next(e as Error);
   }
 });
-const userConnections = new Map<string, number>();
+export const userConnections = new Map<string, number>();
 
 io.on("connection", (socket) => {
   const userId = socket.data.userId;
   socket.join(`user:${userId}`);
-  
+
   const count = (userConnections.get(userId) || 0) + 1;
   userConnections.set(userId, count);
-  
+
   if (count === 1) {
     socket.broadcast.emit("user:online", { userId });
   }
@@ -130,7 +130,7 @@ io.on("connection", (socket) => {
       .maybeSingle();
     if (data) socket.join(`conversation:${conversationId}`);
   });
-  
+
   socket.on("conversation:leave", ({ conversationId }) =>
     socket.leave(`conversation:${conversationId}`),
   );
@@ -154,4 +154,23 @@ if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_EN
   server.listen(env.PORT, () =>
     console.log(`SkillBridge API listening on :${env.PORT}`),
   );
+
+  if (process.env.ENABLE_PUSH_WORKER !== "false") {
+    const intervalMs = parseInt(process.env.PUSH_WORKER_INTERVAL_MS || "300000", 10);
+    const pushWorkerTimer = setInterval(() => {
+      import("./services/PushService.js")
+        .then(({ PushService }) => {
+          PushService.checkPendingReceipts().catch((err) => {
+            console.error("[PushWorker] Receipt check error:", err?.message || err);
+          });
+        })
+        .catch((err) => {
+          console.error("[PushWorker] Failed to load PushService:", err?.message || err);
+        });
+    }, intervalMs);
+
+    if (pushWorkerTimer && typeof pushWorkerTimer.unref === "function") {
+      pushWorkerTimer.unref();
+    }
+  }
 }

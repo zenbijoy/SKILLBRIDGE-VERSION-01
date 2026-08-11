@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Button, Field, H1, Muted } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { colors, radius, spacing } from "@/theme";
+import { colors, spacing } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function SignIn() {

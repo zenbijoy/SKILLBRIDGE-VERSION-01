@@ -9,7 +9,7 @@ import {
   useTracks,
   useParticipant,
 } from "@livekit/react-native";
-import { Track, RoomEvent, DataPacket_Kind, ConnectionQuality } from "livekit-client";
+import { Track, RoomEvent, ConnectionQuality } from "livekit-client";
 import { api } from "@/lib/api";
 import { Button, H1, Muted, Row, Screen } from "@/components/ui";
 import { colors } from "@/theme";

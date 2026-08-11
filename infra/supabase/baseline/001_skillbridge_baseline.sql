@@ -297,7 +297,7 @@ create table public.resources (
   kind text not null default 'file' check(kind in ('note','slide','link','file','image')),
   created_at timestamptz not null default now(),
   fts tsvector generated always as (
-    to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, ''))
+    to_tsvector('english', coalesce(title, ''))
   ) stored
 );
 create index resources_fts_idx on public.resources using gin(fts);

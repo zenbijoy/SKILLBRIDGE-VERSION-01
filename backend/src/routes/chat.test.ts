@@ -82,4 +82,39 @@ test("Chat and Messaging Tests", async (t) => {
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.delivery_status, "read");
   });
+
+  await t.test("POST /chat/messages/:id/reactions - adds a reaction", async () => {
+    mockAdmin.from = (table?: string) => {
+      if (table === "message_reactions") {
+        return createMockChain({ message_id: MESSAGE_ID, user_id: USER_A, reaction: "👍" });
+      }
+      if (table === "messages") {
+        return createMockChain({ conversation_id: CONVERSATION_ID });
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/chat/messages/${MESSAGE_ID}/reactions`)
+      .set(authHeader)
+      .send({ reaction: "👍" });
+
+    assert.strictEqual(res.status, 201);
+    assert.strictEqual(res.body.reaction, "👍");
+  });
+
+  await t.test("DELETE /chat/messages/:id - soft deletes a message", async () => {
+    mockAdmin.from = (table?: string) => {
+      if (table === "messages") {
+        return createMockChain({ id: MESSAGE_ID, soft_deleted: true, conversation_id: CONVERSATION_ID });
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .delete(`/api/v1/chat/messages/${MESSAGE_ID}`)
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 204);
+  });
 });

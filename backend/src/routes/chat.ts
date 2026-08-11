@@ -7,6 +7,15 @@ import { PushService } from "../services/PushService.js";
 
 export function chat(io: Server) {
   const r = Router();
+
+  r.get(
+    "/presence",
+    wrap(async (req, res) => {
+      const { userConnections } = await import("../server.js");
+      res.json({ onlineUsers: Array.from(userConnections.keys()) });
+    })
+  );
+
   r.get(
     "/conversations",
     wrap(async (req, res) => {
@@ -98,7 +107,7 @@ export function chat(io: Server) {
     "/conversations/:id/read",
     wrap(async (req, res) => {
       const id = z.string().uuid().parse(req.params.id);
-      
+
       let messageId: string | undefined;
       if (req.body && typeof req.body === "object") {
         const parsed = z.object({ message_id: z.string().uuid().optional() }).safeParse(req.body);
@@ -128,7 +137,7 @@ export function chat(io: Server) {
     wrap(async (req, res) => {
       const id = z.string().uuid().parse(req.params.id);
       const { body, client_message_id, reply_to_message_id } = z
-        .object({ 
+        .object({
           body: z.string().trim().min(1).max(5000),
           client_message_id: z.string().uuid().optional(),
           reply_to_message_id: z.string().uuid().optional()
@@ -160,7 +169,7 @@ export function chat(io: Server) {
         .select("kind, conversation_members(user_id)")
         .eq("id", id)
         .single();
-      
+
       if (conv?.kind === "dm") {
         const otherUserId = conv.conversation_members.find((cm: any) => cm.user_id !== req.userId!)?.user_id;
         if (otherUserId) {
@@ -187,7 +196,7 @@ export function chat(io: Server) {
         .from("conversations")
         .update({ updated_at: new Date().toISOString() })
         .eq("id", id);
-      
+
       io.to(`conversation:${id}`).emit("message:new", data);
 
       if (conv) {
@@ -224,6 +233,123 @@ export function chat(io: Server) {
       if (error) throw error;
       res.json(data);
     }),
+  );
+
+  r.post(
+    "/messages/:id/reactions",
+    wrap(async (req, res) => {
+      const message_id = z.string().uuid().parse(req.params.id);
+      const { reaction } = z.object({ reaction: z.string().min(1).max(50) }).parse(req.body);
+
+      const { data, error } = await admin
+        .from("message_reactions")
+        .insert({ message_id, user_id: req.userId!, reaction })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const { data: msg } = await admin.from("messages").select("conversation_id").eq("id", message_id).single();
+      if (msg) {
+        io.to(`conversation:${msg.conversation_id}`).emit("message:reaction:add", { messageId: message_id, reaction: data });
+      }
+
+      res.status(201).json(data);
+    })
+  );
+
+  r.delete(
+    "/messages/:id/reactions/:reaction",
+    wrap(async (req, res) => {
+      const message_id = z.string().uuid().parse(req.params.id);
+      const reaction = req.params.reaction;
+
+      const { error } = await admin
+        .from("message_reactions")
+        .delete()
+        .eq("message_id", message_id)
+        .eq("user_id", req.userId!)
+        .eq("reaction", reaction);
+
+      if (error) throw error;
+
+      const { data: msg } = await admin.from("messages").select("conversation_id").eq("id", message_id).single();
+      if (msg) {
+        io.to(`conversation:${msg.conversation_id}`).emit("message:reaction:remove", { messageId: message_id, reaction, userId: req.userId! });
+      }
+
+      res.status(204).send();
+    })
+  );
+
+  r.patch(
+    "/messages/:id/status",
+    wrap(async (req, res) => {
+      const id = z.string().uuid().parse(req.params.id);
+      const { status } = z.object({ status: z.enum(["delivered", "read"]) }).parse(req.body);
+
+      const { data: msg } = await admin
+        .from("messages")
+        .select("id, conversation_id")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (!msg) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+
+      const { data: member } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", msg.conversation_id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      if (!member) {
+        return res.status(403).json({ error: "Not a conversation member" });
+      }
+
+      const receiptData: any = {
+        message_id: id,
+        user_id: req.userId!,
+      };
+      if (status === "delivered") receiptData.delivered_at = new Date().toISOString();
+      if (status === "read") {
+        receiptData.delivered_at = new Date().toISOString();
+        receiptData.read_at = new Date().toISOString();
+      }
+
+      await admin.from("message_delivery_receipts").upsert(receiptData, { onConflict: "message_id,user_id" });
+
+      if (status === "read") {
+        io.to(`conversation:${msg.conversation_id}`).emit("message:read", { messageId: id, userId: req.userId! });
+      } else if (status === "delivered") {
+        io.to(`conversation:${msg.conversation_id}`).emit("message:delivered", { messageId: id, userId: req.userId! });
+      }
+
+      res.json({ success: true, message_id: id, delivery_status: status, status });
+    })
+  );
+
+  r.delete(
+    "/messages/:id",
+    wrap(async (req, res) => {
+      const id = z.string().uuid().parse(req.params.id);
+
+      const { data, error } = await admin
+        .from("messages")
+        .update({ soft_deleted: true })
+        .eq("id", id)
+        .eq("sender_id", req.userId!)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      io.to(`conversation:${data.conversation_id}`).emit("message:delete", { messageId: id });
+
+      res.status(204).send();
+    })
   );
 
   return r;
