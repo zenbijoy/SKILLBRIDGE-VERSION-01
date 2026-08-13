@@ -27,6 +27,7 @@ test("Admin API Tests", async (t) => {
       order: () => chain,
       range: () => Promise.resolve({ data, count, error }),
       single: () => Promise.resolve({ data, error }),
+      maybeSingle: () => Promise.resolve({ data, error }),
       then: (resolve: any) => resolve({ data, count, error }),
     };
     return chain;
