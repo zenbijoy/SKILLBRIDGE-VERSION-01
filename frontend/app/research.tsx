@@ -5,7 +5,7 @@ import type { Profile } from "@/types";
 import { Button, Card, Field, H1, H2, Muted, Pill, Row, Screen } from "@/components/ui";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Alert, Text, View } from "react-native";
-import { colors } from "@/theme";
+import { useTheme } from "@/theme";
 
 type ResearchProject = {
   id: string;
@@ -18,6 +18,7 @@ type ResearchProject = {
 };
 
 export default function Research() {
+  const { colors } = useTheme();
   const [tab, setTab] = useState<"projects" | "people" | "my-requests">("projects");
   const [interest, setInterest] = useState("");
   const qc = useQueryClient();

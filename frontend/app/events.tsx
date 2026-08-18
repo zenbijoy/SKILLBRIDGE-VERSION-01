@@ -11,8 +11,9 @@ import {
   Row,
   Screen,
 } from "@/components/ui";
-import { colors } from "@/theme";
+import { useTheme } from "@/theme";
 export default function Events() {
+  const { colors } = useTheme();
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["events"],
@@ -49,7 +50,7 @@ export default function Events() {
               <Pill>instant registration</Pill>
             )}
           </Row>
-          <Text style={s.title}>{e.title}</Text>
+          <Text style={[s.title, { color: colors.text }]}>{e.title}</Text>
           <Muted>{e.description}</Muted>
           <Muted>
             {new Date(e.starts_at).toLocaleString()} · {e.location || "Online"}
@@ -64,5 +65,5 @@ export default function Events() {
   );
 }
 const s = StyleSheet.create({
-  title: { color: colors.text, fontSize: 18, fontWeight: "800" },
+  title: { fontSize: 18, fontWeight: "800" },
 });

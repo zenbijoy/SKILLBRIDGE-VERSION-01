@@ -13,10 +13,11 @@ import {
 } from "react-native";
 import { Button, Field, H1, Muted } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { colors, spacing } from "@/theme";
+import { spacing, useTheme } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function SignUp() {
+  const { colors, isDark } = useTheme();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -54,14 +55,14 @@ export default function SignUp() {
   }
 
   return (
-    <LinearGradient colors={["#0C192A", "#07111F"]} style={s.container}>
+    <LinearGradient colors={isDark ? ["#0C192A", "#07111F"] : ["#F8FAFC", "#EEF4FF"]} style={s.container}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <Animated.View style={[s.content, { opacity: fadeAnim }]}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Text style={s.backText}>← Back</Text>
+            <Text style={[s.backText, { color: colors.muted }]}>← Back</Text>
           </TouchableOpacity>
 
           <ScrollView
@@ -123,7 +124,7 @@ const s = StyleSheet.create({
     padding: 10,
     zIndex: 10,
   },
-  backText: { color: colors.muted, fontSize: 16, fontWeight: "600" },
+  backText: { fontSize: 16, fontWeight: "600" },
   header: { gap: 10, marginBottom: 40, marginTop: 100 },
   form: { gap: 16 },
 });

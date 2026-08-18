@@ -11,10 +11,11 @@ import {
 } from "react-native";
 import { Button, Field, H1, Muted } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { colors, spacing } from "@/theme";
+import { spacing, useTheme } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function ResetPassword() {
+  const { colors, isDark } = useTheme();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -33,7 +34,7 @@ export default function ResetPassword() {
   }
 
   return (
-    <LinearGradient colors={["#0C192A", "#07111F"]} style={s.container}>
+    <LinearGradient colors={isDark ? ["#0C192A", "#07111F"] : ["#F8FAFC", "#EEF4FF"]} style={s.container}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}

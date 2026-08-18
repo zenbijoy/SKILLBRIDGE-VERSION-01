@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Pressable, StyleSheet, Text } from "react-native";
 import { api } from "@/lib/api";
 import { Button, Card, H1, H2, Muted, Pill, Screen } from "@/components/ui";
-import { colors } from "@/theme";
+import { useTheme } from "@/theme";
 type Quiz = {
   id: string;
   title: string;
@@ -11,6 +11,7 @@ type Quiz = {
   questions: { id: string; prompt: string; options: string[] }[];
 };
 export default function QuizScreen() {
+  const { colors } = useTheme();
   const q = useQuery({
     queryKey: ["quiz"],
     queryFn: () => api<{ quiz: Quiz | null }>("/quiz/next"),
@@ -52,9 +53,9 @@ export default function QuizScreen() {
             <Pressable
               key={o}
               onPress={() => setAnswers((a) => ({ ...a, [x.id]: i }))}
-              style={[s.option, answers[x.id] === i && s.selected]}
+              style={[s.option, { borderColor: colors.border }, answers[x.id] === i && { borderColor: colors.accent, backgroundColor: colors.surface2 }]}
             >
-              <Text style={s.text}>{o}</Text>
+              <Text style={[s.text, { color: colors.text }]}>{o}</Text>
             </Pressable>
           ))}
         </Card>
@@ -75,8 +76,6 @@ const s = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
   },
-  selected: { borderColor: colors.accent, backgroundColor: colors.surface2 },
-  text: { color: colors.text },
+  text: {},
 });

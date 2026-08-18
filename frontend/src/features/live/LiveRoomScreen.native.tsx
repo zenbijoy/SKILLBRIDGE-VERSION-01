@@ -12,7 +12,7 @@ import {
 import { Track, RoomEvent, ConnectionQuality } from "livekit-client";
 import { api } from "@/lib/api";
 import { Button, H1, Muted, Row, Screen } from "@/components/ui";
-import { colors } from "@/theme";
+import { darkColors as colors } from "@/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 function ParticipantTile({ track, isSpotlight, raisedHands }: { track: any; isSpotlight?: boolean; raisedHands: Set<string> }) {
