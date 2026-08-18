@@ -1,108 +1,98 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { BadgeCheck, RefreshCw, ShieldCheck } from 'lucide-react';
 import api from '../lib/api';
+import { PageHeader } from '../components/PageHeader';
+import { EmptyState, ErrorState, LoadingState } from '../components/States';
+
+type OverrideAction = 'APPROVE_OVERRIDE' | 'REJECT_OVERRIDE' | 'BYPASS_REQUIRED_STEP';
+interface OverrideEvent {
+  id: number | string;
+  actor_id?: string | null;
+  target_id?: string | null;
+  metadata?: { action?: OverrideAction; reason?: string } | null;
+  created_at: string;
+}
 
 export default function VerificationOverride() {
   const [userId, setUserId] = useState('');
-  const [action, setAction] = useState('APPROVE_OVERRIDE');
+  const [action, setAction] = useState<OverrideAction>('APPROVE_OVERRIDE');
   const [reason, setReason] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+  const [events, setEvents] = useState<OverrideEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  const handleApply = async () => {
-    if (!userId || !reason) {
-      setMessage({ text: 'User ID and Reason are required.', type: 'error' });
-      return;
-    }
-
+  const load = useCallback(async () => {
     setLoading(true);
-    setMessage(null);
+    setError('');
     try {
-      await api.post(`/admin/users/${userId}/verify`, { action, reason });
-      setMessage({ text: 'Override applied successfully!', type: 'success' });
-      setUserId('');
-      setReason('');
-    } catch (err: any) {
-      setMessage({ text: err.response?.data?.message || err.message || 'Failed to apply override', type: 'error' });
+      const response = await api.get<{ overrides: OverrideEvent[] }>('/admin/verification-overrides');
+      setEvents(response.data.overrides);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load verification audit events');
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const apply = async () => {
+    const id = userId.trim();
+    const why = reason.trim();
+    if (!id || why.length < 5) {
+      setError('Enter a valid user UUID and a reason of at least 5 characters.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.post(`/admin/users/${id}/verify`, { action, reason: why });
+      setSuccess('Verification decision recorded in the immutable admin audit trail.');
+      setUserId('');
+      setReason('');
+      await load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to record verification override');
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">Verification Override</h1>
-      <div className="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-        <p className="text-gray-400 mb-6">Audited verification overrides for specific users/entities.</p>
+      <PageHeader
+        eyebrow="Identity operations"
+        title="Verification override"
+        description="Admin-only audited decisions. This control records an explicit override event without pretending there is a verification column that does not exist in the database schema."
+        actions={<button className="btn-secondary" onClick={() => void load()}><RefreshCw size={15} /> Refresh</button>}
+      />
 
-        {message && (
-          <div className={`mb-6 p-4 rounded border ${message.type === 'success' ? 'bg-green-900 bg-opacity-20 border-green-500 text-green-400' : 'bg-red-900 bg-opacity-20 border-red-500 text-red-400'}`}>
-            {message.text}
+      <div className="dashboard-grid">
+        <section className="panel panel-flat">
+          <div className="panel-header"><div><h2 className="panel-title">Record decision</h2><p className="panel-subtitle">User UUID, decision and justification are required.</p></div><BadgeCheck size={18} className="text-blue-600" /></div>
+          <div className="panel-body grid gap-4">
+            {error ? <div className="notice notice-danger">{error}</div> : null}
+            {success ? <div className="notice">{success}</div> : null}
+            <div><label className="field-label">User UUID</label><input className="field mono" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="00000000-0000-0000-0000-000000000000" /></div>
+            <div><label className="field-label">Decision</label><select className="field" value={action} onChange={(e) => setAction(e.target.value as OverrideAction)}><option value="APPROVE_OVERRIDE">Approve override</option><option value="REJECT_OVERRIDE">Reject override</option><option value="BYPASS_REQUIRED_STEP">Bypass required step</option></select></div>
+            <div><label className="field-label">Reason</label><textarea className="field" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Explain the evidence and why this manual decision is necessary…" maxLength={500} /></div>
+            <button className="btn-primary justify-self-start" disabled={saving} onClick={() => void apply()}><ShieldCheck size={15} /> {saving ? 'Recording…' : 'Record audited decision'}</button>
+            <div className="notice notice-warning">This endpoint is admin-only. It records an audit event; it does not silently mutate a nonexistent <span className="mono">profiles.is_verified</span> field.</div>
           </div>
-        )}
+        </section>
 
-        <div className="mb-8 p-6 bg-gray-900 rounded border border-gray-700">
-          <h3 className="text-xl font-bold mb-4 text-white">Create Override</h3>
-          <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4">
-            <input
-              type="text"
-              placeholder="User ID"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              className="bg-gray-800 border border-gray-600 rounded p-3 flex-1 text-white focus:outline-none focus:border-blue-500"
-            />
-            <select
-              value={action}
-              onChange={(e) => setAction(e.target.value)}
-              className="bg-gray-800 border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="APPROVE_OVERRIDE">APPROVE_OVERRIDE</option>
-              <option value="REJECT_OVERRIDE">REJECT_OVERRIDE</option>
-              <option value="BYPASS_REQUIRED_STEP">BYPASS_REQUIRED_STEP</option>
-            </select>
-            <input
-              type="text"
-              placeholder="Reason (Required)"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="bg-gray-800 border border-gray-600 rounded p-3 flex-1 text-white focus:outline-none focus:border-blue-500"
-            />
-            <button
-              onClick={handleApply}
-              disabled={loading}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Applying...' : 'Apply'}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-xl font-bold mb-4 text-white">Active Overrides</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-900 border-b border-gray-700 text-gray-400 text-sm uppercase tracking-wider">
-                  <th className="p-4 font-medium">User ID</th>
-                  <th className="p-4 font-medium">Action</th>
-                  <th className="p-4 font-medium">Reason</th>
-                  <th className="p-4 font-medium">Admin</th>
-                  <th className="p-4 font-medium text-right">Revoke</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700">
-                <tr className="hover:bg-gray-750 transition-colors">
-                  <td className="p-4 text-sm text-gray-300 font-mono">u-1234</td>
-                  <td className="p-4 text-sm font-bold text-blue-400">APPROVE_OVERRIDE</td>
-                  <td className="p-4 text-sm text-gray-300">Manual verification of student ID</td>
-                  <td className="p-4 text-sm text-gray-400">admin@skillbridge.com</td>
-                  <td className="p-4 text-right">
-                    <button className="text-red-400 hover:text-red-300 text-sm font-medium transition-colors">Revoke</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <section className="panel panel-flat overflow-hidden">
+          <div className="panel-header"><div><h2 className="panel-title">Recent override events</h2><p className="panel-subtitle">Newest verification decisions from audit_logs.</p></div></div>
+          {loading ? <LoadingState label="Loading verification audit…" /> : null}
+          {!loading && error && !events.length ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+          {!loading && events.length ? (
+            <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Time</th><th>User</th><th>Decision</th><th>Reason</th><th>Actor</th></tr></thead><tbody>{events.map((event) => <tr key={String(event.id)}><td>{new Date(event.created_at).toLocaleString()}</td><td className="mono">{event.target_id ?? '—'}</td><td>{event.metadata?.action?.replaceAll('_', ' ') ?? '—'}</td><td>{event.metadata?.reason ?? '—'}</td><td className="mono">{event.actor_id ?? 'system'}</td></tr>)}</tbody></table></div>
+          ) : null}
+          {!loading && !events.length && !error ? <EmptyState title="No override events" detail="Manual verification decisions will appear here after an admin records one." /> : null}
+        </section>
       </div>
     </div>
   );

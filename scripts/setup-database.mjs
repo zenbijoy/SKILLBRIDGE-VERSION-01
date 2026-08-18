@@ -35,9 +35,9 @@ if (executor === 'docker') {
     process.env.DB_CONTAINER_NAME = containerName;
 }
 
-const MIGRATIONS_DIR = isFresh
-    ? path.resolve(__dirname, '../infra/supabase/baseline')
-    : path.resolve(__dirname, '../infra/supabase/migrations');
+const BASELINE_DIR = path.resolve(__dirname, '../infra/supabase/baseline');
+const UPGRADE_DIR = path.resolve(__dirname, '../infra/supabase/migrations');
+const BASELINE_SCHEMA_VERSION = 12;
 
 if (!isFresh && !isUpgrade) {
     console.error("[ERROR] Must specify either --fresh or --upgrade mode.");
@@ -184,10 +184,22 @@ END
 $$;
 `);
 
-const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+const baselineFiles = fs.readdirSync(BASELINE_DIR).filter(f => f.endsWith('.sql')).sort();
+const upgradeFiles = fs.readdirSync(UPGRADE_DIR).filter(f => f.endsWith('.sql')).sort();
+const postBaselineFiles = upgradeFiles.filter((file) => {
+    const number = Number.parseInt(file.split('_')[0], 10);
+    return Number.isFinite(number) && number > BASELINE_SCHEMA_VERSION;
+});
+const plan = isFresh
+    ? [
+        ...baselineFiles.map((file) => ({ file, directory: BASELINE_DIR, migrationType: 'BASELINE' })),
+        ...postBaselineFiles.map((file) => ({ file, directory: UPGRADE_DIR, migrationType: 'POST_BASELINE' })),
+      ]
+    : upgradeFiles.map((file) => ({ file, directory: UPGRADE_DIR, migrationType: 'UPGRADE' }));
 
-for (const file of files) {
-    const pathSql = path.join(MIGRATIONS_DIR, file);
+for (const item of plan) {
+    const { file, directory, migrationType } = item;
+    const pathSql = path.join(directory, file);
     const content = fs.readFileSync(pathSql, 'utf8');
     const checksum = crypto.createHash('sha256').update(content).digest('hex').toLowerCase();
 
@@ -254,7 +266,6 @@ for (const file of files) {
         process.exit(1);
     }
 
-    const migrationType = isFresh ? 'BASELINE' : 'UPGRADE';
     psqlCmdExec(`
         INSERT INTO skillbridge_meta.schema_migrations(filename, checksum_sha256, migration_type)
         VALUES('${file}', '${checksum}', '${migrationType}')

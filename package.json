@@ -1,21 +1,31 @@
 {
   "name": "skillbridge-root",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
-    "setup": "npm install --prefix frontend && npm install --prefix backend",
-    "dev": "start npm run backend && npm run web",
+    "setup": "npm ci --prefix frontend && npm ci --prefix backend && npm ci --prefix admin",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:web": "npm run web --prefix frontend",
+    "dev:admin": "npm run dev --prefix admin",
+    "frontend": "npm run start --prefix frontend",
     "backend": "npm run dev --prefix backend",
     "web": "npm run web --prefix frontend",
-    "frontend": "npm run start --prefix frontend",
+    "admin": "npm run dev --prefix admin",
+    "build": "npm run build --prefix backend && npm run build --prefix admin",
     "test": "npm run test --prefix backend",
-    "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix backend",
-    "lint": "npm run lint --prefix frontend",
-    "validate": "npm run typecheck && npm run lint && npm run test",
+    "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix backend && npm run typecheck --prefix admin",
+    "lint": "npm run lint --prefix frontend && npm run lint --prefix backend && npm run lint --prefix admin",
+    "audit": "node scripts/project-audit.mjs",
+    "validate": "npm run audit && npm run typecheck && npm run lint && npm run test && npm run build",
     "validate:web": "cd frontend && npx expo export --platform web",
+    "smoke": "node scripts/smoke-test.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
     "db:test:fresh": "node scripts/db-test-fresh.mjs",
     "db:test:upgrade": "node scripts/db-test-upgrade.mjs",
     "db:test": "npm run db:test:fresh && npm run db:test:upgrade",
     "db:verify": "node scripts/db-verify-schema.mjs"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

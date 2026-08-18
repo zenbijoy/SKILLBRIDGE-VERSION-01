@@ -1,4 +1,4 @@
-import { startPostgresContainer, execSqlFile, execSql, query, execPsql } from './db-test-docker.mjs';
+import { startPostgresContainer, execSql, query, execPsql } from './db-test-docker.mjs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -37,13 +37,7 @@ async function run() {
             stdio: 'inherit'
         });
 
-        // Apply post-baseline migrations (012 & 013)
-        console.log("[db-test-fresh] Applying post-baseline migrations 012 and 013...");
-        const m12Path = path.resolve(__dirname, '../infra/supabase/migrations/012_upgrade_corrections.sql');
-        const m13Path = path.resolve(__dirname, '../infra/supabase/migrations/013_hardening.sql');
-
-        execSqlFile(container, m12Path);
-        execSqlFile(container, m13Path);
+        // setup-database --fresh applies the baseline plus every migration newer than the baseline snapshot.
 
         // Phase 6: Run Schema Verifier
         console.log("[db-test-fresh] Running db-verify-schema.mjs");

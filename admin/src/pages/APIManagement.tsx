@@ -1,89 +1,68 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { BrainCircuit, CloudCog, RadioTower, RefreshCw, Server, Smartphone } from 'lucide-react';
+import api from '../lib/api';
+import { PageHeader } from '../components/PageHeader';
+import { ErrorState, LoadingState } from '../components/States';
+import { StatusBadge } from '../components/StatusBadge';
+import type { SystemInfo } from '../types/admin';
 
 export default function APIManagement() {
-  const [keys, setKeys] = useState([
-    { id: '1', name: 'Mobile App Production', created: '2026-01-10' },
-    { id: '2', name: 'Web Client', created: '2026-02-15' }
-  ]);
+  const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const handleRevoke = (id: string) => {
-    if (confirm('Are you sure you want to revoke this key?')) {
-      setKeys(keys.filter(k => k.id !== id));
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.get<SystemInfo>('/admin/system');
+      setSystem(response.data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to read integration status');
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const generateNewKey = () => {
-    const newName = prompt('Enter a name for the new API key:');
-    if (newName) {
-      setKeys([...keys, { id: Math.random().toString(), name: newName, created: new Date().toISOString().split('T')[0] }]);
-    }
-  };
+  useEffect(() => { void load(); }, [load]);
+
+  const capabilities = system ? [
+    { name: 'Redis', enabled: system.capabilities.redis, icon: Server, detail: 'Caching, presence and distributed coordination capability.' },
+    { name: 'LiveKit', enabled: system.capabilities.livekit, icon: RadioTower, detail: 'Real-time audio/video learning room infrastructure.' },
+    { name: 'Expo Push', enabled: system.capabilities.push, icon: Smartphone, detail: 'Push notification delivery capability.' },
+    { name: 'AI Provider', enabled: system.capabilities.ai, icon: BrainCircuit, detail: 'Optional provider URL + API credential configured server-side.' },
+  ] : [];
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">API Management</h1>
-      <div className="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-        <p className="text-gray-400 mb-6">Manage API clients, rate limits, and view provider health.</p>
-
-        <div className="space-y-6">
-          <div className="p-6 border border-gray-700 rounded-lg bg-gray-900 shadow-inner flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-green-400 text-lg flex items-center">
-                <span className="h-3 w-3 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                System Health: Operational
-              </h3>
-              <p className="text-sm text-gray-400 mt-2">P95 Latency: <span className="font-mono text-gray-200">120ms</span> | Requests: <span className="font-mono text-gray-200">450/min</span></p>
+      <PageHeader eyebrow="Infrastructure" title="Integrations & API" description="Read-only operational visibility into backend integrations. Credentials stay server-side and are never rendered in the browser." actions={<button className="btn-secondary" onClick={() => void load()}><RefreshCw size={15} /> Refresh</button>} />
+      {loading ? <section className="panel"><LoadingState label="Checking backend capabilities…" /></section> : null}
+      {error ? <section className="panel"><ErrorState message={error} onRetry={() => void load()} /></section> : null}
+      {!loading && !error && system ? (
+        <>
+          <section className="panel panel-flat mb-4">
+            <div className="panel-header"><div><h2 className="panel-title">API runtime</h2><p className="panel-subtitle">Reported directly by the authenticated admin endpoint.</p></div><CloudCog size={18} className="text-blue-600" /></div>
+            <div className="panel-body detail-grid">
+              <Detail label="API status" value={system.api.status} badge />
+              <Detail label="Environment" value={system.environment} />
+              <Detail label="Port" value={String(system.api.port)} />
+              <Detail label="Uptime" value={formatUptime(system.api.uptimeSeconds)} />
+              <Detail label="Global rate limit" value={`${system.runtimePolicy.globalRateLimitPerMinute}/minute`} />
+              <Detail label="Started" value={new Date(system.api.startedAt).toLocaleString()} />
             </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-white">Active API Keys</h3>
-              <button
-                onClick={generateNewKey}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
-              >
-                Generate New Key
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-900 border-b border-gray-700 text-gray-400 text-sm uppercase tracking-wider">
-                    <th className="p-4 font-medium">Name</th>
-                    <th className="p-4 font-medium">Key Prefix</th>
-                    <th className="p-4 font-medium">Created</th>
-                    <th className="p-4 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-700">
-                  {keys.map((key) => (
-                    <tr key={key.id} className="hover:bg-gray-750 transition-colors">
-                      <td className="p-4 text-sm text-gray-200">{key.name}</td>
-                      <td className="p-4 text-sm text-gray-400 font-mono">sk_live_...{key.id.substring(0, 4)}</td>
-                      <td className="p-4 text-sm text-gray-400">{key.created}</td>
-                      <td className="p-4 text-right">
-                        <button
-                          onClick={() => handleRevoke(key.id)}
-                          className="text-red-400 hover:text-red-300 text-sm font-medium transition-colors"
-                        >
-                          Revoke
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {keys.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="p-4 text-center text-gray-500">No active API keys.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
+          </section>
+          <section className="panel panel-flat">
+            <div className="panel-header"><div><h2 className="panel-title">Provider capabilities</h2><p className="panel-subtitle">“Configured” means required environment variables are present; secret values are intentionally hidden.</p></div></div>
+            <div className="panel-body capability-grid">{capabilities.map(({ name, enabled, icon: Icon, detail }) => <div className="capability-card" key={name}><div className={`capability-dot ${enabled ? 'capability-on' : 'capability-off'}`} /><div className="flex items-center gap-2"><Icon size={16} className="text-slate-500" /><strong>{name}</strong></div><p>{detail}</p><div className="mt-3"><StatusBadge value={enabled ? 'configured' : 'not configured'} /></div></div>)}</div>
+            <div className="panel-body pt-0"><div className="notice">API keys are managed through backend environment/secrets management, not generated as fake browser-only keys. This prevents the old dashboard from giving a false impression that a key had been provisioned.</div></div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }
+
+function Detail({ label, value, badge = false }: { label: string; value: string; badge?: boolean }) {
+  return <div className="detail-item"><label>{label}</label>{badge ? <div className="mt-2"><StatusBadge value={value} /></div> : <span>{value}</span>}</div>;
+}
+function formatUptime(seconds: number) { const days = Math.floor(seconds / 86400); const hours = Math.floor((seconds % 86400) / 3600); const minutes = Math.floor((seconds % 3600) / 60); return `${days}d ${hours}h ${minutes}m`; }

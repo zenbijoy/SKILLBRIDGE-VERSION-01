@@ -1,101 +1,44 @@
-import { useState } from 'react';
-
-interface Ticket {
-  id: string;
-  userEmail: string;
-  subject: string;
-  status: 'Open' | 'In Progress' | 'Closed';
-  priority: 'High' | 'Medium' | 'Low';
-  createdAt: string;
-}
-
-const mockTickets: Ticket[] = [
-  { id: '#1024', userEmail: 'john@example.com', subject: 'Cannot join room', status: 'Open', priority: 'High', createdAt: '2023-10-27T10:00:00Z' },
-  { id: '#1025', userEmail: 'alice@example.com', subject: 'Audio not working', status: 'In Progress', priority: 'Medium', createdAt: '2023-10-26T14:30:00Z' },
-  { id: '#1026', userEmail: 'bob@example.com', subject: 'Billing issue', status: 'Closed', priority: 'Low', createdAt: '2023-10-25T09:15:00Z' },
-  { id: '#1027', userEmail: 'charlie@example.com', subject: 'Feature request', status: 'Open', priority: 'Low', createdAt: '2023-10-27T11:45:00Z' },
-];
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, LifeBuoy, RefreshCw, ShieldAlert } from 'lucide-react';
+import api from '../lib/api';
+import { PageHeader } from '../components/PageHeader';
+import { StatCard } from '../components/StatCard';
+import { EmptyState, ErrorState, LoadingState } from '../components/States';
+import { StatusBadge } from '../components/StatusBadge';
+import type { AdminReport, AuditLog } from '../types/admin';
 
 export default function SupportCenter() {
-  const [tickets] = useState<Ticket[]>(mockTickets);
+  const [reports, setReports] = useState<AdminReport[]>([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const [reportResponse, logResponse] = await Promise.all([
+        api.get<{ reports: AdminReport[] }>('/admin/reports', { params: { limit: 40 } }),
+        api.get<{ logs: AuditLog[] }>('/admin/audit-logs', { params: { limit: 15 } }),
+      ]);
+      setReports(reportResponse.data.reports); setLogs(logResponse.data.logs);
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Failed to load operations queue'); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const open = useMemo(() => reports.filter((r) => r.status === 'open').length, [reports]);
+  const reviewing = useMemo(() => reports.filter((r) => r.status === 'reviewing').length, [reports]);
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">Support Center</h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="p-6 bg-gray-800 rounded-lg shadow-lg border border-gray-700">
-          <h2 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">Open Tickets</h2>
-          <p className="text-4xl font-bold text-white">{tickets.filter(t => t.status === 'Open').length}</p>
+      <PageHeader eyebrow="Operations" title="Operations queue" description="A real operational view built from moderation reports and audit activity. The previous hard-coded support tickets from 2023 have been removed." actions={<button className="btn-secondary" onClick={() => void load()}><RefreshCw size={15} /> Refresh</button>} />
+      {loading ? <section className="panel"><LoadingState label="Loading current operations queue…" /></section> : null}
+      {error ? <section className="panel"><ErrorState message={error} onRetry={() => void load()} /></section> : null}
+      {!loading && !error ? <>
+        <div className="stats-grid"><StatCard label="Open reports" value={open} detail="Waiting for triage" icon={ShieldAlert} tone="red" /><StatCard label="In review" value={reviewing} detail="Currently being investigated" icon={LifeBuoy} tone="amber" /><StatCard label="Recent audit" value={logs.length} detail="Newest privileged events loaded" icon={Activity} tone="blue" /><StatCard label="Visible queue" value={reports.length} detail="Newest moderation cases loaded" icon={RefreshCw} tone="violet" /></div>
+        <div className="dashboard-grid">
+          <section className="panel panel-flat overflow-hidden"><div className="panel-header"><div><h2 className="panel-title">Cases needing attention</h2><p className="panel-subtitle">Open and reviewing reports. Resolve them in Moderation Center.</p></div></div>{reports.filter((r) => r.status === 'open' || r.status === 'reviewing').length ? <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Created</th><th>Target</th><th>Reason</th><th>Status</th></tr></thead><tbody>{reports.filter((r) => r.status === 'open' || r.status === 'reviewing').map((r) => <tr key={r.id}><td>{new Date(r.created_at).toLocaleString()}</td><td>{r.target_type}<span className="mono"> · {r.target_id}</span></td><td>{r.reason}</td><td><StatusBadge value={r.status} /></td></tr>)}</tbody></table></div> : <EmptyState title="Queue is clear" detail="No open or reviewing reports in the current result set." />}</section>
+          <section className="panel panel-flat"><div className="panel-header"><div><h2 className="panel-title">Recent operator activity</h2><p className="panel-subtitle">Newest audit events.</p></div></div>{logs.length ? <ul className="activity-list">{logs.map((log) => <li className="activity-item" key={String(log.id)}><span className="activity-dot" /><div className="activity-copy"><strong>{log.action.replaceAll('.', ' · ')}</strong><span>{log.target_type}{log.target_id ? ` · ${log.target_id}` : ''} · {new Date(log.created_at).toLocaleString()}</span></div></li>)}</ul> : <EmptyState title="No activity yet" detail="Admin and moderator actions will be recorded here." />}</section>
         </div>
-        <div className="p-6 bg-gray-800 rounded-lg shadow-lg border border-gray-700">
-          <h2 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">In Progress</h2>
-          <p className="text-4xl font-bold text-white">{tickets.filter(t => t.status === 'In Progress').length}</p>
-        </div>
-      </div>
-
-      <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
-        <div className="p-6 border-b border-gray-700 flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold text-white">Recent Cases</h2>
-            <p className="text-sm text-gray-400">View and manage user support cases.</p>
-          </div>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
-            Create Case
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-900 border-b border-gray-700 text-gray-400 text-sm uppercase tracking-wider">
-                <th className="p-4 font-medium">Case ID</th>
-                <th className="p-4 font-medium">Date</th>
-                <th className="p-4 font-medium">User</th>
-                <th className="p-4 font-medium">Subject</th>
-                <th className="p-4 font-medium">Priority</th>
-                <th className="p-4 font-medium">Status</th>
-                <th className="p-4 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700">
-              {tickets.map((ticket) => (
-                <tr key={ticket.id} className="hover:bg-gray-750 transition-colors">
-                  <td className="p-4 text-sm text-gray-300 font-mono">{ticket.id}</td>
-                  <td className="p-4 text-sm text-gray-300">
-                    {new Date(ticket.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="p-4 text-sm text-gray-300">{ticket.userEmail}</td>
-                  <td className="p-4 text-sm text-gray-300">{ticket.subject}</td>
-                  <td className="p-4 text-sm">
-                    <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
-                      ticket.priority === 'High' ? 'bg-red-900 text-red-200' :
-                      ticket.priority === 'Medium' ? 'bg-yellow-900 text-yellow-200' :
-                      'bg-blue-900 text-blue-200'
-                    }`}>
-                      {ticket.priority}
-                    </span>
-                  </td>
-                  <td className="p-4 text-sm">
-                    <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
-                      ticket.status === 'Open' ? 'bg-yellow-900 text-yellow-200' :
-                      ticket.status === 'In Progress' ? 'bg-blue-900 text-blue-200' :
-                      'bg-green-900 text-green-200'
-                    }`}>
-                      {ticket.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right space-x-2">
-                    <button className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded transition-colors">
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </> : null}
     </div>
   );
 }

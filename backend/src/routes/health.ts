@@ -1,24 +1,30 @@
 import { Router } from "express";
 import { admin } from "../lib/db.js";
-import { redis } from "../lib/redis.js";
 import { env } from "../config/env.js";
+import { RedisService } from "../services/RedisService.js";
 
 export const health = Router();
 
 health.get("/", (_req, res) => {
   res.json({
     success: true,
-    message: "skillbridge-api v2.0.1 is running",
+    status: "UP",
+    version: "2.0.1",
+    service: "skillbridge-api",
   });
 });
 
 health.get("/ready", async (_req, res) => {
-  const data: Record<string, string> = {
+  const services: Record<string, string> = {
     api: "ok",
-    database: env.SUPABASE_URL ? "unhealthy" : "unconfigured",
-    redis: env.REDIS_URL ? "unhealthy" : "disabled",
+    supabase: env.SUPABASE_URL ? "enabled" : "unconfigured",
+    database: env.SUPABASE_URL ? "enabled" : "unconfigured",
+    redis: RedisService.getStatus() === "UP" ? "enabled" : RedisService.getStatus() === "DEGRADED" ? "degraded" : "disabled",
+    socketio: "enabled",
+    storage: env.SUPABASE_URL ? "enabled" : "unconfigured",
+    push: env.EXPO_PUSH_ACCESS_TOKEN || process.env.ENABLE_PUSH_WORKER !== "false" ? "enabled" : "disabled",
     livekit: env.LIVEKIT_URL ? "enabled" : "disabled",
-    firebase: "disabled", // Not configured in env.ts yet
+    firebase: "disabled",
     ai: env.AI_PROVIDER_URL ? "enabled" : "disabled",
   };
 
@@ -26,33 +32,28 @@ health.get("/ready", async (_req, res) => {
     try {
       const { error } = await admin.from("profiles").select("id").limit(1);
       if (!error) {
-        data.database = "enabled";
-      }
-    } catch (e) {
-      data.database = "unhealthy";
-    }
-  }
-
-  if (env.REDIS_URL) {
-    try {
-      if (redis.status === "ready" || redis.status === "connect") {
-        data.redis = "enabled";
+        services.supabase = "enabled";
+        services.database = "enabled";
       } else {
-        await redis.ping();
-        data.redis = "enabled";
+        services.supabase = "unhealthy";
+        services.database = "unhealthy";
       }
-    } catch (e) {
-      data.redis = "unhealthy";
+    } catch {
+      services.supabase = "unhealthy";
+      services.database = "unhealthy";
     }
   }
 
-  const ok =
-    data.api === "ok" &&
-    (data.database === "enabled" || data.database === "unconfigured") &&
-    (data.redis === "enabled" || data.redis === "disabled");
+  const isHealthy =
+    services.api === "ok" &&
+    (services.database === "enabled" || services.database === "unconfigured") &&
+    (services.redis === "enabled" || services.redis === "disabled");
 
-  res.status(ok ? 200 : 503).json({
-    success: ok,
-    data,
+  res.status(isHealthy ? 200 : 503).json({
+    success: isHealthy,
+    status: isHealthy ? "UP" : "DEGRADED",
+    data: services,
+    services,
+    redisMetrics: RedisService.getMetrics(),
   });
 });

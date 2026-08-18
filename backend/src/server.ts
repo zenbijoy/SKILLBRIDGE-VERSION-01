@@ -51,7 +51,7 @@ app.use(express.json({
 app.use(
   rateLimit({
     windowMs: 60_000,
-    limit: 120,
+    limit: env.GLOBAL_RATE_LIMIT_PER_MINUTE,
     standardHeaders: "draft-8",
     legacyHeaders: false,
   }),
@@ -60,6 +60,12 @@ app.use("/health", health);
 app.use("/webhooks/live", liveWebhooks);
 const api = express.Router();
 api.use(auth);
+api.use((req, res, next) => {
+  if (!env.MAINTENANCE_MODE) return next();
+  const canOperate = req.userRoles?.some((role) => role === "admin" || role === "moderator");
+  if (canOperate) return next();
+  return res.status(503).json({ error: "SkillBridge is temporarily in maintenance mode" });
+});
 api.use("/dashboard", dashboard);
 api.use("/catalog", catalog);
 api.use("/clubs", clubs);

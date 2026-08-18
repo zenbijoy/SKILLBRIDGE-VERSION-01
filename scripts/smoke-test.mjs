@@ -18,7 +18,7 @@ if (!beEnv || !feEnv) {
 
 // 2. Check Backend Health
 console.log("\n--- Backend Connectivity Check ---");
-const req = http.get('http://localhost:4000/api/v1/health', (res) => {
+const req = http.get('http://localhost:4000/health', (res) => {
     let data = '';
     res.on('data', chunk => data += chunk);
     res.on('end', () => {
@@ -30,7 +30,7 @@ const req = http.get('http://localhost:4000/api/v1/health', (res) => {
         }
         
         // 3. Database Check via backend ready endpoint
-        http.get('http://localhost:4000/api/v1/health/ready', (readyRes) => {
+        http.get('http://localhost:4000/health/ready', (readyRes) => {
             let readyData = '';
             readyRes.on('data', chunk => readyData += chunk);
             readyRes.on('end', () => {

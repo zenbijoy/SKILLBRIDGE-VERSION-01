@@ -1,4 +1,4 @@
-import { startPostgresContainer, execSqlFile, execSql, query } from './db-test-docker.mjs';
+import { startPostgresContainer, execSql, query } from './db-test-docker.mjs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -65,13 +65,7 @@ async function run() {
             stdio: 'inherit'
         });
 
-        // Apply 012 and 013
-        console.log("[db-test-upgrade] Applying 012_upgrade_corrections.sql and 013_hardening.sql...");
-        const m12Path = path.join(migrationsDir, '012_upgrade_corrections.sql');
-        const m13Path = path.join(migrationsDir, '013_hardening.sql');
-
-        execSqlFile(container, m12Path);
-        execSqlFile(container, m13Path);
+        // setup-database --upgrade applies every required corrective migration itself.
 
         // Verify schema after upgrade
         console.log("[db-test-upgrade] Running db-verify-schema.mjs");

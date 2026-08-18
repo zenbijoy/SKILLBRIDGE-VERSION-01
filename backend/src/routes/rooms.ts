@@ -3,6 +3,7 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
+import { env } from "../config/env.js";
 export const rooms = Router();
 const createSchema = z.object({
   title: z.string().min(4).max(120),
@@ -10,7 +11,7 @@ const createSchema = z.object({
   topic: z.string().min(2).max(100),
   visibility: z.enum(["public", "private", "invite_only"]).default("public"),
   mode: z.enum(["online", "offline", "hybrid"]).default("hybrid"),
-  capacity: z.number().int().min(2).max(250).default(30),
+  capacity: z.number().int().min(2).max(env.MAX_ROOM_CAPACITY).default(30),
   tags: z.array(z.string().max(40)).max(10).default([]),
   rules: z.string().max(1000).optional().default(""),
   campus_location: z.string().max(200).optional(),

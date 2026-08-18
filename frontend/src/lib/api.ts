@@ -1,39 +1,68 @@
 import { supabase } from "./supabase";
 
-const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const BASE = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/+$/, "");
+
+type ApiErrorBody = {
+  error?: string;
+  message?: string;
+  issues?: unknown;
+};
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    public details?: unknown,
+  ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-let refreshPromise: Promise<any> | null = null;
+let refreshPromise: ReturnType<typeof supabase.auth.refreshSession> | null = null;
 
 function isFormData(body: BodyInit | null | undefined) {
   return typeof FormData !== "undefined" && body instanceof FormData;
 }
 
-async function parseResponse(res: Response) {
+async function parseResponse(res: Response): Promise<ApiErrorBody | unknown | null> {
   const text = await res.text();
   if (!text) return null;
   try {
-    return JSON.parse(text);
+    return JSON.parse(text) as unknown;
   } catch {
-    return { message: text };
+    return { message: text } satisfies ApiErrorBody;
   }
+}
+
+function asErrorBody(value: unknown): ApiErrorBody {
+  return value && typeof value === "object" ? (value as ApiErrorBody) : {};
 }
 
 async function requestWithHeaders(path: string, init: RequestInit, accessToken?: string) {
   const headers = new Headers(init.headers);
-  if (init.body && !isFormData(init.body)) headers.set("Content-Type", "application/json");
+  headers.set("Accept", "application/json");
+  if (init.body && !isFormData(init.body) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  return fetch(`${BASE}${path}`, { ...init, headers });
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  try {
+    return await fetch(`${BASE}${normalizedPath}`, { ...init, headers });
+  } catch (error) {
+    throw new ApiError(
+      0,
+      "Cannot reach the SkillBridge API. Check your connection and EXPO_PUBLIC_API_URL.",
+      error,
+    );
+  }
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
   let res = await requestWithHeaders(path, init, session?.access_token);
 
   if (res.status === 401 && session?.access_token) {
@@ -52,7 +81,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const body = await parseResponse(res);
   if (!res.ok) {
-    throw new ApiError(res.status, body?.error ?? body?.message ?? "Request failed");
+    const errorBody = asErrorBody(body);
+    throw new ApiError(
+      res.status,
+      errorBody.error ?? errorBody.message ?? `Request failed (${res.status})`,
+      errorBody.issues,
+    );
   }
   return body as T;
 }
