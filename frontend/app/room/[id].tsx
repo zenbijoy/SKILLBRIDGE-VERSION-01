@@ -29,6 +29,8 @@ export default function RoomDetail() {
   const [ratingValue, setRatingValue] = useState("");
   const [showResourcePrompt, setShowResourcePrompt] = useState(false);
   const [resourceUrl, setResourceUrl] = useState("");
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteUsername, setInviteUsername] = useState("");
 
   const room = useQuery({
     queryKey: ["room", id],
@@ -103,6 +105,22 @@ export default function RoomDetail() {
     }
   }
 
+  async function sendInvite() {
+    const target = inviteUsername.trim().replace(/^@/, "");
+    if (!target) {
+      Alert.alert("Missing username", "Enter the username of the peer to invite.");
+      return;
+    }
+    try {
+      await api(`/rooms/${id}/invitations`, { method: "POST", body: JSON.stringify({ username: target }) });
+      setInviteUsername("");
+      setShowInviteModal(false);
+      Alert.alert("Invitation Sent", `Invited @${target} to join this room.`);
+    } catch (error: any) {
+      Alert.alert("Could not send invite", error.message);
+    }
+  }
+
   async function openResource(resourceId: string, fallbackUrl: string) {
     try {
       const response = await api<{ url: string }>(`/resources/${resourceId}/download`);
@@ -137,6 +155,7 @@ export default function RoomDetail() {
           <View style={s.actionGrid}>
             {d.room.conversation_id ? <Action icon="message-text-outline" label="Room chat" onPress={() => router.push(`/chat/${d.room.conversation_id}` as any)} /> : null}
             {d.room.status === "live" ? <Action icon="video-outline" label="Live class" onPress={() => router.push(`/live/${id}` as any)} /> : null}
+            {["owner", "teacher", "moderator"].includes(d.myMembership.role) ? <Action icon="account-plus-outline" label="Invite peer" onPress={() => setShowInviteModal(true)} /> : null}
             {["owner", "teacher"].includes(d.myMembership.role) ? <Action icon="calendar-plus" label="Schedule" onPress={() => router.push(`/room/${id}/schedule` as any)} /> : null}
             <Action icon="book-plus-outline" label="Resource" onPress={() => setShowResourcePrompt(true)} />
           </View>
@@ -155,6 +174,27 @@ export default function RoomDetail() {
           )}
         </>
       ) : null}
+
+      <H2>Room members ({d.members.length})</H2>
+      {d.members.length === 0 ? <Muted>No members listed.</Muted> : (
+        <View style={{ gap: 8, marginVertical: 8 }}>
+          {d.members.map((member) => (
+            <Pressable key={member.id} onPress={() => router.push(`/user/${member.id}` as any)}>
+              <Card tone="soft" style={{ padding: 12 }}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ gap: 2 }}>
+                    <Text style={[s.infoText, { color: colors.text }]}>{member.full_name || `@${member.username}`}</Text>
+                    <Muted>@{member.username} · {member.reputation || 0} rep</Muted>
+                  </View>
+                  <Pill tone={member.id === d.room.owner_id ? "primary" : "default"}>
+                    {member.id === d.room.owner_id ? "OWNER" : "MEMBER"}
+                  </Pill>
+                </Row>
+              </Card>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       <H2>Teaching requests</H2>
       {d.teachingRequests.length === 0 ? <Muted>No pending teaching requests.</Muted> : d.teachingRequests.map((request) => (
@@ -253,6 +293,7 @@ export default function RoomDetail() {
 
       <TextPromptModal visible={Boolean(reviewSessionId)} title="Rate this session" detail="Enter a whole number from 1 to 5." value={ratingValue} onChangeText={setRatingValue} keyboardType="number-pad" placeholder="1–5" submitLabel="Submit review" onCancel={() => { setReviewSessionId(null); setRatingValue(""); }} onSubmit={() => void submitReview()} />
       <TextPromptModal visible={showResourcePrompt} title="Add a resource link" detail="File picking can be added later without blocking Android users. For now, add a safe web resource URL." value={resourceUrl} onChangeText={setResourceUrl} keyboardType="url" placeholder="https://..." submitLabel="Add resource" onCancel={() => { setShowResourcePrompt(false); setResourceUrl(""); }} onSubmit={() => void addResource()} />
+      <TextPromptModal visible={showInviteModal} title="Invite Peer to Room" detail="Enter username of the peer you wish to invite." value={inviteUsername} onChangeText={setInviteUsername} placeholder="e.g. johndoe" submitLabel="Send Invitation" onCancel={() => { setShowInviteModal(false); setInviteUsername(""); }} onSubmit={() => void sendInvite()} />
     </Screen>
   );
 }
