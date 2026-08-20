@@ -91,6 +91,9 @@ test("Chat and Messaging Tests", async (t) => {
       if (table === "messages") {
         return createMockChain({ conversation_id: CONVERSATION_ID });
       }
+      if (table === "conversation_members") {
+        return createMockChain({ id: "cm-1", conversation_id: CONVERSATION_ID, user_id: USER_A });
+      }
       return createMockChain();
     };
 

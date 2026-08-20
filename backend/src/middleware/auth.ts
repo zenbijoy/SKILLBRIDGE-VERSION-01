@@ -10,11 +10,15 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: "Invalid session" });
   req.userId = data.user.id;
   req.accessToken = token;
-  const { data: p } = await admin
+  const { data: p, error: pError } = await admin
     .from("profiles")
     .select("roles, account_status")
     .eq("id", data.user.id)
     .maybeSingle();
+
+  if (pError) {
+    return res.status(503).json({ error: "Failed to verify account status, please retry" });
+  }
 
   if (p) {
     if (p.account_status === "suspended" || p.account_status === "banned") {

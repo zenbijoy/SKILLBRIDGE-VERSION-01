@@ -1,4 +1,5 @@
 import { admin } from "../lib/db.js";
+
 export async function audit(
   actorId: string,
   action: string,
@@ -6,7 +7,7 @@ export async function audit(
   targetId?: string,
   metadata: Record<string, unknown> = {},
 ) {
-  await admin
+  const { error } = await admin
     .from("audit_logs")
     .insert({
       actor_id: actorId,
@@ -15,4 +16,8 @@ export async function audit(
       target_id: targetId ?? null,
       metadata,
     });
+
+  if (error) {
+    console.error(`[AUDIT_ERROR] Failed to persist audit log for action ${action}:`, error.message);
+  }
 }

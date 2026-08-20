@@ -10,6 +10,17 @@ export function setupSocket(io: SocketServer) {
       if (typeof token !== "string") return next(new Error("unauthorized"));
       const { data, error } = await admin.auth.getUser(token);
       if (error || !data.user) return next(new Error("unauthorized"));
+
+      const { data: p } = await admin
+        .from("profiles")
+        .select("account_status")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (p && (p.account_status === "suspended" || p.account_status === "banned")) {
+        return next(new Error(`Account is ${p.account_status}`));
+      }
+
       socket.data.userId = data.user.id;
       next();
     } catch (e) {

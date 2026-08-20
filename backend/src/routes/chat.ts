@@ -11,9 +11,25 @@ export function chat(io: Server) {
 
   r.get(
     "/presence",
-    wrap(async (_req, res) => {
+    wrap(async (req, res) => {
       const { userConnections } = await import("../socket.js");
-      res.json({ onlineUsers: Array.from(userConnections.keys()) });
+      const { data: myConvs } = await admin
+        .from("conversation_members")
+        .select("conversation_id")
+        .eq("user_id", req.userId!);
+
+      const convIds = (myConvs ?? []).map((c) => c.conversation_id);
+      const relevantPeers = new Set<string>();
+      if (convIds.length > 0) {
+        const { data: peers } = await admin
+          .from("conversation_members")
+          .select("user_id")
+          .in("conversation_id", convIds)
+          .limit(200);
+        (peers ?? []).forEach((p) => relevantPeers.add(p.user_id));
+      }
+      const onlineUsers = Array.from(userConnections.keys()).filter((id) => relevantPeers.has(id));
+      res.json({ onlineUsers });
     })
   );
 
@@ -312,6 +328,25 @@ export function chat(io: Server) {
       const message_id = z.string().uuid().parse(req.params.id);
       const { reaction } = z.object({ reaction: z.string().min(1).max(50) }).parse(req.body);
 
+      const { data: msg } = await admin
+        .from("messages")
+        .select("conversation_id")
+        .eq("id", message_id)
+        .maybeSingle();
+
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+
+      const { data: isMember } = await admin
+        .from("conversation_members")
+        .select("id")
+        .eq("conversation_id", msg.conversation_id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      if (!isMember) {
+        return res.status(403).json({ error: "Not authorized to react to this conversation" });
+      }
+
       const { data, error } = await admin
         .from("message_reactions")
         .insert({ message_id, user_id: req.userId!, reaction })
@@ -320,10 +355,7 @@ export function chat(io: Server) {
 
       if (error) throw error;
 
-      const { data: msg } = await admin.from("messages").select("conversation_id").eq("id", message_id).single();
-      if (msg) {
-        io.to(`conversation:${msg.conversation_id}`).emit("message:reaction:add", { messageId: message_id, reaction: data });
-      }
+      io.to(`conversation:${msg.conversation_id}`).emit("message:reaction:add", { messageId: message_id, reaction: data });
 
       res.status(201).json(data);
     })

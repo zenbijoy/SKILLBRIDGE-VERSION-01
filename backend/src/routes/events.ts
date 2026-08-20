@@ -83,11 +83,26 @@ events.patch(
     const { status } = z
       .object({ status: z.enum(["approved", "rejected", "waitlisted"]) })
       .parse(req.body);
+    const { data: appData } = await admin
+      .from("event_applications")
+      .select("id, event_id, user_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!appData) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+
+    if (appData.event_id !== eventId) {
+      return res.status(403).json({ error: "Application does not belong to this event" });
+    }
+
     const { data: e } = await admin
       .from("events")
-      .select("club_id,title")
+      .select("club_id, title")
       .eq("id", eventId)
       .single();
+
     const { data: m } = e
       ? await admin
           .from("club_members")
@@ -96,8 +111,10 @@ events.patch(
           .eq("user_id", req.userId!)
           .maybeSingle()
       : { data: null };
+
     if (!m || !["owner", "admin"].includes(m.role))
       return res.status(403).json({ error: "Club admin required" });
+
     const { error } = await admin.rpc("decide_event_application_atomic", {
       p_application_id: id,
       p_decision: status,

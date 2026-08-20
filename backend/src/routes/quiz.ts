@@ -117,7 +117,8 @@ quiz.post(
         .select("skill_id")
         .eq("id", quizId)
         .single();
-      if (q?.skill_id)
+
+      if (q?.skill_id) {
         await admin
           .from("user_skills")
           .upsert(
@@ -130,15 +131,42 @@ quiz.post(
             },
             { onConflict: "user_id,skill_id,kind" },
           );
-      await admin
+      }
+
+      // Idempotent point reward check (awarded only once per quiz)
+      const { data: existingReward } = await admin
         .from("points_ledger")
-        .insert({
-          user_id: req.userId!,
-          event_type: "skill_verified",
-          points: 10,
-          reference_type: "quiz_attempt",
-          reference_id: attempt.id,
-        });
+        .select("id")
+        .eq("user_id", req.userId!)
+        .eq("event_type", "skill_verified")
+        .eq("reference_type", "quiz")
+        .eq("reference_id", quizId)
+        .maybeSingle();
+
+      if (!existingReward) {
+        await admin
+          .from("points_ledger")
+          .insert({
+            user_id: req.userId!,
+            event_type: "skill_verified",
+            points: 15,
+            reference_type: "quiz",
+            reference_id: quizId,
+          });
+
+        const { data: profile } = await admin
+          .from("profiles")
+          .select("reputation")
+          .eq("id", req.userId!)
+          .single();
+
+        if (profile) {
+          await admin
+            .from("profiles")
+            .update({ reputation: (profile.reputation || 0) + 15 })
+            .eq("id", req.userId!);
+        }
+      }
     }
     res.json({ score, passed, attemptId: attempt.id });
   }),

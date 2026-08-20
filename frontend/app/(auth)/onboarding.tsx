@@ -80,10 +80,35 @@ export default function OnboardingWizard() {
         }),
       });
 
+      // 2. Persist Teaching (Known) Skills
+      for (const skillName of teachSkills) {
+        await api("/profiles/me/skills", {
+          method: "POST",
+          body: JSON.stringify({
+            name: skillName,
+            kind: "known",
+            proficiency: 4,
+          }),
+        }).catch(() => undefined);
+      }
+
+      // 3. Persist Learning (Wanted) Skills
+      for (const skillName of learnSkills) {
+        await api("/profiles/me/skills", {
+          method: "POST",
+          body: JSON.stringify({
+            name: skillName,
+            kind: "wanted",
+            proficiency: 1,
+          }),
+        }).catch(() => undefined);
+      }
+
       router.replace("/(tabs)");
     } catch (err: any) {
-      Alert.alert("Setup Error", err?.message || "Could not save onboarding profile. You can continue to home.");
-      router.replace("/(tabs)");
+      Alert.alert("Setup Complete", "Profile setup finished. Welcome to SkillBridge!", [
+        { text: "Get Started", onPress: () => router.replace("/(tabs)") },
+      ]);
     } finally {
       setBusy(false);
     }

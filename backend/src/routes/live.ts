@@ -64,52 +64,95 @@ liveWebhooks.post("/", wrap(async (req, res) => {
 live.post(
   "/token/:sessionId",
   wrap(async (req, res) => {
-    const sessionId = z.string().uuid().parse(req.params.sessionId);
+    const paramId = z.string().uuid().parse(req.params.sessionId);
     
-    const { data: session } = await admin
+    // 1. Try resolving directly as session ID
+    let { data: session } = await admin
       .from("sessions")
-      .select("room_id, status")
-      .eq("id", sessionId)
+      .select("id, room_id, status, teacher_id")
+      .eq("id", paramId)
       .maybeSingle();
 
+    // 2. If not a session ID, resolve as room ID with active/scheduled session
     if (!session) {
-      return res.status(404).json({ error: "Session not found" });
-    }
-    if (["draft", "completed", "cancelled"].includes(session.status)) {
-      return res.status(403).json({ error: `Cannot join session in ${session.status} state` });
+      const { data: roomSession } = await admin
+        .from("sessions")
+        .select("id, room_id, status, teacher_id")
+        .eq("room_id", paramId)
+        .in("status", ["live", "scheduled"])
+        .order("starts_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      session = roomSession;
     }
 
+    // 3. If still no session, check if caller is room owner/teacher to start one
+    const targetRoomId = session?.room_id || paramId;
     const { data: member } = await admin
       .from("room_members")
       .select("role")
-      .eq("room_id", session.room_id)
+      .eq("room_id", targetRoomId)
       .eq("user_id", req.userId!)
       .maybeSingle();
       
-    if (!member)
+    if (!member) {
       return res.status(403).json({ error: "Join the learning room first" });
-      
+    }
+
+    if (!session) {
+      if (["owner", "teacher"].includes(member.role)) {
+        // Automatically create live session for room host
+        const { data: newSession, error: createErr } = await admin
+          .from("sessions")
+          .insert({
+            room_id: targetRoomId,
+            teacher_id: req.userId!,
+            title: "Live Peer Session",
+            mode: "online",
+            status: "live",
+            starts_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+
+        if (createErr || !newSession) throw createErr || new Error("Failed to create session");
+        session = newSession;
+      } else {
+        return res.status(404).json({ error: "No active live session found in this room" });
+      }
+    }
+
+    const activeSession = session;
+    if (!activeSession) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    if (["completed", "cancelled"].includes(activeSession.status)) {
+      return res.status(403).json({ error: `Cannot join session in ${activeSession.status} state` });
+    }
+
     const authorizedRoles = ["owner", "teacher", "moderator", "member"];
     if (!authorizedRoles.includes(member.role)) {
       return res.status(403).json({ error: "Unauthorized role" });
     }
 
-    const canPublish = ["owner", "teacher", "moderator"].includes(member.role);
+    const canPublish = ["owner", "teacher", "moderator"].includes(member.role) || activeSession.teacher_id === req.userId;
     const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
       identity: req.userId!,
       ttl: "1h",
-      metadata: JSON.stringify({ sessionId, roomId: session.room_id, role: member.role }),
+      metadata: JSON.stringify({ sessionId: activeSession.id, roomId: activeSession.room_id, role: member.role }),
     });
     
     at.addGrant({
       roomJoin: true,
-      room: `skillbridge-session-${sessionId}`,
+      room: `skillbridge-session-${activeSession.id}`,
       canSubscribe: true,
       canPublish,
       canPublishData: true,
     });
     
-    res.json({ url: env.LIVEKIT_URL, token: await at.toJwt(), canPublish });
+    res.json({ url: env.LIVEKIT_URL, token: await at.toJwt(), canPublish, sessionId: activeSession.id });
   }),
 );
 

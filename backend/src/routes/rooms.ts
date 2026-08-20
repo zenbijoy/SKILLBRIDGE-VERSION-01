@@ -229,9 +229,21 @@ rooms.post(
   "/:id/join",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
+    
+    // 1. Try atomic RPC first
+    const { data: rpcData, error: rpcError } = await admin.rpc("join_room_service_atomic", {
+      p_room_id: id,
+      p_user_id: req.userId!,
+    });
+
+    if (!rpcError && rpcData) {
+      return res.json({ joined: true, role: "learner", member_count: rpcData.member_count });
+    }
+
+    // 2. Safe Fallback with strict verification
     const { data: room, error: roomError } = await admin
       .from("rooms")
-      .select("id, visibility, member_count, capacity")
+      .select("id, visibility, member_count, capacity, status")
       .eq("id", id)
       .single();
 
@@ -239,6 +251,20 @@ rooms.post(
 
     if (room.visibility === "private") {
       return res.status(403).json({ error: "This room is private" });
+    }
+
+    if (room.visibility === "invite_only") {
+      const { data: inv } = await admin
+        .from("room_invitations")
+        .select("status")
+        .eq("room_id", id)
+        .eq("invitee_id", req.userId!)
+        .eq("status", "accepted")
+        .maybeSingle();
+
+      if (!inv) {
+        return res.status(403).json({ error: "This room requires an invitation to join" });
+      }
     }
 
     if (room.member_count >= room.capacity) {
@@ -270,6 +296,18 @@ rooms.post(
   "/:id/leave",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
+
+    // 1. Try atomic RPC first
+    const { data: rpcData, error: rpcError } = await admin.rpc("leave_room_service_atomic", {
+      p_room_id: id,
+      p_user_id: req.userId!,
+    });
+
+    if (!rpcError && rpcData) {
+      return res.json({ left: true, member_count: rpcData.member_count });
+    }
+
+    // 2. Safe Fallback
     const { data: room } = await admin
       .from("rooms")
       .select("owner_id")
@@ -280,19 +318,21 @@ rooms.post(
       return res.status(400).json({ error: "Room owner cannot leave their own room" });
     }
 
-    await admin
+    const { error } = await admin
       .from("room_members")
       .delete()
       .eq("room_id", id)
       .eq("user_id", req.userId!);
+
+    if (error) throw error;
 
     const { count } = await admin
       .from("room_members")
       .select("*", { count: "exact", head: true })
       .eq("room_id", id);
 
-    await admin.from("rooms").update({ member_count: count ?? 0 }).eq("id", id);
+    await admin.from("rooms").update({ member_count: Math.max(1, count ?? 1) }).eq("id", id);
 
-    res.json({ left: true, member_count: count ?? 0 });
+    res.json({ left: true, member_count: Math.max(1, count ?? 1) });
   }),
 );

@@ -135,9 +135,16 @@ research.post(
     const id = z.string().uuid().parse(req.params.id);
     const { message } = z.object({ message: z.string().max(1000).optional() }).parse(req.body);
     
-    const { data: project } = await admin.from("research_projects").select("owner_id").eq("id", id).single();
+    const { data: project } = await admin
+      .from("research_projects")
+      .select("owner_id, visibility, looking_for_collaborators, status")
+      .eq("id", id)
+      .single();
+
     if (!project) return res.status(404).json({ error: "Project not found" });
     if (project.owner_id === req.userId) return res.status(400).json({ error: "Cannot collaborate with yourself" });
+    if (project.visibility === "private") return res.status(403).json({ error: "This project is private" });
+    if (!project.looking_for_collaborators) return res.status(400).json({ error: "Project is not currently recruiting collaborators" });
 
     const { data, error } = await admin
       .from("research_collaboration_requests")
@@ -158,23 +165,13 @@ research.post(
 research.get(
   "/collaboration-requests",
   wrap(async (req, res) => {
-    // Get requests sent TO me (for my projects) and FROM me
-    const { data: myProjects } = await admin.from("research_projects").select("id").eq("owner_id", req.userId!);
-    const projectIds = myProjects?.map(p => p.id) ?? [];
-    
-    const query = admin.from("research_collaboration_requests").select("*, project:research_projects(id, title), requester:profiles!research_collaboration_requests_requester_id_fkey(id, full_name, username)");
-    
-    if (projectIds.length > 0) {
-      assertUuid(req.userId!, "userId");
-      projectIds.forEach((id) => assertUuid(id, "projectId"));
-      query.or(`requester_id.eq.${req.userId},project_id.in.(${projectIds.join(',')})`);
-    } else {
-      query.eq("requester_id", req.userId!);
-    }
-    
-    const { data, error } = await query;
+    const { data, error } = await admin
+      .from("research_collaboration_requests")
+      .select("*, project:research_projects(id, title, owner_id), requester:profiles(id, full_name, avatar_url, department, university)")
+      .eq("project.owner_id", req.userId!);
+      
     if (error) throw error;
-    res.json({ data });
+    res.json({ requests: data ?? [] });
   }),
 );
 
@@ -209,6 +206,18 @@ research.patch(
     if (error) throw error;
     
     if (status === "accepted") {
+      // 1. Insert into research_members table
+      await admin
+        .from("research_members")
+        .insert({
+          project_id: request.project_id,
+          user_id: request.requester_id,
+          role: "collaborator",
+        })
+        .select()
+        .maybeSingle();
+
+      // 2. Notify user
       await notifyUser(request.requester_id, "Collaboration Accepted", "Your collaboration request was accepted.", "research", { projectId: request.project_id });
     }
     

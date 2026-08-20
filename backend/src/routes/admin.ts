@@ -68,6 +68,18 @@ adminRoutes.patch(
     if (id === req.userId && status !== "active") {
       return res.status(400).json({ error: "You cannot suspend or ban your own admin account" });
     }
+
+    // Role hierarchy check
+    const { data: targetUser } = await db
+      .from("profiles")
+      .select("roles")
+      .eq("id", id)
+      .single();
+
+    if (targetUser?.roles?.includes("admin") && !req.userRoles?.includes("admin")) {
+      return res.status(403).json({ error: "Only administrators can modify other administrator accounts" });
+    }
+
     const { data, error } = await db
       .from("profiles")
       .update({ account_status: status })

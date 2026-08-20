@@ -49,6 +49,13 @@ resources.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
     if (!m) return res.status(403).json({ error: "Room membership required" });
+    if (b.storage_path) {
+      const expectedPrefix = `${req.userId}/${b.room_id}/`;
+      if (!b.storage_path.startsWith(expectedPrefix)) {
+        return res.status(403).json({ error: "Invalid storage path prefix: must belong to room uploader" });
+      }
+    }
+
     const { data, error } = await admin
       .from("resources")
       .insert({ ...b, uploader_id: req.userId! })

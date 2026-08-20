@@ -9,25 +9,40 @@ import {
   Platform,
   TouchableOpacity,
 } from "react-native";
-import { Button, Field, H1, Muted } from "@/components/ui";
+import { Button, Field, H1, Muted, triggerHaptic } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 
-export default function ResetPassword() {
+export default function ResetPasswordScreen() {
   const { colors, isDark } = useTheme();
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function submit() {
+  async function handleResetPassword() {
+    if (password.length < 8) {
+      Alert.alert("Password too short", "Password must be at least 8 characters long.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert("Mismatch", "Passwords do not match.");
+      return;
+    }
+
     try {
       setBusy(true);
+      triggerHaptic();
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      Alert.alert("Success", "Password updated successfully");
-      router.replace("/(tabs)");
-    } catch (e) {
-      Alert.alert("Failed", e instanceof Error ? e.message : "Try again");
+
+      Alert.alert(
+        "Password Updated 🎉",
+        "Your password has been reset successfully. Please sign in with your new password.",
+        [{ text: "Sign In", onPress: () => router.replace("/(auth)/sign-in") }]
+      );
+    } catch (e: any) {
+      Alert.alert("Reset Failed", e?.message || "Failed to update password. Please request a new link.");
     } finally {
       setBusy(false);
     }
@@ -40,22 +55,33 @@ export default function ResetPassword() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={s.content}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.replace("/(auth)/sign-in")}>
+            <Text style={[s.backText, { color: colors.muted }]}>← Sign In</Text>
+          </TouchableOpacity>
+
           <View style={s.header}>
-            <H1>Update Password</H1>
-            <Muted>Enter your new password below.</Muted>
+            <H1>Set New Password 🔐</H1>
+            <Muted>Enter and confirm your new secure password below.</Muted>
           </View>
 
           <View style={s.form}>
             <Field
               secureTextEntry
-              placeholder="New Password"
+              placeholder="New password (min 8 characters)"
               value={password}
               onChangeText={setPassword}
             />
+            <Field
+              secureTextEntry
+              placeholder="Confirm new password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
             <Button
               title={busy ? "Updating..." : "Update Password"}
-              disabled={busy || !password || password.length < 6}
-              onPress={submit}
+              disabled={busy || !password || !confirmPassword}
+              loading={busy}
+              onPress={handleResetPassword}
             />
           </View>
         </View>
@@ -67,6 +93,14 @@ export default function ResetPassword() {
 const s = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1, padding: spacing.xl, justifyContent: "center" },
+  backBtn: {
+    position: "absolute",
+    top: 60,
+    left: spacing.xl,
+    padding: 10,
+    zIndex: 10,
+  },
+  backText: { fontSize: 16, fontWeight: "600" },
   header: { gap: 10, marginBottom: 40 },
   form: { gap: 16 },
 });

@@ -172,14 +172,71 @@ export default function RoomDetail() {
       ))}
 
       <H2>Scheduled sessions</H2>
-      {d.sessions.length === 0 ? <Muted>No sessions scheduled.</Muted> : d.sessions.map((session) => (
-        <Card key={session.id}>
-          <Text style={[s.infoText, { color: colors.text }]}>{new Date(session.starts_at).toLocaleString()}</Text>
-          <Muted>{session.mode} · {session.status}</Muted>
-          {session.status === "completed" && session.teacher_id !== d.myMembership?.user_id ? <Button title="Review session" compact variant="secondary" onPress={() => { setReviewSessionId(session.id); setRatingValue(""); }} /> : null}
-          {["owner", "teacher"].includes(d.myMembership?.role ?? "") && session.teacher_id === d.myMembership?.user_id && session.status === "scheduled" ? <Button title="Mark completed" compact variant="secondary" onPress={() => api(`/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ status: "completed" }) }).then(() => qc.invalidateQueries({ queryKey: ["room", id] })).catch((error) => Alert.alert("Could not update", error.message))} /> : null}
-        </Card>
-      ))}
+      {d.sessions.length === 0 ? <Muted>No sessions scheduled.</Muted> : d.sessions.map((session) => {
+        const isTeacher = session.teacher_id === d.myMembership?.user_id;
+        const isHost = ["owner", "teacher"].includes(d.myMembership?.role ?? "");
+        return (
+          <Card key={session.id} tone={session.status === "live" ? "glow" : "default"}>
+            <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={[s.infoText, { color: colors.text, fontWeight: "800" }]}>{new Date(session.starts_at).toLocaleString()}</Text>
+              <Pill tone={session.status === "live" ? "danger" : session.status === "scheduled" ? "primary" : "default"}>
+                {session.status === "live" ? "● LIVE NOW" : session.status.toUpperCase()}
+              </Pill>
+            </Row>
+            <Muted>{session.mode.toUpperCase()} session · Status: {session.status}</Muted>
+
+            <Row style={{ gap: 8, marginTop: 8 }}>
+              {session.status === "scheduled" && (isTeacher || isHost) ? (
+                <Button
+                  title="Start Live Class 🔴"
+                  compact
+                  variant="primary"
+                  onPress={() =>
+                    api(`/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ status: "live" }) })
+                      .then(() => {
+                        qc.invalidateQueries({ queryKey: ["room", id] });
+                        router.push(`/live/${session.id}` as any);
+                      })
+                      .catch((err) => Alert.alert("Error starting class", err.message))
+                  }
+                />
+              ) : null}
+
+              {session.status === "live" ? (
+                <>
+                  <Button
+                    title="Join Live Class 🔴"
+                    compact
+                    variant="primary"
+                    onPress={() => router.push(`/live/${session.id}` as any)}
+                  />
+                  {(isTeacher || isHost) ? (
+                    <Button
+                      title="End Session 🏁"
+                      compact
+                      variant="secondary"
+                      onPress={() =>
+                        api(`/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ status: "completed" }) })
+                          .then(() => qc.invalidateQueries({ queryKey: ["room", id] }))
+                          .catch((err) => Alert.alert("Error ending class", err.message))
+                      }
+                    />
+                  ) : null}
+                </>
+              ) : null}
+
+              {session.status === "completed" && !isTeacher ? (
+                <Button
+                  title="Review session ⭐"
+                  compact
+                  variant="secondary"
+                  onPress={() => { setReviewSessionId(session.id); setRatingValue(""); }}
+                />
+              ) : null}
+            </Row>
+          </Card>
+        );
+      })}
 
       <H2>Resources</H2>
       {d.resources.length === 0 ? <Muted>No resources available.</Muted> : d.resources.map((resource) => (

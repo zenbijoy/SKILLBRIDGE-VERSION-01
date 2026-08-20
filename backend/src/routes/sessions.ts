@@ -93,6 +93,32 @@ sessions.patch(
         status: z.enum(["confirmed", "declined"]),
       })
       .parse(req.body);
+
+    const { data: session, error: sessErr } = await admin
+      .from("sessions")
+      .select("id, room_id, status")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (sessErr || !session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    if (["completed", "cancelled"].includes(session.status)) {
+      return res.status(400).json({ error: `Cannot RSVP to a ${session.status} session` });
+    }
+
+    const { data: isMember } = await admin
+      .from("room_members")
+      .select("id")
+      .eq("room_id", session.room_id)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!isMember) {
+      return res.status(403).json({ error: "Must be a room member to RSVP to this session" });
+    }
+
     const { data, error } = await admin
       .from("session_participants")
       .upsert(

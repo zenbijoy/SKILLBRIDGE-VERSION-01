@@ -22,7 +22,7 @@ health.get("/ready", async (_req, res) => {
     redis: RedisService.getStatus() === "UP" ? "enabled" : RedisService.getStatus() === "DEGRADED" ? "degraded" : "disabled",
     socketio: "enabled",
     storage: env.SUPABASE_URL ? "enabled" : "unconfigured",
-    push: env.EXPO_PUSH_ACCESS_TOKEN || process.env.ENABLE_PUSH_WORKER !== "false" ? "enabled" : "disabled",
+    push: env.EXPO_PUSH_ACCESS_TOKEN ? "enabled" : "disabled",
     livekit: env.LIVEKIT_URL ? "enabled" : "disabled",
     firebase: "disabled",
     ai: env.AI_PROVIDER_URL ? "enabled" : "disabled",

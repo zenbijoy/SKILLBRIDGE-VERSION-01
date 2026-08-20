@@ -1,49 +1,72 @@
 import { Router } from "express";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+
 export const gamification = Router();
+
 gamification.get(
   "/leaderboard",
   wrap(async (req, res) => {
     const category = typeof req.query.category === "string" ? req.query.category : "reputation";
 
-    const { data, error } = await admin
+    const { data: profiles, error } = await admin
       .from("profiles")
       .select(
-        "id,full_name,username,avatar_url,bio,university,department,batch,roles,reputation,profile_visibility",
+        "id, full_name, username, avatar_url, bio, university, department, batch, roles, reputation, profile_visibility",
       )
+      .eq("account_status", "active")
       .neq("profile_visibility", "private")
       .order("reputation", { ascending: false })
       .limit(50);
 
     if (error) throw error;
 
-    const leaders = await Promise.all(
-      (data ?? []).map(async (p) => {
-        const [taughtRes, attendedRes, researchRes] = await Promise.all([
-          admin
-            .from("sessions")
-            .select("*", { count: "exact", head: true })
-            .eq("teacher_id", p.id)
-            .eq("status", "completed"),
-          admin
-            .from("session_attendees")
-            .select("*", { count: "exact", head: true })
-            .eq("user_id", p.id),
-          admin
-            .from("research_projects")
-            .select("*", { count: "exact", head: true })
-            .eq("lead_author_id", p.id),
-        ]);
+    const userIds = (profiles ?? []).map((p) => p.id);
 
-        return {
-          ...p,
-          sessions_taught: taughtRes.count ?? 0,
-          sessions_attended: attendedRes.count ?? 0,
-          research_count: researchRes.count ?? 0,
-        };
-      }),
-    );
+    if (userIds.length === 0) {
+      return res.json({ leaders: [], category });
+    }
+
+    // Batch query counts across the schema
+    const [taughtRows, attendedRows, researchRows] = await Promise.all([
+      admin
+        .from("sessions")
+        .select("teacher_id")
+        .in("teacher_id", userIds)
+        .eq("status", "completed"),
+      admin
+        .from("session_participants")
+        .select("user_id")
+        .in("user_id", userIds)
+        .in("status", ["confirmed", "attended"]),
+      admin
+        .from("research_projects")
+        .select("owner_id")
+        .in("owner_id", userIds),
+    ]);
+
+    // Map counts in-memory in O(N)
+    const taughtMap = new Map<string, number>();
+    (taughtRows.data ?? []).forEach((r: any) => {
+      taughtMap.set(r.teacher_id, (taughtMap.get(r.teacher_id) || 0) + 1);
+    });
+
+    const attendedMap = new Map<string, number>();
+    (attendedRows.data ?? []).forEach((r: any) => {
+      attendedMap.set(r.user_id, (attendedMap.get(r.user_id) || 0) + 1);
+    });
+
+    const researchMap = new Map<string, number>();
+    (researchRows.data ?? []).forEach((r: any) => {
+      researchMap.set(r.owner_id, (researchMap.get(r.owner_id) || 0) + 1);
+    });
+
+    const leaders = (profiles ?? []).map((p) => ({
+      ...p,
+      sessions_taught: taughtMap.get(p.id) || 0,
+      sessions_attended: attendedMap.get(p.id) || 0,
+      research_count: researchMap.get(p.id) || 0,
+    }));
 
     // Sort by requested category
     let sorted = leaders;
@@ -60,6 +83,7 @@ gamification.get(
     res.json({ leaders: sorted, category });
   }),
 );
+
 gamification.get(
   "/ledger",
   wrap(async (req, res) => {
