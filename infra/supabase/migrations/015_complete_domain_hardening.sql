@@ -29,16 +29,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_active_room_invitee ON public.room_invitati
 
 ALTER TABLE public.room_invitations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS room_invitations_select ON public.room_invitations;
 CREATE POLICY room_invitations_select ON public.room_invitations FOR SELECT USING (
     auth.uid() = inviter_id OR auth.uid() = invitee_id OR
     EXISTS (SELECT 1 FROM public.room_members WHERE room_id = room_invitations.room_id AND user_id = auth.uid() AND role IN ('owner', 'moderator'))
 );
 
+DROP POLICY IF EXISTS room_invitations_insert ON public.room_invitations;
 CREATE POLICY room_invitations_insert ON public.room_invitations FOR INSERT WITH CHECK (
     auth.uid() = inviter_id AND
     EXISTS (SELECT 1 FROM public.room_members WHERE room_id = room_invitations.room_id AND user_id = auth.uid() AND role IN ('owner', 'moderator'))
 );
 
+DROP POLICY IF EXISTS room_invitations_update ON public.room_invitations;
 CREATE POLICY room_invitations_update ON public.room_invitations FOR UPDATE USING (
     auth.uid() = invitee_id OR auth.uid() = inviter_id OR
     EXISTS (SELECT 1 FROM public.room_members WHERE room_id = room_invitations.room_id AND user_id = auth.uid() AND role IN ('owner', 'moderator'))
@@ -255,7 +258,7 @@ CREATE OR REPLACE FUNCTION public.award_reputation_atomic(
     p_event_type text,
     p_points integer,
     p_reference_type text DEFAULT NULL,
-    p_reference_id text DEFAULT NULL
+    p_reference_id uuid DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -307,5 +310,5 @@ GRANT EXECUTE ON FUNCTION public.admin_mutate_user_status_atomic(uuid, uuid, tex
 REVOKE ALL ON FUNCTION public.admin_decide_report_atomic(uuid, uuid, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_decide_report_atomic(uuid, uuid, text, text) TO service_role;
 
-REVOKE ALL ON FUNCTION public.award_reputation_atomic(uuid, text, integer, text, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.award_reputation_atomic(uuid, text, integer, text, text) TO service_role;
+REVOKE ALL ON FUNCTION public.award_reputation_atomic(uuid, text, integer, text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.award_reputation_atomic(uuid, text, integer, text, uuid) TO service_role;

@@ -1238,7 +1238,7 @@ create or replace function public.award_reputation_atomic(
     p_event_type text,
     p_points integer,
     p_reference_type text default null,
-    p_reference_id text default null
+    p_reference_id uuid default null
 ) returns jsonb language plpgsql security definer set search_path = public as $$
 declare
     v_existing_id uuid;
@@ -1261,8 +1261,8 @@ begin
     return jsonb_build_object('awarded', true, 'points', p_points, 'new_reputation', v_new_rep);
 end;
 $$;
-revoke all on function public.award_reputation_atomic(uuid, text, integer, text, text) from public, anon, authenticated;
-grant execute on function public.award_reputation_atomic(uuid, text, integer, text, text) to service_role;
+revoke all on function public.award_reputation_atomic(uuid, text, integer, text, uuid) from public, anon, authenticated;
+grant execute on function public.award_reputation_atomic(uuid, text, integer, text, uuid) to service_role;
 
 -- Baseline config info
 create table if not exists public.schema_migrations (

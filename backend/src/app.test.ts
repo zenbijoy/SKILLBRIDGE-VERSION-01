@@ -233,17 +233,3 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
     assert.strictEqual(res.body.url, "http://mock-url");
   });
 });
-
-test("Phase 1.2 Real DB Integration Tests", async (t) => {
-  const HAS_CREDENTIALS = process.env.TEST_SUPABASE_URL && process.env.TEST_SUPABASE_ANON_KEY && process.env.TEST_SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!HAS_CREDENTIALS) {
-    t.skip("Skipping real DB tests due to missing TEST_SUPABASE_URL / TEST_SUPABASE_ANON_KEY / TEST_SUPABASE_SERVICE_ROLE_KEY");
-    return;
-  }
-
-  await t.test("REAL DB - Tests are ready to run", async () => {
-    // Tests against real database such as migration checks, RLS checks, and concurrency would go here.
-    assert.ok(true);
-  });
-});
