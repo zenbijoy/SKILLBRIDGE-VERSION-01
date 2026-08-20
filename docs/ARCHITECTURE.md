@@ -1,22 +1,66 @@
-# Architecture
+# SkillBridge V3 Architecture & System Design
 
-## Client
-Expo Router provides route-driven Android/iOS/Web navigation. React Query owns server-state, Zustand holds small UI state, Supabase client handles the auth session, and all privileged writes go through Express.
+SkillBridge V3 is a peer-learning and research platform built for performance, reliability, and security.
 
-## API
-Node/Express validates the Supabase bearer session on every protected API request. The service-role key stays on the server. Zod validates request bodies. Socket.IO handles low-latency chat events. The API issues short-lived LiveKit tokens according to room role.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            SkillBridge Clients                              │
+│  ┌───────────────────────────────┐     ┌─────────────────────────────────┐  │
+│  │ Expo / React Native / Web App │     │     React / Vite Admin Panel    │  │
+│  └──────────────┬────────────────┘     └────────────────┬────────────────┘  │
+└─────────────────┼───────────────────────────────────────┼───────────────────┘
+                  │ HTTPS (REST) / WSS (Socket.IO)        │ HTTPS (REST API)
+                  ▼                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Node.js / Express API Backend                        │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ Middlewares: Auth (JWT), Rate Limiter, Correlation ID, Error Handler │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────┐ ┌──────────────────────┐ ┌─────────────────────┐  │
+│  │ Domain Controllers   │ │ Socket.IO Gateway    │ │ Push Outbox Worker  │  │
+│  │ (Rooms, Chat, etc.)  │ │ (Typing, Messaging)  │ │ (Expo Notifications)│  │
+│  └──────────┬───────────┘ └──────────┬───────────┘ └──────────┬──────────┘  │
+└─────────────┼────────────────────────┼────────────────────────┼─────────────┘
+              │                        │                        │
+     Postgres │ Connection Pool        │ LiveKit Webhooks       │ Cloud Storage
+              ▼                        ▼                        ▼
+┌──────────────────────────┐ ┌──────────────────────┐ ┌───────────────────────┐
+│   PostgreSQL 15 / RLS    │ │     LiveKit Cloud    │ │   Supabase Storage    │
+│  • 48 Domain Tables      │ │  • SFU Video Mesh    │ │  • avatars (public)   │
+│  • Atomic Stored Proc    │ │  • Screen Sharing    │ │  • attachments (priv) │
+│  • Points Ledger Trigger │ │  • Quality Adapters  │ │  • resources (priv)   │
+└──────────────────────────┘ └──────────────────────┘ └───────────────────────┘
+```
 
-## Data ownership
-1. Supabase PostgreSQL: profiles, skills, social graph, rooms, sessions, clubs/events, chat persistence, resources metadata, reputation, moderation.
-2. Supabase Storage: avatars and room resources with path-scoped policies.
-3. Redis: dashboard/search cache and future distributed rate limiting; no durable business data.
-4. Firebase/FCM via Expo notifications: Android push delivery and optional Analytics/Crash reporting setup.
-5. LiveKit: ephemeral media sessions. Store only room/session metadata in Postgres.
+---
 
-## Security boundaries
-- Expo client sees only Supabase anon key and public API URL.
-- Service-role, LiveKit secret and AI keys exist only in backend environment variables.
-- RLS provides defense-in-depth for direct Supabase client access.
-- Quizzes never expose `correct_answer` through a client policy.
-- Reputation changes are produced by backend events/ledger, never arbitrary client balances.
-- Room join capacity is enforced in a database transaction (`join_room_atomic`).
+## 1. Core Architectural Pillars
+
+### 1.1 Server-Authoritative State & Security
+All business mutations (room joining, session scheduling, reputation rewards, role elevation, moderation actions, and account deletion) execute through strict server-authoritative routes and transactional PostgreSQL functions (`SECURITY DEFINER` with explicit `search_path = public`). Direct unrestricted database writes from public clients are blocked via PostgreSQL Row-Level Security (RLS).
+
+### 1.2 Multi-Format Study Spaces
+Rooms support three distinct formats:
+- **Online**: Integrated LiveKit video classroom, real-time screen sharing, hand raising, and attendance recording.
+- **Offline**: Physical campus study groups with building and room number verification.
+- **Hybrid**: Combined in-person meetup with simultaneous LiveKit stream.
+
+### 1.3 Offline-First Chat & Outbox
+Chat messages are generated with client-side UUIDs (`client_message_id`), immediately stored in local outbox queues (`@chat_outbox_{conversationId}`), and synchronized with optimistic UI state. Upon reconnection, pending outbox items are drained with automatic retry and idempotency protection.
+
+### 1.4 Verifiable Reputation Ledger
+Reputation points cannot be arbitrarily incremented. All reputation changes require inserting an immutable record into `points_ledger` with unique reference constraints `(user_id, event_type, reference_type, reference_id)`. Triggers and atomic stored procedures recalculate and sync profile scores idempotently.
+
+---
+
+## 2. Component Topology
+
+| Component | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Mobile & Web App** | Expo 51, React Native, TypeScript | Unified cross-platform frontend for iOS, Android, and Web |
+| **Admin Control Plane** | React 18, Vite, TypeScript | Backoffice moderation, KPI monitoring, and user management |
+| **API Backend** | Express, TypeScript, Node.js 20+ | REST API, validation, auth middleware, and business services |
+| **Database** | PostgreSQL 15/16, Supabase | Relational data, foreign keys, RLS policies, and atomic RPCs |
+| **Realtime Engine** | Socket.IO, LiveKit | Low-latency messaging, typing indicators, and video conferencing |
+| **Storage Engine** | Supabase Storage (S3-compatible) | Avatars, private attachments, and course resources |
+| **Testing Engine** | PGlite (WASM Postgres), Node Test | In-process real PostgreSQL test suite executing full migrations |
