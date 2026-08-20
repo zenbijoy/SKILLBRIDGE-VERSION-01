@@ -4,6 +4,30 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 export const quiz = Router();
 quiz.get(
+  "/catalog",
+  wrap(async (_req, res) => {
+    const { data: quizzes, error } = await admin
+      .from("quizzes")
+      .select("id, title, description, skill_id, created_at, skills(name), quiz_questions(id)")
+      .eq("active", true)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const list = (quizzes ?? []).map((q: any) => ({
+      id: q.id,
+      title: q.title,
+      description: q.description || `Assessment for ${(q.skills as any)?.name ?? "academic skill"}`,
+      skill_name: (q.skills as any)?.name ?? "Skill",
+      question_count: (q.quiz_questions as any[])?.length ?? 0,
+      reward_points: 15,
+    }));
+
+    res.json({ quizzes: list });
+  }),
+);
+
+quiz.get(
   "/next",
   wrap(async (req, res) => {
     const { data: q } = await admin
@@ -19,6 +43,37 @@ quiz.get(
       .eq("quiz_id", q.id)
       .order("position");
     if (error) throw error;
+    res.json({
+      quiz: {
+        id: q.id,
+        title: q.title,
+        skill_name: (q as any).skills?.name ?? "Skill",
+        questions: questions ?? [],
+      },
+    });
+  }),
+);
+
+quiz.get(
+  "/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: q, error: qError } = await admin
+      .from("quizzes")
+      .select("id, title, skill_id, skills(name)")
+      .eq("id", id)
+      .single();
+
+    if (qError || !q) return res.status(404).json({ error: "Quiz not found" });
+
+    const { data: questions, error } = await admin
+      .from("quiz_questions")
+      .select("id, prompt, options")
+      .eq("quiz_id", q.id)
+      .order("position");
+
+    if (error) throw error;
+
     res.json({
       quiz: {
         id: q.id,

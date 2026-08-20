@@ -1,17 +1,24 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Profile, Room } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
-import { Card, ErrorState, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
+import { Button, Card, ErrorState, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
 import { ProfileCard } from "@/components/ProfileCard";
 import { RoomCard } from "@/components/RoomCard";
 import { FeatureGrid } from "@/components/FeatureGrid";
-import { radius, useTheme } from "@/theme";
+import { radius, spacing, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
+
+type AIMatch = {
+  profile: Profile;
+  matchPercentage: number;
+  sharedSkills: string[];
+  matchReason: string;
+};
 
 const explore = [
   ["flask-outline", "Research Hub", "/research", "Collaborate on papers & projects"],
@@ -27,12 +34,17 @@ const explore = [
 export default function Discover() {
   const { colors } = useTheme();
   const { t } = useI18n();
-  const [activeCategory, setActiveCategory] = useState<string>("all");
+
+  const aiMatches = useQuery({
+    queryKey: ["recommendations", "ai-matches"],
+    queryFn: () => api<{ matches: AIMatch[] }>("/recommendations/ai-matches"),
+  });
 
   const people = useQuery({
     queryKey: ["recommendations", "people"],
     queryFn: () => api<{ people: Profile[] }>("/recommendations/people"),
   });
+
   const rooms = useQuery({
     queryKey: ["rooms"],
     queryFn: () => api<{ rooms: Room[] }>("/rooms"),
@@ -41,9 +53,9 @@ export default function Discover() {
   return (
     <Screen
       onRefresh={async () => {
-        await Promise.all([people.refetch(), rooms.refetch()]);
+        await Promise.all([aiMatches.refetch(), people.refetch(), rooms.refetch()]);
       }}
-      refreshing={people.isRefetching || rooms.isRefetching}
+      refreshing={aiMatches.isRefetching || people.isRefetching || rooms.isRefetching}
     >
       <AppHeader title={t("discover.title")} searchPlaceholder={t("common.searchEverything")} />
       <Muted>{t("discover.subtitle")}</Muted>
@@ -73,6 +85,63 @@ export default function Discover() {
           </View>
         </Card>
       </Pressable>
+
+      {/* AI Smart Peer Matching Section */}
+      <SectionHeader title="AI Smart Peer Matches 🤖" />
+      {aiMatches.isLoading ? (
+        <Skeleton height={140} />
+      ) : aiMatches.data?.matches && aiMatches.data.matches.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.aiScroll}>
+          {aiMatches.data.matches.map((m) => (
+            <Card key={m.profile.id} tone="glow" style={s.aiMatchCard}>
+              <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <Pill tone="accent">{m.matchPercentage}% Match</Pill>
+                <Muted style={{ fontSize: 11 }}>{m.profile.reputation} rep</Muted>
+              </Row>
+
+              <Row style={{ alignItems: "center", gap: 10 }}>
+                {m.profile.avatar_url ? (
+                  <Image source={{ uri: m.profile.avatar_url }} style={s.matchAvatar} />
+                ) : (
+                  <View style={[s.matchAvatar, { backgroundColor: colors.primarySoft }]}>
+                    <Text style={{ color: colors.primary, fontWeight: "900" }}>
+                      {m.profile.full_name?.[0] || "U"}
+                    </Text>
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.matchName, { color: colors.text }]} numberOfLines={1}>
+                    {m.profile.full_name}
+                  </Text>
+                  <Muted numberOfLines={1} style={{ fontSize: 11 }}>
+                    {m.profile.university ? `${m.profile.university} · ` : ""}@{m.profile.username}
+                  </Muted>
+                </View>
+              </Row>
+
+              <Muted numberOfLines={1} style={{ fontSize: 11 }}>💡 {m.matchReason}</Muted>
+
+              {m.sharedSkills.length ? (
+                <Row style={{ gap: 4 }}>
+                  {m.sharedSkills.map((sk) => (
+                    <Pill key={sk} tone="primary">{sk}</Pill>
+                  ))}
+                </Row>
+              ) : null}
+
+              <Button
+                title="View Profile →"
+                compact
+                variant="secondary"
+                onPress={() => {
+                  triggerHaptic();
+                  router.push(`/user/${m.profile.id}` as any);
+                }}
+              />
+            </Card>
+          ))}
+        </ScrollView>
+      ) : null}
 
       {/* Explore Grid */}
       <SectionHeader title={t("discover.explore")} />
@@ -163,6 +232,10 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  aiScroll: { gap: 12, paddingVertical: 4 },
+  aiMatchCard: { width: 260, gap: 8, padding: 14 },
+  matchAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  matchName: { fontSize: 14, fontWeight: "800" },
   exploreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   exploreItem: {
     width: "48%",

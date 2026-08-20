@@ -66,6 +66,20 @@ notifications.delete(
   })
 );
 notifications.patch(
+  "/read-all",
+  wrap(async (req, res) => {
+    const { error } = await admin
+      .from("notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("user_id", req.userId!)
+      .is("read_at", null);
+
+    if (error) throw error;
+    res.json({ success: true });
+  }),
+);
+
+notifications.patch(
   "/:id/read",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
