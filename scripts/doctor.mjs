@@ -55,17 +55,17 @@ check("Security: .gitignore Protects Production Secrets", () => {
 
 // 5. Backend Typescript
 check("Backend Typecheck Verification", () => {
-  execSync("npm run typecheck --prefix backend", { stdio: "pipe" });
+  execSync("npx tsc --noEmit", { cwd: path.resolve("backend"), stdio: "pipe" });
 });
 
 // 6. Frontend Typescript
 check("Frontend Typecheck Verification", () => {
-  execSync("npm run typecheck --prefix frontend", { stdio: "pipe" });
+  execSync("npx tsc --noEmit", { cwd: path.resolve("frontend"), stdio: "pipe" });
 });
 
 // 7. Admin Build
 check("Admin Control Plane Build Verification", () => {
-  execSync("npm run build --prefix admin", { stdio: "pipe" });
+  execSync("npx vite build", { cwd: path.resolve("admin"), stdio: "pipe" });
 });
 
 const failed = checks.filter((c) => c.status === "FAIL");

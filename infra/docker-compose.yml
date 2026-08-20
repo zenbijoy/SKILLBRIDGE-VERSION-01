@@ -5,7 +5,7 @@ services:
     env_file: ../backend/.env
     restart: unless-stopped
     depends_on: [redis, livekit]
-    ports: ["4000:4000"]
+    ports: ["127.0.0.1:4000:4000"]
   redis:
     image: redis:7-alpine
     restart: unless-stopped

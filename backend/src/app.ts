@@ -35,7 +35,7 @@ export function createApp(io?: SocketServer) {
   const app = express();
   const origins = env.WEB_ORIGINS.split(",").map((x) => x.trim());
 
-  app.set("trust proxy", 1);
+  app.set("trust proxy", env.NODE_ENV === "production" ? 1 : false);
   app.use(helmet());
   app.use(compression());
   app.use(cors({ origin: origins, credentials: true }));

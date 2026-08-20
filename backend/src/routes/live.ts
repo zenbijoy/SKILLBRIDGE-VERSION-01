@@ -42,20 +42,26 @@ liveWebhooks.post("/", wrap(async (req, res) => {
     try { meta = JSON.parse(event.participant?.metadata || "{}"); } catch(e){}
     
     if (meta.sessionId && event.participant?.identity) {
-      await admin.rpc("record_livekit_join", {
+      const { error: rpcErr } = await admin.rpc("record_livekit_join", {
         p_session_id: meta.sessionId,
         p_user_id: event.participant.identity,
       });
+      if (rpcErr) {
+        console.warn(`[LIVEKIT_WEBHOOK_WARN] record_livekit_join failed:`, rpcErr.message);
+      }
     }
   } else if (event.event === "participant_left") {
     let meta: any = {};
     try { meta = JSON.parse(event.participant?.metadata || "{}"); } catch(e){}
     
     if (meta.sessionId && event.participant?.identity) {
-      await admin.rpc("record_livekit_leave", {
+      const { error: rpcErr } = await admin.rpc("record_livekit_leave", {
         p_session_id: meta.sessionId,
         p_user_id: event.participant.identity,
       });
+      if (rpcErr) {
+        console.warn(`[LIVEKIT_WEBHOOK_WARN] record_livekit_leave failed:`, rpcErr.message);
+      }
     }
   }
   

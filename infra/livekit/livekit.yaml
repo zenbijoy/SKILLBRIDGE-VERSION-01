@@ -1,3 +1,4 @@
+# LiveKit Server Configuration
 port: 7880
 bind_addresses:
   - "0.0.0.0"
@@ -6,8 +7,9 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: true
+# In production, pass LIVEKIT_KEYS via environment variables or secret manager
 keys:
-  devkey: secret
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
 logging:
   level: info
 room:
