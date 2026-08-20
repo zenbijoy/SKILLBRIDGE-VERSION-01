@@ -1,0 +1,22 @@
+{
+  "createdAt": "2026-08-18T19:20:21.286Z",
+  "projectRoot": "C:\\Users\\24030\\source\\skillbridge-final",
+  "frontendRoot": "C:\\Users\\24030\\source\\skillbridge-final\\frontend",
+  "backupDir": "C:\\Users\\24030\\source\\skillbridge-final\\.skillbridge-v2-backups\\2026-08-18T19-20-21-073Z",
+  "createdFiles": [
+    "app\\search\\index.tsx",
+    "app\\settings\\about.tsx",
+    "app\\settings\\accessibility.tsx",
+    "app\\settings\\appearance.tsx",
+    "app\\settings\\data-storage.tsx",
+    "app\\settings\\index.tsx",
+    "app\\settings\\language.tsx",
+    "app\\settings\\notifications.tsx",
+    "app\\settings\\security.tsx",
+    "src\\components\\feedback\\TextPromptModal.tsx",
+    "src\\components\\navigation\\AppHeader.tsx",
+    "src\\components\\settings\\SettingsRow.tsx",
+    "src\\i18n\\index.ts",
+    "src\\state\\usePreferencesStore.ts"
+  ]
+}

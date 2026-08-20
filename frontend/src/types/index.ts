@@ -77,6 +77,12 @@ export interface Message {
   body: string;
   created_at: string;
   edited_at?: string | null;
+  attachment?: {
+    url: string;
+    type: string;
+    name?: string;
+    size?: number;
+  } | null;
 }
 export interface Dashboard {
   urgentRooms: Room[];

@@ -1,122 +1,129 @@
 import { useQuery } from "@tanstack/react-query";
+import { router } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { api } from "@/lib/api";
-import type { Dashboard } from "@/types";
-import {
-  Button,
-  Card,
-  H2,
-  Loading,
-  Muted,
-  Row,
-  Screen,
-} from "@/components/ui";
+import type { Dashboard, Profile } from "@/types";
+import { Button, Card, ErrorState, H2, Muted, Row, Screen, SectionHeader, Skeleton } from "@/components/ui";
 import { RoomCard } from "@/components/RoomCard";
 import { ProfileCard } from "@/components/ProfileCard";
 import { FeatureGrid } from "@/components/FeatureGrid";
 import { PremiumHero } from "@/components/PremiumHero";
+import { AppHeader } from "@/components/navigation/AppHeader";
 import { useAppStore } from "@/state/useAppStore";
-import { colors, radius } from "@/theme";
+import { radius, useTheme } from "@/theme";
+import { useI18n } from "@/i18n";
+
 export default function Home() {
+  const { colors } = useTheme();
+  const { t } = useI18n();
   const { mode, setMode } = useAppStore();
-  const q = useQuery({
+  const dashboard = useQuery({
     queryKey: ["dashboard", mode],
     queryFn: () => api<Dashboard>(`/dashboard?mode=${mode}`),
   });
-  if (q.isLoading) return <Loading />;
-  const d = q.data;
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api<{ profile: Profile }>("/profiles/me"),
+  });
+
+  const d = dashboard.data;
+  const firstName = me.data?.profile.full_name?.split(/\s+/)[0] ?? "Learner";
+
   return (
-    <Screen>
+    <Screen
+      onRefresh={async () => {
+        await Promise.all([dashboard.refetch(), me.refetch()]);
+      }}
+      refreshing={dashboard.isRefetching || me.isRefetching}
+    >
+      <AppHeader searchPlaceholder={t("common.searchEverything")} />
+      <View style={{ gap: 3 }}>
+        <Text style={[s.greeting, { color: colors.text }]}>{t("home.hello")}, {firstName} 👋</Text>
+        <Muted>{mode === "learn" ? t("home.learnSubtitle") : t("home.teachSubtitle")}</Muted>
+      </View>
+
       <PremiumHero
-        eyebrow="SKILLBRIDGE CAMPUS NETWORK"
-        title={
-          mode === "learn"
-            ? "What do you want to master?"
-            : "Who can you help today?"
-        }
-        detail="Searchable peer knowledge, realtime rooms, research matches and live collaborative learning."
+        eyebrow="SKILLBRIDGE NETWORK"
+        title={mode === "learn" ? t("home.learnTitle") : t("home.teachTitle")}
+        detail={mode === "learn" ? t("home.learnHeroDetail") : t("home.teachHeroDetail")}
       >
-        <Row>
-          <View style={s.mode}>
-            <Button
-              title="I need help"
-              variant={mode === "learn" ? "primary" : "ghost"}
-              onPress={() => setMode("learn")}
-            />
-            <Button
-              title="I can help"
-              variant={mode === "teach" ? "primary" : "ghost"}
-              onPress={() => setMode("teach")}
-            />
-          </View>
-        </Row>
+        <View style={s.modeWrap}>
+          <Button title={t("home.learn")} variant={mode === "learn" ? "primary" : "ghost"} onPress={() => setMode("learn")} compact />
+          <Button title={t("home.teach")} variant={mode === "teach" ? "primary" : "ghost"} onPress={() => setMode("teach")} compact />
+        </View>
       </PremiumHero>
-      <Card>
-        <H2>Your momentum</H2>
-        <Row>
-          <Stat n={d?.stats.reputation ?? 0} label="Reputation" />
-          <Stat n={d?.stats.connections ?? 0} label="Connections" />
-          <Stat n={d?.stats.sessionsTaught ?? 0} label="Taught" />
-          <Stat n={d?.stats.sessionsAttended ?? 0} label="Learned" />
-        </Row>
-      </Card>
-      <H2>Quick access</H2>
-      <FeatureGrid />
-      <H2>
-        {mode === "learn" ? "Urgent learning rooms" : "Open teaching requests"}
-      </H2>
-      {d?.urgentRooms?.length ? (
-        d.urgentRooms.slice(0, 4).map((r) => <RoomCard key={r.id} room={r} />)
+
+      {dashboard.isLoading ? (
+        <Card><Skeleton width="36%" /><Row><Skeleton width="22%" height={52} /><Skeleton width="22%" height={52} /><Skeleton width="22%" height={52} /></Row></Card>
+      ) : dashboard.isError ? (
+        <ErrorState detail={(dashboard.error as Error).message} onRetry={() => dashboard.refetch()} />
       ) : (
-        <Muted>No rooms yet. Create the first one.</Muted>
-      )}
-      <H2>People matched to you</H2>
-      {d?.recommendedPeople?.slice(0, 3).map((p) => (
-        <ProfileCard key={p.id} profile={p} />
-      ))}
-      <H2>Upcoming sessions</H2>
-      {d?.upcomingSessions?.slice(0, 3).map((x) => (
-        <Card key={x.id}>
-          <Text style={s.title}>{new Date(x.starts_at).toLocaleString()}</Text>
-          <Muted>
-            {x.mode} session · status {x.status}
-          </Muted>
+        <Card>
+          <H2>{t("home.momentum")}</H2>
+          <View style={s.statsGrid}>
+            <Stat n={d?.stats.reputation ?? 0} label={t("home.reputation")} />
+            <Stat n={d?.stats.connections ?? 0} label={t("home.connections")} />
+            <Stat n={d?.stats.sessionsTaught ?? 0} label={t("home.taught")} />
+            <Stat n={d?.stats.sessionsAttended ?? 0} label={t("home.learned")} />
+          </View>
         </Card>
-      ))}
-      <H2>Campus events</H2>
-      {d?.events?.slice(0, 3).map((e) => (
-        <Card key={e.id}>
-          <Text style={s.title}>{e.title}</Text>
-          <Muted>{new Date(e.starts_at).toLocaleString()}</Muted>
+      )}
+
+      <SectionHeader title={t("home.quickActions")} action={t("common.more")} onAction={() => router.push("/discover" as any)} />
+      <FeatureGrid compact />
+
+      <SectionHeader title={mode === "learn" ? t("home.urgentLearn") : t("home.urgentTeach")} action={t("common.seeAll")} onAction={() => router.push("/rooms" as any)} />
+      {d?.urgentRooms?.length ? d.urgentRooms.slice(0, 3).map((room) => <RoomCard key={room.id} room={room} />) : dashboard.isLoading ? <Skeleton height={120} /> : <Muted>{t("home.noRooms")}</Muted>}
+
+      <SectionHeader title={t("home.people")} action={t("common.seeAll")} onAction={() => router.push("/connections" as any)} />
+      {d?.recommendedPeople?.slice(0, 3).map((profile) => <ProfileCard key={profile.id} profile={profile} />)}
+
+      <SectionHeader title={t("home.sessions")} action={t("common.seeAll")} onAction={() => router.push("/schedule" as any)} />
+      {d?.upcomingSessions?.length ? d.upcomingSessions.slice(0, 3).map((session) => (
+        <Card key={session.id}>
+          <View style={s.sessionRow}>
+            <View style={[s.dateTile, { backgroundColor: colors.primarySoft }]}>
+              <Text style={[s.dateDay, { color: colors.primary }]}>{new Date(session.starts_at).getDate()}</Text>
+              <Text style={[s.dateMonth, { color: colors.primary }]}>{new Date(session.starts_at).toLocaleString(undefined, { month: "short" }).toUpperCase()}</Text>
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={[s.itemTitle, { color: colors.text }]}>{t("home.sessionTitle")}</Text>
+              <Muted>{new Date(session.starts_at).toLocaleString()} · {session.mode}</Muted>
+            </View>
+          </View>
+        </Card>
+      )) : <Muted>{t("home.noSessions")}</Muted>}
+
+      <SectionHeader title={t("home.events")} action={t("common.seeAll")} onAction={() => router.push("/events" as any)} />
+      {d?.events?.slice(0, 3).map((event) => (
+        <Card key={event.id}>
+          <Text style={[s.itemTitle, { color: colors.text }]}>{event.title}</Text>
+          <Muted>{new Date(event.starts_at).toLocaleString()}</Muted>
         </Card>
       ))}
     </Screen>
   );
 }
+
 function Stat({ n, label }: { n: number; label: string }) {
+  const { colors } = useTheme();
   return (
-    <View style={s.stat}>
-      <Text style={s.n}>{n}</Text>
-      <Muted>{label}</Muted>
+    <View style={[s.stat, { backgroundColor: colors.surface2 }]}>
+      <Text style={[s.statNumber, { color: colors.text }]}>{n}</Text>
+      <Muted numberOfLines={1}>{label}</Muted>
     </View>
   );
 }
+
 const s = StyleSheet.create({
-  header: { gap: 14 },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1.5,
-  },
-  mode: {
-    flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: 4,
-    flex: 1,
-  },
-  stat: { minWidth: 70, flex: 1 },
-  n: { color: colors.text, fontSize: 22, fontWeight: "900" },
-  title: { color: colors.text, fontWeight: "800", fontSize: 16 },
+  greeting: { fontSize: 22, fontWeight: "900", letterSpacing: -0.5 },
+  modeWrap: { flexDirection: "row", padding: 4, borderRadius: radius.md, backgroundColor: "#FFFFFF1C", gap: 4, alignSelf: "flex-start" },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  stat: { flex: 1, minWidth: "45%", minHeight: 78, borderRadius: radius.md, padding: 14, justifyContent: "center", gap: 2 },
+  statNumber: { fontSize: 24, fontWeight: "900" },
+  sessionRow: { flexDirection: "row", gap: 12, alignItems: "center" },
+  dateTile: { width: 52, height: 58, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  dateDay: { fontSize: 20, fontWeight: "900" },
+  dateMonth: { fontSize: 10, fontWeight: "900" },
+  itemTitle: { fontSize: 16, fontWeight: "800" },
 });

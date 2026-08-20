@@ -1,246 +1,211 @@
-import React, { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { RefreshCw, Search, Shield, UserRound } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
+import { PageHeader } from '../components/PageHeader';
+import { EmptyState, ErrorState, LoadingState } from '../components/States';
+import { StatusBadge } from '../components/StatusBadge';
+import type { AccountStatus, AdminProfile, UserDetail } from '../types/admin';
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  status: string;
-  role: string;
-}
+const tabs = ['profile', 'skills', 'rooms', 'sessions', 'activity'] as const;
+type Tab = (typeof tabs)[number];
 
 export default function User360() {
-  const [activeTab, setActiveTab] = useState('profile');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [params, setParams] = useSearchParams();
+  const initialQuery = params.get('q') ?? '';
+  const [query, setQuery] = useState(initialQuery);
+  const [users, setUsers] = useState<AdminProfile[]>([]);
+  const [total, setTotal] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<UserDetail | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
 
-  const searchUsers = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const searchUsers = useCallback(async (searchText: string) => {
     setLoading(true);
     setError('');
     try {
-      const response = await api.get(`/admin/users?q=${searchQuery}`);
-      setUsers(response.data.users || response.data);
-      setSelectedUser(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to search users');
+      const response = await api.get<{ users: AdminProfile[]; total: number }>('/admin/users', { params: { q: searchText.trim() || undefined, limit: 50 } });
+      setUsers(response.data.users);
+      setTotal(response.data.total);
+      if (selectedId && !response.data.users.some((user) => user.id === selectedId)) {
+        setSelectedId(null);
+        setDetail(null);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to search users');
     } finally {
       setLoading(false);
     }
+  }, [selectedId]);
+
+  const loadDetail = useCallback(async (id: string) => {
+    setSelectedId(id);
+    setDetailLoading(true);
+    setActionError('');
+    try {
+      const response = await api.get<UserDetail>(`/admin/users/${id}`);
+      setDetail(response.data);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Failed to load user details');
+      setDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setQuery(initialQuery);
+    void searchUsers(initialQuery);
+  }, [initialQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const next = query.trim();
+    setParams(next ? { q: next } : {});
+    void searchUsers(next);
   };
 
-  const handleStatusChange = async (status: string) => {
-    if (!selectedUser) return;
+  const updateStatus = async (status: AccountStatus) => {
+    if (!detail) return;
     setActionLoading(true);
+    setActionError('');
     try {
-      await api.patch(`/admin/users/${selectedUser.id}/status`, { status });
-      setSelectedUser({ ...selectedUser, status });
-      setUsers(users.map(u => u.id === selectedUser.id ? { ...u, status } : u));
-    } catch (err: any) {
-      alert('Error updating status: ' + (err.message || 'Unknown error'));
+      const response = await api.patch<AdminProfile>(`/admin/users/${detail.profile.id}/status`, { status });
+      setDetail({ ...detail, profile: { ...detail.profile, ...response.data } });
+      setUsers((current) => current.map((user) => user.id === detail.profile.id ? { ...user, ...response.data } : user));
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Could not update account status');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleRoleChange = async (role: string) => {
-    if (!selectedUser) return;
+  const updateElevatedRole = async (elevatedRole: 'moderator' | 'admin' | null) => {
+    if (!detail) return;
     setActionLoading(true);
+    setActionError('');
     try {
-      await api.post(`/admin/users/${selectedUser.id}/role`, { role });
-      setSelectedUser({ ...selectedUser, role });
-      setUsers(users.map(u => u.id === selectedUser.id ? { ...u, role } : u));
-    } catch (err: any) {
-      alert('Error updating role: ' + (err.message || 'Unknown error'));
+      const response = await api.put<{ roles: string[] }>(`/admin/users/${detail.profile.id}/roles`, { elevatedRole });
+      const roles = response.data.roles;
+      setDetail({ ...detail, profile: { ...detail.profile, roles } });
+      setUsers((current) => current.map((user) => user.id === detail.profile.id ? { ...user, roles } : user));
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Only an admin can change elevated roles');
     } finally {
       setActionLoading(false);
     }
   };
+
+  const selectedUser = useMemo(() => users.find((user) => user.id === selectedId) ?? detail?.profile ?? null, [users, selectedId, detail]);
+  const elevatedRole = detail?.profile.roles.includes('admin') ? 'admin' : detail?.profile.roles.includes('moderator') ? 'moderator' : '';
 
   return (
-    <div className="h-full flex flex-col">
-      <h1 className="text-3xl font-bold mb-6">User 360</h1>
+    <div>
+      <PageHeader eyebrow="Identity & access" title="User 360" description="Search real profile records, inspect participation and take audited account actions without relying on mock user fields." />
 
-      <div className="flex gap-6 h-full">
-        <div className="w-1/3 flex flex-col bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4">
-          <form onSubmit={searchUsers} className="mb-4 flex gap-2">
-            <input
-              type="text"
-              placeholder="Search by name or email..."
-              className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded focus:outline-none disabled:opacity-50"
-            >
-              Search
-            </button>
-          </form>
-
-          {error && <div className="text-red-400 mb-4 text-sm">{error}</div>}
-
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="flex justify-center p-4">
-                <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-              </div>
-            ) : (
-              <ul className="divide-y divide-gray-700">
-                {users.map(user => (
-                  <li
-                    key={user.id}
-                    onClick={() => setSelectedUser(user)}
-                    className={`p-3 cursor-pointer rounded transition-colors ${selectedUser?.id === user.id ? 'bg-blue-900 bg-opacity-40' : 'hover:bg-gray-750'}`}
-                  >
-                    <div className="font-semibold text-gray-200">{user.name}</div>
-                    <div className="text-sm text-gray-400">{user.email}</div>
-                  </li>
-                ))}
-                {!loading && users.length === 0 && searchQuery && (
-                  <div className="text-gray-500 p-4 text-center">No users found.</div>
-                )}
-              </ul>
-            )}
+      <div className="two-column">
+        <section className="panel panel-flat overflow-hidden">
+          <div className="panel-header block">
+            <form className="toolbar" onSubmit={submit}>
+              <div className="toolbar-search"><Search size={16} /><input className="field" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, username or university" /></div>
+              <button className="btn-primary" disabled={loading}>Search</button>
+            </form>
+            <div className="mt-2 text-[10px] text-slate-400">{total.toLocaleString()} matching profiles</div>
           </div>
-        </div>
 
-        <div className="w-2/3 flex flex-col">
-          {selectedUser ? (
+          {error ? <ErrorState message={error} onRetry={() => void searchUsers(query)} /> : null}
+          {loading ? <LoadingState label="Searching profiles…" /> : null}
+          {!loading && !error ? (
+            <div className="user-list">
+              {users.length ? users.map((user) => (
+                <button key={user.id} className={`user-list-item ${selectedId === user.id ? 'selected' : ''}`} onClick={() => void loadDetail(user.id)}>
+                  <div className="user-avatar">{initials(user.full_name)}</div>
+                  <div className="user-list-copy"><strong>{user.full_name}</strong><span>@{user.username || 'no-username'} · {user.university || 'No university'}</span></div>
+                  <StatusBadge value={user.account_status} />
+                </button>
+              )) : <EmptyState title="No profiles found" detail="Try a broader name, username or university search." />}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="panel panel-flat overflow-hidden min-h-[480px]">
+          {!selectedId ? <EmptyState title="Select a user" detail="Choose a profile on the left to load skills, rooms, sessions and audit history." /> : null}
+          {detailLoading ? <LoadingState label="Loading user 360…" /> : null}
+          {actionError && !detailLoading ? <div className="m-4 notice notice-danger">{actionError}</div> : null}
+          {!detailLoading && detail && selectedUser ? (
             <>
-              <div className="flex space-x-4 mb-4 border-b border-gray-700 pb-2">
-                {['profile', 'skills', 'rooms', 'reputation', 'impersonation', 'activity'].map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-3 py-1 rounded capitalize transition-colors ${activeTab === tab ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    {tab}
-                  </button>
-                ))}
+              <div className="profile-hero">
+                <div className="profile-avatar-large">{initials(detail.profile.full_name)}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2"><h2 className="profile-title">{detail.profile.full_name}</h2><StatusBadge value={detail.profile.account_status} /></div>
+                  <div className="profile-meta">@{detail.profile.username || 'no-username'} · {detail.profile.university || 'University not set'} · reputation {detail.profile.reputation}</div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">{detail.profile.roles.map((role) => <span key={role} className="status-badge status-neutral">{role}</span>)}</div>
+                </div>
+                <button className="btn-secondary" onClick={() => void loadDetail(detail.profile.id)}><RefreshCw size={14} /> Refresh</button>
               </div>
 
-              <div className="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 flex-1 overflow-y-auto">
-                {activeTab === 'profile' && (
-                  <div>
-                    <h2 className="text-2xl font-semibold mb-4 text-white border-b border-gray-700 pb-2">Profile Overview</h2>
-                    <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-                      <div>
-                        <span className="block text-gray-500 mb-1">ID</span>
-                        <span className="font-mono text-gray-300 bg-gray-900 px-2 py-1 rounded">{selectedUser.id}</span>
-                      </div>
-                      <div>
-                        <span className="block text-gray-500 mb-1">Name</span>
-                        <span className="text-gray-200 text-base">{selectedUser.name}</span>
-                      </div>
-                      <div>
-                        <span className="block text-gray-500 mb-1">Email</span>
-                        <span className="text-gray-200 text-base">{selectedUser.email}</span>
-                      </div>
-                      <div>
-                        <span className="block text-gray-500 mb-1">Status</span>
-                        <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${selectedUser.status === 'suspended' ? 'bg-red-900 text-red-200' : selectedUser.status === 'banned' ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
-                          {selectedUser.status}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="block text-gray-500 mb-1">Role</span>
-                        <span className="text-gray-200 text-base">{selectedUser.role}</span>
-                      </div>
+              <div className="tabs">{tabs.map((tab) => <button key={tab} className={`tab-button ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>{tab}</button>)}</div>
+              <div className="panel-body">
+                {activeTab === 'profile' ? (
+                  <div className="grid gap-4">
+                    <div className="detail-grid">
+                      <Detail label="User ID" value={detail.profile.id} mono />
+                      <Detail label="Account status" value={detail.profile.account_status} />
+                      <Detail label="Department" value={detail.profile.department || 'Not set'} />
+                      <Detail label="Batch" value={detail.profile.batch || 'Not set'} />
+                      <Detail label="Created" value={new Date(detail.profile.created_at).toLocaleString()} />
+                      <Detail label="Reputation" value={String(detail.profile.reputation)} />
                     </div>
-
-                    <div className="mt-8">
-                      <h3 className="text-lg font-medium text-gray-300 mb-3 border-b border-gray-700 pb-1">Administrative Actions</h3>
-                      <div className="flex flex-wrap gap-3">
-                        {selectedUser.status !== 'suspended' && (
-                          <button disabled={actionLoading} onClick={() => handleStatusChange('suspended')} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded text-sm font-medium disabled:opacity-50 transition-colors">
-                            Suspend User
-                          </button>
-                        )}
-                        {selectedUser.status !== 'banned' && (
-                          <button disabled={actionLoading} onClick={() => handleStatusChange('banned')} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium disabled:opacity-50 transition-colors">
-                            Ban User
-                          </button>
-                        )}
-                        {(selectedUser.status === 'suspended' || selectedUser.status === 'banned') && (
-                          <button disabled={actionLoading} onClick={() => handleStatusChange('active')} className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium disabled:opacity-50 transition-colors">
-                            Activate User
-                          </button>
-                        )}
-
-                        <select
-                          className="px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500 ml-auto"
-                          value={selectedUser.role}
-                          onChange={(e) => handleRoleChange(e.target.value)}
-                          disabled={actionLoading}
-                        >
-                          <option value="user">User</option>
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black text-slate-700"><Shield size={15} /> Administrative actions</div>
+                      <div className="toolbar">
+                        <button className="btn-secondary" disabled={actionLoading || detail.profile.account_status === 'active'} onClick={() => void updateStatus('active')}>Activate</button>
+                        <button className="btn-secondary" disabled={actionLoading || detail.profile.account_status === 'suspended'} onClick={() => void updateStatus('suspended')}>Suspend</button>
+                        <button className="btn-danger" disabled={actionLoading || detail.profile.account_status === 'banned'} onClick={() => void updateStatus('banned')}>Ban</button>
+                        <select className="field max-w-[190px]" value={elevatedRole} disabled={actionLoading} onChange={(event) => void updateElevatedRole(event.target.value === 'admin' ? 'admin' : event.target.value === 'moderator' ? 'moderator' : null)}>
+                          <option value="">Standard user</option>
                           <option value="moderator">Moderator</option>
                           <option value="admin">Admin</option>
                         </select>
                       </div>
+                      <p className="mt-3 text-[10px] leading-5 text-slate-400">Role escalation is admin-only on the backend. Moderators can review users but cannot grant themselves or others admin access.</p>
                     </div>
                   </div>
-                )}
+                ) : null}
 
-                {activeTab === 'skills' && (
-                  <div>
-                    <h2 className="text-xl mb-4 text-white">Skills</h2>
-                    <div className="p-4 bg-gray-900 rounded border border-gray-700">
-                      <p className="text-gray-400 italic">No skills data available via API yet.</p>
-                    </div>
-                  </div>
-                )}
+                {activeTab === 'skills' ? detail.skills.length ? (
+                  <div className="grid gap-2">{detail.skills.map((item, index) => <div className="detail-item" key={`${item.skill?.id ?? index}-${item.kind}`}><label>{item.kind} · proficiency {item.proficiency}/5</label><span>{item.skill?.name ?? 'Unknown skill'} {item.verified ? '· verified' : ''}</span></div>)}</div>
+                ) : <EmptyState title="No skills" detail="This user has no skill records yet." /> : null}
 
-                {activeTab === 'rooms' && (
-                  <div>
-                    <h2 className="text-xl mb-4 text-white">Rooms & Sessions</h2>
-                    <div className="p-4 bg-gray-900 rounded border border-gray-700">
-                      <p className="text-gray-400 italic">No rooms data available via API yet.</p>
-                    </div>
-                  </div>
-                )}
+                {activeTab === 'rooms' ? detail.rooms.length ? (
+                  <div className="grid gap-2">{detail.rooms.map((item, index) => <div className="detail-item" key={item.room?.id ?? index}><label>{item.role} · {item.room?.status ?? 'unknown'}</label><span>{item.room?.title ?? 'Unknown room'} · {item.room?.topic || 'No topic'}</span></div>)}</div>
+                ) : <EmptyState title="No room history" detail="No room membership records were returned." /> : null}
 
-                {activeTab === 'reputation' && (
-                  <div>
-                    <h2 className="text-xl mb-4 text-white">Reputation</h2>
-                    <div className="p-4 bg-gray-900 rounded border border-gray-700">
-                      <p className="text-gray-400 italic">No reputation data available via API yet.</p>
-                    </div>
-                  </div>
-                )}
+                {activeTab === 'sessions' ? detail.sessions.length ? (
+                  <div className="grid gap-2">{detail.sessions.map((item, index) => <div className="detail-item" key={item.session?.id ?? index}><label>{item.session?.status ?? 'unknown'} · {item.attendance_status ?? item.status ?? 'no attendance state'}</label><span>{item.session?.starts_at ? new Date(item.session.starts_at).toLocaleString() : 'Unknown time'} · {item.session?.mode ?? 'unknown mode'}</span></div>)}</div>
+                ) : <EmptyState title="No session history" detail="No participant session records were returned." /> : null}
 
-                {activeTab === 'impersonation' && (
-                  <div>
-                    <h2 className="text-xl mb-2 text-white">Support Impersonation</h2>
-                    <p className="text-sm text-gray-400 mb-4">Grant short-lived delegation for support purposes.</p>
-                    <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors">Start READ_ONLY Session</button>
-                  </div>
-                )}
-
-                {activeTab === 'activity' && (
-                  <div>
-                    <h2 className="text-xl mb-4 text-white">Activity Logs</h2>
-                    <div className="p-4 bg-gray-900 rounded border border-gray-700">
-                      <p className="text-sm text-gray-400 italic">No recent activity.</p>
-                    </div>
-                  </div>
-                )}
+                {activeTab === 'activity' ? detail.activity.length ? (
+                  <ul className="activity-list">{detail.activity.map((item) => <li className="activity-item" key={item.id}><span className="activity-dot" /><div className="activity-copy"><strong>{item.action.replaceAll('.', ' · ')}</strong><span>{new Date(item.created_at).toLocaleString()}</span></div></li>)}</ul>
+                ) : <EmptyState title="No privileged activity" detail="No audit events target this user yet." /> : null}
               </div>
             </>
-          ) : (
-            <div className="flex items-center justify-center h-full bg-gray-800 rounded-lg shadow-lg border border-gray-700">
-              <p className="text-gray-500">Select a user to view details</p>
-            </div>
-          )}
-        </div>
+          ) : null}
+        </section>
       </div>
     </div>
   );
+}
+
+function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return <div className="detail-item"><label>{label}</label><span className={mono ? 'mono' : ''}>{value}</span></div>;
+}
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || <UserRound size={15} />;
 }

@@ -1,8 +1,12 @@
 > **Windows hotfix 2.0.1:** run `SETUP_WINDOWS.cmd` first. See `HOTFIX_2.0.1.md`.
 
-# SkillBridge Production V2
+# SkillBridge Production V3 Advanced
 
-Production-oriented rebuild of the original Android/Jetpack Compose SkillBridge prototype as a cross-platform application.
+Production-oriented cross-platform SkillBridge workspace with React Native/Expo, Node/Express, Supabase and a responsive operations control plane. V3 adds contract fixes, audited administration, runtime observability, safer database setup and full-repository validation.
+
+## V3 engineering upgrade
+
+V3 adds a live-data admin control plane, audited User 360/moderation/verification operations, integration and runtime-policy observability, persistent app mode, hardened API networking, configurable operational limits, corrected database migration planning, expanded CI, and `npm run audit` regression checks. See `docs/V3_ADVANCED_AUDIT.md`.
 
 ## Architecture
 

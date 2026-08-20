@@ -1,11 +1,12 @@
 import { router } from "expo-router";
 import { StyleSheet, Text, View, Animated } from "react-native";
 import { Button, H1 } from "@/components/ui";
-import { colors, spacing } from "@/theme";
+import { spacing, useTheme } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 
 export default function Welcome() {
+  const { colors, isDark } = useTheme();
   const [floatAnim] = useState(() => new Animated.Value(0));
   const [fadeAnim] = useState(() => new Animated.Value(0));
 
@@ -39,7 +40,7 @@ export default function Welcome() {
 
   return (
     <LinearGradient
-      colors={["#0C192A", "#07111F", "#040914"]}
+      colors={isDark ? ["#0C192A", "#07111F", "#040914"] : ["#F8FAFC", "#EEF4FF", "#E8EEFF"]}
       style={s.container}
     >
       <Animated.View style={[s.orb1, { transform: [{ translateY }] }]} />
@@ -52,9 +53,9 @@ export default function Welcome() {
 
       <Animated.View style={[s.content, { opacity: fadeAnim }]}>
         <View style={s.hero}>
-          <Text style={s.brand}>SKILLBRIDGE</Text>
+          <Text style={[s.brand, { color: colors.primary }]}>SKILLBRIDGE</Text>
           <H1>Learn from people around you. Teach what you know.</H1>
-          <Text style={s.detail}>
+          <Text style={[s.detail, { color: colors.muted }]}>
             Peer learning, research collaboration, clubs, events, realtime rooms
             and live classes in one campus network.
           </Text>
@@ -106,12 +107,11 @@ const s = StyleSheet.create({
   },
   hero: { gap: 20, marginTop: 40 },
   brand: {
-    color: colors.accent,
     fontWeight: "900",
     letterSpacing: 4,
     fontSize: 14,
     textTransform: "uppercase",
   },
-  detail: { color: colors.muted, fontSize: 18, lineHeight: 28, opacity: 0.9 },
+  detail: { fontSize: 18, lineHeight: 28, opacity: 0.9 },
   actions: { gap: spacing.md, paddingBottom: 40 },
 });

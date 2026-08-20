@@ -2,6 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { bidirectionalFilter, isBlocked } from "../lib/query-helpers.js";
+import type { UserSkillWithSkill } from "../types/database.js";
 export const profiles = Router();
 profiles.get(
   "/me",
@@ -16,14 +18,15 @@ profiles.get(
       .from("user_skills")
       .select("kind,proficiency,skills(name)")
       .eq("user_id", req.userId!);
+    const typedSkills = (skills ?? []) as unknown as UserSkillWithSkill[];
     res.json({
       profile,
-      skillsKnown: (skills ?? [])
+      skillsKnown: typedSkills
         .filter((x) => x.kind === "known")
-        .map((x: any) => ({ name: x.skills.name, proficiency: x.proficiency })),
-      skillsWanted: (skills ?? [])
+        .map((x) => ({ name: x.skills?.name ?? "", proficiency: x.proficiency })),
+      skillsWanted: typedSkills
         .filter((x) => x.kind === "wanted")
-        .map((x: any) => ({ name: x.skills.name, proficiency: x.proficiency })),
+        .map((x) => ({ name: x.skills?.name ?? "", proficiency: x.proficiency })),
     });
   }),
 );
@@ -53,6 +56,42 @@ profiles.patch(
       .single();
     if (error) throw error;
     res.json({ profile: data });
+  }),
+);
+profiles.post(
+  "/me/avatar",
+  wrap(async (req, res) => {
+    const { imageBase64, contentType = "image/jpeg" } = z
+      .object({
+        imageBase64: z.string().min(10),
+        contentType: z.enum(["image/jpeg", "image/png", "image/webp"]).default("image/jpeg"),
+      })
+      .parse(req.body);
+
+    const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const path = `${req.userId}/avatar_${Date.now()}.${ext}`;
+
+    const buffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ""), "base64");
+
+    const { error: uploadError } = await admin.storage
+      .from("avatars")
+      .upload(path, buffer, { contentType, upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = admin.storage.from("avatars").getPublicUrl(path);
+    const avatarUrl = urlData.publicUrl;
+
+    const { data, error } = await admin
+      .from("profiles")
+      .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+      .eq("id", req.userId!)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ avatar_url: avatarUrl, profile: data });
   }),
 );
 profiles.get(
@@ -95,14 +134,8 @@ profiles.get(
   "/:id",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
-    const { data: blocked } = await admin
-      .from("blocks")
-      .select("id")
-      .or(
-        `and(blocker_id.eq.${req.userId},blocked_id.eq.${id}),and(blocker_id.eq.${id},blocked_id.eq.${req.userId})`,
-      )
-      .limit(1);
-    if (blocked?.length)
+    const blocked = await isBlocked(req.userId!, id);
+    if (blocked)
       return res.status(404).json({ error: "Profile unavailable" });
     const { data: profile, error } = await admin
       .from("profiles")
@@ -120,7 +153,7 @@ profiles.get(
       .from("connection_requests")
       .select("status")
       .or(
-        `and(requester_id.eq.${req.userId},recipient_id.eq.${id}),and(requester_id.eq.${id},recipient_id.eq.${req.userId})`,
+        bidirectionalFilter("requester_id", "recipient_id", req.userId!, id),
       )
       .maybeSingle();
     const [a, b] = [req.userId!, id].sort();
@@ -140,10 +173,11 @@ profiles.get(
       p_user_a: req.userId!,
       p_user_b: id,
     });
+    const userSkills = (skills ?? []) as unknown as UserSkillWithSkill[];
     res.json({
       profile,
-      skills: (skills ?? []).map((x: any) => ({
-        name: x.skills.name,
+      skills: userSkills.map((x) => ({
+        name: x.skills?.name ?? "",
         kind: x.kind,
         proficiency: x.proficiency,
       })),

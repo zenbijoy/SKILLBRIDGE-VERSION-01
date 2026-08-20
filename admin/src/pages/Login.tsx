@@ -1,80 +1,50 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, type FormEvent } from 'react';
+import { LockKeyhole, ShieldCheck } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
-const Login: React.FC = () => {
+export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
 
-  const from = location.state?.from?.pathname || '/';
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
+  const handleLogin = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true); setError('');
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (signInError) throw signInError;
       navigate(from, { replace: true });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-4">
-      <div className="w-full max-w-md bg-gray-800 rounded-lg shadow-md p-8 border border-gray-700">
-        <h2 className="text-2xl font-bold mb-6 text-center">SkillBridge Admin Login</h2>
-        
-        {error && (
-          <div className="bg-red-900 border border-red-500 text-red-100 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-150 disabled:opacity-50"
-          >
-            {loading ? 'Logging in...' : 'Log In'}
-          </button>
-        </form>
-      </div>
+    <div className="login-shell">
+      <section className="login-brand-pane">
+        <div className="flex items-center gap-3"><div className="brand-mark">SB</div><div><strong>SkillBridge</strong><div className="text-[11px] text-blue-200">Secure control plane</div></div></div>
+        <div><h1 className="login-brand-title">Operate the learning network with clarity.</h1><p className="login-brand-copy">Moderation, user operations, runtime health and privileged audit trails in one responsive workspace backed by real API data.</p></div>
+        <div className="flex items-center gap-2 text-[11px] text-blue-100"><ShieldCheck size={17} /> Moderator or administrator role required</div>
+      </section>
+      <section className="login-form-pane">
+        <div className="login-card">
+          <div className="mb-5 inline-grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-700"><LockKeyhole size={20} /></div>
+          <h1>Welcome back</h1><p>Sign in with your Supabase account. The API will also verify your moderator/admin role before the dashboard opens.</p>
+          {error ? <div className="notice notice-danger mb-4">{error}</div> : null}
+          <form className="login-form" onSubmit={handleLogin}>
+            <div><label className="field-label">Email</label><input className="field" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="operator@example.com" /></div>
+            <div><label className="field-label">Password</label><input className="field" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••••" /></div>
+            <button className="btn-primary login-submit" type="submit" disabled={loading}>{loading ? 'Verifying access…' : 'Sign in securely'}</button>
+          </form>
+        </div>
+      </section>
     </div>
   );
-};
-
-export default Login;
+}

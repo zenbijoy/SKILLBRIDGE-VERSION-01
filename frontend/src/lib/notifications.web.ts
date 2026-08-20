@@ -1,9 +1,9 @@
 export async function registerPush(): Promise<string | null> {
-  // Notifications are not supported or safely implemented on the web for Phase 1.3.1.
-  console.log("Push notifications skipped on web platform.");
   return null;
 }
-
-export function useNotificationRouting(router: any) {
-  // No-op on web for Phase 1.3.1
+export async function unregisterPush(): Promise<void> {
+  return;
+}
+export function useNotificationRouting(_router: any) {
+  // Expo native notification routing is intentionally disabled on web.
 }

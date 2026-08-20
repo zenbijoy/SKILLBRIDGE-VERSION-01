@@ -13,6 +13,14 @@ const optionalString = z.preprocess(
   z.string().optional(),
 );
 
+const booleanFromEnv = z.preprocess((value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  return false;
+}, z.boolean());
+
 const schema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -29,6 +37,9 @@ const schema = z.object({
   EXPO_PUSH_ACCESS_TOKEN: optionalString,
   AI_PROVIDER_URL: optionalUrl,
   AI_PROVIDER_API_KEY: optionalString,
+  MAX_ROOM_CAPACITY: z.coerce.number().int().min(2).max(1000).default(250),
+  MAINTENANCE_MODE: booleanFromEnv.default(false),
+  GLOBAL_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(30).max(5000).default(120),
 });
 
 export const env = schema.parse(process.env);

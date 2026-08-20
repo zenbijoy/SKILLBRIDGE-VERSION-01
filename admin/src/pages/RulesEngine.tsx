@@ -1,124 +1,47 @@
-import { useState } from 'react';
-
-interface Config {
-  newDiscoverUi: boolean;
-  paidSessions: boolean;
-  maxRoomCapacity: number;
-  uploadLimitMb: number;
-  maintenanceMode: boolean;
-}
+import { useCallback, useEffect, useState } from 'react';
+import { Gauge, RefreshCw, ShieldCheck, UsersRound, Wrench } from 'lucide-react';
+import api from '../lib/api';
+import { PageHeader } from '../components/PageHeader';
+import { ErrorState, LoadingState } from '../components/States';
+import { StatCard } from '../components/StatCard';
+import { StatusBadge } from '../components/StatusBadge';
+import type { SystemInfo } from '../types/admin';
 
 export default function RulesEngine() {
-  const [config, setConfig] = useState<Config>({
-    newDiscoverUi: true,
-    paidSessions: false,
-    maxRoomCapacity: 250,
-    uploadLimitMb: 50,
-    maintenanceMode: false,
-  });
-
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
-
-  const handleSave = () => {
-    setSaving(true);
-    setMessage(null);
-    // Simulate API call
-    setTimeout(() => {
-      setSaving(false);
-      setMessage({ text: 'Configuration saved successfully!', type: 'success' });
-      setTimeout(() => setMessage(null), 3000);
-    }, 1000);
-  };
-
-  const handleChange = (field: keyof Config, value: boolean | number) => {
-    setConfig(prev => ({ ...prev, [field]: value }));
-  };
+  const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try { setSystem((await api.get<SystemInfo>('/admin/system')).data); }
+    catch (err: unknown) { setError(err instanceof Error ? err.message : 'Failed to load runtime policy'); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">Rules & Feature Flags</h1>
-
-      <div className="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-        <p className="text-gray-400 mb-6">Manage app configuration, feature flags, and business rules.</p>
-
-        {message && (
-          <div className={`mb-6 p-4 rounded border ${message.type === 'success' ? 'bg-green-900 bg-opacity-20 border-green-500 text-green-400' : 'bg-red-900 bg-opacity-20 border-red-500 text-red-400'}`}>
-            {message.text}
-          </div>
-        )}
-
-        <div className="space-y-8">
-          <div>
-            <h3 className="text-xl font-bold border-b border-gray-700 pb-2 mb-4 text-white">Global Feature Flags</h3>
-            <div className="space-y-4">
-              <label className="flex items-center space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 focus:ring-opacity-25"
-                  checked={config.newDiscoverUi}
-                  onChange={(e) => handleChange('newDiscoverUi', e.target.checked)}
-                />
-                <span className="text-gray-200">Enable New Discover UI</span>
-              </label>
-              <label className="flex items-center space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 focus:ring-opacity-25"
-                  checked={config.paidSessions}
-                  onChange={(e) => handleChange('paidSessions', e.target.checked)}
-                />
-                <span className="text-gray-200">Enable Paid Sessions (Beta)</span>
-              </label>
-              <label className="flex items-center space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="form-checkbox h-5 w-5 text-red-600 bg-gray-700 border-gray-600 rounded focus:ring-red-500 focus:ring-opacity-25"
-                  checked={config.maintenanceMode}
-                  onChange={(e) => handleChange('maintenanceMode', e.target.checked)}
-                />
-                <span className="text-red-400 font-medium">Maintenance Mode (Disables public access)</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-xl font-bold border-b border-gray-700 pb-2 mb-4 text-white">Business Rules</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Max Room Capacity</label>
-                <input
-                  type="number"
-                  value={config.maxRoomCapacity}
-                  onChange={(e) => handleChange('maxRoomCapacity', parseInt(e.target.value) || 0)}
-                  className="bg-gray-700 border border-gray-600 rounded p-2 w-full text-white focus:outline-none focus:border-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">Maximum users allowed in a single room</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Upload Limit (MB)</label>
-                <input
-                  type="number"
-                  value={config.uploadLimitMb}
-                  onChange={(e) => handleChange('uploadLimitMb', parseInt(e.target.value) || 0)}
-                  className="bg-gray-700 border border-gray-600 rounded p-2 w-full text-white focus:outline-none focus:border-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">Maximum file size for user uploads</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-gray-700">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-colors disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save Configuration'}
-            </button>
-          </div>
+      <PageHeader eyebrow="Platform policy" title="Runtime policy" description="Effective server-side limits. Unlike the previous simulated form, this page only shows policy the backend is actually enforcing." actions={<button className="btn-secondary" onClick={() => void load()}><RefreshCw size={15} /> Refresh</button>} />
+      {loading ? <section className="panel"><LoadingState label="Reading effective policy…" /></section> : null}
+      {error ? <section className="panel"><ErrorState message={error} onRetry={() => void load()} /></section> : null}
+      {!loading && !error && system ? <>
+        <div className="stats-grid">
+          <StatCard label="Global requests" value={`${system.runtimePolicy.globalRateLimitPerMinute}/min`} detail="Express rate limiter" icon={Gauge} tone="blue" />
+          <StatCard label="Max room capacity" value={system.runtimePolicy.maxRoomCapacity} detail="Validated during room creation" icon={UsersRound} tone="violet" />
+          <StatCard label="Maintenance mode" value={system.runtimePolicy.maintenanceMode ? 'Enabled' : 'Disabled'} detail="Moderators/admins retain access" icon={Wrench} tone={system.runtimePolicy.maintenanceMode ? 'red' : 'green'} />
+          <StatCard label="Database" value={system.database.status} detail="Policy source API can reach Supabase" icon={ShieldCheck} tone={system.database.status === 'operational' ? 'green' : 'red'} />
         </div>
-      </div>
+        <section className="panel panel-flat">
+          <div className="panel-header"><div><h2 className="panel-title">Effective configuration</h2><p className="panel-subtitle">Change these values in the backend environment and restart/redeploy the API so the source of truth remains auditable.</p></div><StatusBadge value={system.runtimePolicy.maintenanceMode ? 'maintenance enabled' : 'operational'} /></div>
+          <div className="panel-body grid gap-3">
+            <ConfigLine name="GLOBAL_RATE_LIMIT_PER_MINUTE" value={String(system.runtimePolicy.globalRateLimitPerMinute)} detail="Allowed range: 30–5000 requests per minute per configured rate-limit key." />
+            <ConfigLine name="MAX_ROOM_CAPACITY" value={String(system.runtimePolicy.maxRoomCapacity)} detail="Allowed range: 2–1000 and enforced by room request validation." />
+            <ConfigLine name="MAINTENANCE_MODE" value={String(system.runtimePolicy.maintenanceMode)} detail="Accepts true/false, 1/0, yes/no or on/off in the upgraded parser." />
+            <div className="notice notice-warning">A browser “Save configuration” button was removed because it only changed React state and never changed backend behavior. Use deployment secrets/environment management for production policy.</div>
+          </div>
+        </section>
+      </> : null}
     </div>
   );
 }
+function ConfigLine({ name, value, detail }: { name: string; value: string; detail: string }) { return <div className="flex flex-col gap-2 rounded-xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between"><div><strong className="mono text-slate-700">{name}</strong><p className="mt-1 text-[10px] text-slate-400">{detail}</p></div><code className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700">{value}</code></div>; }

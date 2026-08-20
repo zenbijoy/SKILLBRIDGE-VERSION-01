@@ -2,6 +2,7 @@ import { Router } from "express";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { cacheGet, cacheSet } from "../lib/redis.js";
+import { eitherColumnFilter } from "../lib/query-helpers.js";
 export const dashboard = Router();
 dashboard.get(
   "/",
@@ -9,7 +10,7 @@ dashboard.get(
     const uid = req.userId!;
     const mode = req.query.mode === "teach" ? "teach" : "learn";
     const key = `dashboard:${uid}:${mode}`;
-    const cached = await cacheGet<any>(key);
+    const cached = await cacheGet<Record<string, unknown>>(key);
     if (cached) return res.json(cached);
     const [
       roomsQ,
@@ -44,7 +45,7 @@ dashboard.get(
       admin
         .from("connections")
         .select("*", { count: "exact", head: true })
-        .or(`user_a.eq.${uid},user_b.eq.${uid}`),
+        .or(eitherColumnFilter("user_a", "user_b", uid)),
       admin
         .from("sessions")
         .select("*", { count: "exact", head: true })
@@ -61,7 +62,7 @@ dashboard.get(
       urgentRooms: roomsQ.data ?? [],
       recommendedPeople: peopleQ.data ?? [],
       upcomingSessions: (sessionsQ.data ?? [])
-        .map((x: any) => x.sessions)
+        .map((x: { sessions?: unknown }) => x.sessions)
         .filter(Boolean),
       events: eventsQ.data ?? [],
       stats: {

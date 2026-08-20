@@ -1,25 +1,70 @@
 import { supabase } from "./supabase";
-const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+
+const BASE = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/+$/, "");
+
+type ApiErrorBody = {
+  error?: string;
+  message?: string;
+  issues?: unknown;
+};
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public details?: unknown,
   ) {
     super(message);
+    this.name = "ApiError";
   }
 }
-let refreshPromise: Promise<any> | null = null;
+
+let refreshPromise: ReturnType<typeof supabase.auth.refreshSession> | null = null;
+
+function isFormData(body: BodyInit | null | undefined) {
+  return typeof FormData !== "undefined" && body instanceof FormData;
+}
+
+async function parseResponse(res: Response): Promise<ApiErrorBody | unknown | null> {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: text } satisfies ApiErrorBody;
+  }
+}
+
+function asErrorBody(value: unknown): ApiErrorBody {
+  return value && typeof value === "object" ? (value as ApiErrorBody) : {};
+}
+
+async function requestWithHeaders(path: string, init: RequestInit, accessToken?: string) {
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "application/json");
+  if (init.body && !isFormData(init.body) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  try {
+    return await fetch(`${BASE}${normalizedPath}`, { ...init, headers });
+  } catch (error) {
+    throw new ApiError(
+      0,
+      "Cannot reach the SkillBridge API. Check your connection and EXPO_PUBLIC_API_URL.",
+      error,
+    );
+  }
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
-  if (session?.access_token)
-    headers.set("Authorization", `Bearer ${session.access_token}`);
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  
+
+  let res = await requestWithHeaders(path, init, session?.access_token);
+
   if (res.status === 401 && session?.access_token) {
     if (!refreshPromise) {
       refreshPromise = supabase.auth.refreshSession().finally(() => {
@@ -27,35 +72,28 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       });
     }
     const { data: refreshData } = await refreshPromise;
-    
     if (refreshData?.session?.access_token) {
-      // Retry request with new token
-      headers.set("Authorization", `Bearer ${refreshData.session.access_token}`);
-      const retryRes = await fetch(`${BASE}${path}`, { ...init, headers });
-      const retryText = await retryRes.text();
-      const retryBody = retryText ? JSON.parse(retryText) : null;
-      if (!retryRes.ok) throw new ApiError(retryRes.status, retryBody?.error ?? retryBody?.message ?? "Request failed");
-      return retryBody as T;
+      res = await requestWithHeaders(path, init, refreshData.session.access_token);
     } else {
-      // If refresh fails, sign out to clear state
       await supabase.auth.signOut();
     }
   }
 
-  const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
-  if (!res.ok)
+  const body = await parseResponse(res);
+  if (!res.ok) {
+    const errorBody = asErrorBody(body);
     throw new ApiError(
       res.status,
-      body?.error ?? body?.message ?? "Request failed",
+      errorBody.error ?? errorBody.message ?? `Request failed (${res.status})`,
+      errorBody.issues,
     );
+  }
   return body as T;
 }
-export const qs = (
-  obj: Record<string, string | number | boolean | undefined>,
-) =>
+
+export const qs = (obj: Record<string, string | number | boolean | undefined>) =>
   new URLSearchParams(
     Object.entries(obj)
-      .filter(([, v]) => v !== undefined)
-      .map(([k, v]) => [k, String(v)]),
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [key, String(value)]),
   ).toString();

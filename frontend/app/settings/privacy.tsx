@@ -51,12 +51,13 @@ export default function Privacy() {
   });
   const [visibility, setVisibility] = useState("public");
   const update = useMutation({
-    mutationFn: () =>
+    mutationFn: (nextVisibility: string) =>
       api("/profiles/me/privacy", {
         method: "PATCH",
-        body: JSON.stringify({ profile_visibility: visibility }),
+        body: JSON.stringify({ profile_visibility: nextVisibility }),
       }),
     onSuccess: () => Alert.alert("Privacy updated"),
+    onError: (error) => Alert.alert("Could not update privacy", error.message),
   });
   const del = useMutation({
     mutationFn: () =>
@@ -92,7 +93,7 @@ export default function Privacy() {
           variant="secondary"
           onPress={() => {
             setVisibility("public");
-            update.mutate();
+            update.mutate("public");
           }}
         />
         <Button
@@ -100,7 +101,7 @@ export default function Privacy() {
           variant="secondary"
           onPress={() => {
             setVisibility("connections");
-            update.mutate();
+            update.mutate("connections");
           }}
         />
         <Button
@@ -108,7 +109,7 @@ export default function Privacy() {
           variant="secondary"
           onPress={() => {
             setVisibility("private");
-            update.mutate();
+            update.mutate("private");
           }}
         />
       </Card>

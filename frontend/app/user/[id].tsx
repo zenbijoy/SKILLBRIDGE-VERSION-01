@@ -46,11 +46,11 @@ export default function UserProfile() {
   });
   
   const [showReport, setShowReport] = useState(false);
-  const [reportReason, setReportReason] = useState("spam");
+  const [reportReason, setReportReason] = useState("Spam or scam");
   const [reportDetails] = useState("");
   
   const report = useMutation({
-    mutationFn: () => api(`/moderation`, { method: "POST", body: JSON.stringify({ target_type: "user", target_id: id, reason: reportReason, details: reportDetails }) }),
+    mutationFn: () => api(`/moderation/report`, { method: "POST", body: JSON.stringify({ target_type: "user", target_id: id, reason: reportReason, details: reportDetails }) }),
     onSuccess: () => {
       setShowReport(false);
       Alert.alert("Reported", "Thank you for helping keep the community safe.");
@@ -92,9 +92,10 @@ export default function UserProfile() {
       {showReport ? (
         <Card>
           <H2>Report User</H2>
-          <Muted>Reason: (spam, harassment, inappropriate_content, etc)</Muted>
-          <Button title="Toggle Reason: Spam" variant={reportReason === "spam" ? "primary" : "secondary"} onPress={() => setReportReason("spam")} />
-          <Button title="Toggle Reason: Harassment" variant={reportReason === "harassment" ? "primary" : "secondary"} onPress={() => setReportReason("harassment")} />
+          <Muted>Choose the closest reason. You can cancel before submitting.</Muted>
+          <Button title="Spam or scam" variant={reportReason === "Spam or scam" ? "primary" : "secondary"} onPress={() => setReportReason("Spam or scam")} />
+          <Button title="Harassment or bullying" variant={reportReason === "Harassment or bullying" ? "primary" : "secondary"} onPress={() => setReportReason("Harassment or bullying")} />
+          <Button title="Unsafe or inappropriate content" variant={reportReason === "Unsafe or inappropriate content" ? "primary" : "secondary"} onPress={() => setReportReason("Unsafe or inappropriate content")} />
           <Button title="Submit Report" variant="danger" onPress={() => report.mutate()} />
           <Button title="Cancel" variant="ghost" onPress={() => setShowReport(false)} />
         </Card>

@@ -4,14 +4,15 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import type { Server } from "socket.io";
 import { PushService } from "../services/PushService.js";
+import { isBlocked } from "../lib/query-helpers.js";
 
 export function chat(io: Server) {
   const r = Router();
 
   r.get(
     "/presence",
-    wrap(async (req, res) => {
-      const { userConnections } = await import("../server.js");
+    wrap(async (_req, res) => {
+      const { userConnections } = await import("../socket.js");
       res.json({ onlineUsers: Array.from(userConnections.keys()) });
     })
   );
@@ -27,18 +28,43 @@ export function chat(io: Server) {
         .eq("user_id", req.userId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const conversations = await Promise.all(
-        (data ?? []).map(async (x: any) => {
-          let query = admin
-            .from("messages")
-            .select("*", { count: "exact", head: true })
-            .eq("conversation_id", x.conversation_id)
-            .neq("sender_id", req.userId!);
-          if (x.last_read_at) query = query.gt("created_at", x.last_read_at);
-          const { count } = await query;
-          return { ...x.conversations, unread_count: count ?? 0 };
-        }),
-      );
+
+      if (!data || data.length === 0) {
+        return res.json({ conversations: [] });
+      }
+
+      const convIds = data.map((x: any) => x.conversation_id);
+
+      // Single batch query instead of N individual queries
+      const { data: unreadMessages, error: msgError } = await admin
+        .from("messages")
+        .select("conversation_id,created_at")
+        .in("conversation_id", convIds)
+        .neq("sender_id", req.userId!)
+        .order("created_at", { ascending: false })
+        .limit(2000);
+
+      if (msgError) throw msgError;
+
+      const unreadMap = new Map<string, number>();
+      for (const cm of data) {
+        unreadMap.set(cm.conversation_id, 0);
+      }
+
+      for (const msg of unreadMessages ?? []) {
+        const cm = data.find((x: any) => x.conversation_id === msg.conversation_id);
+        if (cm) {
+          if (!cm.last_read_at || msg.created_at > cm.last_read_at) {
+            unreadMap.set(msg.conversation_id, (unreadMap.get(msg.conversation_id) || 0) + 1);
+          }
+        }
+      }
+
+      const conversations = data.map((x: any) => ({
+        ...x.conversations,
+        unread_count: unreadMap.get(x.conversation_id) ?? 0,
+      }));
+
       res.json({ conversations });
     }),
   );
@@ -75,14 +101,8 @@ export function chat(io: Server) {
       const { participantId } = z
         .object({ participantId: z.string().uuid() })
         .parse(req.body);
-      const { data: block } = await admin
-        .from("blocks")
-        .select("id")
-        .or(
-          `and(blocker_id.eq.${req.userId},blocked_id.eq.${participantId}),and(blocker_id.eq.${participantId},blocked_id.eq.${req.userId})`,
-        )
-        .limit(1);
-      if (block?.length)
+      const blocked = await isBlocked(req.userId!, participantId);
+      if (blocked)
         return res.status(403).json({ error: "Messaging unavailable" });
       const { data: existing } = await admin.rpc("find_dm_conversation", {
         p_user_a: req.userId!,
@@ -133,14 +153,64 @@ export function chat(io: Server) {
     }),
   );
   r.post(
+    "/upload",
+    wrap(async (req, res) => {
+      const { fileBase64, contentType = "image/jpeg", fileName = "attachment" } = z
+        .object({
+          fileBase64: z.string().min(10),
+          contentType: z.string().default("image/jpeg"),
+          fileName: z.string().optional().default("attachment"),
+        })
+        .parse(req.body);
+
+      const ext = contentType.includes("png")
+        ? "png"
+        : contentType.includes("pdf")
+        ? "pdf"
+        : contentType.includes("webp")
+        ? "webp"
+        : "jpg";
+      const sanitizedName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${req.userId}/${Date.now()}_${sanitizedName}.${ext}`;
+      const buffer = Buffer.from(fileBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+
+      const { error: uploadError } = await admin.storage
+        .from("avatars")
+        .upload(path, buffer, { contentType, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = admin.storage.from("avatars").getPublicUrl(path);
+
+      res.json({
+        url: urlData.publicUrl,
+        type: contentType.startsWith("image/") ? "image" : "file",
+        name: fileName,
+        size: buffer.length,
+      });
+    }),
+  );
+
+  r.post(
     "/conversations/:id/messages",
     wrap(async (req, res) => {
       const id = z.string().uuid().parse(req.params.id);
-      const { body, client_message_id, reply_to_message_id } = z
+      const { body, client_message_id, reply_to_message_id, attachment } = z
         .object({
-          body: z.string().trim().min(1).max(5000),
+          body: z.string().trim().max(5000).default(""),
           client_message_id: z.string().uuid().optional(),
-          reply_to_message_id: z.string().uuid().optional()
+          reply_to_message_id: z.string().uuid().optional(),
+          attachment: z
+            .object({
+              url: z.string().url(),
+              type: z.string(),
+              name: z.string().optional(),
+              size: z.number().optional(),
+            })
+            .optional(),
+        })
+        .refine((data) => data.body.length > 0 || data.attachment, {
+          message: "Message must contain text or an attachment",
         })
         .parse(req.body);
 
@@ -173,14 +243,8 @@ export function chat(io: Server) {
       if (conv?.kind === "dm") {
         const otherUserId = conv.conversation_members.find((cm: any) => cm.user_id !== req.userId!)?.user_id;
         if (otherUserId) {
-          const { data: block } = await admin
-            .from("blocks")
-            .select("id")
-            .or(
-              `and(blocker_id.eq.${req.userId},blocked_id.eq.${otherUserId}),and(blocker_id.eq.${otherUserId},blocked_id.eq.${req.userId})`,
-            )
-            .limit(1);
-          if (block?.length) {
+          const blocked = await isBlocked(req.userId!, otherUserId);
+          if (blocked) {
             return res.status(403).json({ error: "Messaging unavailable" });
           }
         }
@@ -188,7 +252,14 @@ export function chat(io: Server) {
 
       const { data, error } = await admin
         .from("messages")
-        .insert({ conversation_id: id, sender_id: req.userId!, body, client_message_id, reply_to_message_id })
+        .insert({
+          conversation_id: id,
+          sender_id: req.userId!,
+          body: body || (attachment ? `[${attachment.type === "image" ? "Photo" : "Attachment"}]` : ""),
+          client_message_id,
+          reply_to_message_id,
+          attachment: attachment ?? null,
+        })
         .select()
         .single();
       if (error) throw error;

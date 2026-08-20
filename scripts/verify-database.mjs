@@ -8,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const MIGRATIONS_DIR = path.resolve(__dirname, '../infra/supabase/migrations');
 const BASELINE_DIR = path.resolve(__dirname, '../infra/supabase/baseline');
+const BASELINE_SCHEMA_VERSION = 12;
 
 function psqlCmd(dbUrl, query) {
     try {
@@ -78,6 +79,11 @@ export function determineState(dbUrl) {
 
             const expectedUpgrade = getExpectedMigrations(MIGRATIONS_DIR);
             const expectedBaseline = getExpectedMigrations(BASELINE_DIR);
+            const expectedPostBaseline = expectedUpgrade.filter(({ filename }) => {
+                const number = Number.parseInt(filename.split('_')[0], 10);
+                return Number.isFinite(number) && number > BASELINE_SCHEMA_VERSION;
+            });
+            const expectedFresh = [...expectedBaseline, ...expectedPostBaseline];
 
             // Check against Upgrade Chain
             let matchUpgrade = true;
@@ -91,14 +97,14 @@ export function determineState(dbUrl) {
                 if (isPrefix) return 'BASELINE_V1';
             }
 
-            // Check against Baseline Chain
-            let matchBaseline = true;
-            for (let i = 0; i < applied.length; i++) {
-                const exp = expectedBaseline.find(e => e.filename === applied[i].filename);
-                if (!exp || exp.checksum !== applied[i].checksum) matchBaseline = false;
-            }
-            if (matchBaseline) {
-                if (applied.length === expectedBaseline.length) return 'CURRENT';
+            // Check against Fresh Chain (baseline snapshot + migrations newer than the snapshot).
+            const matchesFreshPrefix = applied.every((app, index) => {
+                const expected = expectedFresh[index];
+                return expected && app.filename === expected.filename && app.checksum === expected.checksum;
+            });
+            if (matchesFreshPrefix) {
+                if (applied.length === expectedFresh.length) return 'CURRENT';
+                return 'BASELINE_V1';
             }
 
             return 'UNKNOWN';

@@ -11,10 +11,11 @@ import {
 } from "react-native";
 import { Button, Field, H1, Muted } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { colors, spacing } from "@/theme";
+import { spacing, useTheme } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function ForgotPassword() {
+  const { colors, isDark } = useTheme();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -35,14 +36,14 @@ export default function ForgotPassword() {
   }
 
   return (
-    <LinearGradient colors={["#0C192A", "#07111F"]} style={s.container}>
+    <LinearGradient colors={isDark ? ["#0C192A", "#07111F"] : ["#F8FAFC", "#EEF4FF"]} style={s.container}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={s.content}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Text style={s.backText}>← Back</Text>
+            <Text style={[s.backText, { color: colors.muted }]}>← Back</Text>
           </TouchableOpacity>
 
           <View style={s.header}>
@@ -86,7 +87,7 @@ const s = StyleSheet.create({
     padding: 10,
     zIndex: 10,
   },
-  backText: { color: colors.muted, fontSize: 16, fontWeight: "600" },
+  backText: { fontSize: 16, fontWeight: "600" },
   header: { gap: 10, marginBottom: 40 },
   form: { gap: 16 },
 });

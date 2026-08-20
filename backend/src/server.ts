@@ -1,176 +1,29 @@
 import http from "node:http";
-import express from "express";
-import cors from "cors";
-import helmet from "helmet";
-import compression from "compression";
-import { rateLimit } from "express-rate-limit";
 import { Server as SocketServer } from "socket.io";
 import { env } from "./config/env.js";
-import { auth, requireRole } from "./middleware/auth.js";
-import { errors, notFound } from "./middleware/error.js";
-import { dashboard } from "./routes/dashboard.js";
-import { profiles } from "./routes/profiles.js";
-import { connections } from "./routes/connections.js";
-import { rooms } from "./routes/rooms.js";
-import { sessions } from "./routes/sessions.js";
-import { search } from "./routes/search.js";
-import { recommendations } from "./routes/recommendations.js";
-import { events } from "./routes/events.js";
-import { chat } from "./routes/chat.js";
-import { resources } from "./routes/resources.js";
-import { saved } from "./routes/saved.js";
-import { gamification } from "./routes/gamification.js";
-import { quiz } from "./routes/quiz.js";
-import { notifications } from "./routes/notifications.js";
-import { moderation } from "./routes/moderation.js";
-import { live, liveWebhooks } from "./routes/live.js";
-import { account } from "./routes/account.js";
-import { adminRoutes } from "./routes/admin.js";
-import { ai } from "./routes/ai.js";
-import { catalog } from "./routes/catalog.js";
-import { clubs } from "./routes/clubs.js";
-import { research } from "./routes/research.js";
-import { admin } from "./lib/db.js";
-import { health } from "./routes/health.js";
-const app = express();
-const server = http.createServer(app);
+import { createApp } from "./app.js";
+import { setupSocket, userConnections } from "./socket.js";
+import { startPushWorker } from "./workers/pushWorker.js";
+
 const origins = env.WEB_ORIGINS.split(",").map((x) => x.trim());
+
+const server = http.createServer();
 const io = new SocketServer(server, {
   cors: { origin: origins, credentials: true },
 });
-app.set("trust proxy", 1);
-app.use(helmet());
-app.use(compression());
-app.use(cors({ origin: origins, credentials: true }));
-app.use(express.json({
-  limit: "1mb",
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
-app.use(
-  rateLimit({
-    windowMs: 60_000,
-    limit: 120,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-  }),
-);
-app.use("/health", health);
-app.use("/webhooks/live", liveWebhooks);
-const api = express.Router();
-api.use(auth);
-api.use("/dashboard", dashboard);
-api.use("/catalog", catalog);
-api.use("/clubs", clubs);
-api.use("/profiles", profiles);
-api.use("/connections", connections);
-api.use("/rooms", rooms);
-api.use("/sessions", sessions);
-api.use("/search", search);
-api.use("/recommendations", recommendations);
-api.use("/events", events);
-api.use("/chat", chat(io));
-api.use("/resources", resources);
-api.use("/saved", saved);
-api.use("/gamification", gamification);
-api.use("/quiz", quiz);
-api.use("/notifications", notifications);
-api.use("/moderation", moderation);
-api.use("/live", live);
-api.use("/account", account);
-api.use("/ai", ai);
-api.use("/research", research);
-api.use("/admin", requireRole("moderator", "admin"), adminRoutes);
-app.use("/api/v1", api);
-app.use(notFound);
-app.use(errors);
-io.use(async (socket, next) => {
-  try {
-    const token = socket.handshake.auth.token;
-    if (typeof token !== "string") return next(new Error("unauthorized"));
-    const { data, error } = await admin.auth.getUser(token);
-    if (error || !data.user) return next(new Error("unauthorized"));
-    socket.data.userId = data.user.id;
-    next();
-  } catch (e) {
-    next(e as Error);
-  }
-});
-export const userConnections = new Map<string, number>();
 
-io.on("connection", (socket) => {
-  const userId = socket.data.userId;
-  socket.join(`user:${userId}`);
+const app = createApp(io);
+// Mount app handler on http server
+server.on("request", app);
 
-  const count = (userConnections.get(userId) || 0) + 1;
-  userConnections.set(userId, count);
+setupSocket(io);
 
-  if (count === 1) {
-    socket.broadcast.emit("user:online", { userId });
-  }
+export { app, server, io, userConnections };
 
-  socket.on("disconnect", () => {
-    const newCount = (userConnections.get(userId) || 1) - 1;
-    if (newCount === 0) {
-      userConnections.delete(userId);
-      socket.broadcast.emit("user:offline", { userId });
-    } else {
-      userConnections.set(userId, newCount);
-    }
-  });
-
-  socket.on("conversation:join", async ({ conversationId }) => {
-    if (typeof conversationId !== "string") return;
-    const { data } = await admin
-      .from("conversation_members")
-      .select("id")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", socket.data.userId)
-      .maybeSingle();
-    if (data) socket.join(`conversation:${conversationId}`);
-  });
-
-  socket.on("conversation:leave", ({ conversationId }) =>
-    socket.leave(`conversation:${conversationId}`),
-  );
-
-  socket.on("typing:start", ({ conversationId }) => {
-    if (typeof conversationId !== "string") return;
-    if (socket.rooms.has(`conversation:${conversationId}`)) {
-      socket.to(`conversation:${conversationId}`).emit("typing:start", { userId, conversationId });
-    }
-  });
-
-  socket.on("typing:stop", ({ conversationId }) => {
-    if (typeof conversationId !== "string") return;
-    if (socket.rooms.has(`conversation:${conversationId}`)) {
-      socket.to(`conversation:${conversationId}`).emit("typing:stop", { userId, conversationId });
-    }
-  });
-});
-export { app };
 if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_ENV !== "test") {
-  server.listen(env.PORT, () =>
-    console.log(`SkillBridge API listening on :${env.PORT}`),
-  );
+  server.listen(env.PORT, () => {
+    console.log(`SkillBridge API listening on :${env.PORT}`);
+  });
 
-  if (process.env.ENABLE_PUSH_WORKER !== "false") {
-    const intervalMs = parseInt(process.env.PUSH_WORKER_INTERVAL_MS || "300000", 10);
-    const pushWorkerTimer = setInterval(() => {
-      import("./services/PushService.js")
-        .then(({ PushService }) => {
-          PushService.checkPendingReceipts().catch((err) => {
-            console.error("[PushWorker] Receipt check error:", err?.message || err);
-          });
-        })
-        .catch((err) => {
-          console.error("[PushWorker] Failed to load PushService:", err?.message || err);
-        });
-    }, intervalMs);
-
-    if (pushWorkerTimer && typeof pushWorkerTimer.unref === "function") {
-      pushWorkerTimer.unref();
-    }
-  }
+  startPushWorker();
 }

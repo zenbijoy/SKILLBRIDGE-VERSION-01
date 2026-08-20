@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { eitherColumnFilter } from "../lib/query-helpers.js";
 
 export const search = Router();
 
@@ -19,7 +20,7 @@ search.get(
     const { data: blocks } = await admin
       .from("blocks")
       .select("blocker_id,blocked_id")
-      .or(`blocker_id.eq.${uid},blocked_id.eq.${uid}`);
+      .or(eitherColumnFilter("blocker_id", "blocked_id", uid));
 
     const blocked = new Set(
       (blocks ?? []).map((x) =>

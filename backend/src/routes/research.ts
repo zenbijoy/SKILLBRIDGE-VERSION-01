@@ -3,6 +3,7 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
+import { assertUuid } from "../lib/query-helpers.js";
 
 export const research = Router();
 
@@ -19,16 +20,49 @@ const projectSchema = z.object({
 });
 
 research.get(
+  "/stats",
+  wrap(async (_req, res) => {
+    const [totalProjects, openCalls, completedRes] = await Promise.all([
+      admin.from("research_projects").select("*", { count: "exact", head: true }).eq("visibility", "public"),
+      admin.from("research_projects").select("*", { count: "exact", head: true }).eq("looking_for_collaborators", true).eq("visibility", "public"),
+      admin.from("research_projects").select("*", { count: "exact", head: true }).eq("status", "completed").eq("visibility", "public"),
+    ]);
+
+    res.json({
+      totalProjects: totalProjects.count ?? 0,
+      openCalls: openCalls.count ?? 0,
+      completedProjects: completedRes.count ?? 0,
+    });
+  }),
+);
+
+research.get(
   "/projects",
   wrap(async (req, res) => {
-    const { data, error } = await admin
+    const area = typeof req.query.area === "string" ? req.query.area.trim() : "";
+    const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const openOnly = req.query.openOnly === "true";
+
+    let query = admin
       .from("research_projects")
-      .select("*, owner:profiles!research_projects_owner_id_fkey(id, full_name, username, avatar_url)")
+      .select("*, owner:profiles!research_projects_owner_id_fkey(id, full_name, username, avatar_url, university, department)")
       .eq("visibility", "public")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(60);
+
+    if (openOnly) {
+      query = query.eq("looking_for_collaborators", true);
+    }
+    if (area && area !== "all") {
+      query = query.contains("research_areas", [area]);
+    }
+    if (search.length >= 2) {
+      query = query.or(`title.ilike.%${search.replace(/[%_]/g, "")}%,description.ilike.%${search.replace(/[%_]/g, "")}%`);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
-    res.json({ data });
+    res.json({ data: data ?? [] });
   }),
 );
 
@@ -43,6 +77,20 @@ research.post(
       .single();
     if (error) throw error;
     res.status(201).json(data);
+  }),
+);
+
+research.delete(
+  "/projects/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { error } = await admin
+      .from("research_projects")
+      .delete()
+      .eq("id", id)
+      .eq("owner_id", req.userId!);
+    if (error) throw error;
+    res.status(204).end();
   }),
 );
 
@@ -117,6 +165,8 @@ research.get(
     const query = admin.from("research_collaboration_requests").select("*, project:research_projects(id, title), requester:profiles!research_collaboration_requests_requester_id_fkey(id, full_name, username)");
     
     if (projectIds.length > 0) {
+      assertUuid(req.userId!, "userId");
+      projectIds.forEach((id) => assertUuid(id, "projectId"));
       query.or(`requester_id.eq.${req.userId},project_id.in.(${projectIds.join(',')})`);
     } else {
       query.eq("requester_id", req.userId!);
