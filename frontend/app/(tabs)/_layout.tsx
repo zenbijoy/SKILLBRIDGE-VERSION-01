@@ -6,7 +6,7 @@ import type { Conversation } from "@/types";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
-const Icon = ({ name, color }: { name: keyof typeof MaterialCommunityIcons.glyphMap; color: string }) => (
+const Icon = ({ name, color }: { name: keyof typeof MaterialCommunityIcons.glyphMap; color: any }) => (
   <MaterialCommunityIcons name={name} size={23} color={color} />
 );
 

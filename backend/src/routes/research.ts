@@ -3,6 +3,7 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
+import { assertUuid } from "../lib/query-helpers.js";
 
 export const research = Router();
 
@@ -117,6 +118,8 @@ research.get(
     const query = admin.from("research_collaboration_requests").select("*, project:research_projects(id, title), requester:profiles!research_collaboration_requests_requester_id_fkey(id, full_name, username)");
     
     if (projectIds.length > 0) {
+      assertUuid(req.userId!, "userId");
+      projectIds.forEach((id) => assertUuid(id, "projectId"));
       query.or(`requester_id.eq.${req.userId},project_id.in.(${projectIds.join(',')})`);
     } else {
       query.eq("requester_id", req.userId!);

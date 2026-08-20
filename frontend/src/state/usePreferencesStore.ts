@@ -2,12 +2,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-export type ThemePreference = "system" | "light" | "dark";
+export type ThemePreference = "system" | "light" | "dark" | "oled";
+export type AccentColor = "ocean" | "emerald" | "violet" | "sunset" | "cyberpunk";
+export type CardStyle = "rounded" | "smooth" | "pill";
 export type AppLanguage = "en" | "bn";
 export type DataSaverMode = "off" | "standard" | "extreme";
 
 interface PreferencesState {
   theme: ThemePreference;
+  accentColor: AccentColor;
+  cardStyle: CardStyle;
   language: AppLanguage;
   useDeviceLanguage: boolean;
   dataSaver: DataSaverMode;
@@ -19,6 +23,8 @@ interface PreferencesState {
   pushEnabled: boolean;
   recentSearches: string[];
   setTheme: (theme: ThemePreference) => void;
+  setAccentColor: (accent: AccentColor) => void;
+  setCardStyle: (style: CardStyle) => void;
   setLanguage: (language: AppLanguage) => void;
   setUseDeviceLanguage: (enabled: boolean) => void;
   setDataSaver: (mode: DataSaverMode) => void;
@@ -36,6 +42,8 @@ export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set) => ({
       theme: "system",
+      accentColor: "ocean",
+      cardStyle: "smooth",
       language: "en",
       useDeviceLanguage: false,
       dataSaver: "standard",
@@ -47,6 +55,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       pushEnabled: true,
       recentSearches: [],
       setTheme: (theme) => set({ theme }),
+      setAccentColor: (accentColor) => set({ accentColor }),
+      setCardStyle: (cardStyle) => set({ cardStyle }),
       setLanguage: (language) => set({ language, useDeviceLanguage: false }),
       setUseDeviceLanguage: (useDeviceLanguage) => set({ useDeviceLanguage }),
       setDataSaver: (dataSaver) => set({ dataSaver }),
@@ -76,6 +86,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         theme: state.theme,
+        accentColor: state.accentColor,
+        cardStyle: state.cardStyle,
         language: state.language,
         useDeviceLanguage: state.useDeviceLanguage,
         dataSaver: state.dataSaver,

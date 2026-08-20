@@ -4,6 +4,7 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
 import { env } from "../config/env.js";
+import { cacheGet, cacheSet } from "../lib/redis.js";
 export const rooms = Router();
 const createSchema = z.object({
   title: z.string().min(4).max(120),
@@ -16,18 +17,39 @@ const createSchema = z.object({
   rules: z.string().max(1000).optional().default(""),
   campus_location: z.string().max(200).optional(),
 });
+const pageSchema = z.coerce.number().int().min(1).default(1);
+const limitSchema = z.coerce.number().int().min(1).max(100).default(20);
+
 rooms.get(
   "/",
   wrap(async (req, res) => {
-    const { data, error } = await admin
+    const page = pageSchema.parse(req.query.page ?? 1);
+    const limit = limitSchema.parse(req.query.limit ?? 20);
+    const cacheKey = `rooms:public:p${page}:l${limit}`;
+
+    const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+    if (cached) return res.json(cached);
+
+    const from = (page - 1) * limit;
+    const to = page * limit - 1;
+
+    const { data, count, error } = await admin
       .from("rooms")
-      .select("*")
+      .select("*", { count: "exact" })
       .in("status", ["open", "scheduled", "live"])
       .eq("visibility", "public")
       .order("created_at", { ascending: false })
-      .limit(60);
+      .range(from, to);
+
     if (error) throw error;
-    res.json({ rooms: data ?? [] });
+    const result = {
+      rooms: data ?? [],
+      total: count ?? 0,
+      page,
+      limit,
+    };
+    await cacheSet(cacheKey, result, 30);
+    res.json(result);
   }),
 );
 rooms.post(
@@ -92,7 +114,7 @@ rooms.get(
       return res.status(403).json({ error: "Room is private" });
     res.json({
       room,
-      members: (members ?? []).map((m: any) => m.profiles),
+      members: (members ?? []).map((m: { profiles?: unknown }) => m.profiles),
       teachingRequests: teach ?? [],
       sessions: sessions ?? [],
       resources: resources ?? [],
@@ -200,5 +222,77 @@ rooms.delete(
       
     if (error) throw error;
     res.status(204).end();
+  }),
+);
+
+rooms.post(
+  "/:id/join",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: room, error: roomError } = await admin
+      .from("rooms")
+      .select("id, visibility, member_count, capacity")
+      .eq("id", id)
+      .single();
+
+    if (roomError || !room) return res.status(404).json({ error: "Room not found" });
+
+    if (room.visibility === "private") {
+      return res.status(403).json({ error: "This room is private" });
+    }
+
+    if (room.member_count >= room.capacity) {
+      return res.status(400).json({ error: "Room is at maximum capacity" });
+    }
+
+    const { error: insertError } = await admin
+      .from("room_members")
+      .upsert(
+        { room_id: id, user_id: req.userId!, role: "learner" },
+        { onConflict: "room_id,user_id" },
+      );
+
+    if (insertError) throw insertError;
+
+    // Recalculate member count
+    const { count } = await admin
+      .from("room_members")
+      .select("*", { count: "exact", head: true })
+      .eq("room_id", id);
+
+    await admin.from("rooms").update({ member_count: count ?? 1 }).eq("id", id);
+
+    res.json({ joined: true, role: "learner", member_count: count ?? 1 });
+  }),
+);
+
+rooms.post(
+  "/:id/leave",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: room } = await admin
+      .from("rooms")
+      .select("owner_id")
+      .eq("id", id)
+      .single();
+
+    if (room?.owner_id === req.userId) {
+      return res.status(400).json({ error: "Room owner cannot leave their own room" });
+    }
+
+    await admin
+      .from("room_members")
+      .delete()
+      .eq("room_id", id)
+      .eq("user_id", req.userId!);
+
+    const { count } = await admin
+      .from("room_members")
+      .select("*", { count: "exact", head: true })
+      .eq("room_id", id);
+
+    await admin.from("rooms").update({ member_count: count ?? 0 }).eq("id", id);
+
+    res.json({ left: true, member_count: count ?? 0 });
   }),
 );

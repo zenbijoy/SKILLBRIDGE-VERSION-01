@@ -5,12 +5,19 @@ export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
+    // Use onAuthStateChange as the single source of truth.
+    // The listener fires an INITIAL_SESSION event synchronously after
+    // subscription, so we only flip loading=false after the first event.
+    let didReceiveInitial = false;
+    const { data } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      if (!didReceiveInitial) {
+        didReceiveInitial = true;
+        setLoading(false);
+      }
     });
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => data.subscription.unsubscribe();
   }, []);
   return { session, loading };
 }
+

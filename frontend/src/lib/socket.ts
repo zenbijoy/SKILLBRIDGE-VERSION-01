@@ -34,3 +34,27 @@ export function getSocket(): Socket | null {
 
   return socketInstance;
 }
+
+/**
+ * Connect the socket with a valid access token.
+ * Must be called after the user has an active session.
+ */
+export function connectSocket(accessToken: string): void {
+  const socket = getSocket();
+  if (!socket) return;
+  socket.auth = { token: accessToken };
+  if (!socket.connected) {
+    socket.connect();
+  }
+}
+
+/**
+ * Disconnect and clean up the socket instance.
+ */
+export function disconnectSocket(): void {
+  if (socketInstance) {
+    socketInstance.disconnect();
+    socketInstance = null;
+  }
+}
+

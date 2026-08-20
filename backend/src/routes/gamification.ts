@@ -4,7 +4,9 @@ import { wrap } from "../middleware/error.js";
 export const gamification = Router();
 gamification.get(
   "/leaderboard",
-  wrap(async (_req, res) => {
+  wrap(async (req, res) => {
+    const category = typeof req.query.category === "string" ? req.query.category : "reputation";
+
     const { data, error } = await admin
       .from("profiles")
       .select(
@@ -13,18 +15,49 @@ gamification.get(
       .neq("profile_visibility", "private")
       .order("reputation", { ascending: false })
       .limit(50);
+
     if (error) throw error;
+
     const leaders = await Promise.all(
       (data ?? []).map(async (p) => {
-        const { count } = await admin
-          .from("sessions")
-          .select("*", { count: "exact", head: true })
-          .eq("teacher_id", p.id)
-          .eq("status", "completed");
-        return { ...p, sessions_taught: count ?? 0 };
+        const [taughtRes, attendedRes, researchRes] = await Promise.all([
+          admin
+            .from("sessions")
+            .select("*", { count: "exact", head: true })
+            .eq("teacher_id", p.id)
+            .eq("status", "completed"),
+          admin
+            .from("session_attendees")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", p.id),
+          admin
+            .from("research_projects")
+            .select("*", { count: "exact", head: true })
+            .eq("lead_author_id", p.id),
+        ]);
+
+        return {
+          ...p,
+          sessions_taught: taughtRes.count ?? 0,
+          sessions_attended: attendedRes.count ?? 0,
+          research_count: researchRes.count ?? 0,
+        };
       }),
     );
-    res.json({ leaders });
+
+    // Sort by requested category
+    let sorted = leaders;
+    if (category === "tutors") {
+      sorted = leaders.sort((a, b) => b.sessions_taught - a.sessions_taught || b.reputation - a.reputation);
+    } else if (category === "learners") {
+      sorted = leaders.sort((a, b) => b.sessions_attended - a.sessions_attended || b.reputation - a.reputation);
+    } else if (category === "research") {
+      sorted = leaders.sort((a, b) => b.research_count - a.research_count || b.reputation - a.reputation);
+    } else {
+      sorted = leaders.sort((a, b) => b.reputation - a.reputation);
+    }
+
+    res.json({ leaders: sorted, category });
   }),
 );
 gamification.get(

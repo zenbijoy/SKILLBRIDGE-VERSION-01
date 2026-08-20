@@ -7,6 +7,7 @@ import { usePreferencesStore } from "@/state/usePreferencesStore";
 export default function SettingsHome() {
   const { t, language } = useI18n();
   const theme = usePreferencesStore((state) => state.theme);
+  const accent = usePreferencesStore((state) => state.accentColor);
   const dataSaver = usePreferencesStore((state) => state.dataSaver);
   return (
     <Screen>
@@ -19,7 +20,7 @@ export default function SettingsHome() {
 
       <H2>{t("settings.preferences")}</H2>
       <SettingsRow icon="translate" title={t("settings.language")} detail="বাংলা and English runtime language" value={language === "bn" ? "বাংলা" : "English"} onPress={() => router.push("/settings/language" as any)} />
-      <SettingsRow icon="theme-light-dark" title={t("settings.appearance")} detail="Light, dark or follow the device" value={theme} onPress={() => router.push("/settings/appearance" as any)} />
+      <SettingsRow icon="palette-outline" title={t("settings.appearance")} detail="Color palettes, dark/OLED mode & corner geometry" value={`${theme.toUpperCase()} · ${accent.charAt(0).toUpperCase() + accent.slice(1)}`} onPress={() => router.push("/settings/appearance" as any)} />
       <SettingsRow icon="bell-outline" title={t("settings.notifications")} detail="Push registration and notification controls" onPress={() => router.push("/settings/notifications" as any)} />
       <SettingsRow icon="database-outline" title={t("settings.data")} detail="Data saver, autoplay and download behavior" value={dataSaver} onPress={() => router.push("/settings/data-storage" as any)} />
       <SettingsRow icon="human" title={t("settings.accessibility")} detail="Large text, reduced motion and interaction comfort" onPress={() => router.push("/settings/accessibility" as any)} />

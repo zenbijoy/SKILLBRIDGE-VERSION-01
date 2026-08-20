@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { useSession } from "@/hooks/useSession";
 import { registerPush, useNotificationRouting } from "@/lib/notifications";
+import { connectSocket, disconnectSocket } from "@/lib/socket";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { useTheme } from "@/theme";
 
@@ -41,6 +42,16 @@ function Gate() {
       registerPush().catch(() => undefined);
     }
   }, [loading, session?.user.id, pushEnabled]);
+
+  // Connect/disconnect socket based on session state
+  useEffect(() => {
+    if (!loading && session?.access_token) {
+      connectSocket(session.access_token);
+    } else if (!loading && !session) {
+      disconnectSocket();
+    }
+    return () => disconnectSocket();
+  }, [loading, session?.access_token]);
 
   return (
     <Stack

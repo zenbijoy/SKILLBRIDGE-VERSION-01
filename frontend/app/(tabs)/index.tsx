@@ -30,17 +30,22 @@ export default function Home() {
   const firstName = me.data?.profile.full_name?.split(/\s+/)[0] ?? "Learner";
 
   return (
-    <Screen>
+    <Screen
+      onRefresh={async () => {
+        await Promise.all([dashboard.refetch(), me.refetch()]);
+      }}
+      refreshing={dashboard.isRefetching || me.isRefetching}
+    >
       <AppHeader searchPlaceholder={t("common.searchEverything")} />
       <View style={{ gap: 3 }}>
         <Text style={[s.greeting, { color: colors.text }]}>{t("home.hello")}, {firstName} 👋</Text>
-        <Muted>{mode === "learn" ? "Build skills through people, rooms and real collaboration." : "Share what you know and grow your reputation."}</Muted>
+        <Muted>{mode === "learn" ? t("home.learnSubtitle") : t("home.teachSubtitle")}</Muted>
       </View>
 
       <PremiumHero
         eyebrow="SKILLBRIDGE NETWORK"
         title={mode === "learn" ? t("home.learnTitle") : t("home.teachTitle")}
-        detail={mode === "learn" ? "Find the right peer, resource or live room without hunting through disconnected groups." : "See learners who need your skills, teach live, and build a trusted skill profile."}
+        detail={mode === "learn" ? t("home.learnHeroDetail") : t("home.teachHeroDetail")}
       >
         <View style={s.modeWrap}>
           <Button title={t("home.learn")} variant={mode === "learn" ? "primary" : "ghost"} onPress={() => setMode("learn")} compact />
@@ -64,11 +69,11 @@ export default function Home() {
         </Card>
       )}
 
-      <SectionHeader title={t("home.quickActions")} action="More" onAction={() => router.push("/discover" as any)} />
+      <SectionHeader title={t("home.quickActions")} action={t("common.more")} onAction={() => router.push("/discover" as any)} />
       <FeatureGrid compact />
 
       <SectionHeader title={mode === "learn" ? t("home.urgentLearn") : t("home.urgentTeach")} action={t("common.seeAll")} onAction={() => router.push("/rooms" as any)} />
-      {d?.urgentRooms?.length ? d.urgentRooms.slice(0, 3).map((room) => <RoomCard key={room.id} room={room} />) : dashboard.isLoading ? <Skeleton height={120} /> : <Muted>No matching rooms right now. Create one when you need help.</Muted>}
+      {d?.urgentRooms?.length ? d.urgentRooms.slice(0, 3).map((room) => <RoomCard key={room.id} room={room} />) : dashboard.isLoading ? <Skeleton height={120} /> : <Muted>{t("home.noRooms")}</Muted>}
 
       <SectionHeader title={t("home.people")} action={t("common.seeAll")} onAction={() => router.push("/connections" as any)} />
       {d?.recommendedPeople?.slice(0, 3).map((profile) => <ProfileCard key={profile.id} profile={profile} />)}
@@ -82,12 +87,12 @@ export default function Home() {
               <Text style={[s.dateMonth, { color: colors.primary }]}>{new Date(session.starts_at).toLocaleString(undefined, { month: "short" }).toUpperCase()}</Text>
             </View>
             <View style={{ flex: 1, gap: 4 }}>
-              <Text style={[s.itemTitle, { color: colors.text }]}>Learning session</Text>
+              <Text style={[s.itemTitle, { color: colors.text }]}>{t("home.sessionTitle")}</Text>
               <Muted>{new Date(session.starts_at).toLocaleString()} · {session.mode}</Muted>
             </View>
           </View>
         </Card>
-      )) : <Muted>No upcoming sessions yet.</Muted>}
+      )) : <Muted>{t("home.noSessions")}</Muted>}
 
       <SectionHeader title={t("home.events")} action={t("common.seeAll")} onAction={() => router.push("/events" as any)} />
       {d?.events?.slice(0, 3).map((event) => (
@@ -113,9 +118,9 @@ function Stat({ n, label }: { n: number; label: string }) {
 const s = StyleSheet.create({
   greeting: { fontSize: 22, fontWeight: "900", letterSpacing: -0.5 },
   modeWrap: { flexDirection: "row", padding: 4, borderRadius: radius.md, backgroundColor: "#FFFFFF1C", gap: 4, alignSelf: "flex-start" },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  stat: { width: "48%", minHeight: 74, borderRadius: radius.md, padding: 12, justifyContent: "center", gap: 2 },
-  statNumber: { fontSize: 23, fontWeight: "900" },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  stat: { flex: 1, minWidth: "45%", minHeight: 78, borderRadius: radius.md, padding: 14, justifyContent: "center", gap: 2 },
+  statNumber: { fontSize: 24, fontWeight: "900" },
   sessionRow: { flexDirection: "row", gap: 12, alignItems: "center" },
   dateTile: { width: 52, height: 58, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   dateDay: { fontSize: 20, fontWeight: "900" },

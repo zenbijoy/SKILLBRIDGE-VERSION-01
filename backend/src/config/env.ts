@@ -15,11 +15,10 @@ const optionalString = z.preprocess(
 
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === "boolean") return value;
-  if (typeof value !== "string") return value;
+  if (typeof value !== "string") return false;
   const normalized = value.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off", ""].includes(normalized)) return false;
-  return value;
+  return false;
 }, z.boolean());
 
 const schema = z.object({

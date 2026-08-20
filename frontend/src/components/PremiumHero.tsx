@@ -15,7 +15,7 @@ export function PremiumHero({
   detail: string;
   children?: ReactNode;
 }) {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isOled } = useTheme();
   const reduceMotion = usePreferencesStore((state) => state.reduceMotion);
   const floatAnim = useRef(new Animated.Value(0)).current;
 
@@ -36,16 +36,24 @@ export function PremiumHero({
   }, [floatAnim, reduceMotion]);
 
   const translateY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
-  const gradient = isDark
-    ? ["#17345E", "#1B245C", "#31205C"] as const
-    : ["#1D4ED8", "#2563EB", "#4F46E5"] as const;
+  const gradient = isOled
+    ? ["#0F172A", "#09090B", "#000000"] as const
+    : isDark
+    ? [colors.surfaceElevated, colors.surface, colors.bg] as const
+    : [colors.primary, colors.primary2, `${colors.primary2}DD`] as const;
 
   return (
-    <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.hero, { borderColor: `${colors.white}2B` }]}>
-      <Animated.View style={[s.orb, { transform: [{ translateY }] }]} />
-      <Text style={s.eyebrow}>{eyebrow}</Text>
+    <LinearGradient
+      colors={gradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[s.hero, { borderColor: `${colors.white}25` }]}
+    >
+      <Animated.View style={[s.orb, { backgroundColor: `${colors.primary}33`, transform: [{ translateY }] }]} />
+      <Animated.View style={[s.orb2, { backgroundColor: `${colors.accent}22`, transform: [{ translateY: floatAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }] }]} />
+      <Text style={[s.eyebrow, { color: isDark ? colors.accent : "#E0F2FE" }]}>{eyebrow}</Text>
       <Text style={s.title}>{title}</Text>
-      <Text style={s.detail}>{detail}</Text>
+      <Text style={[s.detail, { color: isDark ? colors.textSecondary : "#F0F9FF" }]}>{detail}</Text>
       {children ? <View style={s.childrenContainer}>{children}</View> : null}
     </LinearGradient>
   );
@@ -53,9 +61,10 @@ export function PremiumHero({
 
 const s = StyleSheet.create({
   hero: { overflow: "hidden", borderRadius: radius.xl, padding: spacing.lg, gap: 10, borderWidth: 1 },
-  orb: { position: "absolute", width: 210, height: 210, borderRadius: 105, backgroundColor: "#FFFFFF18", right: -65, top: -80 },
-  eyebrow: { color: "#CFFAFE", fontWeight: "900", fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase" },
+  orb: { position: "absolute", width: 220, height: 220, borderRadius: 110, right: -70, top: -85 },
+  orb2: { position: "absolute", width: 140, height: 140, borderRadius: 70, left: -40, bottom: -40 },
+  eyebrow: { fontWeight: "900", fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase" },
   title: { color: "#FFFFFF", fontSize: 28, fontWeight: "900", letterSpacing: -0.8, lineHeight: 34 },
-  detail: { color: "#E7EEFF", fontSize: 15, lineHeight: 22 },
+  detail: { fontSize: 15, lineHeight: 22 },
   childrenContainer: { marginTop: 6 },
 });

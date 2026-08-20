@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Conversation } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
-import { Card, Empty, ErrorState, Field, H2, Muted, Pill, Row, Screen, Skeleton } from "@/components/ui";
+import { Card, Empty, ErrorState, Field, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
@@ -17,10 +17,11 @@ export default function Inbox() {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
+
   const conversations = useQuery({
     queryKey: ["conversations"],
     queryFn: () => api<{ conversations: Conversation[] }>("/chat/conversations"),
-    refetchInterval: 45_000,
+    refetchInterval: 30_000,
   });
 
   const visible = useMemo(() => {
@@ -34,50 +35,176 @@ export default function Inbox() {
   }, [conversations.data?.conversations, filter, query]);
 
   return (
-    <Screen>
-      <AppHeader title={t("inbox.title")} searchPlaceholder="Search SkillBridge..." />
+    <Screen
+      onRefresh={async () => {
+        await conversations.refetch();
+      }}
+      refreshing={conversations.isRefetching}
+    >
+      <AppHeader title={t("inbox.title")} searchPlaceholder="Search conversations..." />
       <Muted>{t("inbox.subtitle")}</Muted>
-      <View style={s.searchWrap}>
-        <MaterialCommunityIcons name="magnify" size={20} color={colors.muted} />
-        <Field style={s.searchField} placeholder="Search conversations" value={query} onChangeText={setQuery} />
+
+      {/* Search Input Bar */}
+      <View style={[s.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.primary} />
+        <Field
+          style={s.searchField}
+          placeholder="Search chats, study groups, room channels..."
+          value={query}
+          onChangeText={setQuery}
+        />
+        {query ? (
+          <Pressable onPress={() => setQuery("")}>
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.muted} />
+          </Pressable>
+        ) : null}
       </View>
+
+      {/* Filter Tabs */}
       <Row>
-        {(["all", "unread", "groups"] as const).map((item) => <Pressable key={item} onPress={() => setFilter(item)}><Pill tone={filter === item ? "primary" : "default"}>{item.charAt(0).toUpperCase() + item.slice(1)}</Pill></Pressable>)}
+        {(["all", "unread", "groups"] as const).map((item) => (
+          <Pill
+            key={item}
+            tone={filter === item ? "primary" : "default"}
+            onPress={() => setFilter(item)}
+          >
+            {item === "all" ? "All Messages" : item === "unread" ? "Unread Only" : "Study Groups"}
+          </Pill>
+        ))}
       </Row>
 
-      {conversations.isLoading ? <><Skeleton height={82} /><Skeleton height={82} /><Skeleton height={82} /></> : null}
-      {conversations.isError ? <ErrorState detail={(conversations.error as Error).message} onRetry={() => conversations.refetch()} /> : null}
-      {conversations.isSuccess && visible.length === 0 ? <Empty title={t("inbox.empty")} detail={t("inbox.emptyDetail")} /> : null}
+      {conversations.isLoading ? (
+        <>
+          <Skeleton height={86} />
+          <Skeleton height={86} />
+          <Skeleton height={86} />
+        </>
+      ) : null}
+      {conversations.isError ? (
+        <ErrorState detail={(conversations.error as Error).message} onRetry={() => conversations.refetch()} />
+      ) : null}
+      {conversations.isSuccess && visible.length === 0 ? (
+        <Empty
+          title={t("inbox.empty")}
+          detail={t("inbox.emptyDetail")}
+          actionTitle="Explore Network"
+          onAction={() => router.push("/discover" as any)}
+        />
+      ) : null}
 
-      {visible.map((conversation) => (
-        <Pressable key={conversation.id} onPress={() => router.push(`/chat/${conversation.id}` as any)} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
-          <Card>
-            <View style={s.row}>
-              <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
-                <MaterialCommunityIcons name={conversation.kind === "dm" ? "account-outline" : "account-group-outline"} size={23} color={colors.primary} />
+      {visible.map((conversation) => {
+        const hasUnread = Boolean(conversation.unread_count && conversation.unread_count > 0);
+        return (
+          <Pressable
+            key={conversation.id}
+            onPress={() => {
+              triggerHaptic();
+              router.push(`/chat/${conversation.id}` as any);
+            }}
+            style={({ pressed }) => ({
+              opacity: pressed ? 0.85 : 1,
+              transform: [{ scale: pressed ? 0.985 : 1 }],
+            })}
+          >
+            <Card tone={hasUnread ? "glow" : "default"}>
+              <View style={s.row}>
+                <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons
+                    name={
+                      conversation.kind === "dm"
+                        ? "account-outline"
+                        : conversation.kind === "room"
+                        ? "human-male-board"
+                        : "account-group-outline"
+                    }
+                    size={24}
+                    color={colors.primary}
+                  />
+                  {hasUnread ? <View style={[s.onlineDot, { backgroundColor: colors.primary }]} /> : null}
+                </View>
+
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={[s.title, { color: colors.text, fontWeight: hasUnread ? "900" : "700" }]}
+                  >
+                    {conversation.title ||
+                      (conversation.kind === "dm"
+                        ? "Direct Conversation"
+                        : conversation.kind === "room"
+                        ? "Room Classroom Chat"
+                        : "Study Group")}
+                  </Text>
+                  <Muted numberOfLines={1}>
+                    {conversation.kind === "room"
+                      ? "Classroom stream & shared notes"
+                      : conversation.kind === "group"
+                      ? "Group conversation"
+                      : "Direct peer message"}
+                  </Muted>
+                </View>
+
+                <View style={{ alignItems: "flex-end", gap: 6 }}>
+                  <Muted style={{ fontSize: 12 }}>
+                    {new Date(conversation.updated_at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </Muted>
+                  {hasUnread ? (
+                    <View style={[s.unread, { backgroundColor: colors.primary }]}>
+                      <Text style={s.unreadText}>
+                        {conversation.unread_count! > 99 ? "99+" : conversation.unread_count}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text numberOfLines={1} style={[s.title, { color: colors.text }]}>{conversation.title || (conversation.kind === "dm" ? "Direct conversation" : "Study group")}</Text>
-                <Muted numberOfLines={1}>{conversation.kind === "room" ? "Learning room conversation" : conversation.kind === "group" ? "Group conversation" : "Direct message"}</Muted>
-              </View>
-              <View style={{ alignItems: "flex-end", gap: 7 }}>
-                <Muted>{new Date(conversation.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</Muted>
-                {conversation.unread_count ? <View style={[s.unread, { backgroundColor: colors.primary }]}><Text style={s.unreadText}>{conversation.unread_count > 99 ? "99+" : conversation.unread_count}</Text></View> : null}
-              </View>
-            </View>
-          </Card>
-        </Pressable>
-      ))}
+            </Card>
+          </Pressable>
+        );
+      })}
     </Screen>
   );
 }
 
 const s = StyleSheet.create({
-  searchWrap: { flexDirection: "row", alignItems: "center" },
-  searchField: { flex: 1, paddingLeft: 42, marginLeft: -30 },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    minHeight: 48,
+    gap: 8,
+  },
+  searchField: { flex: 1, borderWidth: 0, paddingHorizontal: 0, minHeight: 44 },
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: { width: 48, height: 48, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 16, fontWeight: "800" },
-  unread: { minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  onlineDot: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  title: { fontSize: 16 },
+  unread: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   unreadText: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
 });

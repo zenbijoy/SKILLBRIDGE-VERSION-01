@@ -3,6 +3,7 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
+import { eitherColumnFilter, isBlocked } from "../lib/query-helpers.js";
 export const connections = Router();
 connections.get(
   "/",
@@ -11,7 +12,7 @@ connections.get(
     const { data: edges } = await admin
       .from("connections")
       .select("user_a,user_b")
-      .or(`user_a.eq.${uid},user_b.eq.${uid}`)
+      .or(eitherColumnFilter("user_a", "user_b", uid))
       .limit(200);
     const ids = (edges ?? []).map((x) =>
       x.user_a === uid ? x.user_b : x.user_a,
@@ -43,14 +44,8 @@ connections.post(
       .parse(req.body);
     if (recipientId === req.userId)
       return res.status(400).json({ error: "Cannot connect to yourself" });
-    const { data: blocked } = await admin
-      .from("blocks")
-      .select("id")
-      .or(
-        `and(blocker_id.eq.${req.userId},blocked_id.eq.${recipientId}),and(blocker_id.eq.${recipientId},blocked_id.eq.${req.userId})`,
-      )
-      .limit(1);
-    if (blocked?.length)
+    const blocked = await isBlocked(req.userId!, recipientId);
+    if (blocked)
       return res.status(403).json({ error: "Connection unavailable" });
     const { data, error } = await admin
       .from("connection_requests")

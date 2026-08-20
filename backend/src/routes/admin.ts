@@ -5,6 +5,7 @@ import { wrap } from "../middleware/error.js";
 import { requireRole } from "../middleware/auth.js";
 import { audit } from "../services/audit.js";
 import { env } from "../config/env.js";
+import { sanitizeIlike } from "../lib/query-helpers.js";
 
 export const adminRoutes = Router();
 
@@ -136,7 +137,7 @@ adminRoutes.get(
 
     let query = db.from("profiles").select("*", { count: "exact" });
     if (q) {
-      const safe = q.replace(/[,%()]/g, " ").trim();
+      const safe = sanitizeIlike(q);
       if (safe) query = query.or(`full_name.ilike.%${safe}%,username.ilike.%${safe}%,university.ilike.%${safe}%`);
     }
 
@@ -190,7 +191,7 @@ adminRoutes.get(
     const { page, limit, from, to } = pagination(req.query as Record<string, unknown>);
     const action = z.string().trim().max(120).optional().parse(req.query.action);
     let query = db.from("audit_logs").select("*", { count: "exact" });
-    if (action) query = query.ilike("action", `%${action}%`);
+    if (action) query = query.ilike("action", `%${sanitizeIlike(action)}%`);
     const { data, count, error } = await query.order("created_at", { ascending: false }).range(from, to);
     if (error) throw error;
     res.json({ logs: data ?? [], total: count ?? 0, page, limit });

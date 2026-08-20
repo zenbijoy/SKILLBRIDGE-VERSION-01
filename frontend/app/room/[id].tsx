@@ -37,21 +37,19 @@ export default function RoomDetail() {
   });
 
   const join = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.rpc("join_room_atomic", { p_room_id: id });
-      if (error) throw error;
-      return data;
+    mutationFn: () => api<{ joined: boolean; role: string }>(`/rooms/${id}/join`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["room", id] });
+      qc.invalidateQueries({ queryKey: ["rooms"] });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["room", id] }),
     onError: (error) => Alert.alert("Join failed", error.message),
   });
   const leave = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.rpc("leave_room_atomic", { p_room_id: id });
-      if (error) throw error;
-      return data;
+    mutationFn: () => api<{ left: boolean }>(`/rooms/${id}/leave`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["room", id] });
+      qc.invalidateQueries({ queryKey: ["rooms"] });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["room", id] }),
     onError: (error) => Alert.alert("Leave failed", error.message),
   });
   const volunteer = useMutation({

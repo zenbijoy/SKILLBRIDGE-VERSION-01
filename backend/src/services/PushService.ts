@@ -110,6 +110,8 @@ export class ExpoPushProvider implements PushProvider {
       const result = await response.json();
       const data = result.data || {};
 
+      const deliveredIds: string[] = [];
+      const errorUpdates: Array<{ id: string; details: any }> = [];
       const invalidTokens: string[] = [];
       
       for (const p of pending) {
@@ -117,24 +119,41 @@ export class ExpoPushProvider implements PushProvider {
         if (!receipt) continue;
 
         if (receipt.status === "ok") {
-          await admin.from("push_receipts").update({ status: "delivered" }).eq("ticket_id", p.ticket_id);
+          deliveredIds.push(p.ticket_id);
         } else if (receipt.status === "error") {
-          await admin.from("push_receipts").update({ 
-            status: "error", 
-            error_details: receipt.details || null 
-          }).eq("ticket_id", p.ticket_id);
-
+          errorUpdates.push({ id: p.ticket_id, details: receipt.details || null });
           if (receipt.details?.error === "DeviceNotRegistered") {
             invalidTokens.push(p.device_token);
           }
         }
       }
 
+      // Batch update delivered receipts in one query
+      if (deliveredIds.length > 0) {
+        await admin
+          .from("push_receipts")
+          .update({ status: "delivered" })
+          .in("ticket_id", deliveredIds);
+      }
+
+      // Process error updates
+      if (errorUpdates.length > 0) {
+        await Promise.all(
+          errorUpdates.map((item) =>
+            admin
+              .from("push_receipts")
+              .update({ status: "error", error_details: item.details })
+              .eq("ticket_id", item.id),
+          ),
+        );
+      }
+
+      // Batch disable invalid device tokens
       if (invalidTokens.length > 0) {
         await admin
           .from("device_tokens")
           .update({ enabled: false })
-          .in("token", invalidTokens);
+          .in("token", [...new Set(invalidTokens)]);
       }
     } catch (err) {
       console.error("Error checking push receipts:", err);
