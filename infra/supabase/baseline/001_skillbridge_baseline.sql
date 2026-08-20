@@ -1264,9 +1264,158 @@ $$;
 revoke all on function public.award_reputation_atomic(uuid, text, integer, text, uuid) from public, anon, authenticated;
 grant execute on function public.award_reputation_atomic(uuid, text, integer, text, uuid) to service_role;
 
+-- Extended profiles columns
+alter table public.profiles
+  add column if not exists onboarding_version integer default 1,
+  add column if not exists onboarding_status text default 'not_started' check (onboarding_status in ('not_started', 'in_progress', 'completed', 'skipped')),
+  add column if not exists onboarding_step text default 'language',
+  add column if not exists profile_completion_percent integer default 0 check (profile_completion_percent between 0 and 100),
+  add column if not exists profile_missing_fields text[] default array[]::text[],
+  add column if not exists guided_tour_version integer default 1,
+  add column if not exists guided_tour_status text default 'pending' check (guided_tour_status in ('pending', 'in_progress', 'completed', 'skipped')),
+  add column if not exists guided_tour_last_step text default 'start',
+  add column if not exists preferred_locale text default 'en' check (preferred_locale in ('en', 'bn')),
+  add column if not exists quiet_hours_start text default '22:00',
+  add column if not exists quiet_hours_end text default '07:00';
+
+-- Dashboard Configs
+create table if not exists public.dashboard_configs (
+  id uuid primary key default gen_random_uuid(),
+  widget_key text not null unique,
+  title_en text not null,
+  title_bn text not null,
+  default_order integer not null default 0,
+  is_required boolean default false,
+  is_enabled boolean default true,
+  target_roles text[] default array['student', 'tutor', 'moderator', 'admin'],
+  target_campus text,
+  min_app_version text default '2.0.0',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- User Dashboard Layouts
+create table if not exists public.user_dashboard_layouts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  density text default 'comfortable' check (density in ('compact', 'comfortable', 'spacious')),
+  preset text default 'balanced' check (preset in ('learner', 'tutor', 'researcher', 'community', 'balanced', 'custom')),
+  widgets jsonb not null default '[]'::jsonb,
+  updated_at timestamptz default now(),
+  constraint user_dashboard_layouts_user_id_key unique (user_id)
+);
+
+-- Announcements
+create table if not exists public.announcements (
+  id uuid primary key default gen_random_uuid(),
+  title_en text not null,
+  title_bn text not null,
+  body_en text not null,
+  body_bn text not null,
+  tone text default 'info' check (tone in ('info', 'warning', 'success', 'accent')),
+  action_url text,
+  action_label_en text,
+  action_label_bn text,
+  is_active boolean default true,
+  starts_at timestamptz default now(),
+  ends_at timestamptz,
+  created_at timestamptz default now()
+);
+
+-- Feature Flags
+create table if not exists public.feature_flags (
+  id uuid primary key default gen_random_uuid(),
+  key text not null unique,
+  description text,
+  is_enabled boolean default true,
+  rollout_percentage integer default 100 check (rollout_percentage between 0 and 100),
+  target_roles text[] default array['student', 'tutor', 'moderator', 'admin'],
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.dashboard_configs enable row level security;
+alter table public.user_dashboard_layouts enable row level security;
+alter table public.announcements enable row level security;
+alter table public.feature_flags enable row level security;
+
+create policy "Anyone can read dashboard configs" on public.dashboard_configs for select using (true);
+create policy "Users can read own layout" on public.user_dashboard_layouts for select using (auth.uid() = user_id);
+create policy "Users can update own layout" on public.user_dashboard_layouts for all using (auth.uid() = user_id);
+create policy "Anyone can read active announcements" on public.announcements for select using (is_active = true and (ends_at is null or ends_at > now()));
+create policy "Anyone can read feature flags" on public.feature_flags for select using (true);
+
+create or replace function public.save_user_dashboard_layout_atomic(
+  p_user_id uuid,
+  p_preset text,
+  p_density text,
+  p_widgets jsonb
+) returns jsonb as $$
+declare
+  v_result jsonb;
+begin
+  insert into public.user_dashboard_layouts (user_id, preset, density, widgets, updated_at)
+  values (p_user_id, p_preset, p_density, p_widgets, now())
+  on conflict (user_id) do update set
+    preset = excluded.preset,
+    density = excluded.density,
+    widgets = excluded.widgets,
+    updated_at = now();
+
+  select jsonb_build_object(
+    'user_id', user_id,
+    'preset', preset,
+    'density', density,
+    'widgets', widgets,
+    'updated_at', updated_at
+  ) into v_result
+  from public.user_dashboard_layouts
+  where user_id = p_user_id;
+
+  return v_result;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create or replace function public.complete_guided_tour_step_atomic(
+  p_user_id uuid,
+  p_step text,
+  p_is_last boolean
+) returns jsonb as $$
+declare
+  v_status text;
+  v_reward jsonb;
+begin
+  if p_is_last then
+    v_status := 'completed';
+    v_reward := public.award_reputation_atomic(p_user_id, 'tour_completed', 5, 'tour', p_user_id);
+  else
+    v_status := 'in_progress';
+  end if;
+
+  update public.profiles
+  set
+    guided_tour_last_step = p_step,
+    guided_tour_status = v_status,
+    updated_at = now()
+  where id = p_user_id;
+
+  return jsonb_build_object(
+    'step', p_step,
+    'status', v_status,
+    'reward', v_reward
+  );
+end;
+$$ language plpgsql security definer set search_path = public;
+
+revoke all on function public.save_user_dashboard_layout_atomic(uuid, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.save_user_dashboard_layout_atomic(uuid, text, text, jsonb) to service_role;
+
+revoke all on function public.complete_guided_tour_step_atomic(uuid, text, boolean) from public, anon, authenticated;
+grant execute on function public.complete_guided_tour_step_atomic(uuid, text, boolean) to service_role;
+
 -- Baseline config info
 create table if not exists public.schema_migrations (
   version text primary key,
   applied_at timestamptz not null default now()
 );
-insert into public.schema_migrations (version) values ('015_complete_domain_hardening') on conflict do nothing;
+insert into public.schema_migrations (version) values ('016_experience_expansion') on conflict do nothing;

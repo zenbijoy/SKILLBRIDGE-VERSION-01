@@ -108,7 +108,7 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     assert.ok(tables.has("session_participants"), "session_participants table exists");
   });
 
-  await t.test("2. Incremental migration 001 → 015 on real PostgreSQL", async () => {
+  await t.test("2. Incremental migration 001 → 016 on real PostgreSQL", async () => {
     upgradedDb = new PGlite();
     await setupPostgresEnv(upgradedDb);
 
@@ -121,10 +121,16 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
       await upgradedDb.exec(sanitizeSql(mig015Sql));
     }
 
+    const mig016File = path.join(migrationsDir, "016_experience_expansion.sql");
+    if (fs.existsSync(mig016File)) {
+      const mig016Sql = fs.readFileSync(mig016File, "utf-8");
+      await upgradedDb.exec(sanitizeSql(mig016Sql));
+    }
+
     const res = await upgradedDb.query(`
       SELECT count(*) as count FROM information_schema.tables WHERE table_schema = 'public'
     `);
-    assert.ok(Number((res.rows[0] as any).count) >= 15);
+    assert.ok(Number((res.rows[0] as any).count) >= 18);
   });
 
   await t.test("3. Schema-diff comparison between fresh and upgraded databases", async () => {
@@ -373,5 +379,73 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     assert.ok(tutorLeaderboardRes.rows.length >= 1);
     assert.strictEqual((tutorLeaderboardRes.rows[0] as any).teacher_id, topTutorLowRep);
     assert.strictEqual(Number((tutorLeaderboardRes.rows[0] as any).sessions_taught), 1);
+  });
+
+  await t.test("9. User Dashboard Layout Atomic Save & Persistence", async () => {
+    const db = freshDb;
+    const testUser = "11111111-1111-4111-8111-111111111111";
+
+    const customWidgets = JSON.stringify([
+      { widget_key: "greeting_hero", visible: true, order: 1 },
+      { widget_key: "quick_actions", visible: true, order: 2 },
+      { widget_key: "profile_quest", visible: false, order: 3 },
+    ]);
+
+    const res = await db.query(`
+      SELECT public.save_user_dashboard_layout_atomic(
+        '${testUser}'::uuid,
+        'learner',
+        'compact',
+        '${customWidgets}'::jsonb
+      ) as result;
+    `);
+
+    const resultObj = (res.rows[0] as any).result;
+    assert.strictEqual(resultObj.preset, "learner");
+    assert.strictEqual(resultObj.density, "compact");
+    assert.strictEqual(resultObj.widgets.length, 3);
+  });
+
+  await t.test("10. Guided Tour Step Tracking & Idempotent Completion Reward", async () => {
+    const db = freshDb;
+    const testUser = "22222222-2222-4222-8222-222222222222";
+
+    // Step 1: Intermediate step
+    const step1Res = await db.query(`
+      SELECT public.complete_guided_tour_step_atomic(
+        '${testUser}'::uuid,
+        'dashboard_customizer',
+        false
+      ) as result;
+    `);
+    const step1 = (step1Res.rows[0] as any).result;
+    assert.strictEqual(step1.status, "in_progress");
+    assert.strictEqual(step1.step, "dashboard_customizer");
+
+    // Step 2: Final step (Awards +5 reputation)
+    const stepFinalRes = await db.query(`
+      SELECT public.complete_guided_tour_step_atomic(
+        '${testUser}'::uuid,
+        'finish_tour',
+        true
+      ) as result;
+    `);
+    const stepFinal = (stepFinalRes.rows[0] as any).result;
+    assert.strictEqual(stepFinal.status, "completed");
+    assert.strictEqual(stepFinal.reward.awarded, true);
+    assert.strictEqual(stepFinal.reward.points, 5);
+
+    // Step 3: Replay/Repeat completion -> MUST NOT double-award
+    const stepRepeatRes = await db.query(`
+      SELECT public.complete_guided_tour_step_atomic(
+        '${testUser}'::uuid,
+        'finish_tour',
+        true
+      ) as result;
+    `);
+    const stepRepeat = (stepRepeatRes.rows[0] as any).result;
+    assert.strictEqual(stepRepeat.status, "completed");
+    assert.strictEqual(stepRepeat.reward.awarded, false);
+    assert.strictEqual(stepRepeat.reward.reason, "already_awarded");
   });
 });

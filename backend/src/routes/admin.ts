@@ -325,3 +325,164 @@ adminRoutes.post(
     res.status(201).json(data);
   }),
 );
+
+// Dashboard Configs Management
+adminRoutes.get(
+  "/dashboard-configs",
+  wrap(async (_req, res) => {
+    const { data, error } = await db.from("dashboard_configs").select("*").order("default_order");
+    if (error) throw error;
+    res.json({ configs: data ?? [] });
+  }),
+);
+
+adminRoutes.patch(
+  "/dashboard-configs/:id",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z.object({
+      default_order: z.number().int().optional(),
+      is_required: z.boolean().optional(),
+      is_enabled: z.boolean().optional(),
+      title_en: z.string().optional(),
+      title_bn: z.string().optional(),
+      target_roles: z.array(z.string()).optional(),
+    }).parse(req.body);
+
+    const { data, error } = await db
+      .from("dashboard_configs")
+      .update({ ...body, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    await audit(req.userId!, "admin.dashboard_config.update", "dashboard_config", id, body);
+    res.json(data);
+  }),
+);
+
+// Announcements Management
+adminRoutes.get(
+  "/announcements",
+  wrap(async (_req, res) => {
+    const { data, error } = await db.from("announcements").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ announcements: data ?? [] });
+  }),
+);
+
+adminRoutes.post(
+  "/announcements",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const body = z.object({
+      title_en: z.string().min(2),
+      title_bn: z.string().min(2),
+      body_en: z.string().min(2),
+      body_bn: z.string().min(2),
+      tone: z.enum(["info", "warning", "success", "accent"]).default("info"),
+      action_url: z.string().optional(),
+      action_label_en: z.string().optional(),
+      action_label_bn: z.string().optional(),
+      is_active: z.boolean().default(true),
+    }).parse(req.body);
+
+    const { data, error } = await db
+      .from("announcements")
+      .insert(body)
+      .select()
+      .single();
+
+    if (error) throw error;
+    await audit(req.userId!, "admin.announcement.create", "announcement", data.id, body);
+    res.status(201).json(data);
+  }),
+);
+
+adminRoutes.patch(
+  "/announcements/:id",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z.object({
+      title_en: z.string().optional(),
+      title_bn: z.string().optional(),
+      body_en: z.string().optional(),
+      body_bn: z.string().optional(),
+      tone: z.enum(["info", "warning", "success", "accent"]).optional(),
+      action_url: z.string().optional(),
+      is_active: z.boolean().optional(),
+    }).parse(req.body);
+
+    const { data, error } = await db
+      .from("announcements")
+      .update(body)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    await audit(req.userId!, "admin.announcement.update", "announcement", id, body);
+    res.json(data);
+  }),
+);
+
+// Feature Flags Management
+adminRoutes.get(
+  "/feature-flags",
+  wrap(async (_req, res) => {
+    const { data, error } = await db.from("feature_flags").select("*").order("key");
+    if (error) throw error;
+    res.json({ flags: data ?? [] });
+  }),
+);
+
+adminRoutes.post(
+  "/feature-flags",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const body = z.object({
+      key: z.string().min(2).max(60),
+      description: z.string().optional(),
+      is_enabled: z.boolean().default(true),
+      rollout_percentage: z.number().int().min(0).max(100).default(100),
+      target_roles: z.array(z.string()).default(["student", "tutor", "moderator", "admin"]),
+    }).parse(req.body);
+
+    const { data, error } = await db
+      .from("feature_flags")
+      .insert(body)
+      .select()
+      .single();
+
+    if (error) throw error;
+    await audit(req.userId!, "admin.feature_flag.create", "feature_flag", data.id, body);
+    res.status(201).json(data);
+  }),
+);
+
+adminRoutes.patch(
+  "/feature-flags/:key",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const key = z.string().min(2).parse(req.params.key);
+    const body = z.object({
+      description: z.string().optional(),
+      is_enabled: z.boolean().optional(),
+      rollout_percentage: z.number().int().min(0).max(100).optional(),
+    }).parse(req.body);
+
+    const { data, error } = await db
+      .from("feature_flags")
+      .update({ ...body, updated_at: new Date().toISOString() })
+      .eq("key", key)
+      .select()
+      .single();
+
+    if (error) throw error;
+    await audit(req.userId!, "admin.feature_flag.update", "feature_flag", key, body);
+    res.json(data);
+  }),
+);

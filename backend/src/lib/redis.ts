@@ -34,3 +34,14 @@ export async function cacheSet(key: string, value: unknown, ttl = 60): Promise<v
     return;
   }
 }
+
+export async function cacheDel(key: string): Promise<void> {
+  if (!redis) return;
+  try {
+    if (redis.status === "wait") await redis.connect();
+    await redis.del(key);
+  } catch {
+    return;
+  }
+}
+
