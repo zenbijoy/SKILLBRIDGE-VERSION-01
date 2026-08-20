@@ -212,6 +212,10 @@ function deviceLanguage(): AppLanguage {
   return locale.startsWith("bn") ? "bn" : "en";
 }
 
+export function t(key: string, lang: AppLanguage = "en", fallback?: string): string {
+  return dictionaries[lang]?.[key] ?? dictionaries.en[key] ?? fallback ?? key;
+}
+
 export function useI18n() {
   const language = usePreferencesStore((state) => state.language);
   const useDeviceLanguage = usePreferencesStore((state) => state.useDeviceLanguage);
@@ -219,8 +223,7 @@ export function useI18n() {
   return useMemo(
     () => ({
       language: activeLanguage,
-      t: (key: string, fallback?: string) =>
-        dictionaries[activeLanguage][key] ?? dictionaries.en[key] ?? fallback ?? key,
+      t: (key: string, fallback?: string) => t(key, activeLanguage, fallback),
     }),
     [activeLanguage],
   );

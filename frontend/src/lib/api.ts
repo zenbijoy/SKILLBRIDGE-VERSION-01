@@ -91,9 +91,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-export const qs = (obj: Record<string, string | number | boolean | undefined>) =>
+export const qs = (obj: Record<string, string | number | boolean | null | undefined>) =>
   new URLSearchParams(
     Object.entries(obj)
-      .filter(([, value]) => value !== undefined)
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
       .map(([key, value]) => [key, String(value)]),
   ).toString();

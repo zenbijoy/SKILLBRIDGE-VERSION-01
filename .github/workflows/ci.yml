@@ -24,6 +24,7 @@ jobs:
       - run: npx expo-doctor
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm run test
 
   backend:
     runs-on: ubuntu-latest

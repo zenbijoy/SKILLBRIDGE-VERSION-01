@@ -18,7 +18,14 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-const nav = [
+type NavItem = {
+  to: string;
+  label: string;
+  icon: typeof Gauge;
+  end?: boolean;
+};
+
+const nav: NavItem[] = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
   { to: '/users', label: 'User 360', icon: Users },
   { to: '/moderation', label: 'Moderation', icon: ShieldAlert },
@@ -27,7 +34,7 @@ const nav = [
   { to: '/rules', label: 'Runtime Policy', icon: SlidersHorizontal },
   { to: '/api-mgmt', label: 'Integrations', icon: ServerCog },
   { to: '/db-ops', label: 'Audit & Data', icon: Database },
-] as const;
+];
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
