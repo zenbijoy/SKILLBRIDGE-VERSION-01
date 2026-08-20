@@ -455,5 +455,71 @@ export function chat(io: Server) {
     })
   );
 
+  // Private Attachment Upload Ticket
+  r.post(
+    "/conversations/:id/attachment-ticket",
+    wrap(async (req, res) => {
+      const convId = z.string().uuid().parse(req.params.id);
+      const b = z
+        .object({
+          filename: z.string().min(1).max(160),
+          contentType: z.string().regex(/^(image\/(jpeg|png|webp|gif)|application\/pdf|text\/plain|application\/zip)$/i, {
+            message: "Unsupported file type",
+          }),
+          sizeBytes: z.number().int().min(1).max(15 * 1024 * 1024), // Max 15MB
+        })
+        .parse(req.body);
+
+      const { data: member } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", convId)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      if (!member) {
+        return res.status(403).json({ error: "Not authorized to upload to this conversation" });
+      }
+
+      const { signedUpload } = await import("../services/storage.js");
+      const safeFilename = b.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${convId}/${req.userId!}/${crypto.randomUUID()}-${safeFilename}`;
+      const ticket = await signedUpload("attachments", storagePath);
+
+      res.json({ bucket: "attachments", ...ticket, storagePath });
+    })
+  );
+
+  // Private Attachment Signed Download
+  r.get(
+    "/conversations/:id/attachments/:attachmentId/download",
+    wrap(async (req, res) => {
+      const convId = z.string().uuid().parse(req.params.id);
+      const { storagePath } = z.object({ storagePath: z.string().min(5) }).parse(req.query);
+
+      const { data: member } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", convId)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      if (!member) {
+        return res.status(403).json({ error: "Not authorized to download conversation attachments" });
+      }
+
+      if (!storagePath.startsWith(`${convId}/`)) {
+        return res.status(403).json({ error: "Invalid attachment path for this conversation" });
+      }
+
+      const { data, error } = await admin.storage
+        .from("attachments")
+        .createSignedUrl(storagePath, 3600);
+
+      if (error) throw error;
+      res.json({ url: data.signedUrl });
+    })
+  );
+
   return r;
 }

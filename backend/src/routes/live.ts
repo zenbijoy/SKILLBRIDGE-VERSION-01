@@ -47,7 +47,8 @@ liveWebhooks.post("/", wrap(async (req, res) => {
         p_user_id: event.participant.identity,
       });
       if (rpcErr) {
-        console.warn(`[LIVEKIT_WEBHOOK_WARN] record_livekit_join failed:`, rpcErr.message);
+        console.error(`[LIVEKIT_WEBHOOK_ERROR] record_livekit_join failed:`, rpcErr.message);
+        throw rpcErr;
       }
     }
   } else if (event.event === "participant_left") {
@@ -60,7 +61,8 @@ liveWebhooks.post("/", wrap(async (req, res) => {
         p_user_id: event.participant.identity,
       });
       if (rpcErr) {
-        console.warn(`[LIVEKIT_WEBHOOK_WARN] record_livekit_leave failed:`, rpcErr.message);
+        console.error(`[LIVEKIT_WEBHOOK_ERROR] record_livekit_leave failed:`, rpcErr.message);
+        throw rpcErr;
       }
     }
   }

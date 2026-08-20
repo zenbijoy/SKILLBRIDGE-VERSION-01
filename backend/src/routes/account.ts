@@ -12,8 +12,11 @@ account.delete(
       .parse(req.body);
     void confirm;
     const uid = req.userId!;
-    for (const bucket of ["avatars", "resources"])
-      await removeTree(bucket, uid);
+    for (const bucket of ["avatars", "resources", "attachments"]) {
+      await removeTree(bucket, uid).catch((err) => {
+        console.warn(`[ACCOUNT_CLEANUP_WARN] Failed cleaning bucket ${bucket} for user ${uid}:`, err?.message);
+      });
+    }
     const { error } = await admin.auth.admin.deleteUser(uid);
     if (error) throw error;
     res.status(204).end();

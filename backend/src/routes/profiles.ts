@@ -46,6 +46,9 @@ profiles.patch(
         university: z.string().max(120).optional(),
         department: z.string().max(120).optional(),
         batch: z.string().max(40).optional(),
+        study_mode_preference: z.enum(["online", "offline", "hybrid"]).optional(),
+        profile_visibility: z.enum(["public", "campus_only", "private"]).optional(),
+        onboarding_completed: z.boolean().optional(),
       })
       .parse(req.body);
     const { data, error } = await admin

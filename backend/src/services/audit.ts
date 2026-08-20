@@ -6,7 +6,7 @@ export async function audit(
   targetType: string,
   targetId?: string,
   metadata: Record<string, unknown> = {},
-) {
+): Promise<void> {
   const { error } = await admin
     .from("audit_logs")
     .insert({
@@ -19,5 +19,6 @@ export async function audit(
 
   if (error) {
     console.error(`[AUDIT_ERROR] Failed to persist audit log for action ${action}:`, error.message);
+    throw new Error(`Durable audit logging failed for ${action}: ${error.message}`);
   }
 }

@@ -77,6 +77,8 @@ export default function OnboardingWizard() {
           department: department.trim(),
           batch: batch.trim(),
           bio: bio.trim() || `Student at ${university.trim() || "SkillBridge"} passionate about learning.`,
+          study_mode_preference: preferredMode,
+          onboarding_completed: true,
         }),
       });
 
