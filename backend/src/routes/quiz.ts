@@ -133,40 +133,14 @@ quiz.post(
           );
       }
 
-      // Idempotent point reward check (awarded only once per quiz)
-      const { data: existingReward } = await admin
-        .from("points_ledger")
-        .select("id")
-        .eq("user_id", req.userId!)
-        .eq("event_type", "skill_verified")
-        .eq("reference_type", "quiz")
-        .eq("reference_id", quizId)
-        .maybeSingle();
-
-      if (!existingReward) {
-        await admin
-          .from("points_ledger")
-          .insert({
-            user_id: req.userId!,
-            event_type: "skill_verified",
-            points: 15,
-            reference_type: "quiz",
-            reference_id: quizId,
-          });
-
-        const { data: profile } = await admin
-          .from("profiles")
-          .select("reputation")
-          .eq("id", req.userId!)
-          .single();
-
-        if (profile) {
-          await admin
-            .from("profiles")
-            .update({ reputation: (profile.reputation || 0) + 15 })
-            .eq("id", req.userId!);
-        }
-      }
+      // Atomic idempotent reputation reward
+      await admin.rpc("award_reputation_atomic", {
+        p_user_id: req.userId!,
+        p_event_type: "skill_verified",
+        p_points: 15,
+        p_reference_type: "quiz",
+        p_reference_id: quizId,
+      });
     }
     res.json({ score, passed, attemptId: attempt.id });
   }),

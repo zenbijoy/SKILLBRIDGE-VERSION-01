@@ -246,24 +246,19 @@ test("Adversarial Security & Authorization Test Matrix", async (t) => {
 
     mockAdmin.from = (table?: string) => {
       if (table === "profiles") {
-        // When checking caller: moderator; when checking target: admin
-        return {
-          select: (fields: string) => ({
-            eq: (col: string, val: string) => ({
-              single: async () => ({
-                data: val === USER_ADMIN ? { roles: ["admin"], account_status: "active" } : { roles: ["moderator"], account_status: "active" },
-                error: null,
-              }),
-              maybeSingle: async () => ({
-                data: val === USER_ADMIN ? { roles: ["admin"], account_status: "active" } : { roles: ["moderator"], account_status: "active" },
-                error: null,
-              }),
-            }),
-          }),
-          update: () => ({ eq: () => ({ select: () => ({ single: async () => ({ data: {}, error: null }) }) }) }),
-        };
+        return createMockChain({ id: USER_MODERATOR, roles: ["moderator"], account_status: "active" });
       }
       return createMockChain();
+    };
+
+    (mockAdmin as any).rpc = async (rpcName: string, params: any) => {
+      if (rpcName === "admin_mutate_user_status_atomic") {
+        if (params.p_target_id === USER_ADMIN) {
+          return { data: null, error: new Error("Moderators cannot modify administrator accounts") };
+        }
+        return { data: { success: true }, error: null };
+      }
+      return { data: null, error: null };
     };
 
     const res = await request(app)
@@ -275,13 +270,13 @@ test("Adversarial Security & Authorization Test Matrix", async (t) => {
     assert.match(res.body.error, /administrators/i);
   });
 
-  await t.test("9. Quiz Point Reward Idempotency", async () => {
+  await t.test("9. Quiz Point Reward Idempotency (Atomic Ledger)", async () => {
     const authHeader = authHeaderFor(USER_ALICE, ["student"]);
     const QUIZ_ID = "12345678-1234-4234-8234-123456789abc";
     const Q1_ID = "11111111-2222-4333-8444-555555555555";
     const Q2_ID = "22222222-3333-4444-8555-666666666666";
 
-    let pointsLedgerInsertCount = 0;
+    let awardReputationRpcCalls = 0;
 
     mockAdmin.from = (table?: string) => {
       if (table === "profiles") {
@@ -299,26 +294,15 @@ test("Adversarial Security & Authorization Test Matrix", async (t) => {
       if (table === "quizzes") {
         return createMockChain({ id: QUIZ_ID, skill_id: "skill-1" });
       }
-      if (table === "points_ledger") {
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                eq: () => ({
-                  eq: () => ({
-                    maybeSingle: async () => ({ data: { id: "existing-points-1" }, error: null }),
-                  }),
-                }),
-              }),
-            }),
-          }),
-          insert: () => {
-            pointsLedgerInsertCount++;
-            return createMockChain();
-          },
-        };
-      }
       return createMockChain();
+    };
+
+    (mockAdmin as any).rpc = async (rpcName: string) => {
+      if (rpcName === "award_reputation_atomic") {
+        awardReputationRpcCalls++;
+        return { data: { awarded: true, new_reputation: 65 }, error: null };
+      }
+      return { data: null, error: null };
     };
 
     const res = await request(app)
@@ -331,7 +315,6 @@ test("Adversarial Security & Authorization Test Matrix", async (t) => {
 
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.passed, true);
-    // Because user already collected reward, ledger points should NOT be inserted again
-    assert.strictEqual(pointsLedgerInsertCount, 0);
+    assert.strictEqual(awardReputationRpcCalls, 1);
   });
 });

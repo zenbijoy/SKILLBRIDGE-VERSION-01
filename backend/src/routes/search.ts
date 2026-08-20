@@ -6,17 +6,41 @@ import { eitherColumnFilter } from "../lib/query-helpers.js";
 
 export const search = Router();
 
+export type SearchResult = {
+  kind: "person" | "room" | "event" | "skill" | "club" | "research" | "resource";
+  id: string;
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  score: number;
+  metadata: Record<string, string | number | boolean | null>;
+};
+
+const searchQuerySchema = z.object({
+  q: z.string().min(1).max(100),
+  kind: z.enum(["all", "person", "room", "event", "skill", "club", "research", "resource"]).default("all"),
+  cursor: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  campus: z.string().optional(),
+  department: z.string().optional(),
+});
+
+function calculateScore(text: string, query: string, baseWeight: number): number {
+  const normText = text.toLowerCase();
+  const normQuery = query.toLowerCase();
+  if (normText === normQuery) return baseWeight * 1.5;
+  if (normText.startsWith(normQuery)) return baseWeight * 1.3;
+  if (normText.includes(normQuery)) return baseWeight * 1.0;
+  return baseWeight * 0.7;
+}
+
 search.get(
   "/",
   wrap(async (req, res) => {
-    const q = z.string().min(2).max(80).parse(req.query.q);
-    const kind = String(req.query.kind ?? "all");
-    const cursor = parseInt(String(req.query.cursor ?? "0"), 10) || 0;
-    const limit = 20;
-
+    const { q, kind, cursor, limit, campus, department } = searchQuerySchema.parse(req.query);
     const uid = req.userId!;
-    
-    // Fetch blocks & user room memberships
+
+    // 1. Fetch blocks & user room memberships
     const [blocksRes, userRoomsRes] = await Promise.all([
       admin
         .from("blocks")
@@ -35,83 +59,239 @@ search.get(
     );
     const myRoomIds = new Set((userRoomsRes.data ?? []).map((r) => r.room_id));
 
-    const [people, rooms, events, skills, clubs, research, resources] = await Promise.all([
-      ["all", "people"].includes(kind)
-        ? admin
+    const allResults: SearchResult[] = [];
+
+    // Helper queries
+    const tasks: Promise<void>[] = [];
+
+    // PEOPLE
+    if (kind === "all" || kind === "person") {
+      tasks.push(
+        (async () => {
+          let query = admin
             .from("profiles")
-            .select("id, full_name, username, avatar_url, bio, university, department, reputation, profile_visibility")
-            .textSearch("fts", q, { type: "websearch" })
+            .select("id, full_name, username, avatar_url, bio, university, department, reputation")
             .eq("profile_visibility", "public")
             .eq("account_status", "active")
-            .range(cursor, cursor + limit - 1)
-        : Promise.resolve({ data: [] }),
-      ["all", "rooms"].includes(kind)
-        ? admin
+            .or(`full_name.ilike.%${q}%,username.ilike.%${q}%,bio.ilike.%${q}%`)
+            .limit(30);
+
+          if (campus) query = query.ilike("university", `%${campus}%`);
+          if (department) query = query.ilike("department", `%${department}%`);
+
+          const { data } = await query;
+          (data ?? []).forEach((p: any) => {
+            if (blocked.has(p.id) || p.id === uid) return;
+            allResults.push({
+              kind: "person",
+              id: p.id,
+              title: p.full_name || p.username,
+              subtitle: `${p.university || "Student"} • ${p.department || "Peer"} • Rep: ${p.reputation || 0}`,
+              imageUrl: p.avatar_url || undefined,
+              score: calculateScore(p.full_name || p.username, q, 30),
+              metadata: {
+                username: p.username,
+                university: p.university ?? null,
+                department: p.department ?? null,
+                reputation: p.reputation ?? 0,
+              },
+            });
+          });
+        })(),
+      );
+    }
+
+    // ROOMS
+    if (kind === "all" || kind === "room") {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
             .from("rooms")
-            .select("id, title, topic, description, mode, member_count, capacity, status, visibility, scheduled_at")
+            .select("id, title, topic, description, mode, member_count, capacity, status, campus_location")
             .eq("visibility", "public")
-            .textSearch("fts", q, { type: "websearch" })
-            .range(cursor, cursor + limit - 1)
-        : Promise.resolve({ data: [] }),
-      ["all", "events"].includes(kind)
-        ? admin
+            .in("status", ["open", "scheduled", "live"])
+            .or(`title.ilike.%${q}%,topic.ilike.%${q}%,description.ilike.%${q}%`)
+            .limit(30);
+
+          (data ?? []).forEach((r: any) => {
+            allResults.push({
+              kind: "room",
+              id: r.id,
+              title: r.title,
+              subtitle: `${r.topic} • ${r.mode.toUpperCase()} • ${r.member_count}/${r.capacity} members`,
+              score: calculateScore(r.title, q, 25),
+              metadata: {
+                topic: r.topic,
+                mode: r.mode,
+                status: r.status,
+                member_count: r.member_count,
+                capacity: r.capacity,
+                campus_location: r.campus_location ?? null,
+              },
+            });
+          });
+        })(),
+      );
+    }
+
+    // EVENTS
+    if (kind === "all" || kind === "event") {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
             .from("events")
-            .select("id, title, description, starts_at, ends_at, location, capacity, club_id, status")
+            .select("id, title, description, starts_at, location, capacity, club_id, status")
             .eq("status", "published")
-            .textSearch("fts", q, { type: "websearch" })
-            .range(cursor, cursor + limit - 1)
-        : Promise.resolve({ data: [] }),
-      ["all", "skills"].includes(kind)
-        ? admin
+            .or(`title.ilike.%${q}%,description.ilike.%${q}%,location.ilike.%${q}%`)
+            .limit(30);
+
+          (data ?? []).forEach((e: any) => {
+            allResults.push({
+              kind: "event",
+              id: e.id,
+              title: e.title,
+              subtitle: `${new Date(e.starts_at).toLocaleDateString()} • ${e.location || "Campus"}`,
+              score: calculateScore(e.title, q, 20),
+              metadata: {
+                starts_at: e.starts_at,
+                location: e.location ?? null,
+                capacity: e.capacity ?? null,
+                club_id: e.club_id ?? null,
+              },
+            });
+          });
+        })(),
+      );
+    }
+
+    // SKILLS
+    if (kind === "all" || kind === "skill") {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
             .from("skills")
             .select("id, name, category, description")
-            .textSearch("fts", q, { type: "websearch" })
-            .range(cursor, cursor + limit - 1)
-        : Promise.resolve({ data: [] }),
-      ["all", "clubs"].includes(kind)
-        ? admin
+            .or(`name.ilike.%${q}%,category.ilike.%${q}%`)
+            .limit(20);
+
+          (data ?? []).forEach((s: any) => {
+            allResults.push({
+              kind: "skill",
+              id: s.id,
+              title: s.name,
+              subtitle: `Category: ${s.category}`,
+              score: calculateScore(s.name, q, 20),
+              metadata: {
+                category: s.category,
+                description: s.description ?? null,
+              },
+            });
+          });
+        })(),
+      );
+    }
+
+    // CLUBS
+    if (kind === "all" || kind === "club") {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
             .from("clubs")
             .select("id, name, description, category, university, member_count")
-            .textSearch("fts", q, { type: "websearch" })
-            .range(cursor, cursor + limit - 1)
-        : Promise.resolve({ data: [] }),
-      ["all", "research"].includes(kind)
-        ? admin
-            .from("research_projects")
-            .select("id, title, description, field, status, owner_id, looking_for_collaborators, visibility")
-            .eq("visibility", "public")
-            .textSearch("fts", q, { type: "websearch" })
-            .range(cursor, cursor + limit - 1)
-        : Promise.resolve({ data: [] }),
-      ["all", "resources"].includes(kind)
-        ? admin
-            .from("resources")
-            .select("id, title, description, room_id, mime_type, file_size, created_at")
-            .textSearch("fts", q, { type: "websearch" })
-            .range(cursor, cursor + limit - 1)
-        : Promise.resolve({ data: [] }),
-    ]);
+            .or(`name.ilike.%${q}%,description.ilike.%${q}%`)
+            .limit(20);
 
-    const filteredPeople = (people.data ?? []).filter((p: any) => !blocked.has(p.id));
-    const filteredResources = (resources.data ?? []).filter((r: any) => !r.room_id || myRoomIds.has(r.room_id));
+          (data ?? []).forEach((c: any) => {
+            allResults.push({
+              kind: "club",
+              id: c.id,
+              title: c.name,
+              subtitle: `${c.category || "Club"} • ${c.university || "Campus"} • ${c.member_count || 0} members`,
+              score: calculateScore(c.name, q, 20),
+              metadata: {
+                category: c.category ?? null,
+                university: c.university ?? null,
+                member_count: c.member_count ?? 0,
+              },
+            });
+          });
+        })(),
+      );
+    }
+
+    // RESEARCH PROJECTS
+    if (kind === "all" || kind === "research") {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
+            .from("research_projects")
+            .select("id, title, description, field, status, owner_id, looking_for_collaborators")
+            .eq("visibility", "public")
+            .in("status", ["active", "completed"])
+            .or(`title.ilike.%${q}%,field.ilike.%${q}%,description.ilike.%${q}%`)
+            .limit(20);
+
+          (data ?? []).forEach((r: any) => {
+            if (blocked.has(r.owner_id)) return;
+            allResults.push({
+              kind: "research",
+              id: r.id,
+              title: r.title,
+              subtitle: `${r.field || "Research"} • ${r.status.toUpperCase()} ${r.looking_for_collaborators ? "• 🤝 Recruiting" : ""}`,
+              score: calculateScore(r.title, q, 20),
+              metadata: {
+                field: r.field ?? null,
+                status: r.status,
+                looking_for_collaborators: r.looking_for_collaborators ?? false,
+              },
+            });
+          });
+        })(),
+      );
+    }
+
+    // RESOURCES
+    if (kind === "all" || kind === "resource") {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
+            .from("resources")
+            .select("id, title, room_id, kind, created_at")
+            .or(`title.ilike.%${q}%`)
+            .limit(30);
+
+          (data ?? []).forEach((resItem: any) => {
+            if (resItem.room_id && !myRoomIds.has(resItem.room_id)) return;
+            allResults.push({
+              kind: "resource",
+              id: resItem.id,
+              title: resItem.title,
+              subtitle: `Resource • ${resItem.kind || "file"}`,
+              score: calculateScore(resItem.title, q, 15),
+              metadata: {
+                kind: resItem.kind ?? "file",
+                room_id: resItem.room_id ?? null,
+              },
+            });
+          });
+        })(),
+      );
+    }
+
+    await Promise.all(tasks);
+
+    // Deterministic sorting by score descending, then title ascending, then ID
+    allResults.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+
+    const paginated = allResults.slice(cursor, cursor + limit);
+    const nextCursor = cursor + limit < allResults.length ? cursor + limit : null;
 
     res.json({
-      people: filteredPeople,
-      rooms: rooms.data ?? [],
-      events: events.data ?? [],
-      skills: skills.data ?? [],
-      clubs: clubs.data ?? [],
-      research: research.data ?? [],
-      resources: filteredResources,
-      nextCursor: [
-        filteredPeople.length,
-        (rooms.data ?? []).length,
-        (events.data ?? []).length,
-        (skills.data ?? []).length,
-        (clubs.data ?? []).length,
-        (research.data ?? []).length,
-        filteredResources.length
-      ].some(l => l === limit) ? cursor + limit : null
+      results: paginated,
+      total: allResults.length,
+      nextCursor,
+      query: q,
+      kind,
     });
   }),
 );

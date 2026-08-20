@@ -4,21 +4,45 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
 import { env } from "../config/env.js";
-import { cacheGet, cacheSet } from "../lib/redis.js";
+import { cacheGet, cacheSet, redis } from "../lib/redis.js";
+
 export const rooms = Router();
-const createSchema = z.object({
-  title: z.string().min(4).max(120),
-  description: z.string().max(1000),
-  topic: z.string().min(2).max(100),
-  visibility: z.enum(["public", "private", "invite_only"]).default("public"),
-  mode: z.enum(["online", "offline", "hybrid"]).default("hybrid"),
-  capacity: z.number().int().min(2).max(env.MAX_ROOM_CAPACITY).default(30),
-  tags: z.array(z.string().max(40)).max(10).default([]),
-  rules: z.string().max(1000).optional().default(""),
-  campus_location: z.string().max(200).optional(),
-});
+
+const createSchema = z
+  .object({
+    title: z.string().min(4).max(120),
+    description: z.string().max(1000),
+    topic: z.string().min(2).max(100),
+    visibility: z.enum(["public", "private", "invite_only"]).default("public"),
+    mode: z.enum(["online", "offline", "hybrid"]).default("hybrid"),
+    capacity: z.number().int().min(2).max(env.MAX_ROOM_CAPACITY).default(30),
+    tags: z.array(z.string().max(40)).max(10).default([]),
+    rules: z.string().max(1000).optional().default(""),
+    campus_location: z.string().max(200).optional(),
+  })
+  .refine(
+    (data) => data.mode === "online" || (data.campus_location && data.campus_location.trim().length > 0),
+    {
+      message: "Campus location is required for offline or hybrid learning rooms",
+      path: ["campus_location"],
+    },
+  );
+
 const pageSchema = z.coerce.number().int().min(1).default(1);
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20);
+
+// Invalidate room list cache
+async function invalidateRoomCache() {
+  if (!redis) return;
+  try {
+    const keys = await redis.keys("rooms:public:*");
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
+  } catch {
+    // Ignore cache invalidation failures
+  }
+}
 
 rooms.get(
   "/",
@@ -52,6 +76,7 @@ rooms.get(
     res.json(result);
   }),
 );
+
 rooms.post(
   "/",
   wrap(async (req, res) => {
@@ -63,16 +88,25 @@ rooms.post(
       p_visibility: body.visibility,
       p_mode: body.mode,
       p_capacity: body.capacity,
-      p_rules: body.rules,
       p_tags: body.tags,
-      p_campus_location: body.campus_location ?? null,
+      p_rules: body.rules,
+      p_campus_location: body.campus_location,
       p_owner_id: req.userId!,
     });
     if (error) throw error;
-    const { data: room } = await admin.from("rooms").select().eq("id", v_room_id).single();
+
+    await invalidateRoomCache();
+
+    const { data: room, error: fetchErr } = await admin
+      .from("rooms")
+      .select("*")
+      .eq("id", v_room_id)
+      .single();
+    if (fetchErr) throw fetchErr;
     res.status(201).json(room);
   }),
 );
+
 rooms.get(
   "/:id",
   wrap(async (req, res) => {
@@ -98,37 +132,45 @@ rooms.get(
         .maybeSingle(),
       admin
         .from("room_members")
-        .select("profiles(*)")
+        .select("role, profiles(id, full_name, username, avatar_url, reputation)")
         .eq("room_id", id)
         .limit(100),
       admin
         .from("teaching_requests")
         .select(
-          "id,status,volunteer:profiles!teaching_requests_volunteer_id_fkey(*)",
+          "id,status,note,created_at,volunteer:profiles!teaching_requests_volunteer_id_fkey(id, full_name, username, avatar_url)",
         )
         .eq("room_id", id),
       admin.from("sessions").select("*").eq("room_id", id).order("starts_at"),
-      admin.from("resources").select("id,title,url").eq("room_id", id),
+      admin.from("resources").select("id,title,url,kind,created_at").eq("room_id", id),
     ]);
     if (room.visibility !== "public" && !membership)
       return res.status(403).json({ error: "Room is private" });
     res.json({
       room,
-      members: (members ?? []).map((m: { profiles?: unknown }) => m.profiles),
+      membership,
+      members: members ?? [],
       teachingRequests: teach ?? [],
       sessions: sessions ?? [],
       resources: resources ?? [],
-      myMembership: membership,
     });
   }),
 );
+
 rooms.post(
   "/:id/teach",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
     const { note } = z
-      .object({ note: z.string().max(500).optional() })
+      .object({ note: z.string().max(500).default("") })
       .parse(req.body);
+    const { data: m } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", id)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+    if (!m) return res.status(403).json({ error: "Must join room first" });
     const { data, error } = await admin
       .from("teaching_requests")
       .upsert(
@@ -154,6 +196,7 @@ rooms.post(
     res.status(201).json(data);
   }),
 );
+
 rooms.patch(
   "/:id/teach/:requestId",
   wrap(async (req, res) => {
@@ -193,7 +236,6 @@ rooms.delete(
     const roomId = z.string().uuid().parse(req.params.id);
     const requestId = z.string().uuid().parse(req.params.requestId);
     
-    // Check if the user is the one who volunteered
     const { data: request } = await admin
       .from("teaching_requests")
       .select("volunteer_id, status")
@@ -203,7 +245,6 @@ rooms.delete(
       
     if (!request) return res.status(404).json({ error: "Request not found" });
     
-    // Users can cancel their own request, OR room owners can cancel it (rejecting it is handled by PATCH, but they might want to delete)
     if (request.volunteer_id !== req.userId) {
       const { data: room } = await admin
         .from("rooms")
@@ -225,114 +266,151 @@ rooms.delete(
   }),
 );
 
+// Room Invitations: Create Invitation
+rooms.post(
+  "/:id/invitations",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { invitee_id } = z.object({ invitee_id: z.string().uuid() }).parse(req.body);
+
+    if (invitee_id === req.userId!) {
+      return res.status(400).json({ error: "Cannot invite yourself" });
+    }
+
+    // Verify caller is owner or moderator
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Only room hosts or moderators can invite members" });
+    }
+
+    // Verify invitee is not already a member
+    const { data: existingMember } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", invitee_id)
+      .maybeSingle();
+
+    if (existingMember) {
+      return res.status(400).json({ error: "User is already a member of this room" });
+    }
+
+    const { data: invite, error } = await admin
+      .from("room_invitations")
+      .insert({
+        room_id: roomId,
+        inviter_id: req.userId!,
+        invitee_id,
+        status: "pending",
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const { data: room } = await admin.from("rooms").select("title").eq("id", roomId).single();
+    await notifyUser(
+      invitee_id,
+      "Room Invitation",
+      `You were invited to join "${room?.title || "a study room"}".`,
+      "room",
+      { roomId },
+    );
+
+    res.status(201).json(invite);
+  }),
+);
+
+// Room Invitations: List
+rooms.get(
+  "/:id/invitations",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Not authorized to view invitations" });
+    }
+
+    const { data, error } = await admin
+      .from("room_invitations")
+      .select("*, invitee:profiles!room_invitations_invitee_id_fkey(id, full_name, username, avatar_url)")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ invitations: data ?? [] });
+  }),
+);
+
+// Atomic Join
 rooms.post(
   "/:id/join",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
     
-    // 1. Try atomic RPC first
     const { data: rpcData, error: rpcError } = await admin.rpc("join_room_service_atomic", {
       p_room_id: id,
       p_user_id: req.userId!,
     });
 
-    if (!rpcError && rpcData) {
-      return res.json({ joined: true, role: "learner", member_count: rpcData.member_count });
-    }
-
-    // 2. Safe Fallback with strict verification
-    const { data: room, error: roomError } = await admin
-      .from("rooms")
-      .select("id, visibility, member_count, capacity, status")
-      .eq("id", id)
-      .single();
-
-    if (roomError || !room) return res.status(404).json({ error: "Room not found" });
-
-    if (room.visibility === "private") {
-      return res.status(403).json({ error: "This room is private" });
-    }
-
-    if (room.visibility === "invite_only") {
-      const { data: inv } = await admin
-        .from("room_invitations")
-        .select("status")
-        .eq("room_id", id)
-        .eq("invitee_id", req.userId!)
-        .eq("status", "accepted")
-        .maybeSingle();
-
-      if (!inv) {
+    if (rpcError) {
+      const msg = (rpcError.message || "").toLowerCase();
+      if (msg.includes("capacity") || msg.includes("full")) {
+        return res.status(400).json({ error: "Room is at maximum capacity" });
+      }
+      if (msg.includes("invit") || msg.includes("invite")) {
         return res.status(403).json({ error: "This room requires an invitation to join" });
       }
+      if (msg.includes("private")) {
+        return res.status(403).json({ error: "This room is private" });
+      }
+      if (msg.includes("not found")) {
+        return res.status(404).json({ error: "Room not found" });
+      }
+      throw rpcError;
     }
 
-    if (room.member_count >= room.capacity) {
-      return res.status(400).json({ error: "Room is at maximum capacity" });
-    }
-
-    const { error: insertError } = await admin
-      .from("room_members")
-      .upsert(
-        { room_id: id, user_id: req.userId!, role: "learner" },
-        { onConflict: "room_id,user_id" },
-      );
-
-    if (insertError) throw insertError;
-
-    // Recalculate member count
-    const { count } = await admin
-      .from("room_members")
-      .select("*", { count: "exact", head: true })
-      .eq("room_id", id);
-
-    await admin.from("rooms").update({ member_count: count ?? 1 }).eq("id", id);
-
-    res.json({ joined: true, role: "learner", member_count: count ?? 1 });
+    await invalidateRoomCache();
+    res.json({ joined: true, role: "member", member_count: rpcData?.member_count ?? 1 });
   }),
 );
 
+// Atomic Leave
 rooms.post(
   "/:id/leave",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
 
-    // 1. Try atomic RPC first
     const { data: rpcData, error: rpcError } = await admin.rpc("leave_room_service_atomic", {
       p_room_id: id,
       p_user_id: req.userId!,
     });
 
-    if (!rpcError && rpcData) {
-      return res.json({ left: true, member_count: rpcData.member_count });
+    if (rpcError) {
+      const msg = rpcError.message || "";
+      if (msg.includes("owner")) {
+        return res.status(400).json({ error: "Room owner cannot leave without transferring ownership" });
+      }
+      if (msg.includes("not found")) {
+        return res.status(404).json({ error: "Room not found" });
+      }
+      throw rpcError;
     }
 
-    // 2. Safe Fallback
-    const { data: room } = await admin
-      .from("rooms")
-      .select("owner_id")
-      .eq("id", id)
-      .single();
-
-    if (room?.owner_id === req.userId) {
-      return res.status(400).json({ error: "Room owner cannot leave their own room" });
-    }
-
-    const { error } = await admin
-      .from("room_members")
-      .delete()
-      .eq("room_id", id)
-      .eq("user_id", req.userId!);
-
-    if (error) throw error;
-
-    const { count } = await admin
-      .from("room_members")
-      .select("*", { count: "exact", head: true })
-      .eq("room_id", id);
-
-    await admin.from("rooms").update({ member_count: Math.max(1, count ?? 1) }).eq("id", id);
-
-    res.json({ left: true, member_count: Math.max(1, count ?? 1) });
+    await invalidateRoomCache();
+    res.json({ left: true, member_count: rpcData?.member_count ?? 1 });
   }),
 );

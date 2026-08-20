@@ -110,7 +110,7 @@ sessions.patch(
 
     const { data: isMember } = await admin
       .from("room_members")
-      .select("id")
+      .select("role")
       .eq("room_id", session.room_id)
       .eq("user_id", req.userId!)
       .maybeSingle();

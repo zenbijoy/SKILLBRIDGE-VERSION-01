@@ -42,20 +42,15 @@ adminRoutes.patch(
         action: z.string().trim().min(3).max(200).optional(),
       })
       .parse(req.body);
-    const action = b.action ?? `Report marked ${b.status}`;
-    const { data, error } = await db
-      .from("reports")
-      .update({
-        status: b.status,
-        action,
-        reviewed_by: req.userId!,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .select()
-      .single();
+
+    const { data, error } = await db.rpc("admin_decide_report_atomic", {
+      p_admin_id: req.userId!,
+      p_report_id: id,
+      p_status: b.status,
+      p_action: b.action ?? `Report marked ${b.status}`,
+    });
+
     if (error) throw error;
-    await audit(req.userId!, "moderation.report.update", "report", id, { status: b.status, action });
     res.json(data);
   }),
 );
@@ -64,30 +59,28 @@ adminRoutes.patch(
   "/users/:id/status",
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
-    const { status } = z.object({ status: z.enum(["active", "suspended", "banned"]) }).parse(req.body);
-    if (id === req.userId && status !== "active") {
-      return res.status(400).json({ error: "You cannot suspend or ban your own admin account" });
+    const { status, reason } = z.object({
+      status: z.enum(["active", "suspended", "banned"]),
+      reason: z.string().max(300).optional(),
+    }).parse(req.body);
+
+    const { data, error } = await db.rpc("admin_mutate_user_status_atomic", {
+      p_admin_id: req.userId!,
+      p_target_id: id,
+      p_new_status: status,
+      p_reason: reason ?? null,
+    });
+
+    if (error) {
+      if (error.message.includes("Moderators cannot modify administrator")) {
+        return res.status(403).json({ error: "Only administrators can modify other administrator accounts" });
+      }
+      if (error.message.includes("Cannot suspend or ban your own")) {
+        return res.status(400).json({ error: "You cannot suspend or ban your own admin account" });
+      }
+      throw error;
     }
 
-    // Role hierarchy check
-    const { data: targetUser } = await db
-      .from("profiles")
-      .select("roles")
-      .eq("id", id)
-      .single();
-
-    if (targetUser?.roles?.includes("admin") && !req.userRoles?.includes("admin")) {
-      return res.status(403).json({ error: "Only administrators can modify other administrator accounts" });
-    }
-
-    const { data, error } = await db
-      .from("profiles")
-      .update({ account_status: status })
-      .eq("id", id)
-      .select()
-      .single();
-    if (error) throw error;
-    await audit(req.userId!, "moderation.user.status", "user", id, { status });
     res.json(data);
   }),
 );

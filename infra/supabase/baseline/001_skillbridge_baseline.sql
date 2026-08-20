@@ -1101,9 +1101,172 @@ $$;
 revoke all on function public.create_club_atomic(text, text, text, uuid) from public, anon, authenticated;
 grant execute on function public.create_club_atomic(text, text, text, uuid) to service_role;
 
+-- Room invitations
+create table if not exists public.room_invitations (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  inviter_id uuid not null references public.profiles(id) on delete cascade,
+  invitee_id uuid references public.profiles(id) on delete cascade,
+  token_hash text,
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined', 'revoked', 'expired', 'consumed')),
+  expires_at timestamptz not null default (now() + interval '7 days'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  accepted_at timestamptz,
+  metadata jsonb default '{}'::jsonb,
+  constraint chk_invitation_target check (invitee_id is not null or token_hash is not null),
+  constraint chk_no_self_invite check (inviter_id != invitee_id)
+);
+
+create index if not exists idx_room_invitations_room_id on public.room_invitations(room_id);
+create index if not exists idx_room_invitations_invitee on public.room_invitations(invitee_id) where status = 'pending';
+create unique index if not exists uq_active_room_invitee on public.room_invitations(room_id, invitee_id) where status = 'pending';
+
+alter table public.room_invitations enable row level security;
+create policy room_invitations_select on public.room_invitations for select using (
+  auth.uid() = inviter_id or auth.uid() = invitee_id or
+  exists (select 1 from public.room_members where room_id = room_invitations.room_id and user_id = auth.uid() and role in ('owner', 'moderator'))
+);
+create policy room_invitations_insert on public.room_invitations for insert with check (
+  auth.uid() = inviter_id and
+  exists (select 1 from public.room_members where room_id = room_invitations.room_id and user_id = auth.uid() and role in ('owner', 'moderator'))
+);
+create policy room_invitations_update on public.room_invitations for update using (
+  auth.uid() = invitee_id or auth.uid() = inviter_id or
+  exists (select 1 from public.room_members where room_id = room_invitations.room_id and user_id = auth.uid() and role in ('owner', 'moderator'))
+);
+
+create or replace function public.join_room_service_atomic(
+    p_room_id uuid,
+    p_user_id uuid
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+    r public.rooms;
+    v_actual_count integer;
+    v_existing boolean;
+    v_invite_id uuid;
+begin
+    if p_user_id is null then raise exception 'User ID required'; end if;
+    select * into r from public.rooms where id = p_room_id for update;
+    if not found then raise exception 'Room not found'; end if;
+    if r.status not in ('open','scheduled','live') then raise exception 'Room is not active'; end if;
+    
+    select exists(select 1 from public.room_members where room_id = p_room_id and user_id = p_user_id) into v_existing;
+    if v_existing then return jsonb_build_object('already_member', true, 'member_count', r.member_count); end if;
+    
+    select count(*) into v_actual_count from public.room_members where room_id = p_room_id;
+    if v_actual_count >= r.capacity then raise exception 'Room is at maximum capacity'; end if;
+    if r.visibility = 'private' then raise exception 'This room is private'; end if;
+
+    if r.visibility = 'invite_only' then
+        select id into v_invite_id from public.room_invitations 
+        where room_id = p_room_id and invitee_id = p_user_id and status in ('pending', 'accepted') and expires_at > now()
+        order by created_at desc limit 1;
+        if v_invite_id is null then raise exception 'This room requires an invitation to join'; end if;
+        update public.room_invitations set status = 'consumed', accepted_at = now(), updated_at = now() where id = v_invite_id;
+    end if;
+    
+    insert into public.room_members(room_id, user_id, role) values (p_room_id, p_user_id, 'member');
+    if r.conversation_id is not null then
+        insert into public.conversation_members(conversation_id, user_id, role) values (r.conversation_id, p_user_id, 'member')
+        on conflict (conversation_id, user_id) do nothing;
+    end if;
+    
+    v_actual_count := v_actual_count + 1;
+    update public.rooms set member_count = v_actual_count, updated_at = now() where id = p_room_id;
+    return jsonb_build_object('joined', true, 'member_count', v_actual_count);
+end;
+$$;
+revoke all on function public.join_room_service_atomic(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.join_room_service_atomic(uuid, uuid) to service_role;
+
+create or replace function public.leave_room_service_atomic(
+    p_room_id uuid,
+    p_user_id uuid
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+    r public.rooms;
+    v_actual_count integer;
+begin
+    select * into r from public.rooms where id = p_room_id for update;
+    if not found then raise exception 'Room not found'; end if;
+    if r.owner_id = p_user_id then raise exception 'Room owner cannot leave without transferring ownership'; end if;
+
+    delete from public.room_members where room_id = p_room_id and user_id = p_user_id;
+    if r.conversation_id is not null then
+        delete from public.conversation_members where conversation_id = r.conversation_id and user_id = p_user_id;
+    end if;
+
+    select count(*) into v_actual_count from public.room_members where room_id = p_room_id;
+    update public.rooms set member_count = v_actual_count, updated_at = now() where id = p_room_id;
+    return jsonb_build_object('left', true, 'member_count', v_actual_count);
+end;
+$$;
+revoke all on function public.leave_room_service_atomic(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.leave_room_service_atomic(uuid, uuid) to service_role;
+
+create or replace function public.admin_mutate_user_status_atomic(
+    p_admin_id uuid,
+    p_target_id uuid,
+    p_new_status text,
+    p_reason text default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+    v_admin public.profiles;
+    v_target public.profiles;
+begin
+    select * into v_admin from public.profiles where id = p_admin_id;
+    if not found then raise exception 'Admin profile not found'; end if;
+    if not ('admin' = any(v_admin.roles) or 'moderator' = any(v_admin.roles)) then raise exception 'Unauthorized: elevated role required'; end if;
+
+    select * into v_target from public.profiles where id = p_target_id for update;
+    if not found then raise exception 'Target user not found'; end if;
+    if 'admin' = any(v_target.roles) and not ('admin' = any(v_admin.roles)) then raise exception 'Moderators cannot modify administrator accounts'; end if;
+    if p_admin_id = p_target_id and p_new_status != 'active' then raise exception 'Cannot suspend or ban your own administrator account'; end if;
+
+    update public.profiles set account_status = p_new_status, updated_at = now() where id = p_target_id;
+    insert into public.audit_logs (actor_id, action, target_type, target_id, metadata)
+    values (p_admin_id, 'moderation.user.status', 'user', p_target_id, jsonb_build_object('status', p_new_status, 'previous_status', v_target.account_status, 'reason', p_reason));
+    return jsonb_build_object('success', true, 'user_id', p_target_id, 'status', p_new_status);
+end;
+$$;
+revoke all on function public.admin_mutate_user_status_atomic(uuid, uuid, text, text) from public, anon, authenticated;
+grant execute on function public.admin_mutate_user_status_atomic(uuid, uuid, text, text) to service_role;
+
+create or replace function public.award_reputation_atomic(
+    p_user_id uuid,
+    p_event_type text,
+    p_points integer,
+    p_reference_type text default null,
+    p_reference_id text default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+    v_existing_id uuid;
+    v_new_rep integer;
+begin
+    if p_reference_type is not null and p_reference_id is not null then
+        select id into v_existing_id from public.points_ledger 
+        where user_id = p_user_id and event_type = p_event_type and reference_type = p_reference_type and reference_id = p_reference_id;
+        if v_existing_id is not null then
+            select reputation into v_new_rep from public.profiles where id = p_user_id;
+            return jsonb_build_object('awarded', false, 'reason', 'already_awarded', 'reputation', v_new_rep);
+        end if;
+    end if;
+
+    insert into public.points_ledger (user_id, event_type, points, reference_type, reference_id)
+    values (p_user_id, p_event_type, p_points, p_reference_type, p_reference_id);
+
+    select coalesce(sum(points), 0) into v_new_rep from public.points_ledger where user_id = p_user_id;
+    update public.profiles set reputation = greatest(0, v_new_rep), updated_at = now() where id = p_user_id;
+    return jsonb_build_object('awarded', true, 'points', p_points, 'new_reputation', v_new_rep);
+end;
+$$;
+revoke all on function public.award_reputation_atomic(uuid, text, integer, text, text) from public, anon, authenticated;
+grant execute on function public.award_reputation_atomic(uuid, text, integer, text, text) to service_role;
+
 -- Baseline config info
 create table if not exists public.schema_migrations (
   version text primary key,
   applied_at timestamptz not null default now()
 );
-insert into public.schema_migrations (version) values ('012_baseline') on conflict do nothing;
+insert into public.schema_migrations (version) values ('015_complete_domain_hardening') on conflict do nothing;

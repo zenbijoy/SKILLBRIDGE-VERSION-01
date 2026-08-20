@@ -115,6 +115,7 @@ test("Phase 1.1 DB Integration Mock Tests", async (t) => {
 
   await t.test("TEACHING - member can submit teaching request", async () => {
     mockAdmin.from = (table?: string) => {
+      if (table === "room_members") return createMockChain({ role: "member" });
       if (table === "teaching_requests") return createMockChain({ id: TEACH_REQ_ID });
       if (table === "rooms") return createMockChain({ owner_id: USER_B, title: "Test Room" });
       return createMockChain();
