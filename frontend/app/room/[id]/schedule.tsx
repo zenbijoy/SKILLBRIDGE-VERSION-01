@@ -22,8 +22,11 @@ export default function ScheduleRoom() {
   const [topicNote, setTopicNote] = useState("");
 
   const m = useMutation({
-    mutationFn: () =>
-      api("/sessions", {
+    mutationFn: () => {
+      if ((mode === "offline" || mode === "hybrid") && !location.trim()) {
+        throw new Error("Campus location is required for in-person or hybrid sessions.");
+      }
+      return api("/sessions", {
         method: "POST",
         body: JSON.stringify({
           room_id: id,
@@ -31,7 +34,8 @@ export default function ScheduleRoom() {
           mode,
           campus_location: mode === "online" ? undefined : location.trim() || undefined,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       triggerHaptic();
       qc.invalidateQueries({ queryKey: ["room", id] });
