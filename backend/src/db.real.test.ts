@@ -124,7 +124,7 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     const res = await upgradedDb.query(`
       SELECT count(*) as count FROM information_schema.tables WHERE table_schema = 'public'
     `);
-    assert.ok(Number(res.rows[0].count) >= 15);
+    assert.ok(Number((res.rows[0] as any).count) >= 15);
   });
 
   await t.test("3. Schema-diff comparison between fresh and upgraded databases", async () => {
@@ -199,13 +199,13 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     const memRes = await db.query(`
       SELECT role FROM public.room_members WHERE room_id = '${roomId}' AND user_id = '${userB}';
     `);
-    assert.strictEqual(memRes.rows[0].role, "member");
+    assert.strictEqual((memRes.rows[0] as any).role, "member");
 
     // 6. Verify invitation was consumed
     const invRes = await db.query(`
       SELECT status FROM public.room_invitations WHERE room_id = '${roomId}' AND invitee_id = '${userB}';
     `);
-    assert.strictEqual(invRes.rows[0].status, "consumed");
+    assert.strictEqual((invRes.rows[0] as any).status, "consumed");
   });
 
   await t.test("5. Room Capacity Boundary Enforcement", async () => {
@@ -278,7 +278,7 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
 
     // Check profiles table reputation cache matches points_ledger sum
     const profRes = await db.query(`SELECT reputation FROM public.profiles WHERE id = '${testUser}';`);
-    assert.strictEqual(profRes.rows[0].reputation, 15);
+    assert.strictEqual((profRes.rows[0] as any).reputation, 15);
   });
 
   await t.test("7. Transactional Admin Moderation & Audit Logging", async () => {
@@ -335,7 +335,7 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
       WHERE target_id = '${targetUser}' AND action = 'moderation.user.status';
     `);
     assert.strictEqual(auditRes.rows.length, 1);
-    assert.strictEqual(auditRes.rows[0].actor_id, adminUser);
+    assert.strictEqual((auditRes.rows[0] as any).actor_id, adminUser);
   });
 
   await t.test("8. Leaderboard Activity Aggregation without Reputation Truncation", async () => {
@@ -371,7 +371,7 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     `);
 
     assert.ok(tutorLeaderboardRes.rows.length >= 1);
-    assert.strictEqual(tutorLeaderboardRes.rows[0].teacher_id, topTutorLowRep);
-    assert.strictEqual(Number(tutorLeaderboardRes.rows[0].sessions_taught), 1);
+    assert.strictEqual((tutorLeaderboardRes.rows[0] as any).teacher_id, topTutorLowRep);
+    assert.strictEqual(Number((tutorLeaderboardRes.rows[0] as any).sessions_taught), 1);
   });
 });
