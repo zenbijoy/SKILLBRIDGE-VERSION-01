@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Dashboard, Profile } from "@/types";
@@ -14,6 +14,7 @@ import { AppHeader } from "@/components/navigation/AppHeader";
 import { useAppStore } from "@/state/useAppStore";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
+import { spotIllustrations } from "@/assets/illustrations";
 
 export default function HomeScreen() {
   const { colors } = useTheme();
@@ -154,14 +155,23 @@ export default function HomeScreen() {
             if (!profileQuest || profileQuest.completionPercent >= 100) return null;
             return (
               <Card key="profile_quest" tone="glow" style={styles.questCard}>
-                <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <View style={styles.questBadgeRow}>
-                    <MaterialCommunityIcons name="shield-star" size={20} color={colors.primary} />
-                    <Text style={[styles.questTitle, { color: colors.text }]}>{t("home.completeProfileQuest")}</Text>
+                <Row style={{ alignItems: "center", gap: 12, marginBottom: 8 }}>
+                  <Image
+                    source={spotIllustrations.dashboardBoost}
+                    style={{ width: 44, height: 44 }}
+                    resizeMode="contain"
+                    accessible={false}
+                    accessibilityElementsHidden={true}
+                    importantForAccessibility="no"
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={[styles.questTitle, { color: colors.text }]}>{t("home.completeProfileQuest")}</Text>
+                      <Pill tone="primary">{profileQuest.completionPercent}%</Pill>
+                    </Row>
+                    <Muted>{t("home.completeProfileDetail")}</Muted>
                   </View>
-                  <Pill tone="primary">{profileQuest.completionPercent}%</Pill>
                 </Row>
-                <Muted>{t("home.completeProfileDetail")}</Muted>
                 <View style={[styles.progressTrack, { backgroundColor: colors.surface, marginTop: 10 }]}>
                   <View
                     style={[
