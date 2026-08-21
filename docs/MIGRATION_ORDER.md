@@ -25,6 +25,6 @@ All future migrations **MUST** use a strictly increasing numerical prefix after 
 16. `014_atomic_room_service_and_membership.sql` - Atomic room service and membership consistency.
 17. `015_complete_domain_hardening.sql` - Complete domain constraints, indexes, and transactional RPC hardening.
 18. `016_experience_expansion.sql` - Progressive onboarding, dashboard layouts/configuration, announcements, guided tours, and feature flags.
-19. `017_experience_integrity_and_admin_content.sql` - Atomic onboarding/preferences/tour contracts, announcement dismissal and targeting, versioned experience content, privilege correction, and baseline parity.
+19. `017_experience_integrity_and_admin_content.sql` - Atomic onboarding/preferences/tour contracts, announcement dismissal and targeting, versioned experience content, canonical room-creation RPC convergence, privilege correction, and baseline parity.
 
 `001_skillbridge_baseline.sql` is the canonical fresh-install schema. It is not part of the numbered incremental chain; its current schema must remain equivalent to the forward-migrated schema. The real PostgreSQL suite verifies a fresh baseline against a reconstructed 016 schema upgraded through 017.

@@ -33,7 +33,7 @@
 The authoritative complete sequence is maintained in `docs/MIGRATION_ORDER.md`. Experience expansion additions are:
 
 - `016_experience_expansion.sql`: Initial onboarding, dashboard, announcement, tour, and feature-flag schema.
-- `017_experience_integrity_and_admin_content.sql`: Forward-only integrity repair, atomic persistence RPCs, audience/action constraints, dismissals, and versioned content.
+- `017_experience_integrity_and_admin_content.sql`: Forward-only integrity repair, canonical 10-argument room creation, atomic persistence RPCs, audience/action constraints, dismissals, and versioned content.
 
 Historical phase notes:
 - `001_schema.sql`: Core tables, RLS, functions, triggers, trigram extension.

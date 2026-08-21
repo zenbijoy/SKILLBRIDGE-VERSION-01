@@ -11,7 +11,7 @@ These functions perform sensitive administrative actions and must ONLY be execut
 |---------------|-----------|------------------|--------|
 | `block_user_atomic` | `p_blocker_id uuid`, `p_blocked_id uuid` | Yes | Backend (`service_role`) |
 | `submit_review_atomic` | `p_reviewer_id uuid`, `p_reviewee_id uuid`, `p_session_id uuid`, `p_rating int`, `p_comment text` | Yes | Backend (`service_role`) |
-| `create_room_atomic` | `p_title text`, `p_description text`, `p_visibility text`, `p_capacity int`, `p_rules text`, `p_tags text[]`, `p_owner_id uuid` | Yes | Backend (`service_role`) |
+| `create_room_atomic` | `p_title text`, `p_description text`, `p_topic text`, `p_visibility text`, `p_mode text`, `p_capacity int`, `p_rules text`, `p_tags text[]`, `p_campus_location text`, `p_owner_id uuid` | Yes | Backend (`service_role`) |
 | `accept_teaching_request` | `p_room_id uuid`, `p_request_id uuid` | Yes | Backend (`service_role`) |
 
 ## Client-Callable Functions

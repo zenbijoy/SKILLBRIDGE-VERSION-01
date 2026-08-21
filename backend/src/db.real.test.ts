@@ -182,7 +182,15 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     const upgradedFunctions = await upgradedDb.query(functionQuery);
     assert.deepStrictEqual(freshFunctions.rows, upgradedFunctions.rows, "RPC signatures match exactly");
 
+    const roomRpc = await freshDb.query(`
+      SELECT
+        to_regprocedure('public.create_room_atomic(text,text,text,text,text,integer,text,text[],text,uuid)') IS NOT NULL AS canonical_exists,
+        to_regprocedure('public.create_room_atomic(text,text,text,integer,text,text[],uuid)') IS NULL AS obsolete_removed;
+    `);
+    assert.deepStrictEqual(roomRpc.rows, [{ canonical_exists: true, obsolete_removed: true }], "room creation exposes only the backend-compatible signature");
+
     const protectedFunctions = [
+      "create_room_atomic",
       "save_user_dashboard_layout_atomic",
       "save_onboarding_progress_atomic",
       "save_notification_preferences_atomic",

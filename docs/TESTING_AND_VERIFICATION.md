@@ -50,7 +50,14 @@ skipped 0
 cd frontend
 npm test -- --runInBand
 ```
-The current suite contains 15 tests. Exact totals must be taken from the current run rather than assumed from this document.
+*Current suite size:*
+```text
+test suites 4
+tests 15
+pass 15
+fail 0
+skipped 0
+```
 
 ### Run Frontend Typecheck
 ```bash
@@ -80,3 +87,13 @@ npx expo export --platform web
 ```
 
 Migration verification is complete only after the in-process fresh/upgrade suite passes. For release environments with Docker and Supabase credentials, also run the root `db:test` and `db:verify` scripts and report unavailable external services as blocked gates rather than silently skipping them.
+
+### Current local verification snapshot
+
+- Root Doctor: 7/7 checks passed.
+- Expo Doctor: 20/20 enabled checks passed; the native app-config synchronization check is intentionally disabled for the documented hybrid native workflow.
+- Expo dependency validation: all dependencies match the installed Expo SDK.
+- Expo web export: 1,107 modules bundled and 61 static routes exported.
+- Docker database verification: fresh install and historical upgrade paths each passed 8/8 schema/security checks.
+- Live Supabase verification: skipped when `psql` or live credentials are unavailable; this is an external release gate.
+- Runtime smoke test: requires the backend and its dependent services to be running; connection refusal is a blocked external gate, not a passing result.

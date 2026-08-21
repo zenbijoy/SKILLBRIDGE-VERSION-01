@@ -100,6 +100,16 @@ try {
         report.expected_functions = true;
     }
 
+    const roomSignature = query(containerName, `
+        SELECT
+          to_regprocedure('public.create_room_atomic(text,text,text,text,text,integer,text,text[],text,uuid)') IS NOT NULL
+          AND to_regprocedure('public.create_room_atomic(text,text,text,integer,text,text[],uuid)') IS NULL;
+    `);
+    report.room_rpc_signature = roomSignature === 't';
+    if (!report.room_rpc_signature) {
+        console.error("[VERIFY] create_room_atomic does not expose only the canonical 10-argument signature");
+    }
+
     // 5. Check RPC execution privileges (authenticated role should NOT have EXECUTE on admin/service RPCs)
     const unauthorizedExecuteRaw = query(containerName, `
         SELECT p.proname
