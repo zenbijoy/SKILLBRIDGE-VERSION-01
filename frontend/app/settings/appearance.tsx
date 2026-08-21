@@ -6,7 +6,7 @@ import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
 export default function AppearanceSettings() {
-  const { colors, isDark, isOled, accent, cardStyle } = useTheme();
+  const { colors, accent, cardStyle } = useTheme();
   const { t } = useI18n();
   const theme = usePreferencesStore((state) => state.theme);
   const setTheme = usePreferencesStore((state) => state.setTheme);

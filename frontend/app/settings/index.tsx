@@ -2,12 +2,13 @@ import { useState } from "react";
 import { TextInput, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { H1, H2, Muted, Screen } from "@/components/ui";
+import { Empty, H1, H2, Muted, Screen } from "@/components/ui";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { useI18n } from "@/i18n";
 import { radius, useTheme } from "@/theme";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { useTour } from "@/features/tour/TourContext";
+import { spotIllustrations } from "@/assets/illustrations";
 
 export default function SettingsHomeScreen() {
   const { colors } = useTheme();
@@ -133,6 +134,18 @@ export default function SettingsHomeScreen() {
 
   const query = search.trim().toLowerCase();
 
+  const totalMatches = SETTINGS_SECTIONS.reduce((acc, section) => {
+    const matching = query
+      ? section.items.filter(
+          (item) =>
+            item.title.toLowerCase().includes(query) ||
+            item.detail.toLowerCase().includes(query) ||
+            item.keywords.toLowerCase().includes(query),
+        ).length
+      : section.items.length;
+    return acc + matching;
+  }, 0);
+
   return (
     <Screen>
       <H1>{t("settings.title")}</H1>
@@ -149,6 +162,14 @@ export default function SettingsHomeScreen() {
           onChangeText={setSearch}
         />
       </View>
+
+      {Boolean(query) && totalMatches === 0 ? (
+        <Empty
+          illustration={spotIllustrations.profileControl}
+          title={t("settings.noMatches") || "No settings found"}
+          detail={`No settings match "${search.trim()}". Try searching for profile, theme, or notifications.`}
+        />
+      ) : null}
 
       {/* Render Settings Sections */}
       {SETTINGS_SECTIONS.map((section) => {
