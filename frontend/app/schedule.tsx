@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { EventItem, Room, Session } from "@/types";
-import { Button, Card, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { Button, Card, Empty, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { router } from "expo-router";
 
@@ -28,7 +28,7 @@ const FILTERS = [
 ];
 
 export default function Schedule() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [filter, setFilter] = useState("all");
 
   const sessionsQuery = useQuery({

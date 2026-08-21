@@ -6,8 +6,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "@/lib/api";
 import type { Profile } from "@/types";
-import { Button, Card, ErrorState, Field, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
-import { radius, useTheme } from "@/theme";
+import { Button, Card, ErrorState, Field, H1, H2, Muted, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { useTheme } from "@/theme";
 
 export default function EditProfile() {
   const { colors } = useTheme();

@@ -22,8 +22,11 @@ try {
         'resources', 'saved_items', 'points_ledger', 'achievements', 'user_achievements',
         'quizzes', 'quiz_questions', 'quiz_attempts', 'notifications', 'device_tokens',
         'notification_preferences', 'push_receipts', 'reports', 'user_settings', 'audit_logs',
-        'research_projects', 'research_collaboration_requests',
-        'admin_roles', 'admin_permissions', 'admin_role_permissions', 'admin_assignments'
+        'research_projects', 'research_collaboration_requests', 'research_members',
+        'saved_research_projects', 'research_publications',
+        'admin_roles', 'admin_permissions', 'admin_role_permissions', 'admin_assignments',
+        'dashboard_configs', 'user_dashboard_layouts', 'announcements',
+        'announcement_dismissals', 'feature_flags', 'experience_content_sets'
     ];
 
     const tablesRaw = query(containerName, `SELECT tablename FROM pg_tables WHERE schemaname = 'public';`);
@@ -74,7 +77,12 @@ try {
         'create_room_atomic',
         'recompute_reputation',
         'record_livekit_join',
-        'record_livekit_leave'
+        'record_livekit_leave',
+        'save_user_dashboard_layout_atomic',
+        'save_onboarding_progress_atomic',
+        'save_notification_preferences_atomic',
+        'complete_guided_tour_step_atomic',
+        'publish_experience_content_atomic'
     ];
     const functionsRaw = query(containerName, `
         SELECT p.proname 
@@ -92,6 +100,16 @@ try {
         report.expected_functions = true;
     }
 
+    const roomSignature = query(containerName, `
+        SELECT
+          to_regprocedure('public.create_room_atomic(text,text,text,text,text,integer,text,text[],text,uuid)') IS NOT NULL
+          AND to_regprocedure('public.create_room_atomic(text,text,text,integer,text,text[],uuid)') IS NULL;
+    `);
+    report.room_rpc_signature = roomSignature === 't';
+    if (!report.room_rpc_signature) {
+        console.error("[VERIFY] create_room_atomic does not expose only the canonical 10-argument signature");
+    }
+
     // 5. Check RPC execution privileges (authenticated role should NOT have EXECUTE on admin/service RPCs)
     const unauthorizedExecuteRaw = query(containerName, `
         SELECT p.proname
@@ -99,7 +117,12 @@ try {
         JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public'
         AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-        AND p.proname IN ('create_room_atomic', 'recompute_reputation', 'block_user_atomic', 'submit_review_atomic');
+        AND p.proname IN (
+          'create_room_atomic', 'recompute_reputation', 'block_user_atomic', 'submit_review_atomic',
+          'save_user_dashboard_layout_atomic', 'save_onboarding_progress_atomic',
+          'save_notification_preferences_atomic', 'complete_guided_tour_step_atomic',
+          'publish_experience_content_atomic'
+        );
     `);
     const unauthorizedExecute = unauthorizedExecuteRaw.split('\n').map(x => x.trim()).filter(Boolean);
     if (unauthorizedExecute.length > 0) {

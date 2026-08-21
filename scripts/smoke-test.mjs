@@ -14,6 +14,7 @@ console.log(`Frontend .env: ${feEnv ? 'PASS' : 'FAIL (Missing)'}`);
 
 if (!beEnv || !feEnv) {
     console.warn("[WARNING] Missing .env files! Did you copy the .env.example files?");
+    process.exitCode = 1;
 }
 
 // 2. Check Backend Health
@@ -27,6 +28,7 @@ const req = http.get('http://localhost:4000/health', (res) => {
             console.log(`Response: ${data}`);
         } else {
             console.log(`[FAIL] Backend returned ${res.statusCode}`);
+            process.exitCode = 1;
         }
         
         // 3. Database Check via backend ready endpoint
@@ -41,13 +43,16 @@ const req = http.get('http://localhost:4000/health', (res) => {
                 } else {
                     console.log(`[FAIL] Readiness Check failed: ${readyRes.statusCode}`);
                     console.log(`Response: ${readyData}`);
+                    process.exitCode = 1;
                 }
             });
         }).on('error', (e) => {
             console.log(`[FAIL] Could not reach backend readiness endpoint. Is it running? (${e.message})`);
+            process.exitCode = 1;
         });
 
     });
 }).on('error', (e) => {
     console.log(`[FAIL] Could not reach backend on localhost:4000. Is it running? (${e.message})`);
+    process.exitCode = 1;
 });

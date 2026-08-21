@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Room } from "@/types";
 import { Card, Muted, Pill, Row, triggerHaptic } from "./ui";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 
 export function RoomCard({ room }: { room: Room }) {
   const { colors } = useTheme();

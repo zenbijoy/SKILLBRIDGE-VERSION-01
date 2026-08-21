@@ -19,7 +19,6 @@ export default function ScheduleRoom() {
   });
   const [mode, setMode] = useState<"online" | "offline" | "hybrid">("online");
   const [location, setLocation] = useState("");
-  const [topicNote, setTopicNote] = useState("");
 
   const m = useMutation({
     mutationFn: () => {

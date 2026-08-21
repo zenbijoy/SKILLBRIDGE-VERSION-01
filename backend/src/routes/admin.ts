@@ -6,12 +6,54 @@ import { requireRole } from "../middleware/auth.js";
 import { audit } from "../services/audit.js";
 import { env } from "../config/env.js";
 import { sanitizeIlike } from "../lib/query-helpers.js";
+import { cacheDelPattern } from "../lib/redis.js";
 
 export const adminRoutes = Router();
 
 const pageSchema = z.coerce.number().int().min(1).default(1);
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20);
 const elevatedRoles = ["moderator", "admin"] as const;
+const audienceRoleSchema = z.enum(["student", "tutor", "peer_tutor", "club_admin", "researcher", "moderator", "admin"]);
+const defaultAudienceRoles = ["student", "tutor", "peer_tutor", "club_admin", "researcher", "moderator", "admin"] as const;
+const semverSchema = z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
+const actionUrlSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .refine(
+    (value) => (value.startsWith("/") && !value.startsWith("//")) || value.startsWith("https://"),
+    "Use an internal path or HTTPS URL",
+  );
+const contentIdSchema = z.string().trim().min(1).max(60).regex(/^[a-z0-9_-]+$/);
+const experienceCopySchema = z.object({
+  title: z.string().trim().min(2).max(160),
+  body: z.string().trim().min(2).max(1200),
+}).strict();
+const welcomeContentSchema = z.array(experienceCopySchema.extend({ id: contentIdSchema }).strict()).min(1).max(12);
+const onboardingContentSchema = z.object({
+  language: experienceCopySchema,
+  identity: experienceCopySchema,
+  academic: experienceCopySchema,
+  mission: experienceCopySchema,
+  skills: experienceCopySchema,
+  preferences: experienceCopySchema,
+  privacy: experienceCopySchema,
+  notifications: experienceCopySchema,
+  review: experienceCopySchema,
+}).strict();
+const tourContentSchema = z.array(experienceCopySchema.extend({
+  id: contentIdSchema,
+  route: z.string().trim().min(1).max(160).refine((value) => value.startsWith("/") && !value.startsWith("//"), "Tour route must be internal"),
+}).strict()).min(1).max(20).refine(
+  (items) => new Set(items.map((item) => item.id)).size === items.length,
+  "Tour chapter IDs must be unique",
+);
+
+function parseExperienceContent(contentType: "welcome" | "onboarding" | "tour", content: unknown) {
+  if (contentType === "welcome") return welcomeContentSchema.parse(content);
+  if (contentType === "onboarding") return onboardingContentSchema.parse(content);
+  return tourContentSchema.parse(content);
+}
 
 function pagination(query: Record<string, unknown>) {
   const page = pageSchema.parse(query.page ?? 1);
@@ -219,6 +261,7 @@ adminRoutes.put(
     const { data, error } = await db.from("profiles").update({ roles }).eq("id", id).select("id,roles").single();
     if (error) throw error;
     await audit(req.userId!, "admin.user.roles.replace", "user", id, { roles });
+    await cacheDelPattern(`dashboard:${id}:*`);
     res.json({ success: true, ...data });
   }),
 );
@@ -241,6 +284,7 @@ adminRoutes.post(
     const { error } = await db.from("profiles").update({ roles }).eq("id", id);
     if (error) throw error;
     await audit(req.userId!, "admin.user.role.assign", "user", id, { role, roles });
+    await cacheDelPattern(`dashboard:${id}:*`);
     res.json({ success: true, roles });
   }),
 );
@@ -342,13 +386,15 @@ adminRoutes.patch(
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
     const body = z.object({
-      default_order: z.number().int().optional(),
+      default_order: z.number().int().min(1).max(1000).optional(),
       is_required: z.boolean().optional(),
       is_enabled: z.boolean().optional(),
-      title_en: z.string().optional(),
-      title_bn: z.string().optional(),
-      target_roles: z.array(z.string()).optional(),
-    }).parse(req.body);
+      title_en: z.string().trim().min(2).max(100).optional(),
+      title_bn: z.string().trim().min(2).max(100).optional(),
+      target_roles: z.array(audienceRoleSchema).min(1).optional(),
+      target_campus: z.string().trim().min(2).max(120).nullable().optional(),
+      min_app_version: semverSchema.optional(),
+    }).strict().refine((value) => Object.keys(value).length > 0, "At least one dashboard field is required").parse(req.body);
 
     const { data, error } = await db
       .from("dashboard_configs")
@@ -359,6 +405,7 @@ adminRoutes.patch(
 
     if (error) throw error;
     await audit(req.userId!, "admin.dashboard_config.update", "dashboard_config", id, body);
+    await cacheDelPattern("dashboard:*");
     res.json(data);
   }),
 );
@@ -378,16 +425,34 @@ adminRoutes.post(
   requireRole("admin"),
   wrap(async (req, res) => {
     const body = z.object({
-      title_en: z.string().min(2),
-      title_bn: z.string().min(2),
-      body_en: z.string().min(2),
-      body_bn: z.string().min(2),
+      title_en: z.string().trim().min(2).max(160),
+      title_bn: z.string().trim().min(2).max(160),
+      body_en: z.string().trim().min(2).max(2000),
+      body_bn: z.string().trim().min(2).max(2000),
       tone: z.enum(["info", "warning", "success", "accent"]).default("info"),
-      action_url: z.string().optional(),
-      action_label_en: z.string().optional(),
-      action_label_bn: z.string().optional(),
+      action_url: actionUrlSchema.optional(),
+      action_label_en: z.string().trim().min(1).max(80).optional(),
+      action_label_bn: z.string().trim().min(1).max(80).optional(),
       is_active: z.boolean().default(true),
-    }).parse(req.body);
+      is_dismissible: z.boolean().default(true),
+      target_roles: z.array(audienceRoleSchema).min(1).default([...defaultAudienceRoles]),
+      target_campus: z.string().trim().min(2).max(120).nullable().optional(),
+      starts_at: z.string().datetime({ offset: true }).optional(),
+      ends_at: z.string().datetime({ offset: true }).nullable().optional(),
+    }).strict()
+      .refine((value) => !value.ends_at || !value.starts_at || new Date(value.ends_at) > new Date(value.starts_at), {
+        message: "Announcement end time must be after its start time",
+        path: ["ends_at"],
+      })
+      .refine((value) => !value.action_url || Boolean(value.action_label_en && value.action_label_bn), {
+        message: "Localized action labels are required when an action URL is provided",
+        path: ["action_label_en"],
+      })
+      .refine((value) => Boolean(value.action_url) || (!value.action_label_en && !value.action_label_bn), {
+        message: "Action labels require an action URL",
+        path: ["action_url"],
+      })
+      .parse(req.body);
 
     const { data, error } = await db
       .from("announcements")
@@ -397,6 +462,7 @@ adminRoutes.post(
 
     if (error) throw error;
     await audit(req.userId!, "admin.announcement.create", "announcement", data.id, body);
+    await cacheDelPattern("dashboard:*");
     res.status(201).json(data);
   }),
 );
@@ -407,24 +473,56 @@ adminRoutes.patch(
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
     const body = z.object({
-      title_en: z.string().optional(),
-      title_bn: z.string().optional(),
-      body_en: z.string().optional(),
-      body_bn: z.string().optional(),
+      title_en: z.string().trim().min(2).max(160).optional(),
+      title_bn: z.string().trim().min(2).max(160).optional(),
+      body_en: z.string().trim().min(2).max(2000).optional(),
+      body_bn: z.string().trim().min(2).max(2000).optional(),
       tone: z.enum(["info", "warning", "success", "accent"]).optional(),
-      action_url: z.string().optional(),
+      action_url: actionUrlSchema.nullable().optional(),
+      action_label_en: z.string().trim().min(1).max(80).nullable().optional(),
+      action_label_bn: z.string().trim().min(1).max(80).nullable().optional(),
       is_active: z.boolean().optional(),
-    }).parse(req.body);
+      is_dismissible: z.boolean().optional(),
+      target_roles: z.array(audienceRoleSchema).min(1).optional(),
+      target_campus: z.string().trim().min(2).max(120).nullable().optional(),
+      starts_at: z.string().datetime({ offset: true }).optional(),
+      ends_at: z.string().datetime({ offset: true }).nullable().optional(),
+    }).strict().refine((value) => Object.keys(value).length > 0, "At least one announcement field is required").parse(req.body);
+
+    const { data: current, error: currentError } = await db
+      .from("announcements")
+      .select("starts_at,ends_at,action_url,action_label_en,action_label_bn")
+      .eq("id", id)
+      .single();
+    if (currentError) throw currentError;
+    const nextStart = body.starts_at ?? current.starts_at;
+    const nextEnd = body.ends_at === undefined ? current.ends_at : body.ends_at;
+    if (nextEnd && new Date(nextEnd) <= new Date(nextStart)) {
+      return res.status(400).json({ error: "Announcement end time must be after its start time" });
+    }
+    const nextUrl = body.action_url === undefined ? current.action_url : body.action_url;
+    const nextLabelEn = body.action_url === null ? null : (body.action_label_en === undefined ? current.action_label_en : body.action_label_en);
+    const nextLabelBn = body.action_url === null ? null : (body.action_label_bn === undefined ? current.action_label_bn : body.action_label_bn);
+    if (nextUrl && (!nextLabelEn || !nextLabelBn)) {
+      return res.status(400).json({ error: "Localized action labels are required when an action URL is provided" });
+    }
+    if (!nextUrl && (nextLabelEn || nextLabelBn)) {
+      return res.status(400).json({ error: "Action labels require an action URL" });
+    }
+    const updatePayload = body.action_url === null
+      ? { ...body, action_label_en: null, action_label_bn: null }
+      : body;
 
     const { data, error } = await db
       .from("announcements")
-      .update(body)
+      .update(updatePayload)
       .eq("id", id)
       .select()
       .single();
 
     if (error) throw error;
-    await audit(req.userId!, "admin.announcement.update", "announcement", id, body);
+    await audit(req.userId!, "admin.announcement.update", "announcement", id, updatePayload);
+    await cacheDelPattern("dashboard:*");
     res.json(data);
   }),
 );
@@ -444,12 +542,12 @@ adminRoutes.post(
   requireRole("admin"),
   wrap(async (req, res) => {
     const body = z.object({
-      key: z.string().min(2).max(60),
-      description: z.string().optional(),
+      key: z.string().trim().min(2).max(60).regex(/^[a-z0-9_.-]+$/),
+      description: z.string().trim().max(500).optional(),
       is_enabled: z.boolean().default(true),
       rollout_percentage: z.number().int().min(0).max(100).default(100),
-      target_roles: z.array(z.string()).default(["student", "tutor", "moderator", "admin"]),
-    }).parse(req.body);
+      target_roles: z.array(audienceRoleSchema).min(1).default([...defaultAudienceRoles]),
+    }).strict().parse(req.body);
 
     const { data, error } = await db
       .from("feature_flags")
@@ -459,6 +557,7 @@ adminRoutes.post(
 
     if (error) throw error;
     await audit(req.userId!, "admin.feature_flag.create", "feature_flag", data.id, body);
+    await cacheDelPattern("dashboard:*");
     res.status(201).json(data);
   }),
 );
@@ -467,12 +566,13 @@ adminRoutes.patch(
   "/feature-flags/:key",
   requireRole("admin"),
   wrap(async (req, res) => {
-    const key = z.string().min(2).parse(req.params.key);
+    const key = z.string().trim().min(2).max(60).regex(/^[a-z0-9_.-]+$/).parse(req.params.key);
     const body = z.object({
-      description: z.string().optional(),
+      description: z.string().trim().max(500).optional(),
       is_enabled: z.boolean().optional(),
       rollout_percentage: z.number().int().min(0).max(100).optional(),
-    }).parse(req.body);
+      target_roles: z.array(audienceRoleSchema).min(1).optional(),
+    }).strict().refine((value) => Object.keys(value).length > 0, "At least one feature flag field is required").parse(req.body);
 
     const { data, error } = await db
       .from("feature_flags")
@@ -483,6 +583,47 @@ adminRoutes.patch(
 
     if (error) throw error;
     await audit(req.userId!, "admin.feature_flag.update", "feature_flag", key, body);
+    await cacheDelPattern("dashboard:*");
     res.json(data);
+  }),
+);
+
+adminRoutes.get(
+  "/experience-content",
+  wrap(async (req, res) => {
+    const type = z.enum(["welcome", "onboarding", "tour"]).optional().parse(req.query.type);
+    const locale = z.enum(["en", "bn"]).optional().parse(req.query.locale);
+    let query = db.from("experience_content_sets").select("*");
+    if (type) query = query.eq("content_type", type);
+    if (locale) query = query.eq("locale", locale);
+    const { data, error } = await query.order("content_type").order("locale").order("version", { ascending: false });
+    if (error) throw error;
+    res.json({ contentSets: data ?? [] });
+  }),
+);
+
+adminRoutes.post(
+  "/experience-content/:type/:locale/publish",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const contentType = z.enum(["welcome", "onboarding", "tour"]).parse(req.params.type);
+    const locale = z.enum(["en", "bn"]).parse(req.params.locale);
+    const raw = z.object({ content: z.unknown() }).strict().parse(req.body);
+    const content = parseExperienceContent(contentType, raw.content);
+    const { data, error } = await db.rpc("publish_experience_content_atomic", {
+      p_actor_id: req.userId!,
+      p_content_type: contentType,
+      p_locale: locale,
+      p_content: content,
+    });
+    if (error) throw error;
+    const published = data as { id?: string; version?: number };
+    await audit(req.userId!, "admin.experience_content.publish", "experience_content", published.id ?? `${contentType}:${locale}`, {
+      content_type: contentType,
+      locale,
+      version: published.version,
+    });
+    await cacheDelPattern("dashboard:*");
+    res.status(201).json(published);
   }),
 );

@@ -37,7 +37,7 @@ const RESEARCH_DISCIPLINES = [
 ];
 
 export default function ResearchHub() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { session } = useSession();
   const qc = useQueryClient();
 

@@ -14,19 +14,26 @@ test("Admin API Tests", async (t) => {
 
   const ADMIN_ID = "00000000-0000-4000-8000-000000000000";
   const USER_ID = "11111111-1111-4111-8111-111111111111";
+  let authenticatedRoles = ["admin"];
 
   const createMockChain = (data: any = null, error: any = null, count: number = 0) => {
+    let selected = "";
     const chain: any = {
-      select: () => chain,
+      select: (columns?: string) => { selected = columns ?? ""; return chain; },
       insert: () => chain,
       update: () => chain,
       delete: () => chain,
       eq: () => chain,
+      in: () => chain,
       ilike: () => chain,
       limit: () => chain,
       order: () => chain,
       range: () => Promise.resolve({ data, count, error }),
       single: () => Promise.resolve({ data, error }),
+      maybeSingle: () => Promise.resolve({
+        data: selected.includes("account_status") ? { roles: authenticatedRoles, account_status: "active" } : data,
+        error,
+      }),
       then: (resolve: any) => resolve({ data, count, error }),
     };
     return chain;
@@ -40,14 +47,6 @@ test("Admin API Tests", async (t) => {
   };
   setAdminClient(mockAdmin as any);
 
-  // Note: we need to bypass requireRole middleware for testing or mock the user role somehow.
-  // Actually, our mockAdmin auth only returns role: 'authenticated'.
-  // We'll mock the user profile lookup to return 'admin' role if requireRole checks it,
-  // but let's see how requireRole is implemented. It uses auth user metadata or profile.
-  // We will assume the endpoint is reachable for these tests. If it fails due to auth, 
-  // we would need to mock the middleware or the db query inside the middleware.
-  // I will just add the tests to assert the basic flow.
-
   const authHeader = { Authorization: "Bearer valid_mock_token" };
 
   await t.test("GET /admin/stats - returns counts", async () => {
@@ -59,12 +58,9 @@ test("Admin API Tests", async (t) => {
       .get("/api/v1/admin/stats")
       .set(authHeader);
 
-    // If requireRole fails, it returns 403. Let's check status or skip exact status check if it fails due to mock setup.
-    // Assuming requireRole might fail, but let's see what happens.
-    if (res.status === 200) {
-      assert.strictEqual(res.body.users, 10);
-      assert.strictEqual(res.body.rooms, 10);
-    }
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.users, 10);
+    assert.strictEqual(res.body.rooms, 10);
   });
 
   await t.test("GET /admin/users - returns paginated users", async () => {
@@ -76,16 +72,15 @@ test("Admin API Tests", async (t) => {
       .get("/api/v1/admin/users")
       .set(authHeader);
 
-    if (res.status === 200) {
-      assert.strictEqual(res.body.total, 1);
-      assert.strictEqual(res.body.users[0].id, USER_ID);
-    }
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.total, 1);
+    assert.strictEqual(res.body.users[0].id, USER_ID);
   });
 
   await t.test("POST /admin/users/:id/role - updates user roles", async () => {
     mockAdmin.from = (table?: string) => {
       if (table === "profiles") {
-        return createMockChain({ roles: ["user"] });
+        return createMockChain({ roles: ["student"] });
       }
       return createMockChain();
     };
@@ -95,9 +90,57 @@ test("Admin API Tests", async (t) => {
       .set(authHeader)
       .send({ role: "moderator" });
 
-    if (res.status === 200) {
-      assert.strictEqual(res.body.success, true);
-      assert(res.body.roles.includes("moderator"));
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert(res.body.roles.includes("moderator"));
+  });
+
+  await t.test("PUT /admin/users/:id/roles - accepts the current elevated-role contract", async () => {
+    mockAdmin.from = (table?: string) => table === "profiles"
+      ? createMockChain({ id: USER_ID, roles: ["student", "moderator"] })
+      : createMockChain();
+    const res = await request(app)
+      .put(`/api/v1/admin/users/${USER_ID}/roles`)
+      .set(authHeader)
+      .send({ elevatedRole: "moderator" });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+  });
+
+  await t.test("POST /admin/announcements - rejects unsafe actions before database access", async () => {
+    const res = await request(app)
+      .post("/api/v1/admin/announcements")
+      .set(authHeader)
+      .send({
+        title_en: "Notice",
+        title_bn: "Notice BN",
+        body_en: "Body",
+        body_bn: "Body BN",
+        action_url: "http://unsafe.example",
+        action_label_en: "Open",
+        action_label_bn: "Open BN",
+      });
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("POST /admin/experience-content - rejects invalid content structure", async () => {
+    const res = await request(app)
+      .post("/api/v1/admin/experience-content/welcome/en/publish")
+      .set(authHeader)
+      .send({ content: [] });
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("moderators cannot mutate product experience configuration", async () => {
+    authenticatedRoles = ["moderator"];
+    try {
+      const res = await request(app)
+        .patch("/api/v1/admin/dashboard-configs/11111111-1111-4111-8111-111111111111")
+        .set(authHeader)
+        .send({ is_enabled: false });
+      assert.strictEqual(res.status, 403);
+    } finally {
+      authenticatedRoles = ["admin"];
     }
   });
 });

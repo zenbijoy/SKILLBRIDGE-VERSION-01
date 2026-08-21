@@ -59,12 +59,20 @@ export const usePreferencesStore = create<PreferencesState>()(
       setCardStyle: (cardStyle) => set({ cardStyle }),
       setLanguage: (language) => set({ language, useDeviceLanguage: false }),
       setUseDeviceLanguage: (useDeviceLanguage) => set({ useDeviceLanguage }),
-      setDataSaver: (dataSaver) => set({ dataSaver }),
+      setDataSaver: (dataSaver) => set((state) => ({
+        dataSaver,
+        autoplayMedia: dataSaver === "extreme" ? false : state.autoplayMedia,
+        downloadOnWifiOnly: dataSaver === "extreme" ? true : state.downloadOnWifiOnly,
+      })),
       setReduceMotion: (reduceMotion) => set({ reduceMotion }),
       setLargeText: (largeText) => set({ largeText }),
       setHaptics: (haptics) => set({ haptics }),
-      setAutoplayMedia: (autoplayMedia) => set({ autoplayMedia }),
-      setDownloadOnWifiOnly: (downloadOnWifiOnly) => set({ downloadOnWifiOnly }),
+      setAutoplayMedia: (autoplayMedia) => set((state) => ({
+        autoplayMedia: state.dataSaver === "extreme" ? false : autoplayMedia,
+      })),
+      setDownloadOnWifiOnly: (downloadOnWifiOnly) => set((state) => ({
+        downloadOnWifiOnly: state.dataSaver === "extreme" ? true : downloadOnWifiOnly,
+      })),
       setPushEnabled: (pushEnabled) => set({ pushEnabled }),
       addRecentSearch: (query) =>
         set((state) => {

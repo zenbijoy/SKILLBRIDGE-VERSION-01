@@ -3,9 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
-import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
-import { useI18n } from "@/i18n";
-import { radius, spacing, useTheme } from "@/theme";
+import { Button, Card, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import { router } from "expo-router";
 
 type NotificationItem = {
@@ -28,7 +27,6 @@ const FILTERS = [
 export default function Notifications() {
   const qc = useQueryClient();
   const { colors } = useTheme();
-  const { t } = useI18n();
   const [filter, setFilter] = useState("all");
 
   const notifications = useQuery({

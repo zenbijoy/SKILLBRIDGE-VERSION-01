@@ -1,4 +1,6 @@
 import { supabase } from "./supabase";
+import Constants from "expo-constants";
+import { usePreferencesStore } from "@/state/usePreferencesStore";
 
 const BASE = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/+$/, "");
 
@@ -42,6 +44,9 @@ function asErrorBody(value: unknown): ApiErrorBody {
 async function requestWithHeaders(path: string, init: RequestInit, accessToken?: string) {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
+  headers.set("X-App-Version", Constants.expoConfig?.version ?? "2.0.0");
+  headers.set("X-App-Locale", usePreferencesStore.getState().language);
+  headers.set("X-Data-Saver", usePreferencesStore.getState().dataSaver);
   if (init.body && !isFormData(init.body) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }

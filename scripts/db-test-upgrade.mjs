@@ -1,4 +1,4 @@
-import { startPostgresContainer, execSql, query } from './db-test-docker.mjs';
+import { startPostgresContainer, execSql, execSqlFile, query } from './db-test-docker.mjs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';

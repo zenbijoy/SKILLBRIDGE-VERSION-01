@@ -4,7 +4,42 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { bidirectionalFilter, isBlocked } from "../lib/query-helpers.js";
 import type { UserSkillWithSkill } from "../types/database.js";
+import { cacheDelPattern } from "../lib/redis.js";
 export const profiles = Router();
+
+const onboardingSteps = [
+  "language",
+  "identity",
+  "academic",
+  "mission",
+  "skills",
+  "preferences",
+  "privacy",
+  "notifications",
+  "review",
+  "completed",
+] as const;
+
+const skillListSchema = z
+  .array(z.string().trim().min(1).max(60))
+  .max(50)
+  .transform((items) => [...new Map(items.map((item) => [item.toLocaleLowerCase(), item])).values()]);
+
+const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const timezoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(/^[A-Za-z0-9_+./:-]+$/)
+  .refine((value) => {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: value }).format();
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Invalid IANA timezone");
 
 // Check username availability with normalization
 profiles.get(
@@ -15,11 +50,13 @@ profiles.get(
       return res.json({ available: false, reason: "invalid_format" });
     }
 
-    const { data: existing } = await admin
+    const { data: existing, error } = await admin
       .from("profiles")
       .select("id")
-      .eq("username", raw)
+      .ilike("username", raw)
+      .limit(1)
       .maybeSingle();
+    if (error) throw error;
 
     if (existing && existing.id !== req.userId) {
       return res.json({ available: false, reason: "taken" });
@@ -38,10 +75,11 @@ profiles.get(
       .eq("id", req.userId!)
       .single();
     if (error) throw error;
-    const { data: skills } = await admin
+    const { data: skills, error: skillsError } = await admin
       .from("user_skills")
       .select("kind,proficiency,skills(name)")
       .eq("user_id", req.userId!);
+    if (skillsError) throw skillsError;
     const typedSkills = (skills ?? []) as unknown as UserSkillWithSkill[];
     res.json({
       profile,
@@ -61,12 +99,13 @@ profiles.post(
   wrap(async (req, res) => {
     const body = z
       .object({
-        full_name: z.string().min(2).max(80).optional(),
+        full_name: z.string().trim().min(2).max(80).optional(),
         username: z
           .string()
           .min(3)
           .max(30)
           .regex(/^[a-zA-Z0-9_.]+$/)
+          .transform((value) => value.toLocaleLowerCase())
           .optional(),
         bio: z.string().max(500).optional(),
         university: z.string().max(120).optional(),
@@ -75,105 +114,35 @@ profiles.post(
         study_mode_preference: z.enum(["online", "offline", "hybrid"]).optional(),
         profile_visibility: z.enum(["public", "connections", "private"]).optional(),
         preferred_locale: z.enum(["en", "bn"]).optional(),
-        onboarding_step: z.string().optional(),
+        onboarding_step: z.enum(onboardingSteps).optional(),
         onboarding_status: z.enum(["not_started", "in_progress", "completed", "skipped"]).optional(),
-        teachSkills: z.array(z.string().min(1).max(60)).optional(),
-        learnSkills: z.array(z.string().min(1).max(60)).optional(),
+        onboarding_version: z.number().int().min(1).max(1000).optional(),
+        onboarding_mission: z.enum(["learn", "teach", "both", "research"]).optional(),
+        onboarding_push_opt_in: z.boolean().optional(),
+        timezone: timezoneSchema.optional(),
+        teachSkills: skillListSchema.optional(),
+        learnSkills: skillListSchema.optional(),
       })
       .parse(req.body);
 
     const uid = req.userId!;
-
-    // 1. Calculate profile completeness % and missing fields
-    const missing: string[] = [];
-    let completedPoints = 0;
-    const totalPoints = 7;
-
-    if (body.full_name?.trim()) completedPoints++; else missing.push("full_name");
-    if (body.username?.trim()) completedPoints++; else missing.push("username");
-    if (body.university?.trim()) completedPoints++; else missing.push("university");
-    if (body.department?.trim()) completedPoints++; else missing.push("department");
-    if (body.study_mode_preference) completedPoints++; else missing.push("study_mode_preference");
-    if ((body.teachSkills?.length ?? 0) > 0) completedPoints++; else missing.push("teach_skills");
-    if ((body.learnSkills?.length ?? 0) > 0) completedPoints++; else missing.push("learn_skills");
-
-    const percent = Math.round((completedPoints / totalPoints) * 100);
-
-    const updatePayload: any = {
-      profile_completion_percent: percent,
-      profile_missing_fields: missing,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (body.full_name) updatePayload.full_name = body.full_name.trim();
-    if (body.username) updatePayload.username = body.username.trim().toLowerCase();
-    if (body.bio !== undefined) updatePayload.bio = body.bio.trim();
-    if (body.university !== undefined) updatePayload.university = body.university.trim();
-    if (body.department !== undefined) updatePayload.department = body.department.trim();
-    if (body.batch !== undefined) updatePayload.batch = body.batch.trim();
-    if (body.study_mode_preference) updatePayload.study_mode_preference = body.study_mode_preference;
-    if (body.profile_visibility) updatePayload.profile_visibility = body.profile_visibility;
-    if (body.preferred_locale) updatePayload.preferred_locale = body.preferred_locale;
-    if (body.onboarding_step) updatePayload.onboarding_step = body.onboarding_step;
-    if (body.onboarding_status) updatePayload.onboarding_status = body.onboarding_status;
-    if (body.onboarding_status === "completed") updatePayload.onboarding_completed = true;
-
-    const { data: updatedProfile, error: profileErr } = await admin
-      .from("profiles")
-      .update(updatePayload)
-      .eq("id", uid)
-      .select()
-      .single();
-
-    if (profileErr) throw profileErr;
-
-    // 2. Atomic Bulk Skill Ingestion
-    if (body.teachSkills && body.teachSkills.length > 0) {
-      for (const skillName of body.teachSkills) {
-        const clean = skillName.trim();
-        if (!clean) continue;
-        let { data: skill } = await admin.from("skills").select("id").eq("name", clean).maybeSingle();
-        if (!skill) {
-          const { data: created } = await admin.from("skills").insert({ name: clean, category: "General" }).select("id").single();
-          skill = created;
-        }
-        if (skill) {
-          await admin.from("user_skills").upsert({
-            user_id: uid,
-            skill_id: skill.id,
-            kind: "known",
-            proficiency: 4,
-          }, { onConflict: "user_id,skill_id,kind" });
-        }
-      }
-    }
-
-    if (body.learnSkills && body.learnSkills.length > 0) {
-      for (const skillName of body.learnSkills) {
-        const clean = skillName.trim();
-        if (!clean) continue;
-        let { data: skill } = await admin.from("skills").select("id").eq("name", clean).maybeSingle();
-        if (!skill) {
-          const { data: created } = await admin.from("skills").insert({ name: clean, category: "General" }).select("id").single();
-          skill = created;
-        }
-        if (skill) {
-          await admin.from("user_skills").upsert({
-            user_id: uid,
-            skill_id: skill.id,
-            kind: "wanted",
-            proficiency: 1,
-          }, { onConflict: "user_id,skill_id,kind" });
-        }
-      }
-    }
-
-    res.json({
-      success: true,
-      profile: updatedProfile,
-      completion_percent: percent,
-      missing_fields: missing,
+    const { teachSkills, learnSkills, ...profilePayload } = body;
+    const { data, error } = await admin.rpc("save_onboarding_progress_atomic", {
+      p_user_id: uid,
+      p_profile: profilePayload,
+      p_teach_skills: teachSkills ?? null,
+      p_learn_skills: learnSkills ?? null,
     });
+
+    if (error) {
+      if (error.code === "23505") {
+        return res.status(409).json({ error: "Username is already taken" });
+      }
+      throw error;
+    }
+
+    await cacheDelPattern(`dashboard:${uid}:*`);
+    res.json({ success: true, ...(data as Record<string, unknown>) });
   }),
 );
 
@@ -181,31 +150,43 @@ profiles.post(
 profiles.post(
   "/me/tour/progress",
   wrap(async (req, res) => {
-    const { step, isLast = false, skipped = false } = z
+    const { step, isLast = false, skipped = false, version = 1 } = z
       .object({
-        step: z.string().min(1),
+        step: z.string().trim().min(1).max(80).regex(/^[a-z0-9_-]+$/),
         isLast: z.boolean().optional().default(false),
         skipped: z.boolean().optional().default(false),
+        version: z.number().int().min(1).max(1000).optional().default(1),
       })
       .parse(req.body);
 
     const uid = req.userId!;
 
     if (skipped) {
-      await admin
+      const { data, error } = await admin
         .from("profiles")
-        .update({ guided_tour_status: "skipped", updated_at: new Date().toISOString() })
-        .eq("id", uid);
-      return res.json({ status: "skipped" });
+        .update({
+          guided_tour_version: version,
+          guided_tour_last_step: step,
+          guided_tour_status: "skipped",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", uid)
+        .select("guided_tour_status,guided_tour_version,guided_tour_last_step")
+        .single();
+      if (error) throw error;
+      await cacheDelPattern(`dashboard:${uid}:*`);
+      return res.json(data);
     }
 
     const { data: rpcData, error } = await admin.rpc("complete_guided_tour_step_atomic", {
       p_user_id: uid,
       p_step: step,
       p_is_last: isLast,
+      p_version: version,
     });
 
     if (error) throw error;
+    await cacheDelPattern(`dashboard:${uid}:*`);
     res.json(rpcData);
   }),
 );
@@ -215,12 +196,13 @@ profiles.patch(
   wrap(async (req, res) => {
     const body = z
       .object({
-        full_name: z.string().min(2).max(80).optional(),
+        full_name: z.string().trim().min(2).max(80).optional(),
         username: z
           .string()
           .min(3)
           .max(30)
           .regex(/^[a-zA-Z0-9_.]+$/)
+          .transform((value) => value.toLocaleLowerCase())
           .optional(),
         bio: z.string().max(500).optional(),
         university: z.string().max(120).optional(),
@@ -229,10 +211,11 @@ profiles.patch(
         study_mode_preference: z.enum(["online", "offline", "hybrid"]).optional(),
         profile_visibility: z.enum(["public", "connections", "private"]).optional(),
         preferred_locale: z.enum(["en", "bn"]).optional(),
-        quiet_hours_start: z.string().optional(),
-        quiet_hours_end: z.string().optional(),
-        onboarding_completed: z.boolean().optional(),
+        quiet_hours_start: timeSchema.optional(),
+        quiet_hours_end: timeSchema.optional(),
+        timezone: timezoneSchema.optional(),
       })
+      .strict()
       .parse(req.body);
     const { data, error } = await admin
       .from("profiles")
@@ -240,7 +223,11 @@ profiles.patch(
       .eq("id", req.userId!)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      if (error.code === "23505") return res.status(409).json({ error: "Username is already taken" });
+      throw error;
+    }
+    await cacheDelPattern(`dashboard:${req.userId!}:*`);
     res.json({ profile: data });
   }),
 );
@@ -249,15 +236,28 @@ profiles.post(
   wrap(async (req, res) => {
     const { imageBase64, contentType = "image/jpeg" } = z
       .object({
-        imageBase64: z.string().min(10),
+        imageBase64: z.string().min(16).max(1_000_000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
         contentType: z.enum(["image/jpeg", "image/png", "image/webp"]).default("image/jpeg"),
       })
       .parse(req.body);
 
-    const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
-    const path = `${req.userId}/avatar_${Date.now()}.${ext}`;
+    const buffer = Buffer.from(imageBase64, "base64");
+    if (buffer.length > 700_000) {
+      return res.status(413).json({ error: "Avatar image must be 700 KB or smaller" });
+    }
 
-    const buffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ""), "base64");
+    const detectedType = buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
+      ? "image/jpeg"
+      : buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        ? "image/png"
+        : buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP"
+          ? "image/webp"
+          : null;
+    if (!detectedType || detectedType !== contentType) {
+      return res.status(400).json({ error: "Avatar content does not match its declared image type" });
+    }
+
+    const path = `${req.userId}/avatar`;
 
     const { error: uploadError } = await admin.storage
       .from("avatars")
@@ -266,7 +266,7 @@ profiles.post(
     if (uploadError) throw uploadError;
 
     const { data: urlData } = admin.storage.from("avatars").getPublicUrl(path);
-    const avatarUrl = urlData.publicUrl;
+    const avatarUrl = `${urlData.publicUrl}?v=${Date.now()}`;
 
     const { data, error } = await admin
       .from("profiles")
@@ -276,6 +276,8 @@ profiles.post(
       .single();
 
     if (error) throw error;
+
+    await cacheDelPattern(`dashboard:${req.userId!}:*`);
 
     res.json({ avatar_url: avatarUrl, profile: data });
   }),
@@ -391,6 +393,7 @@ profiles.post(
       .select("*,skills(name,category)")
       .single();
     if (error) throw error;
+    await cacheDelPattern(`dashboard:${req.userId!}:*`);
     res.status(201).json(data);
   }),
 );
@@ -399,12 +402,14 @@ profiles.delete(
   wrap(async (req, res) => {
     const skillId = z.string().uuid().parse(req.params.skillId);
     const kind = z.enum(["known", "wanted", "research"]).parse(req.params.kind);
-    await admin
+    const { error } = await admin
       .from("user_skills")
       .delete()
       .eq("user_id", req.userId!)
       .eq("skill_id", skillId)
       .eq("kind", kind);
+    if (error) throw error;
+    await cacheDelPattern(`dashboard:${req.userId!}:*`);
     res.status(204).end();
   }),
 );

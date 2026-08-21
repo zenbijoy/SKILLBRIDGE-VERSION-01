@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -10,7 +9,7 @@ import { Button, Card, ErrorState, H2, Muted, Pill, Row, Screen, SectionHeader, 
 import { ProfileCard } from "@/components/ProfileCard";
 import { RoomCard } from "@/components/RoomCard";
 import { FeatureGrid } from "@/components/FeatureGrid";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
 type AIMatch = {

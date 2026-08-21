@@ -4,7 +4,18 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+
+function runNpm(args, cwd) {
+  if (process.platform === "win32") {
+    execFileSync(process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe", ["/d", "/s", "/c", `npm.cmd ${args.join(" ")}`], {
+      cwd,
+      stdio: "pipe",
+    });
+    return;
+  }
+  execFileSync("npm", args, { cwd, stdio: "pipe" });
+}
 
 console.log("\n🔍 Starting SkillBridge Production Pre-flight Diagnostic...\n");
 
@@ -22,9 +33,9 @@ function check(title, fn) {
 }
 
 // 1. Node.js version
-check("Node.js Runtime Version >= 20", () => {
+check("Node.js Runtime Version >= 22", () => {
   const v = parseInt(process.versions.node.split(".")[0], 10);
-  if (v < 20) throw new Error(`Found Node v${process.version}, requires >= 20`);
+  if (v < 22) throw new Error(`Found Node ${process.version}, requires >= 22`);
 });
 
 // 2. Directory Structure
@@ -55,26 +66,26 @@ check("Security: .gitignore Protects Production Secrets", () => {
 
 // 5. Backend Typescript
 check("Backend Typecheck Verification", () => {
-  execSync("npx tsc --noEmit", { cwd: path.resolve("backend"), stdio: "pipe" });
+  runNpm(["run", "typecheck"], path.resolve("backend"));
 });
 
 // 6. Frontend Typescript
 check("Frontend Typecheck Verification", () => {
-  execSync("npx tsc --noEmit", { cwd: path.resolve("frontend"), stdio: "pipe" });
+  runNpm(["run", "typecheck"], path.resolve("frontend"));
 });
 
 // 7. Admin Build
 check("Admin Control Plane Build Verification", () => {
-  execSync("npx vite build", { cwd: path.resolve("admin"), stdio: "pipe" });
+  runNpm(["run", "build"], path.resolve("admin"));
 });
 
 const failed = checks.filter((c) => c.status === "FAIL");
 
 console.log("\n" + "=".repeat(60));
 if (failed.length === 0) {
-  console.log(`🎉 ALL ${checks.length} PRODUCTION PRE-FLIGHT CHECKS PASSED! SkillBridge is ready for deployment.`);
+  console.log(`ALL ${checks.length} STATIC PRE-FLIGHT CHECKS PASSED. Continue with database, Expo, and external integration gates.`);
 } else {
-  console.log(`⚠️ ${failed.length} / ${checks.length} CHECKS FAILED.`);
+  console.log(`${failed.length} / ${checks.length} CHECKS FAILED.`);
   process.exit(1);
 }
 console.log("=" .repeat(60) + "\n");

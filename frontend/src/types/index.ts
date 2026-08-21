@@ -18,6 +18,22 @@ export interface Profile {
   roles: UserRole[];
   reputation: number;
   profile_visibility: "public" | "connections" | "private";
+  study_mode_preference?: RoomMode;
+  preferred_locale?: "en" | "bn";
+  onboarding_version?: number;
+  onboarding_status?: "not_started" | "in_progress" | "completed" | "skipped";
+  onboarding_step?: string;
+  onboarding_completed?: boolean;
+  onboarding_mission?: "learn" | "teach" | "both" | "research";
+  onboarding_push_opt_in?: boolean;
+  profile_completion_percent?: number;
+  profile_missing_fields?: string[];
+  guided_tour_version?: number;
+  guided_tour_status?: "pending" | "in_progress" | "completed" | "skipped";
+  guided_tour_last_step?: string;
+  timezone?: string;
+  quiet_hours_start?: string;
+  quiet_hours_end?: string;
 }
 export interface Skill {
   id: string;
@@ -84,11 +100,59 @@ export interface Message {
     size?: number;
   } | null;
 }
+export interface DashboardWidget {
+  widget_key: string;
+  visible: boolean;
+  order: number;
+  is_required: boolean;
+  title_en: string;
+  title_bn: string;
+}
+
+export interface DashboardAnnouncement {
+  id: string;
+  title_en: string;
+  title_bn: string;
+  body_en: string;
+  body_bn: string;
+  tone: "info" | "warning" | "success" | "accent";
+  action_url?: string | null;
+  action_label_en?: string | null;
+  action_label_bn?: string | null;
+  is_dismissible: boolean;
+  target_roles?: string[];
+  target_campus?: string | null;
+  starts_at: string;
+  ends_at?: string | null;
+}
+
 export interface Dashboard {
+  layout: {
+    preset: "learner" | "tutor" | "researcher" | "community" | "balanced" | "custom";
+    density: "compact" | "comfortable" | "spacious";
+    widgets: DashboardWidget[];
+  };
+  featureFlags: Record<string, boolean>;
+  announcements: DashboardAnnouncement[];
+  profileQuest: {
+    completionPercent: number;
+    missingFields: string[];
+    guidedTourStatus: "pending" | "in_progress" | "completed" | "skipped";
+    guidedTourVersion: number;
+    guidedTourLastStep: string;
+  };
   urgentRooms: Room[];
   recommendedPeople: Profile[];
   upcomingSessions: Session[];
   events: EventItem[];
+  researchProjects: {
+    id: string;
+    title: string;
+    description?: string | null;
+    research_areas?: string[];
+    looking_for_collaborators?: boolean;
+    owner_id?: string;
+  }[];
   stats: {
     reputation: number;
     connections: number;

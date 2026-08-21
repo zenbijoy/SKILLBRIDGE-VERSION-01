@@ -57,3 +57,17 @@ graph TD
     M7 --> M8["8. Admin Control Plane Experience Modules"]
     M8 --> M9["9. Real PostgreSQL & Automated Verification Gates"]
 ```
+
+---
+
+## 4. Recovery Implementation Outcome
+
+The blueprint above records the pre-implementation gaps. The recovered implementation now includes:
+
+- Migration 016 for the initial experience schema and forward-only migration 017 for missing profile fields, targeted/dismissible announcements, versioned experience content, atomic onboarding and notification preference persistence, version-aware tour progress, and corrected execution privileges.
+- A 9-step resumable onboarding wizard, responsive localized welcome carousel, globally mounted resumable guided tour, settings replay, and EN/BN key-parity tests.
+- A server-resolved dashboard with validated layouts, presets, required-widget enforcement, role/campus/version targeting, deterministic feature rollouts, scheduled announcements, persistent dismissal, and live rather than placeholder metrics.
+- A dedicated `/experience` Vite admin surface for dashboard policy, localized announcements, feature flags, and schema-validated content publishing, plus aligned mobile moderator/admin access controls.
+- Fresh-baseline versus 016→017 real PostgreSQL schema/RPC/privilege comparison and transactional tests for onboarding, preferences, tour rewards, layouts, and content version activation.
+
+External release integrations (Docker daemon, a deployed Supabase project, LiveKit, Redis, Expo push credentials, and AI provider credentials) remain environment-dependent and must be reported separately by the final verification run.

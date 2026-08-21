@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
@@ -36,7 +36,7 @@ const REPUTATION_RULES = [
 ];
 
 export default function Leaderboard() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [activeCategory, setActiveCategory] = useState("reputation");
   const [timeWindow, setTimeWindow] = useState("weekly");
   const [showHowPointsWork, setShowHowPointsWork] = useState(false);
