@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useRef } from "react";
+import React, { ReactNode, useEffect, useState } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { radius, spacing, useTheme } from "@/theme";
@@ -17,7 +17,7 @@ export function PremiumHero({
 }) {
   const { colors, isDark, isOled } = useTheme();
   const reduceMotion = usePreferencesStore((state) => state.reduceMotion);
-  const floatAnim = useRef(new Animated.Value(0)).current;
+  const [floatAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (reduceMotion) {
@@ -36,6 +36,7 @@ export function PremiumHero({
   }, [floatAnim, reduceMotion]);
 
   const translateY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
+  const inverseTranslateY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] });
   const gradient = isOled
     ? ["#0F172A", "#09090B", "#000000"] as const
     : isDark
@@ -50,7 +51,7 @@ export function PremiumHero({
       style={[s.hero, { borderColor: `${colors.white}25` }]}
     >
       <Animated.View style={[s.orb, { backgroundColor: `${colors.primary}33`, transform: [{ translateY }] }]} />
-      <Animated.View style={[s.orb2, { backgroundColor: `${colors.accent}22`, transform: [{ translateY: floatAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }] }]} />
+      <Animated.View style={[s.orb2, { backgroundColor: `${colors.accent}22`, transform: [{ translateY: inverseTranslateY }] }]} />
       <Text style={[s.eyebrow, { color: isDark ? colors.accent : "#E0F2FE" }]}>{eyebrow}</Text>
       <Text style={s.title}>{title}</Text>
       <Text style={[s.detail, { color: isDark ? colors.textSecondary : "#F0F9FF" }]}>{detail}</Text>

@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Dashboard, Profile } from "@/types";
-import { Button, Card, ErrorState, H2, Muted, Row, Screen, SectionHeader, Skeleton } from "@/components/ui";
+import { Button, Card, ErrorState, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
 import { RoomCard } from "@/components/RoomCard";
 import { ProfileCard } from "@/components/ProfileCard";
 import { FeatureGrid } from "@/components/FeatureGrid";
@@ -13,21 +15,45 @@ import { useAppStore } from "@/state/useAppStore";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
-export default function Home() {
+export default function HomeScreen() {
   const { colors } = useTheme();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { mode, setMode } = useAppStore();
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
+
   const dashboard = useQuery({
     queryKey: ["dashboard", mode],
     queryFn: () => api<Dashboard>(`/dashboard?mode=${mode}`),
   });
+
   const me = useQuery({
     queryKey: ["me"],
     queryFn: () => api<{ profile: Profile }>("/profiles/me"),
   });
 
   const d = dashboard.data;
-  const firstName = me.data?.profile.full_name?.split(/\s+/)[0] ?? "Learner";
+  const firstName = me.data?.profile.full_name?.split(/\s+/)[0] ?? t("home.learnerFallback");
+
+  const visibleWidgets = [...(d?.layout.widgets ?? [])]
+    .filter((widget) => widget.visible)
+    .sort((a, b) => a.order - b.order);
+
+  const activeAnnouncements = (d?.announcements ?? []).filter(
+    (announcement) => !dismissedAnnouncements.includes(announcement.id),
+  );
+
+  const profileQuest = d?.profileQuest;
+
+  const dismissAnnouncement = async (announcementId: string) => {
+    triggerHaptic();
+    setDismissedAnnouncements((previous) => [...previous, announcementId]);
+    try {
+      await api(`/dashboard/announcements/${announcementId}/dismiss`, { method: "POST" });
+    } catch (error) {
+      setDismissedAnnouncements((previous) => previous.filter((id) => id !== announcementId));
+      Alert.alert(t("common.error"), error instanceof Error ? error.message : t("home.dismissFailed"));
+    }
+  };
 
   return (
     <Screen
@@ -36,71 +62,272 @@ export default function Home() {
       }}
       refreshing={dashboard.isRefetching || me.isRefetching}
     >
+      {/* Top Header with Universal Search */}
       <AppHeader searchPlaceholder={t("common.searchEverything")} />
-      <View style={{ gap: 3 }}>
-        <Text style={[s.greeting, { color: colors.text }]}>{t("home.hello")}, {firstName} 👋</Text>
-        <Muted>{mode === "learn" ? t("home.learnSubtitle") : t("home.teachSubtitle")}</Muted>
-      </View>
-
-      <PremiumHero
-        eyebrow="SKILLBRIDGE NETWORK"
-        title={mode === "learn" ? t("home.learnTitle") : t("home.teachTitle")}
-        detail={mode === "learn" ? t("home.learnHeroDetail") : t("home.teachHeroDetail")}
-      >
-        <View style={s.modeWrap}>
-          <Button title={t("home.learn")} variant={mode === "learn" ? "primary" : "ghost"} onPress={() => setMode("learn")} compact />
-          <Button title={t("home.teach")} variant={mode === "teach" ? "primary" : "ghost"} onPress={() => setMode("teach")} compact />
-        </View>
-      </PremiumHero>
 
       {dashboard.isLoading ? (
-        <Card><Skeleton width="36%" /><Row><Skeleton width="22%" height={52} /><Skeleton width="22%" height={52} /><Skeleton width="22%" height={52} /></Row></Card>
+        <Card><Skeleton width="40%" /><Skeleton height={120} /></Card>
       ) : dashboard.isError ? (
         <ErrorState detail={(dashboard.error as Error).message} onRetry={() => dashboard.refetch()} />
-      ) : (
-        <Card>
-          <H2>{t("home.momentum")}</H2>
-          <View style={s.statsGrid}>
-            <Stat n={d?.stats.reputation ?? 0} label={t("home.reputation")} />
-            <Stat n={d?.stats.connections ?? 0} label={t("home.connections")} />
-            <Stat n={d?.stats.sessionsTaught ?? 0} label={t("home.taught")} />
-            <Stat n={d?.stats.sessionsAttended ?? 0} label={t("home.learned")} />
-          </View>
-        </Card>
-      )}
+      ) : visibleWidgets.length === 0 ? (
+        <Muted>{t("home.noWidgets")}</Muted>
+      ) : visibleWidgets.map((widget) => {
+        switch (widget.widget_key) {
+          case "announcements":
+            if (!activeAnnouncements.length) return null;
+            return (
+              <View key="announcements" style={{ gap: 8 }}>
+                {activeAnnouncements.map((ann) => (
+                  <Card key={ann.id} tone="accent" style={styles.announcementCard}>
+                    <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={[styles.announcementTitle, { color: colors.text }]}>{language === "bn" ? ann.title_bn : ann.title_en}</Text>
+                        <Text style={[styles.announcementBody, { color: colors.muted }]}>{language === "bn" ? ann.body_bn : ann.body_en}</Text>
+                      </View>
+                      {ann.is_dismissible ? (
+                        <Pressable onPress={() => void dismissAnnouncement(ann.id)} hitSlop={12} style={{ padding: 4 }}>
+                          <MaterialCommunityIcons name="close" size={18} color={colors.muted} />
+                        </Pressable>
+                      ) : null}
+                    </Row>
+                    {ann.action_url ? (
+                      <Button
+                        compact
+                        variant="secondary"
+                        title={(language === "bn" ? ann.action_label_bn : ann.action_label_en) || ann.action_label_en || t("common.more")}
+                        onPress={() => {
+                          if (ann.action_url?.startsWith("https://")) void Linking.openURL(ann.action_url);
+                          else if (ann.action_url) router.push(ann.action_url as never);
+                        }}
+                      />
+                    ) : null}
+                  </Card>
+                ))}
+              </View>
+            );
 
-      <SectionHeader title={t("home.quickActions")} action={t("common.more")} onAction={() => router.push("/discover" as any)} />
-      <FeatureGrid compact />
+          case "greeting_hero":
+            return (
+              <View key="greeting_hero" style={{ gap: 12 }}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ gap: 2 }}>
+                    <Text style={[styles.greeting, { color: colors.text }]}>
+                      {t("home.hello")}, {firstName} 👋
+                    </Text>
+                    <Muted>{mode === "learn" ? t("home.learnSubtitle") : t("home.teachSubtitle")}</Muted>
+                  </View>
+                  {d?.featureFlags.dashboard_customization !== false ? <Pressable
+                    onPress={() => {
+                      triggerHaptic();
+                      router.push("/dashboard/customize" as any);
+                    }}
+                    style={[styles.customizeButton, { borderColor: colors.border }]}
+                  >
+                    <MaterialCommunityIcons name="tune-variant" size={18} color={colors.primary} />
+                  </Pressable> : null}
+                </Row>
 
-      <SectionHeader title={mode === "learn" ? t("home.urgentLearn") : t("home.urgentTeach")} action={t("common.seeAll")} onAction={() => router.push("/rooms" as any)} />
-      {d?.urgentRooms?.length ? d.urgentRooms.slice(0, 3).map((room) => <RoomCard key={room.id} room={room} />) : dashboard.isLoading ? <Skeleton height={120} /> : <Muted>{t("home.noRooms")}</Muted>}
+                <PremiumHero
+                  eyebrow={t("home.networkEyebrow")}
+                  title={mode === "learn" ? t("home.learnTitle") : t("home.teachTitle")}
+                  detail={mode === "learn" ? t("home.learnHeroDetail") : t("home.teachHeroDetail")}
+                >
+                  <View style={styles.modeWrap}>
+                    <Button
+                      title={t("home.learn")}
+                      variant={mode === "learn" ? "primary" : "ghost"}
+                      onPress={() => setMode("learn")}
+                      compact
+                    />
+                    <Button
+                      title={t("home.teach")}
+                      variant={mode === "teach" ? "primary" : "ghost"}
+                      onPress={() => setMode("teach")}
+                      compact
+                    />
+                  </View>
+                </PremiumHero>
+              </View>
+            );
 
-      <SectionHeader title={t("home.people")} action={t("common.seeAll")} onAction={() => router.push("/connections" as any)} />
-      {d?.recommendedPeople?.slice(0, 3).map((profile) => <ProfileCard key={profile.id} profile={profile} />)}
+          case "profile_quest":
+            if (!profileQuest || profileQuest.completionPercent >= 100) return null;
+            return (
+              <Card key="profile_quest" tone="glow" style={styles.questCard}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <View style={styles.questBadgeRow}>
+                    <MaterialCommunityIcons name="shield-star" size={20} color={colors.primary} />
+                    <Text style={[styles.questTitle, { color: colors.text }]}>{t("home.completeProfileQuest")}</Text>
+                  </View>
+                  <Pill tone="primary">{profileQuest.completionPercent}%</Pill>
+                </Row>
+                <Muted>{t("home.completeProfileDetail")}</Muted>
+                <View style={[styles.progressTrack, { backgroundColor: colors.surface, marginTop: 10 }]}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { backgroundColor: colors.primary, width: `${profileQuest.completionPercent}%` },
+                    ]}
+                  />
+                </View>
+                <Row style={{ marginTop: 12, justifyContent: "flex-end" }}>
+                  <Button
+                    title={t("home.completeProfileAction")}
+                    compact
+                    onPress={() => router.push("/(auth)/onboarding" as any)}
+                  />
+                </Row>
+              </Card>
+            );
 
-      <SectionHeader title={t("home.sessions")} action={t("common.seeAll")} onAction={() => router.push("/schedule" as any)} />
-      {d?.upcomingSessions?.length ? d.upcomingSessions.slice(0, 3).map((session) => (
-        <Card key={session.id}>
-          <View style={s.sessionRow}>
-            <View style={[s.dateTile, { backgroundColor: colors.primarySoft }]}>
-              <Text style={[s.dateDay, { color: colors.primary }]}>{new Date(session.starts_at).getDate()}</Text>
-              <Text style={[s.dateMonth, { color: colors.primary }]}>{new Date(session.starts_at).toLocaleString(undefined, { month: "short" }).toUpperCase()}</Text>
-            </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={[s.itemTitle, { color: colors.text }]}>{t("home.sessionTitle")}</Text>
-              <Muted>{new Date(session.starts_at).toLocaleString()} · {session.mode}</Muted>
-            </View>
-          </View>
-        </Card>
-      )) : <Muted>{t("home.noSessions")}</Muted>}
+          case "momentum_stats":
+            return (
+              <Card key="momentum_stats">
+                <H2>{t("home.momentum")}</H2>
+                <View style={styles.statsGrid}>
+                  <Stat n={d?.stats?.reputation ?? 0} label={t("home.reputation")} />
+                  <Stat n={d?.stats?.connections ?? 0} label={t("home.connections")} />
+                  <Stat n={d?.stats?.sessionsTaught ?? 0} label={t("home.taught")} />
+                  <Stat n={d?.stats?.sessionsAttended ?? 0} label={t("home.learned")} />
+                </View>
+              </Card>
+            );
 
-      <SectionHeader title={t("home.events")} action={t("common.seeAll")} onAction={() => router.push("/events" as any)} />
-      {d?.events?.slice(0, 3).map((event) => (
-        <Card key={event.id}>
-          <Text style={[s.itemTitle, { color: colors.text }]}>{event.title}</Text>
-          <Muted>{new Date(event.starts_at).toLocaleString()}</Muted>
-        </Card>
-      ))}
+          case "quick_actions":
+            return (
+              <View key="quick_actions">
+                <SectionHeader
+                  title={t("home.quickActions")}
+                  action={t("common.more")}
+                  onAction={() => router.push("/discover" as any)}
+                />
+                <FeatureGrid compact />
+              </View>
+            );
+
+          case "urgent_rooms":
+            return (
+              <View key="urgent_rooms">
+                <SectionHeader
+                  title={mode === "learn" ? t("home.urgentLearn") : t("home.urgentTeach")}
+                  action={t("common.seeAll")}
+                  onAction={() => router.push("/rooms" as any)}
+                />
+                {d?.urgentRooms?.length ? (
+                  d.urgentRooms.slice(0, 3).map((room) => <RoomCard key={room.id} room={room} />)
+                ) : dashboard.isLoading ? (
+                  <Skeleton height={120} />
+                ) : (
+                  <Muted>{t("home.noRooms")}</Muted>
+                )}
+              </View>
+            );
+
+          case "recommended_peers":
+            return (
+              <View key="recommended_peers">
+                <SectionHeader
+                  title={t("home.people")}
+                  action={t("common.seeAll")}
+                  onAction={() => router.push("/discover" as any)}
+                />
+                {d?.recommendedPeople?.slice(0, 3).map((profile) => (
+                  <ProfileCard key={profile.id} profile={profile} />
+                ))}
+              </View>
+            );
+
+          case "live_and_upcoming":
+            return (
+              <View key="live_and_upcoming">
+                <SectionHeader
+                  title={t("home.sessions")}
+                  action={t("common.seeAll")}
+                  onAction={() => router.push("/schedule" as any)}
+                />
+                {d?.upcomingSessions?.length ? (
+                  d.upcomingSessions.slice(0, 3).map((session) => (
+                    <Card key={session.id}>
+                      <View style={styles.sessionRow}>
+                        <View style={[styles.dateTile, { backgroundColor: colors.primarySoft }]}>
+                          <Text style={[styles.dateDay, { color: colors.primary }]}>
+                            {new Date(session.starts_at).getDate()}
+                          </Text>
+                          <Text style={[styles.dateMonth, { color: colors.primary }]}>
+                            {new Date(session.starts_at).toLocaleString(undefined, { month: "short" }).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1, gap: 4 }}>
+                          <Text style={[styles.itemTitle, { color: colors.text }]}>{t("home.sessionTitle")}</Text>
+                          <Muted>
+                            {new Date(session.starts_at).toLocaleString()} · {session.mode}
+                          </Muted>
+                        </View>
+                      </View>
+                    </Card>
+                  ))
+                ) : (
+                  <Muted>{t("home.noSessions")}</Muted>
+                )}
+              </View>
+            );
+
+          case "campus_events":
+            return (
+              <View key="campus_events">
+                <SectionHeader
+                  title={t("home.events")}
+                  action={t("common.seeAll")}
+                  onAction={() => router.push("/events" as any)}
+                />
+                {d?.events?.slice(0, 3).map((event) => (
+                  <Card key={event.id}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>{event.title}</Text>
+                    <Muted>{new Date(event.starts_at).toLocaleDateString()} · {event.location}</Muted>
+                  </Card>
+                ))}
+              </View>
+            );
+
+          case "research_opportunities":
+            if (!d?.researchProjects?.length) return null;
+            return (
+              <View key="research_opportunities">
+                <SectionHeader
+                  title={t("home.research")}
+                  action={t("common.seeAll")}
+                  onAction={() => router.push("/research" as any)}
+                />
+                {d.researchProjects.map((project) => (
+                  <Card key={project.id}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>{project.title}</Text>
+                    <Muted>{project.research_areas?.[0] || t("home.researchGeneral")} · {t("home.coauthorsOpen")}</Muted>
+                  </Card>
+                ))}
+              </View>
+            );
+
+          case "leaderboard_preview":
+            return (
+              <Card key="leaderboard_preview" tone="glow" style={{ marginTop: 8 }}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ gap: 2 }}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>{t("home.leaderboardTitle")}</Text>
+                    <Muted>{t("home.leaderboardDetail")}</Muted>
+                  </View>
+                  <Button
+                    title={t("home.viewLeaderboard")}
+                    compact
+                    onPress={() => router.push("/leaderboard" as any)}
+                  />
+                </Row>
+              </Card>
+            );
+
+          default:
+            return null;
+        }
+      })}
     </Screen>
   );
 }
@@ -108,22 +335,106 @@ export default function Home() {
 function Stat({ n, label }: { n: number; label: string }) {
   const { colors } = useTheme();
   return (
-    <View style={[s.stat, { backgroundColor: colors.surface2 }]}>
-      <Text style={[s.statNumber, { color: colors.text }]}>{n}</Text>
-      <Muted numberOfLines={1}>{label}</Muted>
+    <View style={styles.statBox}>
+      <Text style={[styles.statNum, { color: colors.primary }]}>{n}</Text>
+      <Text style={[styles.statLabel, { color: colors.muted }]}>{label}</Text>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  greeting: { fontSize: 22, fontWeight: "900", letterSpacing: -0.5 },
-  modeWrap: { flexDirection: "row", padding: 4, borderRadius: radius.md, backgroundColor: "#FFFFFF1C", gap: 4, alignSelf: "flex-start" },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  stat: { flex: 1, minWidth: "45%", minHeight: 78, borderRadius: radius.md, padding: 14, justifyContent: "center", gap: 2 },
-  statNumber: { fontSize: 24, fontWeight: "900" },
-  sessionRow: { flexDirection: "row", gap: 12, alignItems: "center" },
-  dateTile: { width: 52, height: 58, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  dateDay: { fontSize: 20, fontWeight: "900" },
-  dateMonth: { fontSize: 10, fontWeight: "900" },
-  itemTitle: { fontSize: 16, fontWeight: "800" },
+const styles = StyleSheet.create({
+  greeting: {
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  customizeButton: {
+    padding: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modeWrap: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  statBox: {
+    flex: 1,
+    minWidth: "22%",
+    padding: 8,
+    alignItems: "center",
+  },
+  statNum: {
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  statLabel: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  questCard: {
+    padding: 16,
+    borderRadius: radius.lg,
+  },
+  questBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  questTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  sessionRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "center",
+  },
+  dateTile: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateDay: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  dateMonth: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  itemTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  announcementCard: {
+    padding: 12,
+    borderRadius: radius.md,
+  },
+  announcementTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  announcementBody: {
+    fontSize: 13,
+    marginTop: 2,
+  },
 });

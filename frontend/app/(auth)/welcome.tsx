@@ -1,117 +1,288 @@
+import { useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { router } from "expo-router";
-import { StyleSheet, Text, View, Animated } from "react-native";
-import { Button, H1 } from "@/components/ui";
-import { spacing, useTheme } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useState } from "react";
+import { useI18n } from "@/i18n";
+import { radius, useTheme } from "@/theme";
+import { Button, triggerHaptic } from "@/components/ui";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { onboardingIllustrations } from "@/assets/illustrations";
 
-export default function Welcome() {
+type WelcomeContentResponse = {
+  contentSets: {
+    version: number;
+    content: unknown;
+  }[];
+};
+
+type WelcomeCopy = { id: string; title: string; body: string };
+type WelcomeSlide = {
+  id: string;
+  image: number;
+  title: string;
+  subtitle: string;
+  accent: string;
+};
+
+export default function WelcomeCarouselScreen() {
   const { colors, isDark } = useTheme();
-  const [floatAnim] = useState(() => new Animated.Value(0));
-  const [fadeAnim] = useState(() => new Animated.Value(0));
+  const { t, language } = useI18n();
+  const { width, height } = useWindowDimensions();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const flatListRef = useRef<FlatList<WelcomeSlide>>(null);
 
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 1000,
-      useNativeDriver: true,
-    }).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: 1,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, [floatAnim, fadeAnim]);
-
-  const translateY = floatAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -20],
+  const contentQuery = useQuery({
+    queryKey: ["experience-content", "welcome", language],
+    queryFn: () => api<WelcomeContentResponse>(`/experience/content?type=welcome&locale=${language}`),
+    staleTime: 5 * 60_000,
   });
+  const serverCopy = useMemo(() => {
+    const value = contentQuery.data?.contentSets[0]?.content;
+    if (!Array.isArray(value)) return new Map<string, WelcomeCopy>();
+    return new Map(value.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const candidate = item as Record<string, unknown>;
+      return typeof candidate.id === "string" && typeof candidate.title === "string" && typeof candidate.body === "string"
+        ? [[candidate.id, candidate as WelcomeCopy] as const]
+        : [];
+    }));
+  }, [contentQuery.data]);
+
+  const slides: WelcomeSlide[] = [
+    {
+      id: "discover",
+      image: onboardingIllustrations.discover,
+      title: serverCopy.get("discover")?.title ?? t("welcome.discoverTitle"),
+      subtitle: serverCopy.get("discover")?.body ?? t("welcome.discoverSubtitle"),
+      accent: "#2563EB",
+    },
+    {
+      id: "connect",
+      image: onboardingIllustrations.connect,
+      title: serverCopy.get("connect")?.title ?? t("welcome.connectTitle"),
+      subtitle: serverCopy.get("connect")?.body ?? t("welcome.connectSubtitle"),
+      accent: "#0F9F75",
+    },
+    {
+      id: "level_up",
+      image: onboardingIllustrations.levelUp,
+      title: serverCopy.get("level_up")?.title ?? t("welcome.levelUpTitle"),
+      subtitle: serverCopy.get("level_up")?.body ?? t("welcome.levelUpSubtitle"),
+      accent: "#4F46E5",
+    },
+    {
+      id: "launch",
+      image: onboardingIllustrations.launch,
+      title: serverCopy.get("launch")?.title ?? t("welcome.launchTitle"),
+      subtitle: serverCopy.get("launch")?.body ?? t("welcome.launchSubtitle"),
+      accent: "#D97706",
+    },
+  ];
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const slideIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+    if (slideIndex !== activeIndex && slideIndex >= 0 && slideIndex < slides.length) {
+      setActiveIndex(slideIndex);
+    }
+  };
+
+  const handleNext = () => {
+    triggerHaptic();
+    if (activeIndex < slides.length - 1) {
+      flatListRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
+      setActiveIndex(activeIndex + 1);
+    } else {
+      router.push("/(auth)/sign-up" as any);
+    }
+  };
+
+  const handleSkip = () => {
+    triggerHaptic();
+    router.push("/(auth)/sign-up" as any);
+  };
 
   return (
-    <LinearGradient
-      colors={isDark ? ["#0C192A", "#07111F", "#040914"] : ["#F8FAFC", "#EEF4FF", "#E8EEFF"]}
-      style={s.container}
-    >
-      <Animated.View style={[s.orb1, { transform: [{ translateY }] }]} />
-      <Animated.View
-        style={[
-          s.orb2,
-          { transform: [{ translateY: Animated.multiply(translateY, -0.6) }] },
-        ]}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+      {/* Top Header Bar with Skip */}
+      <View style={styles.topBar}>
+        <Text style={[styles.logoText, { color: colors.primary }]}>SkillBridge</Text>
+        {activeIndex < slides.length - 1 ? (
+          <Pressable onPress={handleSkip} hitSlop={12} style={styles.skipButton}>
+            <Text style={[styles.skipText, { color: colors.muted }]}>{t("welcome.skip")}</Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
+      </View>
+
+      {/* Carousel FlatList */}
+      <FlatList
+        ref={flatListRef}
+        data={slides}
+        keyExtractor={(item) => item.id}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        renderItem={({ item }) => (
+          <View style={[styles.slide, { width }]}>
+            {/* Artwork Container */}
+            <View style={[styles.imageWrapper, { width: Math.min(width * 0.85, 560), height: Math.min(height * 0.48, 560) }]}>
+              <Image
+                source={item.image}
+                style={styles.artworkImage}
+                resizeMode="contain"
+                accessibilityLabel={item.title}
+              />
+              <LinearGradient
+                colors={["transparent", isDark ? "rgba(10,12,18,0.85)" : "rgba(255,255,255,0.9)"]}
+                style={styles.imageGradient}
+              />
+            </View>
+
+            {/* Content Container */}
+            <View style={styles.textContainer}>
+              <Text style={[styles.title, { color: colors.text }]}>{item.title}</Text>
+              <Text style={[styles.subtitle, { color: colors.muted }]}>{item.subtitle}</Text>
+            </View>
+          </View>
+        )}
       />
 
-      <Animated.View style={[s.content, { opacity: fadeAnim }]}>
-        <View style={s.hero}>
-          <Text style={[s.brand, { color: colors.primary }]}>SKILLBRIDGE</Text>
-          <H1>Learn from people around you. Teach what you know.</H1>
-          <Text style={[s.detail, { color: colors.muted }]}>
-            Peer learning, research collaboration, clubs, events, realtime rooms
-            and live classes in one campus network.
-          </Text>
+      {/* Bottom Controls */}
+      <View style={styles.bottomBar}>
+        {/* Pagination Dots */}
+        <View style={styles.paginationRow}>
+          {slides.map((_, idx) => (
+            <View
+              key={idx}
+              style={[
+                styles.dot,
+                { backgroundColor: idx === activeIndex ? colors.primary : colors.border },
+                idx === activeIndex && styles.activeDot,
+              ]}
+            />
+          ))}
         </View>
 
-        <View style={s.actions}>
+        {/* Action Button */}
+        <View style={styles.actionButtonContainer}>
           <Button
-            title="Create account"
-            onPress={() => router.push("/(auth)/sign-up")}
+            title={activeIndex === slides.length - 1 ? t("welcome.getStarted") : t("welcome.next")}
+            onPress={handleNext}
           />
           <Button
-            title="I already have an account"
+            title={t("welcome.signIn")}
             variant="secondary"
-            onPress={() => router.push("/(auth)/sign-in")}
+            onPress={() => router.push("/(auth)/sign-in" as any)}
           />
         </View>
-      </Animated.View>
-    </LinearGradient>
+      </View>
+    </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, overflow: "hidden" },
-  content: {
+const styles = StyleSheet.create({
+  container: {
     flex: 1,
-    padding: spacing.xl,
+  },
+  topBar: {
+    flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 80,
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
-  orb1: {
-    position: "absolute",
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "#5B8CFF20",
-    top: -100,
-    right: -100,
-    filter: [{ blur: 40 }] as any,
-  },
-  orb2: {
-    position: "absolute",
-    width: 400,
-    height: 400,
-    borderRadius: 200,
-    backgroundColor: "#22D3A615",
-    bottom: -100,
-    left: -150,
-    filter: [{ blur: 50 }] as any,
-  },
-  hero: { gap: 20, marginTop: 40 },
-  brand: {
+  logoText: {
+    fontSize: 20,
     fontWeight: "900",
-    letterSpacing: 4,
-    fontSize: 14,
-    textTransform: "uppercase",
+    letterSpacing: -0.5,
   },
-  detail: { fontSize: 18, lineHeight: 28, opacity: 0.9 },
-  actions: { gap: spacing.md, paddingBottom: 40 },
+  skipButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  skipText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  slide: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  imageWrapper: {
+    borderRadius: radius.xl,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  artworkImage: {
+    width: "100%",
+    height: "100%",
+  },
+  imageGradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 80,
+  },
+  textContainer: {
+    width: "100%",
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 10,
+    lineHeight: 30,
+  },
+  subtitle: {
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 22,
+    maxWidth: "92%",
+  },
+  bottomBar: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    gap: 16,
+  },
+  paginationRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  activeDot: {
+    width: 24,
+    borderRadius: 4,
+  },
+  actionButtonContainer: {
+    width: "100%",
+    gap: 10,
+  },
 });

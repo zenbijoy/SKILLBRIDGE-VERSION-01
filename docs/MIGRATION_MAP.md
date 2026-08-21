@@ -20,3 +20,8 @@
 | weak UGC safety | block/report/moderator report APIs + privacy UI |
 | no account deletion | authenticated server-side deletion endpoint |
 | no release deployment | EAS config + Docker + GitHub Actions + release checklist |
+| static first-run flow | localized welcome carousel + resumable 9-step atomic onboarding |
+| fixed dashboard layout | server-targeted widgets + user presets/order/visibility + required-widget enforcement |
+| no guided product tour | versioned resumable tour with skip/replay and idempotent reward |
+| local-only notification settings | atomic server preferences + quiet-hours/category push suppression |
+| basic moderation console | dedicated product experience administration with targeting, flags, broadcasts, and versioned copy |

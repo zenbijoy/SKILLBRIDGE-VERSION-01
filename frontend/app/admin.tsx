@@ -1,17 +1,18 @@
 import { useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import type { Profile } from "@/types";
 
 type AdminStats = {
-  total_users: number;
-  active_rooms: number;
-  total_sessions: number;
-  open_reports: number;
+  totalUsers: number;
+  totalRooms: number;
+  activeSessions: number;
+  pendingReports: number;
 };
 
 type ReportItem = {
@@ -37,29 +38,77 @@ type UserItem = {
   created_at: string;
 };
 
+type DashboardConfigItem = {
+  id: string;
+  widget_key: string;
+  title_en: string;
+  title_bn: string;
+  default_order: number;
+  is_required: boolean;
+  is_enabled: boolean;
+};
+
+type AnnouncementItem = {
+  id: string;
+  title_en: string;
+  body_en: string;
+  tone: string;
+  is_active: boolean;
+  created_at: string;
+};
+
 export default function AdminConsoleScreen() {
   const { colors } = useTheme();
   const qc = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<"reports" | "users">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "users" | "widgets" | "announcements">("reports");
   const [userSearch, setUserSearch] = useState("");
+
+  // New announcement inputs
+  const [annTitle, setAnnTitle] = useState("");
+  const [annBody, setAnnBody] = useState("");
+
+  const currentProfileQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api<{ profile: Profile }>("/profiles/me"),
+  });
+  const currentRoles = currentProfileQuery.data?.profile.roles ?? [];
+  const isAdmin = currentRoles.includes("admin");
+  const isElevated = isAdmin || currentRoles.includes("moderator");
 
   // Stats query
   const statsQuery = useQuery({
     queryKey: ["admin-stats"],
     queryFn: () => api<AdminStats>("/admin/stats"),
+    enabled: isElevated,
   });
 
   // Reports query
   const reportsQuery = useQuery({
     queryKey: ["admin-reports"],
     queryFn: () => api<{ reports: ReportItem[] }>("/admin/reports"),
+    enabled: isElevated,
   });
 
   // Users query
   const usersQuery = useQuery({
     queryKey: ["admin-users", userSearch],
-    queryFn: () => api<{ users: UserItem[] }>(`/admin/users?query=${encodeURIComponent(userSearch)}`),
+    queryFn: () => api<{ users: UserItem[] }>(`/admin/users?q=${encodeURIComponent(userSearch)}`),
+    enabled: isElevated,
+  });
+
+  // Dashboard Configs query
+  const configsQuery = useQuery({
+    queryKey: ["admin-dashboard-configs"],
+    queryFn: () => api<{ configs: DashboardConfigItem[] }>("/admin/dashboard-configs"),
+    enabled: isAdmin,
+  });
+
+  // Announcements query
+  const announcementsQuery = useQuery({
+    queryKey: ["admin-announcements"],
+    queryFn: () => api<{ announcements: AnnouncementItem[] }>("/admin/announcements"),
+    enabled: isAdmin,
   });
 
   // Report decision mutation
@@ -93,10 +142,10 @@ export default function AdminConsoleScreen() {
 
   // User role mutation
   const userRoleMutation = useMutation({
-    mutationFn: ({ userId, roles }: { userId: string; roles: string[] }) =>
-      api(`/admin/users/${userId}/role`, {
-        method: "POST",
-        body: JSON.stringify({ roles }),
+    mutationFn: ({ userId, elevatedRole }: { userId: string; elevatedRole: "moderator" | null }) =>
+      api(`/admin/users/${userId}/roles`, {
+        method: "PUT",
+        body: JSON.stringify({ elevatedRole }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
@@ -105,7 +154,68 @@ export default function AdminConsoleScreen() {
     onError: (err: any) => Alert.alert("Action Failed", err.message),
   });
 
+  // Widget config toggle mutation
+  const widgetToggleMutation = useMutation({
+    mutationFn: ({ id, is_enabled }: { id: string; is_enabled: boolean }) =>
+      api(`/admin/dashboard-configs/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_enabled }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-dashboard-configs"] });
+      Alert.alert("Widget Updated", "Dashboard widget status changed.");
+    },
+    onError: (err: any) => Alert.alert("Action Failed", err.message),
+  });
+
+  // Create announcement mutation
+  const createAnnouncementMutation = useMutation({
+    mutationFn: () =>
+      api("/admin/announcements", {
+        method: "POST",
+        body: JSON.stringify({
+          title_en: annTitle.trim(),
+          title_bn: annTitle.trim(),
+          body_en: annBody.trim(),
+          body_bn: annBody.trim(),
+          tone: "info",
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-announcements"] });
+      setAnnTitle("");
+      setAnnBody("");
+      Alert.alert("Broadcast Published", "Announcement is now active on user dashboards.");
+    },
+    onError: (err: any) => Alert.alert("Publish Failed", err.message),
+  });
+
   const stats = statsQuery.data;
+
+  if (currentProfileQuery.isLoading) {
+    return <Screen><View style={styles.container}><Skeleton height={180} /></View></Screen>;
+  }
+
+  if (currentProfileQuery.isError) {
+    return (
+      <Screen>
+        <View style={styles.container}>
+          <ErrorState detail={(currentProfileQuery.error as Error).message} onRetry={() => currentProfileQuery.refetch()} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!isElevated) {
+    return (
+      <Screen>
+        <View style={styles.container}>
+          <Empty title="Access denied" detail="This console is available only to moderators and administrators." />
+          <Button title="Go back" variant="secondary" onPress={() => router.back()} />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -120,27 +230,27 @@ export default function AdminConsoleScreen() {
           </View>
         </Row>
         <Muted style={{ marginBottom: 14 }}>
-          Elevated platform operations, user moderation, and transactional audit governance.
+          Elevated platform operations, user moderation, dashboard builder, and broadcast governance.
         </Muted>
 
         {/* Stats Grid */}
         {stats && (
           <Row style={styles.statsGrid}>
             <Card tone="glow" style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.total_users}</Text>
+              <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalUsers}</Text>
               <Text style={[styles.statLabel, { color: colors.muted }]}>Total Users</Text>
             </Card>
             <Card style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: colors.text }]}>{stats.active_rooms}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Active Rooms</Text>
+              <Text style={[styles.statNumber, { color: colors.text }]}>{stats.totalRooms}</Text>
+              <Text style={[styles.statLabel, { color: colors.muted }]}>Rooms</Text>
             </Card>
             <Card style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: colors.text }]}>{stats.total_sessions}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Sessions</Text>
+              <Text style={[styles.statNumber, { color: colors.text }]}>{stats.activeSessions}</Text>
+              <Text style={[styles.statLabel, { color: colors.muted }]}>Active Sessions</Text>
             </Card>
-            <Card tone={stats.open_reports > 0 ? "accent" : "default"} style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: stats.open_reports > 0 ? colors.accent : colors.text }]}>
-                {stats.open_reports}
+            <Card tone={stats.pendingReports > 0 ? "accent" : "default"} style={styles.statCard}>
+              <Text style={[styles.statNumber, { color: stats.pendingReports > 0 ? colors.accent : colors.text }]}>
+                {stats.pendingReports}
               </Text>
               <Text style={[styles.statLabel, { color: colors.muted }]}>Open Reports</Text>
             </Card>
@@ -157,13 +267,8 @@ export default function AdminConsoleScreen() {
               activeTab === "reports" && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
           >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === "reports" ? "#fff" : colors.muted },
-              ]}
-            >
-              Reports Queue ({reportsQuery.data?.reports.length ?? 0})
+            <Text style={[styles.tabText, { color: activeTab === "reports" ? "#fff" : colors.muted }]}>
+              Reports ({reportsQuery.data?.reports.length ?? 0})
             </Text>
           </Pressable>
 
@@ -175,15 +280,36 @@ export default function AdminConsoleScreen() {
               activeTab === "users" && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
           >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === "users" ? "#fff" : colors.muted },
-              ]}
-            >
-              User Moderation
+            <Text style={[styles.tabText, { color: activeTab === "users" ? "#fff" : colors.muted }]}>
+              Users
             </Text>
           </Pressable>
+
+          {isAdmin && <Pressable
+            onPress={() => setActiveTab("widgets")}
+            style={[
+              styles.tabButton,
+              { borderColor: colors.border },
+              activeTab === "widgets" && { backgroundColor: colors.primary, borderColor: colors.primary },
+            ]}
+          >
+            <Text style={[styles.tabText, { color: activeTab === "widgets" ? "#fff" : colors.muted }]}>
+              Widgets
+            </Text>
+          </Pressable>}
+
+          {isAdmin && <Pressable
+            onPress={() => setActiveTab("announcements")}
+            style={[
+              styles.tabButton,
+              { borderColor: colors.border },
+              activeTab === "announcements" && { backgroundColor: colors.primary, borderColor: colors.primary },
+            ]}
+          >
+            <Text style={[styles.tabText, { color: activeTab === "announcements" ? "#fff" : colors.muted }]}>
+              Broadcasts
+            </Text>
+          </Pressable>}
         </Row>
 
         {/* Tab Content: Reports */}
@@ -327,7 +453,7 @@ export default function AdminConsoleScreen() {
                       </View>
                     )}
 
-                    {!user.roles.includes("moderator") ? (
+                    {isAdmin && (!user.roles.includes("moderator") ? (
                       <View style={{ flex: 1 }}>
                         <Button
                           title="Make Moderator"
@@ -336,7 +462,7 @@ export default function AdminConsoleScreen() {
                           onPress={() =>
                             userRoleMutation.mutate({
                               userId: user.id,
-                              roles: [...user.roles, "moderator"],
+                              elevatedRole: "moderator",
                             })
                           }
                           disabled={userRoleMutation.isPending}
@@ -351,17 +477,89 @@ export default function AdminConsoleScreen() {
                           onPress={() =>
                             userRoleMutation.mutate({
                               userId: user.id,
-                              roles: user.roles.filter((r) => r !== "moderator"),
+                              elevatedRole: null,
                             })
                           }
                           disabled={userRoleMutation.isPending}
                         />
                       </View>
-                    )}
+                    ))}
                   </Row>
                 </Card>
               ))
             )}
+          </View>
+        )}
+
+        {/* Tab Content: Dashboard Widgets */}
+        {activeTab === "widgets" && (
+          <View style={{ gap: 12 }}>
+            <Card>
+              <H2>Dashboard Widgets Manager</H2>
+              <Muted>Enable or disable widgets globally across client applications.</Muted>
+            </Card>
+
+            {configsQuery.data?.configs.map((cfg) => (
+              <Card key={cfg.id} style={{ padding: 12 }}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.userName, { color: colors.text }]}>{cfg.title_en} ({cfg.widget_key})</Text>
+                    <Muted>Order: {cfg.default_order} · {cfg.is_required ? "Mandatory" : "Optional"}</Muted>
+                  </View>
+                  <Button
+                    title={cfg.is_enabled ? "Enabled" : "Disabled"}
+                    variant={cfg.is_enabled ? "primary" : "secondary"}
+                    compact
+                    onPress={() =>
+                      widgetToggleMutation.mutate({
+                        id: cfg.id,
+                        is_enabled: !cfg.is_enabled,
+                      })
+                    }
+                  />
+                </Row>
+              </Card>
+            ))}
+          </View>
+        )}
+
+        {/* Tab Content: Announcements */}
+        {activeTab === "announcements" && (
+          <View style={{ gap: 12 }}>
+            <Card>
+              <H2>Publish Service Announcement</H2>
+              <Muted style={{ marginBottom: 10 }}>Broadcast critical updates to all active user dashboards.</Muted>
+              <TextInput
+                style={[styles.searchInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border, marginBottom: 8 }]}
+                placeholder="Announcement Title..."
+                placeholderTextColor={colors.muted}
+                value={annTitle}
+                onChangeText={setAnnTitle}
+              />
+              <TextInput
+                style={[styles.searchInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border, marginBottom: 12 }]}
+                placeholder="Announcement Body..."
+                placeholderTextColor={colors.muted}
+                value={annBody}
+                onChangeText={setAnnBody}
+              />
+              <Button
+                title="Publish Broadcast"
+                onPress={() => createAnnouncementMutation.mutate()}
+                disabled={!annTitle.trim() || !annBody.trim() || createAnnouncementMutation.isPending}
+                loading={createAnnouncementMutation.isPending}
+              />
+            </Card>
+
+            {announcementsQuery.data?.announcements.map((ann) => (
+              <Card key={ann.id}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={[styles.userName, { color: colors.text }]}>{ann.title_en}</Text>
+                  <Pill tone={ann.is_active ? "primary" : "default"}>{ann.is_active ? "Active" : "Archived"}</Pill>
+                </Row>
+                <Text style={{ color: colors.muted, marginTop: 4 }}>{ann.body_en}</Text>
+              </Card>
+            ))}
           </View>
         )}
       </View>
@@ -409,19 +607,19 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   tabsRow: {
-    gap: 8,
+    gap: 6,
     marginBottom: 16,
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: radius.md,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
   },
   reportCard: {

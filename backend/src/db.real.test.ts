@@ -108,29 +108,48 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     assert.ok(tables.has("session_participants"), "session_participants table exists");
   });
 
-  await t.test("2. Incremental migration 001 → 016 on real PostgreSQL", async () => {
+  await t.test("2. Forward migration 016 → 017 on real PostgreSQL", async () => {
     upgradedDb = new PGlite();
     await setupPostgresEnv(upgradedDb);
 
     const baselineSql = fs.readFileSync(baselineFile, "utf-8");
-    await upgradedDb.exec(sanitizeSql(baselineSql));
+    const migrationMarker = baselineSql.indexOf("-- BEGIN MIGRATION 017 BASELINE SYNC");
+    assert.ok(migrationMarker > 0, "baseline contains a marked 017 synchronization section");
+    const pre017Baseline = baselineSql.slice(0, migrationMarker);
+    await upgradedDb.exec(sanitizeSql(pre017Baseline));
+    await upgradedDb.exec(`
+      INSERT INTO public.announcements(title_en,title_bn,body_en,body_bn,action_url,starts_at,ends_at)
+      VALUES ('Legacy notice','Legacy notice BN','Legacy body','Legacy body BN','http://unsafe.example','2026-08-20T10:00:00Z','2026-08-20T09:00:00Z');
+      INSERT INTO public.dashboard_configs(widget_key,title_en,title_bn,target_roles)
+      VALUES ('legacy_target_fixture','Legacy target','Legacy target BN',ARRAY['unknown_legacy_role']::text[]);
+    `);
 
-    const mig015File = path.join(migrationsDir, "015_complete_domain_hardening.sql");
-    if (fs.existsSync(mig015File)) {
-      const mig015Sql = fs.readFileSync(mig015File, "utf-8");
-      await upgradedDb.exec(sanitizeSql(mig015Sql));
-    }
-
-    const mig016File = path.join(migrationsDir, "016_experience_expansion.sql");
-    if (fs.existsSync(mig016File)) {
-      const mig016Sql = fs.readFileSync(mig016File, "utf-8");
-      await upgradedDb.exec(sanitizeSql(mig016Sql));
-    }
+    const mig017File = path.join(migrationsDir, "017_experience_integrity_and_admin_content.sql");
+    const mig017Sql = fs.readFileSync(mig017File, "utf-8");
+    await upgradedDb.exec(sanitizeSql(mig017Sql));
+    await upgradedDb.exec(`
+      CREATE TABLE IF NOT EXISTS public.schema_migrations (
+        version text PRIMARY KEY,
+        applied_at timestamptz NOT NULL DEFAULT now()
+      );
+      INSERT INTO public.schema_migrations(version)
+      VALUES ('017_experience_integrity_and_admin_content')
+      ON CONFLICT DO NOTHING;
+    `);
 
     const res = await upgradedDb.query(`
       SELECT count(*) as count FROM information_schema.tables WHERE table_schema = 'public'
     `);
     assert.ok(Number((res.rows[0] as any).count) >= 18);
+    const repairedAnnouncement = await upgradedDb.query(`
+      SELECT action_url, action_label_en, action_label_bn, ends_at
+      FROM public.announcements WHERE title_en = 'Legacy notice';
+    `);
+    assert.strictEqual((repairedAnnouncement.rows[0] as any).action_url, null);
+    assert.strictEqual((repairedAnnouncement.rows[0] as any).action_label_en, null);
+    assert.strictEqual((repairedAnnouncement.rows[0] as any).ends_at, null);
+    const repairedAudience = await upgradedDb.query(`SELECT target_roles FROM public.dashboard_configs WHERE widget_key = 'legacy_target_fixture';`);
+    assert.ok((repairedAudience.rows[0] as any).target_roles.includes("researcher"));
   });
 
   await t.test("3. Schema-diff comparison between fresh and upgraded databases", async () => {
@@ -141,6 +160,43 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     const upgTables = upgTablesRes.rows.map((r: any) => r.table_name);
 
     assert.deepStrictEqual(freshTables, upgTables, "Table sets match exactly between fresh and upgraded installations");
+
+    const schemaQuery = `
+      SELECT table_name, column_name, data_type, is_nullable, coalesce(column_default, '') AS column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+      ORDER BY table_name, ordinal_position;
+    `;
+    const freshColumns = await freshDb.query(schemaQuery);
+    const upgradedColumns = await upgradedDb.query(schemaQuery);
+    assert.deepStrictEqual(freshColumns.rows, upgradedColumns.rows, "Column definitions match exactly");
+
+    const functionQuery = `
+      SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS arguments,
+             pg_get_function_result(p.oid) AS result, p.prosecdef
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public'
+      ORDER BY p.proname, arguments;
+    `;
+    const freshFunctions = await freshDb.query(functionQuery);
+    const upgradedFunctions = await upgradedDb.query(functionQuery);
+    assert.deepStrictEqual(freshFunctions.rows, upgradedFunctions.rows, "RPC signatures match exactly");
+
+    const protectedFunctions = [
+      "save_user_dashboard_layout_atomic",
+      "save_onboarding_progress_atomic",
+      "save_notification_preferences_atomic",
+      "complete_guided_tour_step_atomic",
+      "publish_experience_content_atomic",
+    ];
+    const privilegeRows = await freshDb.query(`
+      SELECT p.proname, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS can_execute
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = ANY($1::text[])
+      ORDER BY p.proname, pg_get_function_identity_arguments(p.oid);
+    `, [protectedFunctions]);
+    assert.ok(privilegeRows.rows.length >= protectedFunctions.length);
+    assert.ok(privilegeRows.rows.every((row: any) => row.can_execute === false), "experience mutations are service-role only");
   });
 
   await t.test("4. Room Invitations Lifecycle & Constraints", async () => {
@@ -415,19 +471,22 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
       SELECT public.complete_guided_tour_step_atomic(
         '${testUser}'::uuid,
         'dashboard_customizer',
-        false
+        false,
+        2
       ) as result;
     `);
     const step1 = (step1Res.rows[0] as any).result;
     assert.strictEqual(step1.status, "in_progress");
     assert.strictEqual(step1.step, "dashboard_customizer");
+    assert.strictEqual(step1.version, 2);
 
     // Step 2: Final step (Awards +5 reputation)
     const stepFinalRes = await db.query(`
       SELECT public.complete_guided_tour_step_atomic(
         '${testUser}'::uuid,
         'finish_tour',
-        true
+        true,
+        2
       ) as result;
     `);
     const stepFinal = (stepFinalRes.rows[0] as any).result;
@@ -440,12 +499,134 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
       SELECT public.complete_guided_tour_step_atomic(
         '${testUser}'::uuid,
         'finish_tour',
-        true
+        true,
+        2
       ) as result;
     `);
     const stepRepeat = (stepRepeatRes.rows[0] as any).result;
     assert.strictEqual(stepRepeat.status, "completed");
     assert.strictEqual(stepRepeat.reward.awarded, false);
     assert.strictEqual(stepRepeat.reward.reason, "already_awarded");
+  });
+
+  await t.test("11. Atomic onboarding save, skill synchronization, and rollback", async () => {
+    const db = freshDb;
+    const user = "12121212-1212-4212-8212-121212121212";
+    const conflictingUser = "13131313-1313-4313-8313-131313131313";
+    const placeholderUser = "14141414-1414-4414-8414-141414141414";
+    await db.exec(`
+      INSERT INTO auth.users(id, email) VALUES
+        ('${user}', 'onboarding@test.com'),
+        ('${conflictingUser}', 'existing@test.com'),
+        ('${placeholderUser}', 'placeholder@test.com');
+      INSERT INTO public.profiles(id, username, full_name) VALUES
+        ('${user}', 'onboarding_old', 'Onboarding Old'),
+        ('${conflictingUser}', 'reserved_name', 'Reserved Name'),
+        ('${placeholderUser}', 'user_0123456789', 'New member')
+      ON CONFLICT (id) DO UPDATE SET
+        username = EXCLUDED.username,
+        full_name = EXCLUDED.full_name;
+    `);
+
+    const placeholderAttempt = await db.query(`
+      SELECT public.save_onboarding_progress_atomic(
+        '${placeholderUser}'::uuid,
+        '{"university":"SkillBridge University","department":"Computer Science","onboarding_step":"completed","onboarding_status":"completed"}'::jsonb,
+        ARRAY['Python']::text[],
+        ARRAY['Data Science']::text[]
+      ) AS result;
+    `);
+    assert.strictEqual((placeholderAttempt.rows[0] as any).result.profile.onboarding_completed, false);
+    assert.notStrictEqual((placeholderAttempt.rows[0] as any).result.profile.onboarding_status, "completed");
+    assert.ok((placeholderAttempt.rows[0] as any).result.missing_fields.includes("full_name"));
+    assert.ok((placeholderAttempt.rows[0] as any).result.missing_fields.includes("username"));
+
+    const saved = await db.query(`
+      SELECT public.save_onboarding_progress_atomic(
+        '${user}'::uuid,
+        '{"full_name":"Onboarding User","username":"onboarding_user","university":"SkillBridge University","department":"Computer Science","study_mode_preference":"hybrid","preferred_locale":"bn","onboarding_step":"completed","onboarding_status":"completed","onboarding_version":1}'::jsonb,
+        ARRAY['Python','React']::text[],
+        ARRAY['Data Science']::text[]
+      ) AS result;
+    `);
+    const savedResult = (saved.rows[0] as any).result;
+    assert.strictEqual(savedResult.profile.onboarding_completed, true);
+    assert.strictEqual(savedResult.profile.onboarding_status, "completed");
+    assert.strictEqual(savedResult.completion_percent, 100);
+    assert.deepStrictEqual(savedResult.skills_known, ["Python", "React"]);
+
+    await db.exec(`
+      UPDATE public.user_skills SET verified = true
+      WHERE user_id = '${user}' AND skill_id = (SELECT id FROM public.skills WHERE name = 'Python') AND kind = 'known';
+    `);
+    const resaved = await db.query(`
+      SELECT public.save_onboarding_progress_atomic(
+        '${user}'::uuid,
+        '{"onboarding_step":"skills","onboarding_status":"in_progress"}'::jsonb,
+        ARRAY['react','TypeScript']::text[],
+        NULL
+      ) AS result;
+    `);
+    const known = (resaved.rows[0] as any).result.skills_known as string[];
+    assert.ok(known.includes("Python"), "verified skills survive onboarding edits");
+    assert.ok(known.includes("React"), "case-insensitive skill matching reuses canonical skill");
+    assert.ok(known.includes("TypeScript"));
+    assert.strictEqual((resaved.rows[0] as any).result.profile.onboarding_status, "completed", "completed onboarding is not reopened by profile edits");
+
+    await assert.rejects(
+      () => db.query(`
+        SELECT public.save_onboarding_progress_atomic(
+          '${user}'::uuid,
+          '{"full_name":"Must Roll Back","username":"reserved_name"}'::jsonb,
+          ARRAY['Should Not Persist']::text[],
+          NULL
+        );
+      `),
+      /already taken|duplicate/i,
+    );
+    const rollback = await db.query(`SELECT full_name FROM public.profiles WHERE id = '${user}';`);
+    assert.strictEqual((rollback.rows[0] as any).full_name, "Onboarding User");
+    const leakedSkill = await db.query(`SELECT count(*)::int AS count FROM public.skills WHERE name = 'Should Not Persist';`);
+    assert.strictEqual((leakedSkill.rows[0] as any).count, 0);
+  });
+
+  await t.test("12. Atomic notification preferences preserve concurrent fields", async () => {
+    const db = freshDb;
+    const user = "12121212-1212-4212-8212-121212121212";
+    const first = await db.query(`
+      SELECT public.save_notification_preferences_atomic(
+        '${user}'::uuid,
+        '{"messages":false,"quiet_hours_start":"23:30","quiet_hours_end":"06:15","push_enabled":false}'::jsonb
+      ) AS result;
+    `);
+    assert.strictEqual((first.rows[0] as any).result.preferences.messages, false);
+    assert.strictEqual((first.rows[0] as any).result.quietHours.start, "23:30");
+    assert.strictEqual((first.rows[0] as any).result.onboardingPushOptIn, false);
+
+    const second = await db.query(`
+      SELECT public.save_notification_preferences_atomic('${user}'::uuid, '{"rooms":false}'::jsonb) AS result;
+    `);
+    assert.strictEqual((second.rows[0] as any).result.preferences.messages, false);
+    assert.strictEqual((second.rows[0] as any).result.preferences.rooms, false);
+  });
+
+  await t.test("13. Versioned experience publishing activates exactly one version", async () => {
+    const db = freshDb;
+    const actor = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const published = await db.query(`
+      SELECT public.publish_experience_content_atomic(
+        '${actor}'::uuid,
+        'tour',
+        'en',
+        '[{"id":"new-tour","route":"/(tabs)","title":"New tour","body":"Updated content"}]'::jsonb
+      ) AS result;
+    `);
+    assert.strictEqual((published.rows[0] as any).result.version, 2);
+    const active = await db.query(`
+      SELECT version FROM public.experience_content_sets
+      WHERE content_type = 'tour' AND locale = 'en' AND is_active
+      ORDER BY version;
+    `);
+    assert.deepStrictEqual(active.rows.map((row: any) => row.version), [2]);
   });
 });

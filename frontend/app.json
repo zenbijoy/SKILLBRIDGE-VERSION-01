@@ -50,7 +50,8 @@
           "cameraPermission": "Allow SkillBridge to use your camera for classes.",
           "microphonePermission": "Allow SkillBridge to use your microphone for classes."
         }
-      ]
+      ],
+      "./plugins/withReleaseSigning"
     ],
     "experiments": {
       "typedRoutes": true

@@ -30,6 +30,7 @@ import { catalog } from "./routes/catalog.js";
 import { clubs } from "./routes/clubs.js";
 import { research } from "./routes/research.js";
 import { health } from "./routes/health.js";
+import { experience } from "./routes/experience.js";
 
 export function createApp(io?: SocketServer) {
   const app = express();
@@ -66,6 +67,7 @@ export function createApp(io?: SocketServer) {
 
   app.use("/health", health);
   app.use("/webhooks/live", liveWebhooks);
+  app.use("/api/v1/experience", experience);
 
   const api = express.Router();
   api.use(auth);

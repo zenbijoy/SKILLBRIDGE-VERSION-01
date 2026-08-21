@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -330,7 +330,7 @@ export function ErrorState({ title = "Something went wrong", detail, onRetry }: 
 export function Skeleton({ width = "100%", height = 16, radiusValue = 8 }: { width?: number | `${number}%`; height?: number; radiusValue?: number }) {
   const { colors } = useTheme();
   const reduceMotion = usePreferencesStore((state) => state.reduceMotion);
-  const opacityAnim = useRef(new Animated.Value(0.4)).current;
+  const [opacityAnim] = useState(() => new Animated.Value(0.4));
 
   useEffect(() => {
     if (reduceMotion) return;

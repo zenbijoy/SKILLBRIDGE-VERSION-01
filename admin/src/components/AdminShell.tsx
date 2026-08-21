@@ -12,6 +12,7 @@ import {
   Search,
   ServerCog,
   ShieldAlert,
+  Sparkles,
   SlidersHorizontal,
   Users,
   X,
@@ -32,6 +33,7 @@ const nav: NavItem[] = [
   { to: '/verification', label: 'Verification', icon: BadgeCheck },
   { to: '/support', label: 'Operations', icon: LifeBuoy },
   { to: '/rules', label: 'Runtime Policy', icon: SlidersHorizontal },
+  { to: '/experience', label: 'Product Experience', icon: Sparkles },
   { to: '/api-mgmt', label: 'Integrations', icon: ServerCog },
   { to: '/db-ops', label: 'Audit & Data', icon: Database },
 ];

@@ -23,4 +23,16 @@ describe("usePreferencesStore", () => {
     usePreferencesStore.getState().setTheme("oled");
     expect(usePreferencesStore.getState().theme).toBe("oled");
   });
+
+  it("enforces extreme data-saver media invariants", () => {
+    usePreferencesStore.setState({ dataSaver: "standard", autoplayMedia: true, downloadOnWifiOnly: false });
+    usePreferencesStore.getState().setDataSaver("extreme");
+    expect(usePreferencesStore.getState().autoplayMedia).toBe(false);
+    expect(usePreferencesStore.getState().downloadOnWifiOnly).toBe(true);
+
+    usePreferencesStore.getState().setAutoplayMedia(true);
+    usePreferencesStore.getState().setDownloadOnWifiOnly(false);
+    expect(usePreferencesStore.getState().autoplayMedia).toBe(false);
+    expect(usePreferencesStore.getState().downloadOnWifiOnly).toBe(true);
+  });
 });

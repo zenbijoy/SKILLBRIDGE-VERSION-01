@@ -1,6 +1,6 @@
 # SkillBridge V3 Testing & Verification Guide
 
-SkillBridge V3 features an automated multi-tier test suite designed for execution in local and CI/CD environments without external database dependencies.
+SkillBridge V3 uses layered unit, API, real PostgreSQL-compatible, build, diagnostic, and optional Docker/Supabase verification gates.
 
 ---
 
@@ -11,9 +11,9 @@ The testing suite consists of 4 specialized test engines:
 1. **In-Process Real PostgreSQL Suite (`backend/src/db.real.test.ts`)**:
    - Uses `@electric-sql/pglite` (compiled PostgreSQL 15/16 WASM engine).
    - Installs fresh baseline (`001_skillbridge_baseline.sql`).
-   - Runs incremental migration sequence (`001 → 015`).
-   - Compares table schemas with strict assertions.
-   - Tests row-lock capacity boundaries, invitation constraints, idempotent reputation rewards, transactional admin moderation, and leaderboard aggregation.
+   - Installs the current fresh baseline and separately reconstructs 016 before applying migration 017.
+   - Compares tables, columns, RPC signatures, and protected function privileges with strict assertions.
+   - Tests row-lock capacity boundaries, invitation constraints, idempotent rewards, transactional moderation, atomic onboarding/preferences, guided-tour rewards, dashboard layouts, and versioned content publishing.
 2. **Adversarial Security Matrix (`backend/src/routes/security.adversarial.test.ts`)**:
    - Tests cross-tenant isolation, unauthorized room access, privilege hierarchy violations, suspended account lockdowns, and path traversal protections.
 3. **API & Endpoint Suite (`backend/src/app.test.ts`)**:
@@ -22,6 +22,11 @@ The testing suite consists of 4 specialized test engines:
    - Frontend: `npm run typecheck` in `frontend/`.
    - Backend: `npm run typecheck` in `backend/`.
    - Admin: `npm run typecheck` in `admin/`.
+5. **Frontend Jest Suite (`frontend/src/**/*.test.ts`)**:
+   - Verifies request contracts, locale key parity, persisted settings behavior, data-saver invariants, and feature logic.
+6. **Preflight and artifact gates**:
+   - Root typecheck/lint/build, Vite admin build, `scripts/doctor.mjs`, Expo Doctor, Expo dependency checks, and Expo web export.
+   - Docker-backed `npm run db:test` and live `npm run db:verify` are environment-dependent release gates.
 
 ---
 
@@ -32,15 +37,20 @@ The testing suite consists of 4 specialized test engines:
 cd backend
 npm test
 ```
-*Expected Output:*
+*Current suite size:*
 ```text
-ℹ tests 48
-ℹ suites 0
-ℹ pass 48
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
+tests 66
+pass 66
+fail 0
+skipped 0
 ```
+
+### Run Frontend Tests
+```bash
+cd frontend
+npm test -- --runInBand
+```
+The current suite contains 15 tests. Exact totals must be taken from the current run rather than assumed from this document.
 
 ### Run Frontend Typecheck
 ```bash
@@ -55,3 +65,18 @@ cd admin
 npm run typecheck
 ```
 *Expected Output: Exit code 0 (zero type errors).*
+
+### Run Repository Preflight
+```bash
+npm run typecheck
+npm run lint
+npm run build
+node scripts/doctor.mjs
+npm run audit
+cd frontend
+npx expo-doctor
+npx expo install --check
+npx expo export --platform web
+```
+
+Migration verification is complete only after the in-process fresh/upgrade suite passes. For release environments with Docker and Supabase credentials, also run the root `db:test` and `db:verify` scripts and report unavailable external services as blocked gates rather than silently skipping them.
