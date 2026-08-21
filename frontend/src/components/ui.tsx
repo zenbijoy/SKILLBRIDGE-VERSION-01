@@ -2,6 +2,8 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Image,
+  ImageSourcePropType,
   Platform,
   Pressable,
   RefreshControl,
@@ -299,13 +301,36 @@ export function Loading({ label = "Loading SkillBridge…" }: { label?: string }
   );
 }
 
-export function Empty({ title, detail, actionTitle, onAction }: { title: string; detail: string; actionTitle?: string; onAction?: () => void }) {
+export function Empty({
+  title,
+  detail,
+  actionTitle,
+  onAction,
+  illustration,
+}: {
+  title: string;
+  detail: string;
+  actionTitle?: string;
+  onAction?: () => void;
+  illustration?: ImageSourcePropType;
+}) {
   const { colors } = useTheme();
   return (
     <Card tone="soft" style={{ alignItems: "center", paddingVertical: 32, gap: 10 }}>
-      <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${colors.primary}18`, alignItems: "center", justifyContent: "center" }}>
-        <MaterialCommunityIcons name="tray" size={30} color={colors.primary} />
-      </View>
+      {illustration ? (
+        <Image
+          source={illustration}
+          style={{ width: 140, height: 140, marginBottom: 4 }}
+          resizeMode="contain"
+          accessible={false}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no"
+        />
+      ) : (
+        <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${colors.primary}18`, alignItems: "center", justifyContent: "center" }}>
+          <MaterialCommunityIcons name="tray" size={30} color={colors.primary} />
+        </View>
+      )}
       <H2 style={{ textAlign: "center" }}>{title}</H2>
       <Muted style={{ textAlign: "center", maxWidth: 280 }}>{detail}</Muted>
       {actionTitle ? <Button title={actionTitle} variant="secondary" onPress={onAction} compact /> : null}

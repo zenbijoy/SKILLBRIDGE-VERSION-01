@@ -12,7 +12,7 @@ import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
 export default function ProfileScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { t } = useI18n();
 
   const profile = useQuery({

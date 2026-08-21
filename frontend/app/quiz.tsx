@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 
 type QuizQuestion = {
   id: string;
@@ -29,7 +29,7 @@ type QuizSummary = {
 };
 
 export default function QuizScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const qc = useQueryClient();
 
   // Mode: "catalog" | "active" | "result"

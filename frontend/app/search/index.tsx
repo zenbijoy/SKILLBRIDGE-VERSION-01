@@ -12,6 +12,7 @@ import { RoomCard } from "@/components/RoomCard";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { useI18n } from "@/i18n";
 import { radius, useTheme } from "@/theme";
+import { spotIllustrations } from "@/assets/illustrations";
 
 type Result = {
   people: Profile[];
@@ -107,7 +108,13 @@ export default function GlobalSearch() {
 
       {result.isLoading ? <ActivityIndicator size="large" color={colors.primary} /> : null}
       {result.isError ? <ErrorState detail={(result.error as Error).message} onRetry={() => result.refetch()} /> : null}
-      {result.isSuccess && !hasAny ? <Empty title={t("search.noResults")} detail={t("search.noResultsDetail")} /> : null}
+      {result.isSuccess && !hasAny ? (
+        <Empty
+          illustration={spotIllustrations.searchDiscovery}
+          title={t("search.noResults")}
+          detail={t("search.noResultsDetail")}
+        />
+      ) : null}
 
       {pages.map((page, pageIndex) => (
         <React.Fragment key={pageIndex}>

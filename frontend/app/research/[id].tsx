@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -47,7 +47,6 @@ export default function ResearchDetailScreen() {
 
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [applyNote, setApplyNote] = useState("");
-  const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
 
   const projectQuery = useQuery({
     queryKey: ["research-project", id],
@@ -61,7 +60,7 @@ export default function ResearchDetailScreen() {
         method: "POST",
         body: JSON.stringify({
           project_id: id,
-          call_id: selectedCallId,
+          call_id: null,
           statement: applyNote.trim(),
         }),
       }),

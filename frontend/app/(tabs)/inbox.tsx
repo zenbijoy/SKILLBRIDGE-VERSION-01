@@ -6,9 +6,10 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Conversation } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
-import { Card, Empty, ErrorState, Field, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { Card, Empty, ErrorState, Field, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
+import { spotIllustrations } from "@/assets/illustrations";
 
 type InboxFilter = "all" | "unread" | "groups";
 
@@ -85,6 +86,7 @@ export default function Inbox() {
       ) : null}
       {conversations.isSuccess && visible.length === 0 ? (
         <Empty
+          illustration={spotIllustrations.chatTogether}
           title={t("inbox.empty")}
           detail={t("inbox.emptyDetail")}
           actionTitle="Explore Network"

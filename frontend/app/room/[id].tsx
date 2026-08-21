@@ -8,7 +8,6 @@ import type { Profile, Room, Session } from "@/types";
 import { Button, Card, Empty, ErrorState, Field, H1, H2, Muted, Pill, Row, Screen, Skeleton } from "@/components/ui";
 import { TextPromptModal } from "@/components/feedback/TextPromptModal";
 import { radius, useTheme } from "@/theme";
-import { supabase } from "@/lib/supabase";
 
 type Detail = {
   room: Room;

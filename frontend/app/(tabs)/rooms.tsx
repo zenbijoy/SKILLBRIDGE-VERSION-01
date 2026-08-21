@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Room, RoomMode } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import { Button, Card, Empty, ErrorState, Field, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { RoomCard } from "@/components/RoomCard";
+import { spotIllustrations } from "@/assets/illustrations";
 import { useI18n } from "@/i18n";
 import { useTheme } from "@/theme";
 
@@ -162,6 +163,7 @@ export default function Rooms() {
       ) : null}
       {rooms.isSuccess && filtered.length === 0 ? (
         <Empty
+          illustration={spotIllustrations.createRoom}
           title={t("rooms.empty")}
           detail={t("rooms.emptyDetail")}
           actionTitle={t("rooms.create")}

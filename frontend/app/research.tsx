@@ -8,6 +8,7 @@ import { Button, Card, Empty, ErrorState, Field, H1, H2, Muted, Pill, Row, Scree
 import { ProfileCard } from "@/components/ProfileCard";
 import { radius, spacing, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
+import { spotIllustrations } from "@/assets/illustrations";
 
 type ResearchProject = {
   id: string;
@@ -37,7 +38,7 @@ const RESEARCH_DISCIPLINES = [
 ];
 
 export default function ResearchHub() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { session } = useSession();
   const qc = useQueryClient();
 
@@ -388,6 +389,7 @@ export default function ResearchHub() {
 
           {projectsQuery.data?.data?.length === 0 && !projectsQuery.isLoading ? (
             <Empty
+              illustration={spotIllustrations.researchInnovation}
               title="No research projects found"
               detail="Be the first scholar to publish a project or paper in this research discipline!"
             />

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Profile } from "@/types";
 import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { spotIllustrations } from "@/assets/illustrations";
 
 type LeaderProfile = Profile & {
   sessions_taught?: number;
@@ -36,7 +37,7 @@ const REPUTATION_RULES = [
 ];
 
 export default function Leaderboard() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [activeCategory, setActiveCategory] = useState("reputation");
   const [timeWindow, setTimeWindow] = useState("weekly");
   const [showHowPointsWork, setShowHowPointsWork] = useState(false);
@@ -293,6 +294,16 @@ export default function Leaderboard() {
               </Pressable>
             </Row>
 
+            <View style={{ alignItems: "center", marginVertical: 8 }}>
+              <Image
+                source={spotIllustrations.leaderboardVictory}
+                style={{ width: 90, height: 90 }}
+                resizeMode="contain"
+                accessible={false}
+                accessibilityElementsHidden={true}
+                importantForAccessibility="no"
+              />
+            </View>
             <Muted style={{ marginBottom: 14 }}>
               SkillBridge calculates verifiable reputation from real peer learning and research contributions.
             </Muted>

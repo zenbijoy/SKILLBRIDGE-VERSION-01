@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { EventItem, Room, Session } from "@/types";
-import { Button, Card, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { Button, Card, Empty, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { router } from "expo-router";
+import { spotIllustrations } from "@/assets/illustrations";
 
 type ScheduleItem = {
   id: string;
@@ -28,7 +29,7 @@ const FILTERS = [
 ];
 
 export default function Schedule() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [filter, setFilter] = useState("all");
 
   const sessionsQuery = useQuery({
@@ -218,6 +219,7 @@ export default function Schedule() {
 
       {filteredItems.length === 0 && !isLoading ? (
         <Empty
+          illustration={spotIllustrations.liveClass}
           title="No upcoming events"
           detail="No scheduled classes, rooms, or seminars match this filter. Create a room or volunteer to teach to add to your calendar."
         />
