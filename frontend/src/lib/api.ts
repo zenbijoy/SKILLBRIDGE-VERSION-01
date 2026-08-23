@@ -2,7 +2,14 @@ import { supabase } from "./supabase";
 import Constants from "expo-constants";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 
-const BASE = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/+$/, "");
+const DEFAULT_API_URL = "https://skillbridge-api.onrender.com/api/v1";
+const BASE = (
+  process.env.EXPO_PUBLIC_API_URL ??
+  (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
+  (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")
+    ? DEFAULT_API_URL
+    : "http://localhost:4000/api/v1")
+).replace(/\/+$/, "");
 
 type ApiErrorBody = {
   error?: string;

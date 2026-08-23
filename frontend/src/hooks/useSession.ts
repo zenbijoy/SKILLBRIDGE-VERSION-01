@@ -9,16 +9,27 @@ export function useSession() {
   useEffect(() => {
     let alive = true;
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      if (alive) {
-        setSession(initialSession);
-        setLoading(false);
-      }
-    });
+    // Get initial session with catch handler
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (alive) {
+          setSession(data?.session ?? null);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.warn("Error fetching initial session:", err);
+        if (alive) {
+          setSession(null);
+          setLoading(false);
+        }
+      });
 
     // Listen to real-time auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       if (alive) {
         setSession(currentSession);
         setLoading(false);
@@ -27,7 +38,7 @@ export function useSession() {
 
     return () => {
       alive = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 
