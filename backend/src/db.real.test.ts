@@ -127,13 +127,18 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
     const mig017File = path.join(migrationsDir, "017_experience_integrity_and_admin_content.sql");
     const mig017Sql = fs.readFileSync(mig017File, "utf-8");
     await upgradedDb.exec(sanitizeSql(mig017Sql));
+
+    const mig018File = path.join(migrationsDir, "018_learning_growth_hub.sql");
+    const mig018Sql = fs.readFileSync(mig018File, "utf-8");
+    await upgradedDb.exec(sanitizeSql(mig018Sql));
+
     await upgradedDb.exec(`
       CREATE TABLE IF NOT EXISTS public.schema_migrations (
         version text PRIMARY KEY,
         applied_at timestamptz NOT NULL DEFAULT now()
       );
       INSERT INTO public.schema_migrations(version)
-      VALUES ('017_experience_integrity_and_admin_content')
+      VALUES ('017_experience_integrity_and_admin_content'), ('018_learning_growth_hub')
       ON CONFLICT DO NOTHING;
     `);
 

@@ -5,7 +5,9 @@ export type UserRole =
   | "researcher"
   | "moderator"
   | "admin";
+
 export type RoomMode = "online" | "offline" | "hybrid";
+
 export interface Profile {
   id: string;
   full_name: string;
@@ -35,11 +37,13 @@ export interface Profile {
   quiet_hours_start?: string;
   quiet_hours_end?: string;
 }
+
 export interface Skill {
   id: string;
   name: string;
   category: string;
 }
+
 export interface Room {
   id: string;
   owner_id: string;
@@ -56,6 +60,7 @@ export interface Room {
   status: "open" | "scheduled" | "live" | "completed" | "cancelled";
   conversation_id?: string | null;
 }
+
 export interface Session {
   id: string;
   room_id: string;
@@ -66,7 +71,13 @@ export interface Session {
   meeting_url?: string | null;
   campus_location?: string | null;
   status: string;
+  recording_url?: string | null;
+  recording_video_id?: string | null;
+  recording_provider?: "youtube" | "google_drive" | "r2" | "custom" | null;
+  recording_status?: "none" | "recording" | "uploading" | "ready" | "failed" | null;
+  recording_duration_seconds?: number | null;
 }
+
 export interface EventItem {
   id: string;
   club_id: string;
@@ -79,6 +90,7 @@ export interface EventItem {
   application_required: boolean;
   status: string;
 }
+
 export interface Conversation {
   id: string;
   title?: string | null;
@@ -86,6 +98,7 @@ export interface Conversation {
   updated_at: string;
   unread_count?: number;
 }
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -100,6 +113,7 @@ export interface Message {
     size?: number;
   } | null;
 }
+
 export interface DashboardWidget {
   widget_key: string;
   visible: boolean;

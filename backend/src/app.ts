@@ -31,6 +31,16 @@ import { clubs } from "./routes/clubs.js";
 import { research } from "./routes/research.js";
 import { health } from "./routes/health.js";
 import { experience } from "./routes/experience.js";
+import { goals } from "./routes/goals.js";
+import { planner } from "./routes/planner.js";
+import { calendar } from "./routes/calendar.js";
+import { bookings } from "./routes/bookings.js";
+import { challenges } from "./routes/challenges.js";
+import { achievements, achievementsPublic } from "./routes/achievements.js";
+import { activity } from "./routes/activity.js";
+import { progress } from "./routes/progress.js";
+import { ct } from "./routes/ct.js";
+import { calls } from "./routes/calls.js";
 
 export function createApp(io?: SocketServer) {
   const app = express();
@@ -68,6 +78,7 @@ export function createApp(io?: SocketServer) {
   app.use("/health", health);
   app.use("/webhooks/live", liveWebhooks);
   app.use("/api/v1/experience", experience);
+  app.use("/api/v1/achievements/verify", achievementsPublic);
 
   const api = express.Router();
   api.use(auth);
@@ -104,6 +115,16 @@ export function createApp(io?: SocketServer) {
   api.use("/account", sensitiveLimit, account);
   api.use("/ai", ai);
   api.use("/research", research);
+  api.use("/goals", goals);
+  api.use("/planner", planner);
+  api.use("/calendar", calendar);
+  api.use("/bookings", bookings);
+  api.use("/challenges", challenges);
+  api.use("/achievements", achievements);
+  api.use("/activity", activity);
+  api.use("/progress", progress);
+  api.use("/ct", ct);
+  api.use("/calls", calls);
   api.use("/admin", requireRole("moderator", "admin"), adminRoutes);
 
   app.use("/api/v1", api);

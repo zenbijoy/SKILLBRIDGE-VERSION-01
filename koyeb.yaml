@@ -1,0 +1,55 @@
+# Koyeb App Deployment Specification
+name: skillbridge-app
+services:
+  - name: skillbridge-api
+    type: web
+    docker:
+      dockerfile: ./backend/Dockerfile
+    ports:
+      - port: 4000
+        path: /
+        protocol: http
+    routes:
+      - path: /
+    health_checks:
+      - http:
+          path: /api/v1/health
+          port: 4000
+        interval: 30
+        timeout: 5
+    instance_types:
+      - type: nano # or small / medium
+    regions:
+      - was # Washington DC, or fra (Frankfurt), sin (Singapore)
+    scalings:
+      - min: 1
+        max: 3
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: SUPABASE_URL
+        value: "{{ secret.SUPABASE_URL }}"
+      - key: SUPABASE_ANON_KEY
+        value: "{{ secret.SUPABASE_ANON_KEY }}"
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: "{{ secret.SUPABASE_SERVICE_ROLE_KEY }}"
+      - key: REDIS_URL
+        value: "{{ secret.REDIS_URL }}"
+      - key: WEB_ORIGINS
+        value: "https://skillbridge.app,https://admin.skillbridge.app"
+      - key: LIVEKIT_URL
+        value: "{{ secret.LIVEKIT_URL }}"
+      - key: LIVEKIT_API_KEY
+        value: "{{ secret.LIVEKIT_API_KEY }}"
+      - key: LIVEKIT_API_SECRET
+        value: "{{ secret.LIVEKIT_API_SECRET }}"
+      - key: CLOUDFLARE_TURN_ENABLED
+        value: "false"
+      - key: CLOUDFLARE_TURN_KEY_ID
+        value: "{{ secret.CLOUDFLARE_TURN_KEY_ID }}"
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        value: "{{ secret.CLOUDFLARE_TURN_API_TOKEN }}"
+      - key: EXPO_PUSH_ACCESS_TOKEN
+        value: "{{ secret.EXPO_PUSH_ACCESS_TOKEN }}"

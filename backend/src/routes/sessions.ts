@@ -228,3 +228,50 @@ sessions.patch(
     res.json(data);
   })
 );
+
+sessions.patch(
+  "/:id/recording",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        videoId: z.string().min(3).max(100).optional(),
+        recordingUrl: z.string().url().max(1000).optional(),
+        provider: z.enum(["youtube", "google_drive", "r2", "custom"]).default("youtube"),
+        status: z.enum(["none", "recording", "uploading", "ready", "failed"]).default("ready"),
+        durationSeconds: z.number().int().min(0).max(86400).optional(),
+      })
+      .parse(req.body);
+
+    const { data: session } = await admin
+      .from("sessions")
+      .select("teacher_id, status")
+      .eq("id", id)
+      .single();
+
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (session.teacher_id !== req.userId) {
+      return res.status(403).json({ error: "Only the session host can attach or update recordings." });
+    }
+
+    const calculatedUrl =
+      body.recordingUrl ||
+      (body.videoId ? `https://www.youtube.com/watch?v=${body.videoId}` : null);
+
+    const { data, error } = await admin
+      .from("sessions")
+      .update({
+        recording_url: calculatedUrl,
+        recording_video_id: body.videoId || null,
+        recording_provider: body.provider,
+        recording_status: body.status,
+        recording_duration_seconds: body.durationSeconds || 0,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, session: data });
+  })
+);

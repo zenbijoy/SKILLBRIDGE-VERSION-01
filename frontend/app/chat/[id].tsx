@@ -14,6 +14,7 @@ import { Field, Muted, Screen, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { getSocket } from "@/lib/socket";
 import { useSession } from "@/hooks/useSession";
+import { LocalDB } from "@/lib/database";
 
 type OutboxMessage = Message & { client_message_id?: string; pending?: boolean; failed?: boolean };
 const OUTBOX_KEY = (id: string) => `@chat_outbox_${id}`;
@@ -32,7 +33,23 @@ export default function Chat() {
 
   const messagesQuery = useQuery({
     queryKey: ["messages", id],
-    queryFn: () => api<{ messages: OutboxMessage[] }>(`/chat/conversations/${id}/messages`),
+    queryFn: async () => {
+      const res = await api<{ messages: OutboxMessage[] }>(`/chat/conversations/${id}/messages`);
+      if (res.messages && id) {
+        void LocalDB.setCachedMessages(
+          id,
+          res.messages.map((m) => ({
+            id: m.id,
+            conversation_id: id,
+            sender_id: m.sender_id,
+            body: m.body || "",
+            created_at: m.created_at,
+            status: "sent",
+          })),
+        );
+      }
+      return res;
+    },
     enabled: Boolean(id),
   });
 

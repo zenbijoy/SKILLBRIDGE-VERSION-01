@@ -1,18 +1,16 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '../backend/node_modules/@supabase/supabase-js/dist/index.mjs';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+import dotenv from '../backend/node_modules/dotenv/lib/main.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Check for .env file
-const envPath = path.join(process.cwd(), 'backend', '.env');
-if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, 'utf8');
-    envContent.split('\n').forEach(line => {
-        const match = line.match(/^([^#\s][^=]+)="?(.*?)"?$/);
-        if (match) {
-            process.env[match[1]] = match[2];
-        }
-    });
-}
+const envPath = path.resolve(__dirname, '../backend/.env');
+dotenv.config({ path: envPath });
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -34,14 +32,14 @@ async function seed() {
 
     console.log("--- Seeding Skills Catalog ---");
     const skills = [
-        { name: "JavaScript", category: "Programming", icon: "code" },
-        { name: "Python", category: "Programming", icon: "code" },
-        { name: "React Native", category: "Mobile Development", icon: "smartphone" },
-        { name: "Machine Learning", category: "Data Science", icon: "cpu" },
-        { name: "Data Structures", category: "Computer Science", icon: "database" },
-        { name: "UI/UX", category: "Design", icon: "pen-tool" },
-        { name: "Research Methodology", category: "Academics", icon: "book-open" },
-        { name: "Public Speaking", category: "Soft Skills", icon: "mic" }
+        { name: "JavaScript", category: "Programming" },
+        { name: "Python", category: "Programming" },
+        { name: "React Native", category: "Mobile Development" },
+        { name: "Machine Learning", category: "Data Science" },
+        { name: "Data Structures", category: "Computer Science" },
+        { name: "UI/UX", category: "Design" },
+        { name: "Research Methodology", category: "Academics" },
+        { name: "Public Speaking", category: "Soft Skills" }
     ];
 
     const { error: skillError } = await supabase.from('skills').upsert(skills, { onConflict: 'name' });

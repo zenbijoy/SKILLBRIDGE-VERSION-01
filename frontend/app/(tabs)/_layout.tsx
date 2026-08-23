@@ -1,5 +1,8 @@
-import { Tabs } from "expo-router";
+import { useEffect } from "react";
+import { Platform, BackHandler, ToastAndroid } from "react-native";
+import { Tabs, usePathname, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Conversation } from "@/types";
@@ -12,13 +15,52 @@ const Icon = ({ name, color }: { name: keyof typeof MaterialCommunityIcons.glyph
 
 export default function TabsLayout() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const pathname = usePathname();
+  const router = useRouter();
   const { t } = useI18n();
+
   const conversations = useQuery({
     queryKey: ["conversations"],
     queryFn: () => api<{ conversations: Conversation[] }>("/chat/conversations"),
     staleTime: 30_000,
   });
   const unread = conversations.data?.conversations.reduce((sum, item) => sum + (item.unread_count ?? 0), 0) ?? 0;
+
+  // Safe bottom padding for Android gesture/navigation bar and iOS home indicator
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 14 : 10);
+  const tabHeight = 58 + bottomInset;
+
+  // Android Back button handler: Return to home tab from secondary tabs to prevent accidental app exit
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    let backPressTime = 0;
+    const onBackPress = () => {
+      // If user is on a secondary tab, return to Home tab first
+      const isHome = pathname === "/" || pathname === "/(tabs)" || pathname === "/(tabs)/" || pathname === "/(tabs)/index";
+      if (!isHome && pathname.startsWith("/(tabs)")) {
+        router.push("/(tabs)");
+        return true; // Handled
+      }
+
+      if (isHome) {
+        const now = Date.now();
+        if (now - backPressTime < 2000) {
+          BackHandler.exitApp();
+          return true;
+        }
+        backPressTime = now;
+        ToastAndroid.show("Press back again to exit SkillBridge", ToastAndroid.SHORT);
+        return true; // Handled
+      }
+
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [pathname, router]);
 
   return (
     <Tabs
@@ -27,11 +69,17 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.border,
-          height: 68,
-          paddingTop: 7,
-          paddingBottom: 8,
+          borderTopWidth: 1,
+          height: tabHeight,
+          paddingTop: 8,
+          paddingBottom: bottomInset,
+          elevation: 8,
+          shadowColor: colors.black,
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 6,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "700", marginTop: 2 },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.muted,
         tabBarHideOnKeyboard: true,

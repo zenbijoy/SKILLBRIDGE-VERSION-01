@@ -26,7 +26,11 @@ try {
         'saved_research_projects', 'research_publications',
         'admin_roles', 'admin_permissions', 'admin_role_permissions', 'admin_assignments',
         'dashboard_configs', 'user_dashboard_layouts', 'announcements',
-        'announcement_dismissals', 'feature_flags', 'experience_content_sets'
+        'announcement_dismissals', 'feature_flags', 'experience_content_sets',
+        'learning_goals', 'goal_milestones', 'study_planner_preferences', 'study_plan_blocks',
+        'calendar_reminders', 'tutor_availability_rules', 'tutor_availability_exceptions',
+        'session_bookings', 'booking_status_history', 'saved_collections',
+        'challenge_definitions', 'challenge_progress', 'achievement_definitions', 'user_activity_events'
     ];
 
     const tablesRaw = query(containerName, `SELECT tablename FROM pg_tables WHERE schemaname = 'public';`);
@@ -82,7 +86,14 @@ try {
         'save_onboarding_progress_atomic',
         'save_notification_preferences_atomic',
         'complete_guided_tour_step_atomic',
-        'publish_experience_content_atomic'
+        'publish_experience_content_atomic',
+        'activate_learning_goal_atomic',
+        'complete_goal_milestone_atomic',
+        'request_session_booking_atomic',
+        'update_booking_status_atomic',
+        'complete_booking_atomic',
+        'claim_challenge_reward_atomic',
+        'issue_achievement_atomic'
     ];
     const functionsRaw = query(containerName, `
         SELECT p.proname 

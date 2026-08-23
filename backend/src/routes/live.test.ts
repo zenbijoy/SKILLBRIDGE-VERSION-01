@@ -7,6 +7,7 @@ process.env.SUPABASE_ANON_KEY = "test_anon_key_123456789";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test_service_key_123456789";
 process.env.WEB_ORIGINS = "http://localhost";
 process.env.NODE_ENV = "test";
+process.env.LIVEKIT_URL = "wss://skillbridge-test.livekit.cloud";
 process.env.LIVEKIT_API_KEY = "test_key";
 process.env.LIVEKIT_API_SECRET = "test_secret_1234567890123456789012345678901234567890";
 
@@ -48,10 +49,11 @@ test("LiveKit Integration Tests", async (t) => {
 
   const authHeader = { Authorization: "Bearer valid_mock_token" };
 
-  await t.test("POST /live/token/:sessionId - validates role correctly for token", async () => {
+  await t.test("POST /live/token/:sessionId - validates role correctly and returns token with metadata", async () => {
     mockAdmin.from = (table?: string) => {
-      if (table === "sessions") return createMockChain({ room_id: ROOM_ID });
+      if (table === "sessions") return createMockChain({ id: SESSION_ID, room_id: ROOM_ID, status: "scheduled", teacher_id: USER_A });
       if (table === "room_members") return createMockChain({ role: "teacher" });
+      if (table === "profiles") return createMockChain({ full_name: "Test Teacher", username: "testteacher" });
       return createMockChain();
     };
 
@@ -61,6 +63,9 @@ test("LiveKit Integration Tests", async (t) => {
 
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.canPublish, true);
+    assert.strictEqual(res.body.url, "wss://skillbridge-test.livekit.cloud");
+    assert.strictEqual(res.body.participantName, "Test Teacher");
+    assert.strictEqual(res.body.sessionId, SESSION_ID);
     assert.ok(res.body.token);
   });
 

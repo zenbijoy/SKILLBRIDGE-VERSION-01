@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import type { Dashboard, Profile } from "@/types";
 import { TourProvider } from "@/features/tour/TourContext";
 import { TourOverlay } from "@/features/tour/TourOverlay";
+import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal";
 import { useI18n } from "@/i18n";
 
 const client = new QueryClient({
@@ -113,8 +114,10 @@ function Gate() {
         <Stack.Screen name="user/[id]" options={{ title: "Profile" }} />
         <Stack.Screen name="chat/[id]" options={{ title: "Conversation" }} />
         <Stack.Screen name="live/[roomId]" options={{ title: "Live classroom" }} />
+        <Stack.Screen name="call/[id]" options={{ headerShown: false }} />
       </Stack>
       <TourOverlay />
+      <IncomingCallModal />
     </TourProvider>
   );
 }

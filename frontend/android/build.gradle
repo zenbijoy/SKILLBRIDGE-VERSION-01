@@ -18,6 +18,10 @@ allprojects {
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
   }
+
+  tasks.matching { it.name.startsWith("prefab") }.configureEach {
+    doNotTrackState("Avoid Windows AGP prefab state tracking issue on Gradle 9+")
+  }
 }
 
 apply plugin: "expo-root-project"

@@ -4,6 +4,7 @@ import {
   Animated,
   Image,
   ImageSourcePropType,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   RefreshControl,
@@ -18,7 +19,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { radius as defaultRadius, spacing, useTheme, type AppPalette } from "@/theme";
@@ -43,14 +44,17 @@ export function Screen({
   contentStyle,
   onRefresh,
   refreshing = false,
+  keyboardAvoiding = true,
 }: {
   children: ReactNode;
   scroll?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   onRefresh?: () => void | Promise<void>;
   refreshing?: boolean;
+  keyboardAvoiding?: boolean;
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useStyles();
   const [internalRefreshing, setInternalRefreshing] = useState(false);
 
@@ -68,12 +72,13 @@ export function Screen({
   const isRefreshing = refreshing || internalRefreshing;
   const content = <View style={[styles.content, contentStyle]}>{children}</View>;
 
-  return (
-    <SafeAreaView style={styles.safe}>
+  const body = (
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       {scroll ? (
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(insets.bottom, 24) + 24 }]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           refreshControl={
             onRefresh ? (
@@ -90,10 +95,25 @@ export function Screen({
           {content}
         </ScrollView>
       ) : (
-        content
+        <View style={{ flex: 1, paddingBottom: Math.max(insets.bottom, 10) }}>
+          {content}
+        </View>
       )}
     </SafeAreaView>
   );
+
+  if (keyboardAvoiding) {
+    return (
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: colors.bg }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {body}
+      </KeyboardAvoidingView>
+    );
+  }
+
+  return body;
 }
 
 export function Card({
@@ -284,10 +304,171 @@ export function IconButton({
   );
 }
 
-export function Field(props: TextInputProps) {
-  const { colors } = useTheme();
+export interface FieldProps extends TextInputProps {
+  label?: string;
+  error?: string;
+  leftIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  rightIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  onRightIconPress?: () => void;
+  clearable?: boolean;
+  onClear?: () => void;
+  containerStyle?: StyleProp<ViewStyle>;
+}
+
+export function Field({
+  label,
+  error,
+  leftIcon,
+  rightIcon,
+  onRightIconPress,
+  clearable,
+  onClear,
+  containerStyle,
+  secureTextEntry,
+  style,
+  onFocus,
+  onBlur,
+  value,
+  multiline,
+  ...props
+}: FieldProps) {
+  const { colors, radius } = useTheme();
   const styles = useStyles();
-  return <TextInput placeholderTextColor={colors.muted} {...props} style={[styles.input, props.style]} />;
+  const [isFocused, setIsFocused] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [focusAnim] = useState(() => new Animated.Value(0));
+
+  const handleFocus = (e: any) => {
+    setIsFocused(true);
+    triggerHaptic();
+    Animated.timing(focusAnim, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: false,
+    }).start();
+    if (onFocus) onFocus(e);
+  };
+
+  const handleBlur = (e: any) => {
+    setIsFocused(false);
+    Animated.timing(focusAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: false,
+    }).start();
+    if (onBlur) onBlur(e);
+  };
+
+  const isPassword = secureTextEntry !== undefined;
+  const isActualSecure = isPassword ? (secureTextEntry && !isPasswordVisible) : false;
+
+  const borderColor = focusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [error ? colors.danger : colors.border, error ? colors.danger : colors.primary],
+  });
+
+  const shadowOpacity = focusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 0.2],
+  });
+
+  return (
+    <View style={[{ gap: 6, width: "100%" }, containerStyle]}>
+      {label ? (
+        <Text style={{ fontSize: 13, fontWeight: "700", color: isFocused ? colors.primary : colors.textSecondary, marginLeft: 2 }}>
+          {label}
+        </Text>
+      ) : null}
+      <Animated.View
+        style={[
+          styles.inputContainer,
+          multiline && { minHeight: 90, alignItems: "flex-start" },
+          {
+            borderColor,
+            shadowColor: error ? colors.danger : colors.primary,
+            shadowOpacity,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: isFocused ? 3 : 0,
+          },
+        ]}
+      >
+        {leftIcon ? (
+          <MaterialCommunityIcons
+            name={leftIcon}
+            size={20}
+            color={isFocused ? colors.primary : colors.muted}
+            style={{ marginLeft: 14, marginRight: 2, marginTop: multiline ? 12 : 0 }}
+          />
+        ) : null}
+
+        <TextInput
+          placeholderTextColor={colors.muted}
+          cursorColor={colors.primary}
+          selectionColor={`${colors.primary}40`}
+          secureTextEntry={isActualSecure}
+          value={value}
+          multiline={multiline}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          style={[styles.inputInner, multiline && { minHeight: 80, textAlignVertical: "top", paddingTop: 10 }, style]}
+          {...props}
+        />
+
+        {clearable && value && value.length > 0 ? (
+          <Pressable
+            hitSlop={8}
+            onPress={() => {
+              triggerHaptic();
+              if (onClear) onClear();
+            }}
+            style={{ padding: 8, marginRight: 4 }}
+          >
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.muted} />
+          </Pressable>
+        ) : null}
+
+        {isPassword ? (
+          <Pressable
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={isPasswordVisible ? "Hide password" : "Show password"}
+            onPress={() => {
+              triggerHaptic();
+              setIsPasswordVisible(!isPasswordVisible);
+            }}
+            style={{ padding: 10, marginRight: 6 }}
+          >
+            <MaterialCommunityIcons
+              name={isPasswordVisible ? "eye-off-outline" : "eye-outline"}
+              size={22}
+              color={isPasswordVisible ? colors.primary : colors.muted}
+            />
+          </Pressable>
+        ) : rightIcon ? (
+          <Pressable
+            hitSlop={12}
+            onPress={() => {
+              triggerHaptic();
+              if (onRightIconPress) onRightIconPress();
+            }}
+            style={{ padding: 10, marginRight: 6 }}
+          >
+            <MaterialCommunityIcons
+              name={rightIcon}
+              size={20}
+              color={isFocused ? colors.primary : colors.muted}
+            />
+          </Pressable>
+        ) : null}
+      </Animated.View>
+      {error ? (
+        <Text style={{ fontSize: 12, fontWeight: "600", color: colors.danger, marginLeft: 4 }}>
+          {error}
+        </Text>
+      ) : null}
+    </View>
+  );
 }
 
 export function Loading({ label = "Loading SkillBridge…" }: { label?: string }) {
@@ -494,7 +675,9 @@ const makeStyles = (colors: AppPalette, radius: typeof defaultRadius) =>
     ghost: { backgroundColor: "transparent" },
     danger: { backgroundColor: colors.danger },
     buttonText: { color: colors.white, fontWeight: "800", fontSize: 15 },
-    input: { minHeight: 50, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 14, fontSize: 15 },
+    input: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 14, fontSize: 15, fontWeight: "500" },
+    inputContainer: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", overflow: "hidden" },
+    inputInner: { flex: 1, minHeight: 50, paddingHorizontal: 14, paddingVertical: 10, color: colors.text, fontSize: 15, fontWeight: "500" },
     center: { flex: 1, minHeight: 300, alignItems: "center", justifyContent: "center", gap: 12 },
     iconButton: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
     badge: { position: "absolute", right: -4, top: -4, minWidth: 19, height: 19, paddingHorizontal: 4, borderRadius: 10, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.bg },

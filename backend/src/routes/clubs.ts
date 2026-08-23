@@ -81,3 +81,86 @@ clubs.post(
     res.status(201).json(data);
   }),
 );
+
+// Get Club Broadcasts
+clubs.get(
+  "/:id/broadcasts",
+  wrap(async (req, res) => {
+    const clubId = z.string().uuid().parse(req.params.id);
+    const { data: broadcasts, error } = await admin
+      .from("events")
+      .select("*")
+      .eq("club_id", clubId)
+      .order("starts_at", { ascending: true });
+
+    if (error) throw error;
+    res.json({
+      broadcasts: (broadcasts || []).map((b) => ({
+        id: b.id,
+        clubId: b.club_id,
+        title: b.title,
+        description: b.description,
+        youtubeVideoId: (b.metadata as any)?.youtube_video_id || "dQw4w9WgXcQ",
+        scheduledStart: b.starts_at,
+        status: b.status,
+      })),
+    });
+  }),
+);
+
+// Create Club YouTube Broadcast
+clubs.post(
+  "/:id/broadcasts",
+  wrap(async (req, res) => {
+    const clubId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        title: z.string().min(3).max(200),
+        description: z.string().max(2000).optional(),
+        youtubeVideoId: z.string().min(5).max(100),
+        scheduledStart: z.string().datetime(),
+      })
+      .parse(req.body);
+
+    const { data: me } = await admin
+      .from("club_members")
+      .select("role")
+      .eq("club_id", clubId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!me || !["owner", "admin"].includes(me.role)) {
+      return res.status(403).json({ error: "Club admin required to schedule broadcasts" });
+    }
+
+    const { data, error } = await admin
+      .from("events")
+      .insert({
+        club_id: clubId,
+        title: body.title,
+        description: body.description ?? "",
+        starts_at: body.scheduledStart,
+        status: "scheduled",
+        metadata: {
+          youtube_video_id: body.youtubeVideoId,
+          is_broadcast: true,
+        },
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({
+      broadcast: {
+        id: data.id,
+        clubId: data.club_id,
+        title: data.title,
+        description: data.description,
+        youtubeVideoId: body.youtubeVideoId,
+        scheduledStart: data.starts_at,
+        status: data.status,
+      },
+    });
+  }),
+);
+

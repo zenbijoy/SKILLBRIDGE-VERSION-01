@@ -9,14 +9,17 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  ScrollView,
 } from "react-native";
-import { Button, Field, H1, Muted } from "@/components/ui";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Button, Field, H1, Muted, triggerHaptic } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function SignIn() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,13 +28,14 @@ export default function SignIn() {
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
-      duration: 800,
+      duration: 600,
       useNativeDriver: true,
     }).start();
   }, [fadeAnim]);
 
   async function submit() {
     try {
+      triggerHaptic();
       setBusy(true);
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
@@ -51,62 +55,99 @@ export default function SignIn() {
 
   return (
     <LinearGradient colors={isDark ? ["#0C192A", "#07111F"] : ["#F8FAFC", "#EEF4FF"]} style={s.container}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <Animated.View style={[s.content, { opacity: fadeAnim }]}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Text style={[s.backText, { color: colors.muted }]}>← Back</Text>
-          </TouchableOpacity>
+      <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={[s.scrollContent, { paddingTop: Math.max(insets.top, 16) }]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            <Animated.View style={[s.content, { opacity: fadeAnim }]}>
+              <TouchableOpacity
+                style={s.backBtn}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={() => {
+                  triggerHaptic();
+                  router.back();
+                }}
+              >
+                <Text style={[s.backText, { color: colors.muted }]}>← Back</Text>
+              </TouchableOpacity>
 
-          <View style={s.header}>
-            <H1>Welcome back</H1>
-            <Muted>
-              Use your verified campus or personal email to access your account.
-            </Muted>
-          </View>
+              <View style={s.header}>
+                <H1>Welcome back</H1>
+                <Muted>
+                  Use your verified campus or personal email to access your account.
+                </Muted>
+              </View>
 
-          <View style={s.form}>
-            <Field
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholder="Email address"
-              value={email}
-              onChangeText={setEmail}
-            />
-            <Field
-              secureTextEntry
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-            />
-            <Button
-              title={busy ? "Signing in..." : "Sign in"}
-              disabled={busy || !email || !password}
-              onPress={submit}
-            />
-            <TouchableOpacity onPress={() => router.push("/(auth)/forgot-password")} style={{ alignItems: "center", marginTop: 8 }}>
-              <Text style={{ color: colors.primary, fontWeight: "500" }}>Forgot Password?</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-      </KeyboardAvoidingView>
+              <View style={s.form}>
+                <Field
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  leftIcon="email-outline"
+                  placeholder="Email address"
+                  clearable
+                  onClear={() => setEmail("")}
+                  value={email}
+                  onChangeText={setEmail}
+                />
+                <Field
+                  secureTextEntry
+                  leftIcon="lock-outline"
+                  placeholder="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                />
+                <Button
+                  title={busy ? "Signing in..." : "Sign in"}
+                  disabled={busy || !email || !password}
+                  loading={busy}
+                  onPress={submit}
+                />
+
+                <TouchableOpacity
+                  onPress={() => {
+                    triggerHaptic();
+                    router.push("/(auth)/forgot-password");
+                  }}
+                  style={{ alignItems: "center", marginTop: 8, padding: 8 }}
+                >
+                  <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 14 }}>Forgot Password?</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </LinearGradient>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1 },
-  content: { flex: 1, padding: spacing.xl, justifyContent: "center" },
-  backBtn: {
-    position: "absolute",
-    top: 60,
-    left: spacing.xl,
-    padding: 10,
-    zIndex: 10,
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    paddingBottom: 32,
   },
-  backText: { fontSize: 16, fontWeight: "600" },
-  header: { gap: 10, marginBottom: 40 },
+  content: {
+    width: "100%",
+  },
+  backBtn: {
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 24,
+  },
+  backText: { fontSize: 15, fontWeight: "700" },
+  header: { gap: 8, marginBottom: 32 },
   form: { gap: 16 },
 });
+

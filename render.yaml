@@ -1,0 +1,58 @@
+services:
+  # SkillBridge Backend API
+  - type: web
+    name: skillbridge-api
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    region: oregon # Or frankfurt, singapore, ohio
+    branch: main
+    healthCheckPath: /api/v1/health
+    numInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: SUPABASE_URL
+        sync: false # Set in Render Dashboard
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: skillbridge-redis
+          property: connectionString
+      - key: WEB_ORIGINS
+        value: "https://skillbridge.app,https://admin.skillbridge.app"
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: CLOUDFLARE_TURN_ENABLED
+        value: "false"
+      - key: CLOUDFLARE_TURN_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false
+      - key: EXPO_PUSH_ACCESS_TOKEN
+        sync: false
+      - key: MAX_ROOM_CAPACITY
+        value: "250"
+      - key: GLOBAL_RATE_LIMIT_PER_MINUTE
+        value: "120"
+      - key: MAINTENANCE_MODE
+        value: "false"
+
+  # Managed Redis for Caching, Sessions & Realtime Presence
+  - type: redis
+    name: skillbridge-redis
+    plan: starter
+    region: oregon
+    ipAllowList: [] # Only allow internal Render services by default
+    maxmemoryPolicy: allkeys-lru

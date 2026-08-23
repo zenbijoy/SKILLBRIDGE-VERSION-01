@@ -68,6 +68,9 @@ export default function GlobalSearch() {
             onSubmitEditing={() => submit()}
             placeholder={t("search.placeholder")}
             returnKeyType="search"
+            leftIcon="magnify"
+            clearable
+            onClear={() => setQuery("")}
           />
         </View>
       </View>

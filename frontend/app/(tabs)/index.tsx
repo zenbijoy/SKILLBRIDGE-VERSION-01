@@ -66,11 +66,20 @@ export default function HomeScreen() {
       {/* Top Header with Universal Search */}
       <AppHeader searchPlaceholder={t("common.searchEverything")} />
 
-      {dashboard.isLoading ? (
+      {dashboard.isError ? (
+        <Card tone="accent" style={{ marginBottom: 8, padding: 10 }}>
+          <Row style={{ alignItems: "center", gap: 8 }}>
+            <MaterialCommunityIcons name="cloud-sync-outline" size={18} color={colors.primary} />
+            <Text style={{ color: colors.text, fontSize: 12, flex: 1 }}>
+              Connecting to SkillBridge Cloud… Showing cached offline dashboard.
+            </Text>
+          </Row>
+        </Card>
+      ) : null}
+
+      {dashboard.isLoading && !d ? (
         <Card><Skeleton width="40%" /><Skeleton height={120} /></Card>
-      ) : dashboard.isError ? (
-        <ErrorState detail={(dashboard.error as Error).message} onRetry={() => dashboard.refetch()} />
-      ) : visibleWidgets.length === 0 ? (
+      ) : visibleWidgets.length === 0 && !dashboard.isLoading ? (
         <Muted>{t("home.noWidgets")}</Muted>
       ) : visibleWidgets.map((widget) => {
         switch (widget.widget_key) {

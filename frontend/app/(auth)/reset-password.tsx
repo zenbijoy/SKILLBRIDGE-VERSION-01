@@ -8,7 +8,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  ScrollView,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, Field, H1, Muted, triggerHaptic } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
@@ -16,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 export default function ResetPasswordScreen() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,57 +53,82 @@ export default function ResetPasswordScreen() {
 
   return (
     <LinearGradient colors={isDark ? ["#0C192A", "#07111F"] : ["#F8FAFC", "#EEF4FF"]} style={s.container}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={s.content}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.replace("/(auth)/sign-in")}>
-            <Text style={[s.backText, { color: colors.muted }]}>← Sign In</Text>
-          </TouchableOpacity>
+      <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={[s.scrollContent, { paddingTop: Math.max(insets.top, 16) }]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={s.content}>
+              <TouchableOpacity
+                style={s.backBtn}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={() => {
+                  triggerHaptic();
+                  router.replace("/(auth)/sign-in");
+                }}
+              >
+                <Text style={[s.backText, { color: colors.muted }]}>← Sign In</Text>
+              </TouchableOpacity>
 
-          <View style={s.header}>
-            <H1>Set New Password 🔐</H1>
-            <Muted>Enter and confirm your new secure password below.</Muted>
-          </View>
+              <View style={s.header}>
+                <H1>Set New Password 🔐</H1>
+                <Muted>Enter and confirm your new secure password below.</Muted>
+              </View>
 
-          <View style={s.form}>
-            <Field
-              secureTextEntry
-              placeholder="New password (min 8 characters)"
-              value={password}
-              onChangeText={setPassword}
-            />
-            <Field
-              secureTextEntry
-              placeholder="Confirm new password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-            <Button
-              title={busy ? "Updating..." : "Update Password"}
-              disabled={busy || !password || !confirmPassword}
-              loading={busy}
-              onPress={handleResetPassword}
-            />
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+              <View style={s.form}>
+                <Field
+                  secureTextEntry
+                  leftIcon="lock-outline"
+                  placeholder="New password (min 8 characters)"
+                  value={password}
+                  onChangeText={setPassword}
+                />
+                <Field
+                  secureTextEntry
+                  leftIcon="lock-check-outline"
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+                <Button
+                  title={busy ? "Updating..." : "Update Password"}
+                  disabled={busy || !password || !confirmPassword}
+                  loading={busy}
+                  onPress={handleResetPassword}
+                />
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </LinearGradient>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1 },
-  content: { flex: 1, padding: spacing.xl, justifyContent: "center" },
-  backBtn: {
-    position: "absolute",
-    top: 60,
-    left: spacing.xl,
-    padding: 10,
-    zIndex: 10,
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    paddingBottom: 32,
   },
-  backText: { fontSize: 16, fontWeight: "600" },
-  header: { gap: 10, marginBottom: 40 },
+  content: { width: "100%" },
+  backBtn: {
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 24,
+  },
+  backText: { fontSize: 15, fontWeight: "700" },
+  header: { gap: 8, marginBottom: 32 },
   form: { gap: 16 },
 });
+

@@ -68,7 +68,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     data: { session },
   } = await supabase.auth.getSession();
 
-  let res = await requestWithHeaders(path, init, session?.access_token);
+  const token = session?.access_token;
+  let res = await requestWithHeaders(path, init, token);
 
   if (res.status === 401 && session?.access_token) {
     if (!refreshPromise) {
@@ -102,3 +103,4 @@ export const qs = (obj: Record<string, string | number | boolean | null | undefi
       .filter(([, value]) => value !== undefined && value !== null && value !== "")
       .map(([key, value]) => [key, String(value)]),
   ).toString();
+

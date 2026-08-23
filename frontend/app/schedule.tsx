@@ -9,6 +9,8 @@ import { radius, useTheme } from "@/theme";
 import { router } from "expo-router";
 import { spotIllustrations } from "@/assets/illustrations";
 
+import { SessionReplayModal } from "@/components/SessionReplayModal";
+
 type ScheduleItem = {
   id: string;
   kind: "session" | "room" | "event";
@@ -19,6 +21,9 @@ type ScheduleItem = {
   status: string;
   mode?: string;
   roomId?: string;
+  recordingUrl?: string | null;
+  recordingVideoId?: string | null;
+  recordingDuration?: number | null;
 };
 
 const FILTERS = [
@@ -63,6 +68,9 @@ export default function Schedule() {
       status: s.status,
       mode: s.mode,
       roomId: s.room_id,
+      recordingUrl: s.recording_url,
+      recordingVideoId: s.recording_video_id,
+      recordingDuration: s.recording_duration_seconds,
     });
   }
 
@@ -104,6 +112,14 @@ export default function Schedule() {
     if (filter === "events") return item.kind === "event";
     return true;
   });
+
+  const [activeReplay, setActiveReplay] = useState<{
+    visible: boolean;
+    title: string;
+    videoId?: string | null;
+    recordingUrl?: string | null;
+    durationSeconds?: number | null;
+  }>({ visible: false, title: "" });
 
   return (
     <Screen>
@@ -155,6 +171,8 @@ export default function Schedule() {
 
       {filteredItems.map((item) => {
         const isLive = item.status === "live";
+        const isCompleted = item.status === "completed";
+        const hasRecording = Boolean(item.recordingVideoId || item.recordingUrl);
         const dateStr = new Date(item.startsAt).toLocaleDateString(undefined, {
           weekday: "short",
           month: "short",
@@ -169,8 +187,8 @@ export default function Schedule() {
           <Card key={item.id} tone={isLive ? "glow" : "soft"}>
             <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
               <Row>
-                <Pill tone={isLive ? "danger" : item.kind === "event" ? "accent" : "primary"}>
-                  {isLive ? "● LIVE NOW" : item.kind.toUpperCase()}
+                <Pill tone={isLive ? "danger" : isCompleted ? "success" : item.kind === "event" ? "accent" : "primary"}>
+                  {isLive ? "● LIVE NOW" : item.status ? item.status.toUpperCase() : item.kind.toUpperCase()}
                 </Pill>
                 {item.mode ? <Pill>{item.mode}</Pill> : null}
               </Row>
@@ -188,30 +206,50 @@ export default function Schedule() {
                 <Text style={[s.timeText, { color: colors.text }]}>{timeStr}</Text>
               </View>
 
-              {item.roomId ? (
-                <Button
-                  title={isLive ? "Join Live Class →" : "View Room →"}
-                  compact
-                  variant={isLive ? "primary" : "secondary"}
-                  onPress={() => {
-                    triggerHaptic();
-                    if (isLive) {
-                      router.push(`/live/${item.roomId}` as any);
-                    } else {
-                      router.push(`/room/${item.roomId}` as any);
-                    }
-                  }}
-                />
-              ) : item.locationOrUrl?.startsWith("http") ? (
-                <Button
-                  title="Open Link ↗"
-                  compact
-                  variant="secondary"
-                  onPress={() => {
-                    Linking.openURL(item.locationOrUrl!).catch(() => undefined);
-                  }}
-                />
-              ) : null}
+              <Row style={{ gap: 8 }}>
+                {hasRecording ? (
+                  <Button
+                    title="▶ Watch Recording"
+                    compact
+                    variant="primary"
+                    onPress={() => {
+                      triggerHaptic();
+                      setActiveReplay({
+                        visible: true,
+                        title: item.title,
+                        videoId: item.recordingVideoId,
+                        recordingUrl: item.recordingUrl,
+                        durationSeconds: item.recordingDuration,
+                      });
+                    }}
+                  />
+                ) : null}
+
+                {item.roomId && !isCompleted ? (
+                  <Button
+                    title={isLive ? "Join Live Class →" : "View Room →"}
+                    compact
+                    variant={isLive ? "primary" : "secondary"}
+                    onPress={() => {
+                      triggerHaptic();
+                      if (isLive) {
+                        router.push(`/live/${item.roomId}` as any);
+                      } else {
+                        router.push(`/room/${item.roomId}` as any);
+                      }
+                    }}
+                  />
+                ) : item.locationOrUrl?.startsWith("http") ? (
+                  <Button
+                    title="Open Link ↗"
+                    compact
+                    variant="secondary"
+                    onPress={() => {
+                      Linking.openURL(item.locationOrUrl!).catch(() => undefined);
+                    }}
+                  />
+                ) : null}
+              </Row>
             </Row>
           </Card>
         );
@@ -224,6 +262,15 @@ export default function Schedule() {
           detail="No scheduled classes, rooms, or seminars match this filter. Create a room or volunteer to teach to add to your calendar."
         />
       ) : null}
+
+      <SessionReplayModal
+        visible={activeReplay.visible}
+        title={activeReplay.title}
+        videoId={activeReplay.videoId}
+        recordingUrl={activeReplay.recordingUrl}
+        durationSeconds={activeReplay.durationSeconds}
+        onClose={() => setActiveReplay((prev) => ({ ...prev, visible: false }))}
+      />
     </Screen>
   );
 }

@@ -1,9 +1,11 @@
 node_modules/
 .env
 .env.*
+.env.local
 !.env.example
 .expo/
 dist/
+build/
 web-build/
 .DS_Store
 *.log
@@ -11,5 +13,7 @@ web-build/
 *.keystore
 *.p8
 *.p12
+*.apk
 google-services.json
 GoogleService-Info.plist
+.idea/

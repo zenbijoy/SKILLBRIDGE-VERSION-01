@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, ErrorState, H1, H2, Muted, Row, Screen, SettingSwitch, Skeleton } from "@/components/ui";
+import { Button, Card, ErrorState, H2, Muted, Row, Screen, SettingSwitch, Skeleton } from "@/components/ui";
 import { registerPush, unregisterPush } from "@/lib/notifications";
 import { api } from "@/lib/api";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { useI18n } from "@/i18n";
 import { radius, useTheme } from "@/theme";
+import { GrowthHero } from "@/components/GrowthHero";
+import { growthIllustrations512 } from "@/assets/illustrations";
 
 type PreferenceKey = "messages" | "connections" | "rooms" | "sessions" | "teaching" | "system";
 type NotificationPreferenceResponse = {
@@ -103,8 +105,13 @@ export default function NotificationSettings() {
 
   return (
     <Screen>
-      <H1>{t("settings.notificationsTitle")}</H1>
-      <Muted>{t("settings.notificationsDetail")}</Muted>
+      <GrowthHero
+        eyebrow="SMART ALERTS"
+        title={t("settings.notificationsTitle")}
+        subtitle={t("settings.notificationsDetail")}
+        illustration={growthIllustrations512.smartReminders}
+        illustrationSize={125}
+      />
 
       {preferenceQuery.isLoading ? <Card><Skeleton width="45%" /><Skeleton height={120} /></Card> : null}
       {preferenceQuery.isError ? <ErrorState detail={(preferenceQuery.error as Error).message} onRetry={() => preferenceQuery.refetch()} /> : null}
