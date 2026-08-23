@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TextInput, Pressable, Alert } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -29,11 +29,7 @@ export default function CTPrepScreen() {
   const [generating, setGenerating] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<any | null>(null);
 
-  useEffect(() => {
-    loadPlans();
-  }, []);
-
-  async function loadPlans() {
+  const loadPlans = useCallback(async () => {
     // 1. Instant local render
     const cached = await LocalDB.getCachedCTPlans();
     if (cached && cached.length) {
@@ -51,7 +47,11 @@ export default function CTPrepScreen() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadPlans();
+  }, [loadPlans]);
 
   async function handleGenerateAiPlan() {
     if (!subject.trim() || !topicsInput.trim()) {

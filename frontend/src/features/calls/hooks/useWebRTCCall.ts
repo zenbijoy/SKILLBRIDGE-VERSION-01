@@ -35,7 +35,7 @@ export function useWebRTCCall(callId?: string) {
   const reconnectTimerRef = useRef<any>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const isReconnectingRef = useRef<boolean>(false);
-  const connectStartTimeRef = useRef<number>(Date.now());
+  const connectStartTimeRef = useRef<number>(0);
 
   const socket = getSocket();
 
