@@ -3,18 +3,10 @@ import assert from "node:assert";
 import request from "supertest";
 import { isValidTransition, CallStatus, getProviderForCall } from "./calls.js";
 import { env } from "../config/env.js";
-
-process.env.SUPABASE_URL = "https://test.supabase.co";
-process.env.SUPABASE_ANON_KEY = "test_anon_key_123456789";
-process.env.SUPABASE_SERVICE_ROLE_KEY = "test_service_key_123456789";
-process.env.WEB_ORIGINS = "http://localhost";
-process.env.NODE_ENV = "test";
-process.env.LIVEKIT_URL = "wss://test.livekit.cloud";
-process.env.LIVEKIT_API_KEY = "test_key";
-process.env.LIVEKIT_API_SECRET = "test_secret_1234567890123456789012345678901234567890";
+import { createApp } from "../app.js";
 
 test("WebRTC P2P Calls Hybrid Architecture Test Suite", async (t) => {
-  const { app } = await import("../server.js");
+  const app = createApp();
   const { setAdminClient } = await import("../lib/db.js");
 
   const USER_A = "11111111-1111-4111-8111-111111111111"; // Caller

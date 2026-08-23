@@ -83,6 +83,11 @@ test("SkillBridge V3 Real PostgreSQL Integration Suite", async (t) => {
   let freshDb: PGlite;
   let upgradedDb: PGlite;
 
+  t.after(async () => {
+    await freshDb?.close();
+    await upgradedDb?.close();
+  });
+
   await t.test("1. Fresh baseline installation on real PostgreSQL", async () => {
     freshDb = new PGlite();
     await setupPostgresEnv(freshDb);

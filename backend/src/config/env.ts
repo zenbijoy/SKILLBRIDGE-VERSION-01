@@ -21,17 +21,15 @@ const booleanFromEnv = z.preprocess((value) => {
   return false;
 }, z.boolean());
 
-const isTest = process.env.NODE_ENV === "test";
-
 const schema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
   PORT: z.coerce.number().default(4000),
   WEB_ORIGINS: z.string().default("http://localhost:8081"),
-  SUPABASE_URL: isTest ? z.string().url().default("https://test.supabase.co") : z.string().url(),
-  SUPABASE_ANON_KEY: isTest ? z.string().min(10).default("test_anon_key_1234567890") : z.string().min(10),
-  SUPABASE_SERVICE_ROLE_KEY: isTest ? z.string().min(10).default("test_service_key_1234567890") : z.string().min(10),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_ANON_KEY: z.string().min(10),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(10),
   REDIS_URL: optionalString,
   LIVEKIT_URL: optionalString,
   LIVEKIT_API_KEY: optionalString,
@@ -52,4 +50,6 @@ const schema = z.object({
   CALL_MAX_RECONNECT_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
 });
 
-export const env = schema.parse(process.env);
+export type AppEnv = z.infer<typeof schema>;
+export const env: AppEnv = schema.parse(process.env);
+

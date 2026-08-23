@@ -1,15 +1,10 @@
 import test from "node:test";
 import assert from "node:assert";
 import request from "supertest";
-
-process.env.SUPABASE_URL = "https://test.supabase.co";
-process.env.SUPABASE_ANON_KEY = "test_anon_key_123456789";
-process.env.SUPABASE_SERVICE_ROLE_KEY = "test_service_key_123456789";
-process.env.WEB_ORIGINS = "http://localhost";
-process.env.NODE_ENV = "test";
+import { createApp } from "../app.js";
 
 test("Learning & Growth Hub API Tests", async (t) => {
-  const { app } = await import("../server.js");
+  const app = createApp();
   const { setAdminClient } = await import("../lib/db.js");
 
   const USER_ID = "11111111-1111-4111-8111-111111111111";
