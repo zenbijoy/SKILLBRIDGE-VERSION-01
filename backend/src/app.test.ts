@@ -17,6 +17,12 @@ test("API Endpoints", async (t) => {
     }
   });
 
+  await t.test("GET /api/v1/health - returns basic health status for Render/Docker health checks", async () => {
+    const res = await request(app).get("/api/v1/health");
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+  });
+
   await t.test("GET /health/ready - returns capability status", async () => {
     const res = await request(app).get("/health/ready");
     // We expect 503 because the dummy Supabase URL will fail to connect

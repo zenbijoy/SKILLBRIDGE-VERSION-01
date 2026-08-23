@@ -76,6 +76,7 @@ export function createApp(io?: SocketServer) {
   });
 
   app.use("/health", health);
+  app.use("/api/v1/health", health);
   app.use("/webhooks/live", liveWebhooks);
   app.use("/api/v1/experience", experience);
   app.use("/api/v1/achievements/verify", achievementsPublic);
