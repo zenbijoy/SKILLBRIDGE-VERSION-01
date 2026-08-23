@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
+import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { useSession } from "@/hooks/useSession";
 import { registerPush, useNotificationRouting } from "@/lib/notifications";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
@@ -13,6 +14,16 @@ import { TourProvider } from "@/features/tour/TourContext";
 import { TourOverlay } from "@/features/tour/TourOverlay";
 import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal";
 import { useI18n } from "@/i18n";
+
+// Global error listener for web production diagnostic reporting
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  window.addEventListener("error", (e) => {
+    console.error("[SkillBridge Web Diagnostic Error]", e.error || e.message);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    console.error("[SkillBridge Web Diagnostic Unhandled Rejection]", e.reason);
+  });
+}
 
 const client = new QueryClient({
   defaultOptions: {
@@ -127,6 +138,20 @@ function ThemedStatusBar() {
   return <StatusBar style={isDark ? "light" : "dark"} />;
 }
 
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <View style={layoutStyles.errorContainer}>
+      <Text style={layoutStyles.errorTitle}>SkillBridge Encountered an Issue</Text>
+      <Text style={layoutStyles.errorMessage}>
+        {error?.message || "An unexpected error occurred. Please refresh or try again."}
+      </Text>
+      <Pressable style={layoutStyles.errorButton} onPress={retry}>
+        <Text style={layoutStyles.errorButtonText}>Reload SkillBridge</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function Layout() {
   return (
     <QueryClientProvider client={client}>
@@ -135,3 +160,39 @@ export default function Layout() {
     </QueryClientProvider>
   );
 }
+
+const layoutStyles = StyleSheet.create({
+  errorContainer: {
+    flex: 1,
+    backgroundColor: "#07111F",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  errorTitle: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorMessage: {
+    color: "#91A4BD",
+    fontSize: 14,
+    marginBottom: 24,
+    textAlign: "center",
+    maxWidth: 360,
+  },
+  errorButton: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  errorButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+});
+
