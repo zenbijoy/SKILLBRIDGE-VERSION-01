@@ -13,9 +13,15 @@ export function getSocket(): Socket | null {
     return socketInstance;
   }
 
+  const isDev = process.env.NODE_ENV !== "production";
+  const DEFAULT_API_URL = "https://skillbridge-api.onrender.com/api/v1";
+  
+  // Explicitly require prod URL, fallback to localhost only in dev
   const url = (
-    process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1"
+    process.env.EXPO_PUBLIC_API_URL ?? 
+    (isDev ? "http://localhost:4000/api/v1" : DEFAULT_API_URL)
   ).replace("/api/v1", "");
+
 
   socketInstance = io(url, {
     autoConnect: false,

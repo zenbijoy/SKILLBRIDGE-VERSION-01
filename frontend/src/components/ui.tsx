@@ -622,7 +622,12 @@ const makeStyles = (colors: AppPalette, radius: typeof defaultRadius) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
     scroll: { paddingBottom: 56 },
-    content: { flex: 1, padding: spacing.md, gap: spacing.md },
+    content: {
+      flex: 1,
+      padding: spacing.md,
+      gap: spacing.md,
+      ...(Platform.OS === "web" ? { maxWidth: 1200, width: "100%", alignSelf: "center" as const } : {}),
+    },
     card: {
       padding: spacing.md,
       borderRadius: radius.lg,

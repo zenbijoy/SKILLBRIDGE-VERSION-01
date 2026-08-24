@@ -6,7 +6,7 @@ import { useWebRTCCall } from "@/features/calls/hooks/useWebRTCCall";
 import { useCallStore } from "@/features/calls/store/callStore";
 import { CallControls } from "@/features/calls/components/CallControls";
 import { ConnectionQuality } from "@/features/calls/components/ConnectionQuality";
-import { RTCView } from "@/features/calls/services/webrtc";
+import { VideoView } from "@/features/calls/components/VideoView";
 import { initiateCallApi } from "@/features/calls/services/callApi";
 import { triggerHaptic } from "@/components/ui";
 
@@ -97,9 +97,9 @@ export default function CallScreen() {
   return (
     <View style={styles.container}>
       {/* Remote Video Stream if available */}
-      {isConnected && isVideo && remoteStream && RTCView && Platform.OS !== "web" ? (
-        <RTCView
-          streamURL={remoteStream.toURL ? remoteStream.toURL() : ""}
+      {isConnected && isVideo && remoteStream ? (
+        <VideoView
+          stream={remoteStream}
           style={StyleSheet.absoluteFill}
           objectFit="cover"
         />
@@ -165,13 +165,14 @@ export default function CallScreen() {
       )}
 
       {/* Local PIP Video preview if connected with video */}
-      {isConnected && isVideo && localStream && RTCView && Platform.OS !== "web" ? (
+      {isConnected && isVideo && localStream ? (
         <View style={styles.pipContainer}>
-          <RTCView
-            streamURL={localStream.toURL ? localStream.toURL() : ""}
+          <VideoView
+            stream={localStream}
             style={styles.pipVideo}
             objectFit="cover"
             mirror={activeCall?.isFrontCamera}
+            isMuted
           />
         </View>
       ) : null}

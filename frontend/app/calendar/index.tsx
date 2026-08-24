@@ -64,7 +64,8 @@ export default function CalendarScreen() {
   };
 
   const handleExportIcs = () => {
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://skillbridge-api.onrender.com/api/v1";
+
     const exportUrl = `${apiUrl}/calendar/export/ics`;
     Linking.openURL(exportUrl).catch(() => {
       Alert.alert(t("common.error"), "Could not open calendar export URL.");

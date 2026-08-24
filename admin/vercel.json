@@ -3,9 +3,10 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "installCommand": "npm ci",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets|favicon\\.svg|icons\\.svg).*)",
       "destination": "/index.html"
     }
   ],
