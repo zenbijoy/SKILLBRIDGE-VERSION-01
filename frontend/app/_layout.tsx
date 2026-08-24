@@ -3,7 +3,7 @@ import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-rou
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { useSession } from "@/hooks/useSession";
+import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { registerPush, useNotificationRouting } from "@/lib/notifications";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
@@ -39,7 +39,8 @@ const client = new QueryClient({
 });
 
 function Gate() {
-  const { session, loading } = useSession();
+  const { session, initializing } = useAuth();
+  const loading = initializing;
   const segments = useSegments();
   const router = useRouter();
   const pushEnabled = usePreferencesStore((state) => state.pushEnabled);
@@ -93,6 +94,10 @@ function Gate() {
     }
     return () => disconnectSocket();
   }, [loading, session]);
+
+  if (loading) {
+    return null; // Return null or splash screen to avoid flash
+  }
 
   return (
     <TourProvider enabled={Boolean(session) && onboardingComplete && guidedTourEnabled}>
@@ -155,8 +160,10 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 export default function Layout() {
   return (
     <QueryClientProvider client={client}>
-      <ThemedStatusBar />
-      <Gate />
+      <AuthProvider>
+        <ThemedStatusBar />
+        <Gate />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

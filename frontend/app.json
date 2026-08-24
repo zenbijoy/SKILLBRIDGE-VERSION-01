@@ -62,9 +62,11 @@
       "typedRoutes": true
     },
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "7275d654-e0b6-4523-a264-7c3a0676451a"
+        "projectId": "0fb7ccd3-897e-4e93-8da7-7fa7b4c222bc"
       }
-    }
+    },
+    "owner": "bijoysaha"
   }
 }

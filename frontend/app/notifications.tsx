@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Button, Card, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
@@ -142,12 +143,12 @@ export default function Notifications() {
         <ErrorState detail={(notifications.error as Error).message} onRetry={() => notifications.refetch()} />
       ) : null}
 
-      {filteredList.map((item) => (
-        <Pressable
-          key={item.id}
-          onPress={() => handleNotificationPress(item)}
-          style={({ pressed }) => [{ opacity: pressed ? 0.78 : 1 }]}
-        >
+      {filteredList.map((item, idx) => (
+        <Animated.View key={item.id} entering={FadeInUp.delay(idx * 60).springify()}>
+          <Pressable
+            onPress={() => handleNotificationPress(item)}
+            style={({ pressed }) => [{ opacity: pressed ? 0.78 : 1 }]}
+          >
           <Card tone={item.read_at ? "soft" : "glow"}>
             <View style={s.row}>
               <View
@@ -185,7 +186,8 @@ export default function Notifications() {
               </View>
             </View>
           </Card>
-        </Pressable>
+          </Pressable>
+        </Animated.View>
       ))}
 
       {filteredList.length === 0 && !notifications.isLoading ? (

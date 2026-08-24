@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -235,26 +236,28 @@ export default function AdminConsoleScreen() {
 
         {/* Stats Grid */}
         {stats && (
-          <Row style={styles.statsGrid}>
-            <Card tone="glow" style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalUsers}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Total Users</Text>
-            </Card>
-            <Card style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: colors.text }]}>{stats.totalRooms}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Rooms</Text>
-            </Card>
-            <Card style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: colors.text }]}>{stats.activeSessions}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Active Sessions</Text>
-            </Card>
-            <Card tone={stats.pendingReports > 0 ? "accent" : "default"} style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: stats.pendingReports > 0 ? colors.accent : colors.text }]}>
-                {stats.pendingReports}
-              </Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Open Reports</Text>
-            </Card>
-          </Row>
+          <Animated.View entering={FadeInUp.springify()}>
+            <Row style={styles.statsGrid}>
+              <Card tone="glow" style={styles.statCard}>
+                <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalUsers}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Total Users</Text>
+              </Card>
+              <Card style={styles.statCard}>
+                <Text style={[styles.statNumber, { color: colors.text }]}>{stats.totalRooms}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Rooms</Text>
+              </Card>
+              <Card style={styles.statCard}>
+                <Text style={[styles.statNumber, { color: colors.text }]}>{stats.activeSessions}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Active Sessions</Text>
+              </Card>
+              <Card tone={stats.pendingReports > 0 ? "accent" : "default"} style={styles.statCard}>
+                <Text style={[styles.statNumber, { color: stats.pendingReports > 0 ? colors.accent : colors.text }]}>
+                  {stats.pendingReports}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Open Reports</Text>
+              </Card>
+            </Row>
+          </Animated.View>
         )}
 
         {/* Tab Switcher */}
@@ -331,13 +334,14 @@ export default function AdminConsoleScreen() {
                 detail="All safety and moderation reports have been resolved."
               />
             ) : (
-              reportsQuery.data?.reports.map((report) => (
-                <Card key={report.id} style={styles.reportCard}>
-                  <Row style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.reportReason, { color: colors.text }]}>{report.reason}</Text>
-                      {report.details && <Muted>{report.details}</Muted>}
-                    </View>
+              reportsQuery.data?.reports.map((report, idx) => (
+                <Animated.View key={report.id} entering={FadeInUp.delay(idx * 70).springify()}>
+                  <Card style={styles.reportCard}>
+                    <Row style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.reportReason, { color: colors.text }]}>{report.reason}</Text>
+                        {report.details && <Muted>{report.details}</Muted>}
+                      </View>
                     <Pill tone={report.status === "open" ? "danger" : "accent"}>
                       {report.status.toUpperCase()}
                     </Pill>
@@ -380,8 +384,9 @@ export default function AdminConsoleScreen() {
                         />
                       </View>
                     </Row>
-                  )}
-                </Card>
+                    )}
+                  </Card>
+                </Animated.View>
               ))
             )}
           </View>
@@ -406,13 +411,14 @@ export default function AdminConsoleScreen() {
             ) : (usersQuery.data?.users.length ?? 0) === 0 ? (
               <Empty title="No Users Found" detail="Try a different search keyword." />
             ) : (
-              usersQuery.data?.users.map((user) => (
-                <Card key={user.id} style={styles.userCard}>
-                  <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.userName, { color: colors.text }]}>{user.full_name}</Text>
-                      <Muted>@{user.username} · {user.reputation || 0} rep · Roles: {user.roles.join(", ")}</Muted>
-                    </View>
+              usersQuery.data?.users.map((user, idx) => (
+                <Animated.View key={user.id} entering={FadeInUp.delay(idx * 70).springify()}>
+                  <Card style={styles.userCard}>
+                    <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.userName, { color: colors.text }]}>{user.full_name}</Text>
+                        <Muted>@{user.username} · {user.reputation || 0} rep · Roles: {user.roles.join(", ")}</Muted>
+                      </View>
                     <Pill tone={user.account_status === "active" ? "primary" : "danger"}>
                       {user.account_status.toUpperCase()}
                     </Pill>
@@ -486,6 +492,7 @@ export default function AdminConsoleScreen() {
                     ))}
                   </Row>
                 </Card>
+              </Animated.View>
               ))
             )}
           </View>
@@ -499,13 +506,14 @@ export default function AdminConsoleScreen() {
               <Muted>Enable or disable widgets globally across client applications.</Muted>
             </Card>
 
-            {configsQuery.data?.configs.map((cfg) => (
-              <Card key={cfg.id} style={{ padding: 12 }}>
-                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.userName, { color: colors.text }]}>{cfg.title_en} ({cfg.widget_key})</Text>
-                    <Muted>Order: {cfg.default_order} · {cfg.is_required ? "Mandatory" : "Optional"}</Muted>
-                  </View>
+            {configsQuery.data?.configs.map((cfg, idx) => (
+              <Animated.View key={cfg.id} entering={FadeInUp.delay(idx * 70).springify()}>
+                <Card style={{ padding: 12 }}>
+                  <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.userName, { color: colors.text }]}>{cfg.title_en} ({cfg.widget_key})</Text>
+                      <Muted>Order: {cfg.default_order} · {cfg.is_required ? "Mandatory" : "Optional"}</Muted>
+                    </View>
                   <Button
                     title={cfg.is_enabled ? "Enabled" : "Disabled"}
                     variant={cfg.is_enabled ? "primary" : "secondary"}
@@ -517,8 +525,9 @@ export default function AdminConsoleScreen() {
                       })
                     }
                   />
-                </Row>
-              </Card>
+                  </Row>
+                </Card>
+              </Animated.View>
             ))}
           </View>
         )}
@@ -551,14 +560,16 @@ export default function AdminConsoleScreen() {
               />
             </Card>
 
-            {announcementsQuery.data?.announcements.map((ann) => (
-              <Card key={ann.id}>
-                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={[styles.userName, { color: colors.text }]}>{ann.title_en}</Text>
-                  <Pill tone={ann.is_active ? "primary" : "default"}>{ann.is_active ? "Active" : "Archived"}</Pill>
-                </Row>
-                <Text style={{ color: colors.muted, marginTop: 4 }}>{ann.body_en}</Text>
-              </Card>
+            {announcementsQuery.data?.announcements.map((ann, idx) => (
+              <Animated.View key={ann.id} entering={FadeInUp.delay(idx * 70).springify()}>
+                <Card>
+                  <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={[styles.userName, { color: colors.text }]}>{ann.title_en}</Text>
+                    <Pill tone={ann.is_active ? "primary" : "default"}>{ann.is_active ? "Active" : "Archived"}</Pill>
+                  </Row>
+                  <Text style={{ color: colors.muted, marginTop: 4 }}>{ann.body_en}</Text>
+                </Card>
+              </Animated.View>
             ))}
           </View>
         )}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api, qs } from "@/lib/api";
 import type { Profile } from "@/types";
@@ -297,10 +298,11 @@ export default function ResearchHub() {
             <ErrorState detail={(projectsQuery.error as Error).message} onRetry={() => projectsQuery.refetch()} />
           ) : null}
 
-          {projectsQuery.data?.data?.map((p) => {
+          {projectsQuery.data?.data?.map((p, idx) => {
             const isMyProject = p.owner_id === session?.user.id || p.owner?.id === session?.user.id;
             return (
-              <Card key={p.id} tone={p.looking_for_collaborators ? "glow" : "soft"}>
+              <Animated.View key={p.id} entering={FadeInUp.delay(idx * 70).springify()}>
+                <Card tone={p.looking_for_collaborators ? "glow" : "soft"}>
                 {/* Author Info & Status Tag */}
                 <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
                   <Row style={{ alignItems: "center", flex: 1 }}>
@@ -384,6 +386,7 @@ export default function ResearchHub() {
                   )}
                 </Row>
               </Card>
+            </Animated.View>
             );
           })}
 
@@ -411,8 +414,10 @@ export default function ResearchHub() {
               ))}
             </Row>
           ) : null}
-          {peopleQuery.data?.people?.map((p) => (
-            <ProfileCard key={p.id} profile={p} />
+          {peopleQuery.data?.people?.map((p, idx) => (
+            <Animated.View key={p.id} entering={FadeInUp.delay(idx * 60).springify()}>
+              <ProfileCard profile={p} />
+            </Animated.View>
           ))}
           {peopleQuery.data?.people?.length === 0 && !peopleQuery.isLoading ? (
             <Empty title="No scholars found" detail="Try searching with a broader topic name or department." />
@@ -430,11 +435,12 @@ export default function ResearchHub() {
             </>
           ) : null}
 
-          {requestsQuery.data?.data?.map((req) => {
+          {requestsQuery.data?.data?.map((req, idx) => {
             const isOwner = req.project?.owner_id === session?.user.id;
             return (
-              <Card key={req.id}>
-                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <Animated.View key={req.id} entering={FadeInUp.delay(idx * 60).springify()}>
+                <Card>
+                  <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <Text style={[s.projectTitle, { color: colors.text, fontSize: 15 }]}>
                     {req.project?.title || "Research Project"}
                   </Text>
@@ -481,6 +487,7 @@ export default function ResearchHub() {
                   />
                 )}
               </Card>
+            </Animated.View>
             );
           })}
 

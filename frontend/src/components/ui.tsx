@@ -24,6 +24,19 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { radius as defaultRadius, spacing, useTheme, type AppPalette } from "@/theme";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withRepeat,
+  withSequence,
+} from "react-native-reanimated";
+import { AppTextField } from "./ui/AppTextField";
+import { PasswordField } from "./ui/PasswordField";
+import { ScreenContainer } from "./ui/ScreenContainer";
+
+export { AppTextField, PasswordField, ScreenContainer };
 
 /** Memoize StyleSheet.create() so it only recalculates on theme change. */
 function useStyles() {
@@ -120,14 +133,37 @@ export function Card({
   children,
   style,
   tone = "default",
+  onPress,
 }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   tone?: "default" | "soft" | "primary" | "glass" | "glow" | "accent";
+  onPress?: () => void;
 }) {
   const styles = useStyles();
-  return (
-    <View
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    if (onPress) scale.value = withSpring(0.98, { damping: 15, stiffness: 300 });
+  };
+
+  const handlePressOut = () => {
+    if (onPress) scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+  };
+
+  const handlePress = () => {
+    if (onPress) {
+      triggerHaptic();
+      onPress();
+    }
+  };
+
+  const content = (
+    <Animated.View
       style={[
         styles.card,
         tone === "soft" && styles.cardSoft,
@@ -136,11 +172,22 @@ export function Card({
         tone === "glass" && styles.cardGlass,
         tone === "accent" && styles.cardAccent,
         style,
+        onPress ? animatedStyle : undefined,
       ]}
     >
       {children}
-    </View>
+    </Animated.View>
   );
+
+  if (onPress) {
+    return (
+      <Pressable onPress={handlePress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return content;
 }
 
 export function H1({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
@@ -236,7 +283,7 @@ export function Button({
 }: {
   title: string;
   onPress?: () => void;
-  variant?: "primary" | "secondary" | "ghost" | "danger" | "accent";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "accent" | "social";
   disabled?: boolean;
   loading?: boolean;
   icon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -245,6 +292,25 @@ export function Button({
   const { colors } = useTheme();
   const styles = useStyles();
 
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: disabled ? 0.45 : opacity.value,
+  }));
+
+  const handlePressIn = () => {
+    if (disabled || loading) return;
+    scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(0.8, { duration: 100 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(1, { duration: 100 });
+  };
+
   const handlePress = () => {
     if (!disabled && !loading && onPress) {
       triggerHaptic();
@@ -252,27 +318,53 @@ export function Button({
     }
   };
 
+  // For Web Hover
+  const handleHoverIn = () => {
+    if (Platform.OS === 'web' && !disabled && !loading) opacity.value = withTiming(0.8, { duration: 150 });
+  };
+  const handleHoverOut = () => {
+    if (Platform.OS === 'web') opacity.value = withTiming(1, { duration: 150 });
+  };
+
+  const getTextColor = () => {
+    if (variant === "secondary" || variant === "ghost" || variant === "social") return colors.text;
+    return colors.white;
+  };
+
+  const getIconColor = () => {
+    if (variant === "secondary" || variant === "ghost" || variant === "social") return colors.text;
+    return colors.white;
+  };
+
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled || loading}
       onPress={handlePress}
-      style={({ pressed }) => [
-        styles.button,
-        compact && styles.buttonCompact,
-        variant === "secondary" && styles.secondary,
-        variant === "ghost" && styles.ghost,
-        variant === "danger" && styles.danger,
-        variant === "accent" && { backgroundColor: colors.accent },
-        { opacity: disabled ? 0.45 : pressed ? 0.8 : 1 },
-      ]}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onHoverIn={Platform.OS === 'web' ? handleHoverIn : undefined}
+      onHoverOut={Platform.OS === 'web' ? handleHoverOut : undefined}
     >
-      {loading ? (
-        <ActivityIndicator size="small" color={variant === "secondary" || variant === "ghost" ? colors.primary : colors.white} />
-      ) : icon ? (
-        <MaterialCommunityIcons name={icon} size={18} color={variant === "secondary" || variant === "ghost" ? colors.text : colors.white} />
-      ) : null}
-      <Text style={[styles.buttonText, (variant === "secondary" || variant === "ghost") && { color: colors.text }]}>{title}</Text>
+      <Animated.View
+        style={[
+          styles.button,
+          compact && styles.buttonCompact,
+          variant === "secondary" && styles.secondary,
+          variant === "ghost" && styles.ghost,
+          variant === "danger" && styles.danger,
+          variant === "social" && styles.social,
+          variant === "accent" && { backgroundColor: colors.accent },
+          animatedStyle,
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color={getIconColor()} />
+        ) : icon ? (
+          <MaterialCommunityIcons name={icon} size={20} color={getIconColor()} />
+        ) : null}
+        <Text style={[styles.buttonText, { color: getTextColor() }]}>{title}</Text>
+      </Animated.View>
     </Pressable>
   );
 }
@@ -533,32 +625,39 @@ export function ErrorState({ title = "Something went wrong", detail, onRetry }: 
   );
 }
 
-export function Skeleton({ width = "100%", height = 16, radiusValue = 8 }: { width?: number | `${number}%`; height?: number; radiusValue?: number }) {
+export function Skeleton({ width = "100%", height = 16, radiusValue = 8, style }: { width?: number | `${number}%`; height?: number; radiusValue?: number; style?: StyleProp<ViewStyle> }) {
   const { colors } = useTheme();
   const reduceMotion = usePreferencesStore((state) => state.reduceMotion);
-  const [opacityAnim] = useState(() => new Animated.Value(0.4));
+  const opacity = useSharedValue(0.4);
 
   useEffect(() => {
     if (reduceMotion) return;
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacityAnim, { toValue: 0.9, duration: 800, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-      ]),
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(0.8, { duration: 800 }),
+        withTiming(0.4, { duration: 800 })
+      ),
+      -1,
+      true
     );
-    pulse.start();
-    return () => pulse.stop();
-  }, [opacityAnim, reduceMotion]);
+  }, [opacity, reduceMotion]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: reduceMotion ? 0.6 : opacity.value,
+  }));
 
   return (
     <Animated.View
-      style={{
-        width,
-        height,
-        borderRadius: radiusValue,
-        backgroundColor: colors.surface2,
-        opacity: reduceMotion ? 0.6 : opacityAnim,
-      }}
+      style={[
+        {
+          width,
+          height,
+          borderRadius: radiusValue,
+          backgroundColor: colors.surface2,
+        },
+        animatedStyle,
+        style,
+      ]}
     />
   );
 }
@@ -679,6 +778,7 @@ const makeStyles = (colors: AppPalette, radius: typeof defaultRadius) =>
     secondary: { backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border },
     ghost: { backgroundColor: "transparent" },
     danger: { backgroundColor: colors.danger },
+    social: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
     buttonText: { color: colors.white, fontWeight: "800", fontSize: 15 },
     input: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 14, fontSize: 15, fontWeight: "500" },
     inputContainer: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", overflow: "hidden" },

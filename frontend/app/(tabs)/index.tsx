@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Pressable, StyleSheet, Text, View, TextInput } from "react-native";
+import Animated, { FadeInUp, useSharedValue, useAnimatedProps, withTiming, withDelay } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Dashboard, Profile } from "@/types";
@@ -81,7 +82,8 @@ export default function HomeScreen() {
         <Card><Skeleton width="40%" /><Skeleton height={120} /></Card>
       ) : visibleWidgets.length === 0 && !dashboard.isLoading ? (
         <Muted>{t("home.noWidgets")}</Muted>
-      ) : visibleWidgets.map((widget) => {
+      ) : visibleWidgets.map((widget, idx) => {
+        const renderWidget = () => {
         switch (widget.widget_key) {
           case "announcements":
             if (!activeAnnouncements.length) return null;
@@ -346,16 +348,47 @@ export default function HomeScreen() {
           default:
             return null;
         }
+        };
+
+        const content = renderWidget();
+        if (!content) return null;
+
+        return (
+          <Animated.View key={widget.widget_key} entering={FadeInUp.delay(idx * 80).duration(500).springify().damping(14)}>
+            {content}
+          </Animated.View>
+        );
       })}
     </Screen>
   );
 }
 
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+
 function Stat({ n, label }: { n: number; label: string }) {
   const { colors } = useTheme();
+  
+  // Animated number counter
+  const animatedValue = useSharedValue(0);
+  
+  useEffect(() => {
+    animatedValue.value = withDelay(300, withTiming(n, { duration: 1200 }));
+  }, [n, animatedValue]);
+
+  const animatedProps = useAnimatedProps(() => {
+    return {
+      text: `${Math.round(animatedValue.value)}`,
+    } as any;
+  });
+
   return (
     <View style={styles.statBox}>
-      <Text style={[styles.statNum, { color: colors.primary }]}>{n}</Text>
+      <AnimatedTextInput 
+        animatedProps={animatedProps}
+        editable={false}
+        style={[styles.statNum, { color: colors.primary, padding: 0, margin: 0, height: 26, textAlign: "center" }]} 
+        defaultValue="0"
+      />
       <Text style={[styles.statLabel, { color: colors.muted }]}>{label}</Text>
     </View>
   );

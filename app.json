@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "skillbridge-root",
+    "slug": "skillbridge-root",
+    "version": "3.0.0",
+    "sdkVersion": "46.0.0",
+    "platforms": [],
+    "android": {
+      "package": "com.bijoysaha.skillbridgeroot"
+    }
+  }
+}

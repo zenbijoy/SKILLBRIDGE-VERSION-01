@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { EventItem, Room, Session } from "@/types";
@@ -169,7 +170,7 @@ export default function Schedule() {
         </>
       ) : null}
 
-      {filteredItems.map((item) => {
+      {filteredItems.map((item, idx) => {
         const isLive = item.status === "live";
         const isCompleted = item.status === "completed";
         const hasRecording = Boolean(item.recordingVideoId || item.recordingUrl);
@@ -184,8 +185,9 @@ export default function Schedule() {
         });
 
         return (
-          <Card key={item.id} tone={isLive ? "glow" : "soft"}>
-            <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
+          <Animated.View key={item.id} entering={FadeInUp.delay(idx * 70).springify()}>
+            <Card tone={isLive ? "glow" : "soft"}>
+              <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
               <Row>
                 <Pill tone={isLive ? "danger" : isCompleted ? "success" : item.kind === "event" ? "accent" : "primary"}>
                   {isLive ? "● LIVE NOW" : item.status ? item.status.toUpperCase() : item.kind.toUpperCase()}
@@ -250,8 +252,9 @@ export default function Schedule() {
                   />
                 ) : null}
               </Row>
-            </Row>
-          </Card>
+              </Row>
+            </Card>
+          </Animated.View>
         );
       })}
 

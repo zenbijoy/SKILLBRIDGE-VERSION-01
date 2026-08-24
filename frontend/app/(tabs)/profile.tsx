@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Image, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInUp, ZoomIn, useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useEffect } from "react";
 import { api } from "@/lib/api";
 import type { Profile } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
@@ -14,6 +16,23 @@ import { useI18n } from "@/i18n";
 export default function ProfileScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
+  
+  const orbY = useSharedValue(0);
+
+  useEffect(() => {
+    orbY.value = withRepeat(
+      withSequence(
+        withTiming(-15, { duration: 4000 }),
+        withTiming(0, { duration: 4000 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  const orbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: orbY.value }],
+  }));
 
   const profile = useQuery({
     queryKey: ["me"],
@@ -64,17 +83,19 @@ export default function ProfileScreen() {
       {p ? (
         <>
           {/* Dynamic Gradient Cover Banner */}
-          <LinearGradient
-            colors={[colors.primary, colors.primary2, colors.surface]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={s.cover}
-          >
-            <View style={[s.coverOrb, { backgroundColor: `${colors.white}1E` }]} />
-          </LinearGradient>
+          <Animated.View entering={FadeInUp.duration(500)}>
+            <LinearGradient
+              colors={[colors.primary, colors.primary2, colors.surface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={s.cover}
+            >
+              <Animated.View style={[s.coverOrb, { backgroundColor: `${colors.white}1E` }, orbStyle]} />
+            </LinearGradient>
+          </Animated.View>
 
           {/* Identity & Avatar Card */}
-          <View style={s.identityWrap}>
+          <Animated.View entering={ZoomIn.delay(100).springify()} style={s.identityWrap}>
             {p.avatar_url ? (
               <Image source={{ uri: p.avatar_url }} style={[s.avatar, { borderColor: colors.bg }]} />
             ) : (
@@ -114,109 +135,117 @@ export default function ProfileScreen() {
                 </Pill>
               ))}
             </Row>
-          </View>
+          </Animated.View>
 
           {/* Stats & Profile Health */}
-          <Card tone="glow">
-            <View style={s.stats}>
-              <ProfileStat label={t("profile.reputation")} value={p.reputation} />
-              <ProfileStat label="Health" value={`${completion}%`} />
-              <ProfileStat label="Active Roles" value={p.roles.length} />
-            </View>
+          <Animated.View entering={FadeInUp.delay(200).springify()}>
+            <Card tone="glow">
+              <View style={s.stats}>
+                <ProfileStat label={t("profile.reputation")} value={p.reputation} />
+                <ProfileStat label="Health" value={`${completion}%`} />
+                <ProfileStat label="Active Roles" value={p.roles.length} />
+              </View>
 
-            {/* Profile Completion Bar */}
-            <View style={s.progressTrack}>
-              <View
-                style={[
-                  s.progressBar,
-                  {
-                    width: `${completion}%`,
-                    backgroundColor: completion >= 80 ? colors.success : colors.primary,
-                  },
-                ]}
-              />
-            </View>
-            <Muted style={{ fontSize: 12, textAlign: "center" }}>
-              {completion === 100
-                ? "✨ Your profile is fully complete and visible across matches"
-                : `${completion}% complete · Add bio and skills to increase match ranking`}
-            </Muted>
-          </Card>
+              {/* Profile Completion Bar */}
+              <View style={s.progressTrack}>
+                <View
+                  style={[
+                    s.progressBar,
+                    {
+                      width: `${completion}%`,
+                      backgroundColor: completion >= 80 ? colors.success : colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+              <Muted style={{ fontSize: 12, textAlign: "center" }}>
+                {completion === 100
+                  ? "✨ Your profile is fully complete and visible across matches"
+                  : `${completion}% complete · Add bio and skills to increase match ranking`}
+              </Muted>
+            </Card>
+          </Animated.View>
 
           {p.bio ? (
-            <Card>
-              <H2>About</H2>
-              <Muted>{p.bio}</Muted>
-            </Card>
+            <Animated.View entering={FadeInUp.delay(300).springify()}>
+              <Card>
+                <H2>About</H2>
+                <Muted>{p.bio}</Muted>
+              </Card>
+            </Animated.View>
           ) : null}
 
           {/* Skill Passport Card */}
-          <Card>
-            <View style={s.sectionTitle}>
-              <View style={[s.iconBox, { backgroundColor: colors.primarySoft }]}>
-                <MaterialCommunityIcons name="passport" size={24} color={colors.primary} />
+          <Animated.View entering={FadeInUp.delay(400).springify()}>
+            <Card>
+              <View style={s.sectionTitle}>
+                <View style={[s.iconBox, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="passport" size={24} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <H2>{t("profile.skillPassport")}</H2>
+                  <Muted>Declared competencies for peer tutoring, classroom discovery and research.</Muted>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <H2>{t("profile.skillPassport")}</H2>
-                <Muted>Declared competencies for peer tutoring, classroom discovery and research.</Muted>
-              </View>
-            </View>
 
-            <H2 style={{ marginTop: 8 }}>{t("profile.canTeach")}</H2>
-            <Row>
-              {profile.data?.skillsKnown?.length ? (
-                profile.data.skillsKnown.map((skill) => (
-                  <Pill key={skill.name} tone="success">
-                    ✓ {skill.name}
-                  </Pill>
-                ))
-              ) : (
-                <Muted>No teaching skills listed yet. Tap Edit Skills to add.</Muted>
-              )}
-            </Row>
+              <H2 style={{ marginTop: 8 }}>{t("profile.canTeach")}</H2>
+              <Row>
+                {profile.data?.skillsKnown?.length ? (
+                  profile.data.skillsKnown.map((skill) => (
+                    <Pill key={skill.name} tone="success">
+                      ✓ {skill.name}
+                    </Pill>
+                  ))
+                ) : (
+                  <Muted>No teaching skills listed yet. Tap Edit Skills to add.</Muted>
+                )}
+              </Row>
 
-            <H2 style={{ marginTop: 8 }}>{t("profile.wantLearn")}</H2>
-            <Row>
-              {profile.data?.skillsWanted?.length ? (
-                profile.data.skillsWanted.map((skill) => (
-                  <Pill key={skill.name} tone="primary">
-                    🎯 {skill.name}
-                  </Pill>
-                ))
-              ) : (
-                <Muted>No learning goals listed yet.</Muted>
-              )}
-            </Row>
-          </Card>
+              <H2 style={{ marginTop: 8 }}>{t("profile.wantLearn")}</H2>
+              <Row>
+                {profile.data?.skillsWanted?.length ? (
+                  profile.data.skillsWanted.map((skill) => (
+                    <Pill key={skill.name} tone="primary">
+                      🎯 {skill.name}
+                    </Pill>
+                  ))
+                ) : (
+                  <Muted>No learning goals listed yet.</Muted>
+                )}
+              </Row>
+            </Card>
+          </Animated.View>
 
           {/* Quick Actions */}
-          <Button
-            title={t("profile.edit")}
-            variant="secondary"
-            icon="account-edit-outline"
-            onPress={() => router.push("/settings/profile" as any)}
-          />
-          <Button
-            title={t("profile.skills")}
-            variant="secondary"
-            icon="school-outline"
-            onPress={() => router.push("/settings/skills" as any)}
-          />
-          <Button
-            title={t("profile.settings")}
-            variant="secondary"
-            icon="cog-outline"
-            onPress={() => router.push("/settings" as any)}
-          />
-          <Button
-            title={t("profile.signOut")}
-            variant="ghost"
-            icon="logout"
-            onPress={() => {
-              triggerHaptic();
-              supabase.auth.signOut();
-            }}
-          />
+          <Animated.View entering={FadeInUp.delay(500).springify()} style={{ gap: 8 }}>
+            <Button
+              title={t("profile.edit")}
+              variant="secondary"
+              icon="account-edit-outline"
+              onPress={() => router.push("/settings/profile" as any)}
+            />
+            <Button
+              title={t("profile.skills")}
+              variant="secondary"
+              icon="school-outline"
+              onPress={() => router.push("/settings/skills" as any)}
+            />
+            <Button
+              title={t("profile.settings")}
+              variant="secondary"
+              icon="cog-outline"
+              onPress={() => router.push("/settings" as any)}
+            />
+            <Button
+              title={t("profile.signOut")}
+              variant="ghost"
+              icon="logout"
+              onPress={() => {
+                triggerHaptic();
+                supabase.auth.signOut();
+              }}
+            />
+          </Animated.View>
         </>
       ) : null}
     </Screen>

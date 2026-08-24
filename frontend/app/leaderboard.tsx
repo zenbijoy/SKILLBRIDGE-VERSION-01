@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { BounceInUp, FadeInUp } from "react-native-reanimated";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
@@ -159,15 +160,17 @@ export default function Leaderboard() {
         const second = top3[1];
         const third = top3[2];
         return (
-          <Card tone="glow" style={s.podiumCard}>
-            <Text style={[s.podiumTitle, { color: colors.primary }]}>TOP PERFORMERS</Text>
-            <View style={s.podiumRow}>
+          <Animated.View entering={FadeInUp.duration(500)}>
+            <Card tone="glow" style={s.podiumCard}>
+              <Text style={[s.podiumTitle, { color: colors.primary }]}>TOP PERFORMERS</Text>
+              <View style={s.podiumRow}>
               {/* Rank 2 - Silver */}
               {second ? (
-                <Pressable
-                  onPress={() => router.push(`/user/${second.id}` as any)}
-                  style={[s.podiumCol, { marginTop: 24 }]}
-                >
+                <Animated.View entering={BounceInUp.delay(200).springify()} style={[s.podiumCol, { marginTop: 24 }]}>
+                  <Pressable
+                    onPress={() => router.push(`/user/${second.id}` as any)}
+                    style={{ alignItems: "center", gap: 6 }}
+                  >
                   <View style={[s.podiumAvatarWrap, { borderColor: "#94A3B8" }]}>
                     {second.avatar_url ? (
                       <Image source={{ uri: second.avatar_url }} style={s.podiumAvatar} />
@@ -189,10 +192,11 @@ export default function Leaderboard() {
 
               {/* Rank 1 - Gold */}
               {first ? (
-                <Pressable
-                  onPress={() => router.push(`/user/${first.id}` as any)}
-                  style={s.podiumCol}
-                >
+                <Animated.View entering={BounceInUp.delay(400).springify()} style={s.podiumCol}>
+                  <Pressable
+                    onPress={() => router.push(`/user/${first.id}` as any)}
+                    style={{ alignItems: "center", gap: 6 }}
+                  >
                   <MaterialCommunityIcons name="crown" size={26} color="#EAB308" />
                   <View style={[s.podiumAvatarWrap, { borderColor: "#EAB308", width: 68, height: 68, borderRadius: 34 }]}>
                     {first.avatar_url ? (
@@ -215,10 +219,11 @@ export default function Leaderboard() {
 
               {/* Rank 3 - Bronze */}
               {third ? (
-                <Pressable
-                  onPress={() => router.push(`/user/${third.id}` as any)}
-                  style={[s.podiumCol, { marginTop: 32 }]}
-                >
+                <Animated.View entering={BounceInUp.delay(600).springify()} style={[s.podiumCol, { marginTop: 32 }]}>
+                  <Pressable
+                    onPress={() => router.push(`/user/${third.id}` as any)}
+                    style={{ alignItems: "center", gap: 6 }}
+                  >
                   <View style={[s.podiumAvatarWrap, { borderColor: "#D97706" }]}>
                     {third.avatar_url ? (
                       <Image source={{ uri: third.avatar_url }} style={s.podiumAvatar} />
@@ -235,17 +240,20 @@ export default function Leaderboard() {
                     {third.full_name}
                   </Text>
                   <Pill tone="default">{getMetricBadge(third)}</Pill>
-                </Pressable>
+                  </Pressable>
+                </Animated.View>
               ) : null}
             </View>
           </Card>
+          </Animated.View>
         );
       })() : null}
 
       {/* Ranks 4+ */}
       {rest.map((p, i) => (
-        <Pressable key={p.id} onPress={() => router.push(`/user/${p.id}` as any)}>
-          <Card>
+        <Animated.View key={p.id} entering={FadeInUp.delay(800 + i * 50).springify()}>
+          <Pressable onPress={() => router.push(`/user/${p.id}` as any)}>
+            <Card>
             <Row style={{ alignItems: "center" }}>
               <View style={[s.tableRank, { backgroundColor: colors.surface2 }]}>
                 <Text style={[s.rankNum, { color: colors.text }]}>#{i + 4}</Text>
@@ -270,8 +278,9 @@ export default function Leaderboard() {
 
               <Pill tone="accent">{getMetricBadge(p)}</Pill>
             </Row>
-          </Card>
-        </Pressable>
+            </Card>
+          </Pressable>
+        </Animated.View>
       ))}
 
       {leaders.length === 0 && !q.isLoading ? (

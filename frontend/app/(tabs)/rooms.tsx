@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
+import Animated, { ZoomIn } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Room, RoomMode } from "@/types";
@@ -170,8 +171,10 @@ export default function Rooms() {
           onAction={() => setShowCreator(true)}
         />
       ) : null}
-      {filtered.map((room) => (
-        <RoomCard key={room.id} room={room} />
+      {filtered.map((room, idx) => (
+        <Animated.View key={room.id} entering={ZoomIn.delay(idx * 50).springify()}>
+          <RoomCard room={room} />
+        </Animated.View>
       ))}
     </Screen>
   );

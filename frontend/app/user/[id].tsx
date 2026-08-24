@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { Alert } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { api } from "@/lib/api";
 import type { Profile } from "@/types";
 import {
@@ -66,41 +67,53 @@ export default function UserProfile() {
     );
   return (
     <Screen>
-      <Row>
-        <Pill tone="accent">{d.profile.reputation} reputation</Pill>
-        <Pill>{d.mutualCount} mutual</Pill>
-      </Row>
-      <H1>{d.profile.full_name}</H1>
-      <Muted>
-        @{d.profile.username} · {d.profile.university}
-      </Muted>
-      <Muted>{d.profile.bio}</Muted>
-      <Card>
-        <H2>Skills & goals</H2>
+      <Animated.View entering={FadeInUp.delay(100).springify()}>
         <Row>
-          {d.skills.map((s) => (
-            <Pill
-              key={`${s.kind}-${s.name}`}
-              tone={s.kind === "known" ? "accent" : "default"}
-            >
-              {s.name} · {s.proficiency}/5
-            </Pill>
-          ))}
+          <Pill tone="accent">{d.profile.reputation} reputation</Pill>
+          <Pill>{d.mutualCount} mutual</Pill>
         </Row>
-      </Card>
+      </Animated.View>
+      
+      <Animated.View entering={FadeInUp.delay(200).springify()}>
+        <H1>{d.profile.full_name}</H1>
+        <Muted>
+          @{d.profile.username} · {d.profile.university}
+        </Muted>
+      </Animated.View>
+      
+      <Animated.View entering={FadeInUp.delay(300).springify()}>
+        <Muted>{d.profile.bio}</Muted>
+      </Animated.View>
+      <Animated.View entering={FadeInUp.delay(400).springify()}>
+        <Card>
+          <H2>Skills & goals</H2>
+          <Row>
+            {d.skills.map((s) => (
+              <Pill
+                key={`${s.kind}-${s.name}`}
+                tone={s.kind === "known" ? "accent" : "default"}
+              >
+                {s.name} · {s.proficiency}/5
+              </Pill>
+            ))}
+          </Row>
+        </Card>
+      </Animated.View>
       
       {showReport ? (
-        <Card>
-          <H2>Report User</H2>
-          <Muted>Choose the closest reason. You can cancel before submitting.</Muted>
-          <Button title="Spam or scam" variant={reportReason === "Spam or scam" ? "primary" : "secondary"} onPress={() => setReportReason("Spam or scam")} />
-          <Button title="Harassment or bullying" variant={reportReason === "Harassment or bullying" ? "primary" : "secondary"} onPress={() => setReportReason("Harassment or bullying")} />
-          <Button title="Unsafe or inappropriate content" variant={reportReason === "Unsafe or inappropriate content" ? "primary" : "secondary"} onPress={() => setReportReason("Unsafe or inappropriate content")} />
-          <Button title="Submit Report" variant="danger" onPress={() => report.mutate()} />
-          <Button title="Cancel" variant="ghost" onPress={() => setShowReport(false)} />
-        </Card>
+        <Animated.View entering={FadeInUp.delay(500).springify()}>
+          <Card>
+            <H2>Report User</H2>
+            <Muted>Choose the closest reason. You can cancel before submitting.</Muted>
+            <Button title="Spam or scam" variant={reportReason === "Spam or scam" ? "primary" : "secondary"} onPress={() => setReportReason("Spam or scam")} />
+            <Button title="Harassment or bullying" variant={reportReason === "Harassment or bullying" ? "primary" : "secondary"} onPress={() => setReportReason("Harassment or bullying")} />
+            <Button title="Unsafe or inappropriate content" variant={reportReason === "Unsafe or inappropriate content" ? "primary" : "secondary"} onPress={() => setReportReason("Unsafe or inappropriate content")} />
+            <Button title="Submit Report" variant="danger" onPress={() => report.mutate()} />
+            <Button title="Cancel" variant="ghost" onPress={() => setShowReport(false)} />
+          </Card>
+        </Animated.View>
       ) : (
-        <>
+        <Animated.View entering={FadeInUp.delay(500).springify()} style={{ gap: 8 }}>
           <Button
             title={d.connectionStatus === "none" ? "Connect" : d.connectionStatus}
             disabled={d.connectionStatus !== "none"}
@@ -116,7 +129,7 @@ export default function UserProfile() {
             variant="danger"
             onPress={() => block.mutate()}
           />
-        </>
+        </Animated.View>
       )}
     </Screen>
   );

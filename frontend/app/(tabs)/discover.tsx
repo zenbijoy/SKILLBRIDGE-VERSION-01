@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInRight, ZoomIn } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Profile, Room } from "@/types";
@@ -91,53 +92,55 @@ export default function Discover() {
         <Skeleton height={140} />
       ) : aiMatches.data?.matches && aiMatches.data.matches.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.aiScroll}>
-          {aiMatches.data.matches.map((m) => (
-            <Card key={m.profile.id} tone="glow" style={s.aiMatchCard}>
-              <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                <Pill tone="accent">{m.matchPercentage}% Match</Pill>
-                <Muted style={{ fontSize: 11 }}>{m.profile.reputation} rep</Muted>
-              </Row>
-
-              <Row style={{ alignItems: "center", gap: 10 }}>
-                {m.profile.avatar_url ? (
-                  <Image source={{ uri: m.profile.avatar_url }} style={s.matchAvatar} />
-                ) : (
-                  <View style={[s.matchAvatar, { backgroundColor: colors.primarySoft }]}>
-                    <Text style={{ color: colors.primary, fontWeight: "900" }}>
-                      {m.profile.full_name?.[0] || "U"}
-                    </Text>
-                  </View>
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.matchName, { color: colors.text }]} numberOfLines={1}>
-                    {m.profile.full_name}
-                  </Text>
-                  <Muted numberOfLines={1} style={{ fontSize: 11 }}>
-                    {m.profile.university ? `${m.profile.university} · ` : ""}@{m.profile.username}
-                  </Muted>
-                </View>
-              </Row>
-
-              <Muted numberOfLines={1} style={{ fontSize: 11 }}>💡 {m.matchReason}</Muted>
-
-              {m.sharedSkills.length ? (
-                <Row style={{ gap: 4 }}>
-                  {m.sharedSkills.map((sk) => (
-                    <Pill key={sk} tone="primary">{sk}</Pill>
-                  ))}
+          {aiMatches.data.matches.map((m, idx) => (
+            <Animated.View key={m.profile.id} entering={FadeInRight.delay(idx * 100).springify()}>
+              <Card tone="glow" style={s.aiMatchCard}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <Pill tone="accent">{m.matchPercentage}% Match</Pill>
+                  <Muted style={{ fontSize: 11 }}>{m.profile.reputation} rep</Muted>
                 </Row>
-              ) : null}
 
-              <Button
-                title="View Profile →"
-                compact
-                variant="secondary"
-                onPress={() => {
-                  triggerHaptic();
-                  router.push(`/user/${m.profile.id}` as any);
-                }}
-              />
-            </Card>
+                <Row style={{ alignItems: "center", gap: 10 }}>
+                  {m.profile.avatar_url ? (
+                    <Image source={{ uri: m.profile.avatar_url }} style={s.matchAvatar} />
+                  ) : (
+                    <View style={[s.matchAvatar, { backgroundColor: colors.primarySoft }]}>
+                      <Text style={{ color: colors.primary, fontWeight: "900" }}>
+                        {m.profile.full_name?.[0] || "U"}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.matchName, { color: colors.text }]} numberOfLines={1}>
+                      {m.profile.full_name}
+                    </Text>
+                    <Muted numberOfLines={1} style={{ fontSize: 11 }}>
+                      {m.profile.university ? `${m.profile.university} · ` : ""}@{m.profile.username}
+                    </Muted>
+                  </View>
+                </Row>
+
+                <Muted numberOfLines={1} style={{ fontSize: 11 }}>💡 {m.matchReason}</Muted>
+
+                {m.sharedSkills.length ? (
+                  <Row style={{ gap: 4 }}>
+                    {m.sharedSkills.map((sk) => (
+                      <Pill key={sk} tone="primary">{sk}</Pill>
+                    ))}
+                  </Row>
+                ) : null}
+
+                <Button
+                  title="View Profile →"
+                  compact
+                  variant="secondary"
+                  onPress={() => {
+                    triggerHaptic();
+                    router.push(`/user/${m.profile.id}` as any);
+                  }}
+                />
+              </Card>
+            </Animated.View>
           ))}
         </ScrollView>
       ) : null}
@@ -145,31 +148,33 @@ export default function Discover() {
       {/* Explore Grid */}
       <SectionHeader title={t("discover.explore")} />
       <View style={s.exploreGrid}>
-        {explore.map(([icon, label, href, detail]) => (
-          <Pressable
-            key={label}
-            onPress={() => {
-              triggerHaptic();
-              router.push(href as any);
-            }}
-            style={({ pressed }) => [
-              s.exploreItem,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                opacity: pressed ? 0.8 : 1,
-                transform: [{ scale: pressed ? 0.98 : 1 }],
-              },
-            ]}
-          >
-            <View style={[s.exploreIcon, { backgroundColor: colors.primarySoft }]}>
-              <MaterialCommunityIcons name={icon as any} size={22} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={{ color: colors.text, fontWeight: "800", fontSize: 14 }}>{label}</Text>
-              <Muted numberOfLines={1} style={{ fontSize: 11 }}>{detail}</Muted>
-            </View>
-          </Pressable>
+        {explore.map(([icon, label, href, detail], idx) => (
+          <Animated.View key={label} entering={ZoomIn.delay(idx * 50).springify()} style={{ width: "48%" }}>
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                router.push(href as any);
+              }}
+              style={({ pressed }) => [
+                s.exploreItem,
+                {
+                  width: "100%",
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  opacity: pressed ? 0.8 : 1,
+                  transform: [{ scale: pressed ? 0.96 : 1 }],
+                },
+              ]}
+            >
+              <View style={[s.exploreIcon, { backgroundColor: colors.primarySoft }]}>
+                <MaterialCommunityIcons name={icon as any} size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ color: colors.text, fontWeight: "800", fontSize: 14 }}>{label}</Text>
+                <Muted numberOfLines={1} style={{ fontSize: 11 }}>{detail}</Muted>
+              </View>
+            </Pressable>
+          </Animated.View>
         ))}
       </View>
 

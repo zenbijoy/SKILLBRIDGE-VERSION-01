@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { SlideInRight } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -276,7 +277,7 @@ export default function Chat() {
           const mine = item.sender_id === session?.user.id || item.sender_id === "me";
           const hasImage = item.attachment?.type === "image" && Boolean(item.attachment.url);
           return (
-            <View style={[s.messageRow, { justifyContent: mine ? "flex-end" : "flex-start" }]}>
+            <Animated.View entering={SlideInRight.springify()} style={[s.messageRow, { justifyContent: mine ? "flex-end" : "flex-start" }]}>
               <View
                 style={[
                   s.bubble,
@@ -305,7 +306,7 @@ export default function Chat() {
                     : new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </Text>
               </View>
-            </View>
+            </Animated.View>
           );
         }}
       />

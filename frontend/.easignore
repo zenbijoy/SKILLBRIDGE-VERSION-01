@@ -1,0 +1,11 @@
+# Machine-specific files that must NOT be uploaded to EAS cloud builders
+android/local.properties
+
+# Local build caches (not needed on EAS)
+android/.gradle/
+android/build/
+android/app/build/
+
+# Local environment overrides
+.env.local
+.env.*.local

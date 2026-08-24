@@ -21,8 +21,9 @@ setupSocket(io);
 export { app, server, io, userConnections };
 
 if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_ENV !== "test") {
-  server.listen(env.PORT, () => {
-    console.log(`SkillBridge API listening on :${env.PORT}`);
+  // Explicitly listen on 0.0.0.0 to allow mobile device connections
+  server.listen(env.PORT, "0.0.0.0", () => {
+    console.log(`SkillBridge API listening on http://0.0.0.0:${env.PORT}`);
   });
 
   startPushWorker();

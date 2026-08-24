@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInRight } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Conversation } from "@/types";
@@ -94,76 +95,77 @@ export default function Inbox() {
         />
       ) : null}
 
-      {visible.map((conversation) => {
+      {visible.map((conversation, idx) => {
         const hasUnread = Boolean(conversation.unread_count && conversation.unread_count > 0);
         return (
-          <Pressable
-            key={conversation.id}
-            onPress={() => {
-              triggerHaptic();
-              router.push(`/chat/${conversation.id}` as any);
-            }}
-            style={({ pressed }) => ({
-              opacity: pressed ? 0.85 : 1,
-              transform: [{ scale: pressed ? 0.985 : 1 }],
-            })}
-          >
-            <Card tone={hasUnread ? "glow" : "default"}>
-              <View style={s.row}>
-                <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
-                  <MaterialCommunityIcons
-                    name={
-                      conversation.kind === "dm"
-                        ? "account-outline"
-                        : conversation.kind === "room"
-                        ? "human-male-board"
-                        : "account-group-outline"
-                    }
-                    size={24}
-                    color={colors.primary}
-                  />
-                  {hasUnread ? <View style={[s.onlineDot, { backgroundColor: colors.primary }]} /> : null}
-                </View>
+          <Animated.View key={conversation.id} entering={FadeInRight.delay(idx * 70).springify()}>
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                router.push(`/chat/${conversation.id}` as any);
+              }}
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.85 : 1,
+                transform: [{ scale: pressed ? 0.985 : 1 }],
+              })}
+            >
+              <Card tone={hasUnread ? "glow" : "default"}>
+                <View style={s.row}>
+                  <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
+                    <MaterialCommunityIcons
+                      name={
+                        conversation.kind === "dm"
+                          ? "account-outline"
+                          : conversation.kind === "room"
+                          ? "human-male-board"
+                          : "account-group-outline"
+                      }
+                      size={24}
+                      color={colors.primary}
+                    />
+                    {hasUnread ? <View style={[s.onlineDot, { backgroundColor: colors.primary }]} /> : null}
+                  </View>
 
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text
-                    numberOfLines={1}
-                    style={[s.title, { color: colors.text, fontWeight: hasUnread ? "900" : "700" }]}
-                  >
-                    {conversation.title ||
-                      (conversation.kind === "dm"
-                        ? "Direct Conversation"
-                        : conversation.kind === "room"
-                        ? "Room Classroom Chat"
-                        : "Study Group")}
-                  </Text>
-                  <Muted numberOfLines={1}>
-                    {conversation.kind === "room"
-                      ? "Classroom stream & shared notes"
-                      : conversation.kind === "group"
-                      ? "Group conversation"
-                      : "Direct peer message"}
-                  </Muted>
-                </View>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text
+                      numberOfLines={1}
+                      style={[s.title, { color: colors.text, fontWeight: hasUnread ? "900" : "700" }]}
+                    >
+                      {conversation.title ||
+                        (conversation.kind === "dm"
+                          ? "Direct Conversation"
+                          : conversation.kind === "room"
+                          ? "Room Classroom Chat"
+                          : "Study Group")}
+                    </Text>
+                    <Muted numberOfLines={1}>
+                      {conversation.kind === "room"
+                        ? "Classroom stream & shared notes"
+                        : conversation.kind === "group"
+                        ? "Group conversation"
+                        : "Direct peer message"}
+                    </Muted>
+                  </View>
 
-                <View style={{ alignItems: "flex-end", gap: 6 }}>
-                  <Muted style={{ fontSize: 12 }}>
-                    {new Date(conversation.updated_at).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </Muted>
-                  {hasUnread ? (
-                    <View style={[s.unread, { backgroundColor: colors.primary }]}>
-                      <Text style={s.unreadText}>
-                        {conversation.unread_count! > 99 ? "99+" : conversation.unread_count}
-                      </Text>
-                    </View>
-                  ) : null}
+                  <View style={{ alignItems: "flex-end", gap: 6 }}>
+                    <Muted style={{ fontSize: 12 }}>
+                      {new Date(conversation.updated_at).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </Muted>
+                    {hasUnread ? (
+                      <View style={[s.unread, { backgroundColor: colors.primary }]}>
+                        <Text style={s.unreadText}>
+                          {conversation.unread_count! > 99 ? "99+" : conversation.unread_count}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            </Card>
-          </Pressable>
+              </Card>
+            </Pressable>
+          </Animated.View>
         );
       })}
     </Screen>

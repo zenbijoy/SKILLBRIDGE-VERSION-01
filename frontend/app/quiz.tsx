@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInRight, FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
@@ -166,8 +167,9 @@ export default function QuizScreen() {
 
         {/* Current Question Card */}
         {currentQuestion ? (
-          <Card tone="glow">
-            <Text style={[s.questionPrompt, { color: colors.text }]}>
+          <Animated.View key={currentQuestionIndex} entering={FadeInRight.duration(300).springify()}>
+            <Card tone="glow">
+              <Text style={[s.questionPrompt, { color: colors.text }]}>
               {currentQuestionIndex + 1}. {currentQuestion.prompt}
             </Text>
 
@@ -208,10 +210,11 @@ export default function QuizScreen() {
                       {option}
                     </Text>
                   </Pressable>
-                );
-              })}
-            </View>
-          </Card>
+                  );
+                })}
+              </View>
+            </Card>
+          </Animated.View>
         ) : null}
 
         {/* Navigation / Submit Controls */}
@@ -270,9 +273,10 @@ export default function QuizScreen() {
         <ErrorState detail={(catalogQuery.error as Error).message} onRetry={() => catalogQuery.refetch()} />
       ) : null}
 
-      {catalogQuery.data?.quizzes?.map((q) => (
-        <Card key={q.id} tone="soft">
-          <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+      {catalogQuery.data?.quizzes?.map((q, idx) => (
+        <Animated.View key={q.id} entering={FadeInUp.delay(idx * 80).springify()}>
+          <Card tone="soft">
+            <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
             <Pill tone="primary">{q.skill_name}</Pill>
             <Pill tone="accent">+{q.reward_points} REP</Pill>
           </Row>
@@ -288,6 +292,7 @@ export default function QuizScreen() {
             <Button title="Start Assessment →" compact onPress={() => startQuiz(q.id)} />
           </Row>
         </Card>
+        </Animated.View>
       ))}
 
       {catalogQuery.data?.quizzes?.length === 0 && !catalogQuery.isLoading ? (
