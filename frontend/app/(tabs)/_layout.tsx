@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Platform, BackHandler, ToastAndroid } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, useEffect as useReanimatedEffect } from "react-native-reanimated";
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -13,7 +13,7 @@ import { useI18n } from "@/i18n";
 const Icon = ({ name, color, focused }: { name: keyof typeof MaterialCommunityIcons.glyphMap; color: any; focused: boolean }) => {
   const scale = useSharedValue(focused ? 1.15 : 1);
 
-  useReanimatedEffect(() => {
+  useEffect(() => {
     scale.value = withSpring(focused ? 1.15 : 1, { damping: 12, stiffness: 200 });
   }, [focused, scale]);
 

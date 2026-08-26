@@ -23,24 +23,9 @@
     "db:test:fresh": "node scripts/db-test-fresh.mjs",
     "db:test:upgrade": "node scripts/db-test-upgrade.mjs",
     "db:test": "npm run db:test:fresh && npm run db:test:upgrade",
-    "db:verify": "node scripts/db-verify-schema.mjs",
-    "start": "expo start --dev-client",
-    "android": "expo run:android",
-    "ios": "expo run:ios"
+    "db:verify": "node scripts/db-verify-schema.mjs"
   },
   "engines": {
     "node": ">=22"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.12.9"
-  },
-  "dependencies": {
-    "expo": "~46.0.21",
-    "expo-splash-screen": "~0.16.2",
-    "expo-status-bar": "~1.4.0",
-    "react": "18.0.0",
-    "react-dom": "18.0.0",
-    "react-native": "0.69.9",
-    "react-native-web": "~0.18.7"
   }
 }

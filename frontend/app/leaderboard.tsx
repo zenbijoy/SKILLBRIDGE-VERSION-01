@@ -171,23 +171,24 @@ export default function Leaderboard() {
                     onPress={() => router.push(`/user/${second.id}` as any)}
                     style={{ alignItems: "center", gap: 6 }}
                   >
-                  <View style={[s.podiumAvatarWrap, { borderColor: "#94A3B8" }]}>
-                    {second.avatar_url ? (
-                      <Image source={{ uri: second.avatar_url }} style={s.podiumAvatar} />
-                    ) : (
-                      <View style={[s.podiumAvatar, { backgroundColor: colors.surface2 }]}>
-                        <Text style={s.podiumInitial}>{second.full_name?.[0] || "2"}</Text>
+                    <View style={[s.podiumAvatarWrap, { borderColor: "#94A3B8" }]}>
+                      {second.avatar_url ? (
+                        <Image source={{ uri: second.avatar_url }} style={s.podiumAvatar} />
+                      ) : (
+                        <View style={[s.podiumAvatar, { backgroundColor: colors.surface2 }]}>
+                          <Text style={s.podiumInitial}>{second.full_name?.[0] || "2"}</Text>
+                        </View>
+                      )}
+                      <View style={[s.rankBadge, { backgroundColor: "#94A3B8" }]}>
+                        <Text style={s.rankBadgeText}>2</Text>
                       </View>
-                    )}
-                    <View style={[s.rankBadge, { backgroundColor: "#94A3B8" }]}>
-                      <Text style={s.rankBadgeText}>2</Text>
                     </View>
-                  </View>
-                  <Text numberOfLines={1} style={[s.podiumName, { color: colors.text }]}>
-                    {second.full_name}
-                  </Text>
-                  <Pill tone="default">{getMetricBadge(second)}</Pill>
-                </Pressable>
+                    <Text numberOfLines={1} style={[s.podiumName, { color: colors.text }]}>
+                      {second.full_name}
+                    </Text>
+                    <Pill tone="default">{getMetricBadge(second)}</Pill>
+                  </Pressable>
+                </Animated.View>
               ) : null}
 
               {/* Rank 1 - Gold */}
@@ -197,24 +198,25 @@ export default function Leaderboard() {
                     onPress={() => router.push(`/user/${first.id}` as any)}
                     style={{ alignItems: "center", gap: 6 }}
                   >
-                  <MaterialCommunityIcons name="crown" size={26} color="#EAB308" />
-                  <View style={[s.podiumAvatarWrap, { borderColor: "#EAB308", width: 68, height: 68, borderRadius: 34 }]}>
-                    {first.avatar_url ? (
-                      <Image source={{ uri: first.avatar_url }} style={[s.podiumAvatar, { width: 60, height: 60, borderRadius: 30 }]} />
-                    ) : (
-                      <View style={[s.podiumAvatar, { backgroundColor: colors.primary, width: 60, height: 60, borderRadius: 30 }]}>
-                        <Text style={[s.podiumInitial, { fontSize: 24, color: "#FFFFFF" }]}>{first.full_name?.[0] || "1"}</Text>
+                    <MaterialCommunityIcons name="crown" size={26} color="#EAB308" />
+                    <View style={[s.podiumAvatarWrap, { borderColor: "#EAB308", width: 68, height: 68, borderRadius: 34 }]}>
+                      {first.avatar_url ? (
+                        <Image source={{ uri: first.avatar_url }} style={[s.podiumAvatar, { width: 60, height: 60, borderRadius: 30 }]} />
+                      ) : (
+                        <View style={[s.podiumAvatar, { backgroundColor: colors.primary, width: 60, height: 60, borderRadius: 30 }]}>
+                          <Text style={[s.podiumInitial, { fontSize: 24, color: "#FFFFFF" }]}>{first.full_name?.[0] || "1"}</Text>
+                        </View>
+                      )}
+                      <View style={[s.rankBadge, { backgroundColor: "#EAB308" }]}>
+                        <Text style={s.rankBadgeText}>1</Text>
                       </View>
-                    )}
-                    <View style={[s.rankBadge, { backgroundColor: "#EAB308" }]}>
-                      <Text style={s.rankBadgeText}>1</Text>
                     </View>
-                  </View>
-                  <Text numberOfLines={1} style={[s.podiumName, { color: colors.text, fontWeight: "900" }]}>
-                    {first.full_name}
-                  </Text>
-                  <Pill tone="accent">{getMetricBadge(first)}</Pill>
-                </Pressable>
+                    <Text numberOfLines={1} style={[s.podiumName, { color: colors.text, fontWeight: "900" }]}>
+                      {first.full_name}
+                    </Text>
+                    <Pill tone="accent">{getMetricBadge(first)}</Pill>
+                  </Pressable>
+                </Animated.View>
               ) : null}
 
               {/* Rank 3 - Bronze */}

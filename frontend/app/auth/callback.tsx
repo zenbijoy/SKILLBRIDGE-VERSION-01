@@ -35,11 +35,11 @@ export default function AuthCallback() {
           if (error) throw error;
           
           if (params.type === "recovery") {
-            router.replace("/auth/reset-password");
+            router.replace("/auth/reset-password" as any);
             return;
           }
           
-          router.replace("/(tabs)");
+          router.replace("/(tabs)" as any);
           return;
         }
         
@@ -56,11 +56,11 @@ export default function AuthCallback() {
 
   if (errorMsg) {
     return (
-      <Screen style={styles.container}>
+      <Screen contentStyle={styles.container}>
         <Text style={[styles.error, { color: colors.danger }]}>{errorMsg}</Text>
         <Text
           style={[styles.link, { color: colors.primary }]}
-          onPress={() => router.replace("/(auth)/sign-in")}
+          onPress={() => router.replace("/(auth)/sign-in" as any)}
         >
           Return to Sign In
         </Text>
@@ -69,7 +69,7 @@ export default function AuthCallback() {
   }
 
   return (
-    <Screen style={styles.container}>
+    <Screen contentStyle={styles.container}>
       <Loading label="Authenticating..." />
     </Screen>
   );

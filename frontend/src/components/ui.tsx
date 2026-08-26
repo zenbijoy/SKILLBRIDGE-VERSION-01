@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
+  Animated as RNAnimated,
   Image,
   ImageSourcePropType,
   KeyboardAvoidingView,
@@ -428,12 +428,12 @@ export function Field({
   const styles = useStyles();
   const [isFocused, setIsFocused] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [focusAnim] = useState(() => new Animated.Value(0));
+  const [focusAnim] = useState(() => new RNAnimated.Value(0));
 
   const handleFocus = (e: any) => {
     setIsFocused(true);
     triggerHaptic();
-    Animated.timing(focusAnim, {
+    RNAnimated.timing(focusAnim, {
       toValue: 1,
       duration: 180,
       useNativeDriver: false,
@@ -443,7 +443,7 @@ export function Field({
 
   const handleBlur = (e: any) => {
     setIsFocused(false);
-    Animated.timing(focusAnim, {
+    RNAnimated.timing(focusAnim, {
       toValue: 0,
       duration: 180,
       useNativeDriver: false,
@@ -471,7 +471,7 @@ export function Field({
           {label}
         </Text>
       ) : null}
-      <Animated.View
+      <RNAnimated.View
         style={[
           styles.inputContainer,
           multiline && { minHeight: 90, alignItems: "flex-start" },
@@ -553,7 +553,7 @@ export function Field({
             />
           </Pressable>
         ) : null}
-      </Animated.View>
+      </RNAnimated.View>
       {error ? (
         <Text style={{ fontSize: 12, fontWeight: "600", color: colors.danger, marginLeft: 4 }}>
           {error}
