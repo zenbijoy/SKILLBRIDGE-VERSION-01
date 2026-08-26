@@ -6,7 +6,7 @@ import { Platform } from "react-native";
  * This ensures OAuth and Magic Links return safely to the app or website.
  */
 export function getAuthCallbackUrl(path: string = "/auth/callback") {
-  if (Platform.OS === "web") {
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
     // Return absolute origin for web
     return `${window.location.origin}${path}`;
   }

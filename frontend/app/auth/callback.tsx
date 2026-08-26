@@ -26,7 +26,7 @@ export default function AuthCallback() {
           return;
         }
 
-        // Handle Magic Link / Recovery (Implicit or Hash based)
+        // Handle Magic Link / Recovery from query params
         if (params.access_token && params.refresh_token) {
           const { error } = await supabase.auth.setSession({
             access_token: params.access_token.toString(),
@@ -39,6 +39,42 @@ export default function AuthCallback() {
             return;
           }
           
+          router.replace("/(tabs)" as any);
+          return;
+        }
+
+        // Handle Hash fragment on Web (e.g. #access_token=...&refresh_token=...)
+        if (typeof window !== "undefined" && window.location?.hash) {
+          const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+          const hashError = hashParams.get("error_description") || hashParams.get("error");
+          if (hashError) {
+            throw new Error(hashError);
+          }
+
+          const accessToken = hashParams.get("access_token");
+          const refreshToken = hashParams.get("refresh_token");
+          const type = hashParams.get("type");
+
+          if (accessToken && refreshToken) {
+            const { error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (error) throw error;
+
+            if (type === "recovery") {
+              router.replace("/auth/reset-password" as any);
+              return;
+            }
+
+            router.replace("/(tabs)" as any);
+            return;
+          }
+        }
+
+        // Check if Supabase JS already automatically initialized a session from URL
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
           router.replace("/(tabs)" as any);
           return;
         }
