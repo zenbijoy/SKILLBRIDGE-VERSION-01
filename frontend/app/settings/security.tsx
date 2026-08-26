@@ -14,46 +14,28 @@ export default function SecuritySettings() {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
 
-  const performSignOut = async () => {
+  const handleSignOut = async () => {
     try {
       setLoading(true);
       triggerHaptic();
       await supabase.auth.signOut();
       queryClient.clear();
-      router.replace("/(auth)/welcome" as any);
+
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = "/";
+      } else {
+        router.replace("/(auth)/welcome" as any);
+      }
     } catch (err) {
       console.error("Sign out failed:", err);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = "/";
+      } else {
+        router.replace("/(auth)/welcome" as any);
+      }
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSignOut = () => {
-    triggerHaptic();
-    if (Platform.OS === "web") {
-      if (typeof window !== "undefined") {
-        const confirmed = window.confirm("Are you sure you want to sign out?");
-        if (confirmed) {
-          void performSignOut();
-        }
-      } else {
-        void performSignOut();
-      }
-      return;
-    }
-
-    Alert.alert(
-      "Sign out?",
-      "You will need to sign in again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign out",
-          style: "destructive",
-          onPress: () => void performSignOut(),
-        },
-      ]
-    );
   };
 
   return (

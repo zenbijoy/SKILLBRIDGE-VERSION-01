@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, Platform, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp, ZoomIn, useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -245,7 +245,11 @@ export default function ProfileScreen() {
                 triggerHaptic();
                 await supabase.auth.signOut();
                 qc.clear();
-                router.replace("/(auth)/welcome" as any);
+                if (Platform.OS === "web" && typeof window !== "undefined") {
+                  window.location.href = "/";
+                } else {
+                  router.replace("/(auth)/welcome" as any);
+                }
               }}
             />
           </Animated.View>
