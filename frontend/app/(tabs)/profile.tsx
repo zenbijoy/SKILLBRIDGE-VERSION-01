@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp, ZoomIn, useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming } from "react-native-reanimated";
@@ -16,6 +16,7 @@ import { useI18n } from "@/i18n";
 export default function ProfileScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
+  const qc = useQueryClient();
   
   const orbY = useSharedValue(0);
 
@@ -240,9 +241,11 @@ export default function ProfileScreen() {
               title={t("profile.signOut")}
               variant="ghost"
               icon="logout"
-              onPress={() => {
+              onPress={async () => {
                 triggerHaptic();
-                supabase.auth.signOut();
+                await supabase.auth.signOut();
+                qc.clear();
+                router.replace("/(auth)/welcome" as any);
               }}
             />
           </Animated.View>
