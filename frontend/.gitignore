@@ -1,6 +1,11 @@
 .expo/
 node_modules/
 
+# Local environment — never commit real secrets
+.env
+.env.local
+.env.production
+
 # Android machine-specific files
 android/local.properties
 android/.gradle/
