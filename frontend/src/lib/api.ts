@@ -4,7 +4,7 @@ import { usePreferencesStore } from "@/state/usePreferencesStore";
 
 // Production default: Render-hosted backend.
 // Never fall back to localhost — on Vercel that address is unreachable.
-const DEFAULT_API_URL = "https://skillbridge-api.onrender.com/api/v1";
+const DEFAULT_API_URL = "https://skillbridge-api-pd9c.onrender.com/api/v1";
 
 const isDev = process.env.NODE_ENV !== "production";
 const expoApiUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
