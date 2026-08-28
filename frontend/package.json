@@ -48,6 +48,7 @@
     "react-native-safe-area-context": "5.7.0",
     "react-native-screens": "4.26.0",
     "react-native-web": "0.21.2",
+    "react-native-worklets": "0.10.0",
     "socket.io-client": "4.8.3",
     "uuid": "^14.0.1",
     "zod": "4.4.3",
@@ -65,7 +66,7 @@
     "typescript": "6.0.3"
   },
   "overrides": {
-    "react-native-worklets": "0.11.4"
+    "react-native-worklets": "0.10.0"
   },
   "expo": {
     "doctor": {

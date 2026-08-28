@@ -47,8 +47,24 @@ export function createApp(io?: SocketServer) {
   const origins = env.WEB_ORIGINS.split(",").map((x) => x.trim());
 
   app.set("trust proxy", env.NODE_ENV === "production" ? 1 : false);
+
+  // Bypass Express middleware pipeline for Socket.IO polling / transport requests
+  app.use((req, _res, next) => {
+    if (req.path?.startsWith("/socket.io") || req.url?.startsWith("/socket.io")) {
+      return;
+    }
+    next();
+  });
+
   app.use(helmet());
-  app.use(compression());
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.url?.startsWith("/socket.io")) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
   app.use(cors({ origin: origins, credentials: true }));
   app.use(express.json({
     limit: "1mb",
