@@ -1,14 +1,23 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
+
 export function notFound(_req: Request, res: Response) {
+  // Guard: Socket.IO or other middleware may have already sent a response
+  if (res.headersSent) return;
   res.status(404).json({ error: "Not found" });
 }
+
 export function errors(
   err: unknown,
   _req: Request,
   res: Response,
   _next: NextFunction,
 ) {
+  // Guard: prevent ERR_HTTP_HEADERS_SENT crash when response already sent
+  if (res.headersSent) {
+    console.error("[errors] Headers already sent, cannot send error response:", err);
+    return;
+  }
   if (err instanceof ZodError)
     return res
       .status(400)
@@ -16,8 +25,10 @@ export function errors(
   console.error(err);
   return res.status(500).json({ error: "Internal server error" });
 }
+
 export const wrap =
   (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>
   (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
+
