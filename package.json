@@ -13,6 +13,7 @@
     "admin": "npm run dev --prefix admin",
     "build": "npm run build --prefix backend && npm run build --prefix admin",
     "test": "npm run test --prefix backend",
+    "test:coverage": "npm run test:coverage --prefix backend",
     "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix backend && npm run typecheck --prefix admin",
     "lint": "npm run lint --prefix frontend && npm run lint --prefix backend && npm run lint --prefix admin",
     "audit": "node scripts/project-audit.mjs",

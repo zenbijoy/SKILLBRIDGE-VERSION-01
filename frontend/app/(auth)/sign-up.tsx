@@ -102,6 +102,9 @@ export default function SignUp() {
             <AppTextField
               label="Full name"
               leftIcon="account-outline"
+              autoCapitalize="words"
+              autoComplete="name"
+              textContentType="name"
               value={name}
               onChangeText={setName}
             />
@@ -109,6 +112,8 @@ export default function SignUp() {
               label="Email address"
               autoCapitalize="none"
               keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
               leftIcon="email-outline"
               value={email}
               onChangeText={setEmail}
@@ -116,6 +121,8 @@ export default function SignUp() {
             <PasswordField
               label="Password"
               leftIcon="lock-outline"
+              autoComplete="new-password"
+              textContentType="newPassword"
               value={password}
               onChangeText={setPassword}
               showRequirements

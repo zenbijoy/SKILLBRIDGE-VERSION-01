@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Text,
   View,
-  TouchableOpacity,
   ActivityIndicator,
   ScrollView,
 } from "react-native";
@@ -41,7 +40,8 @@ function getParticipantDisplayName(participant: any): string {
     const meta = JSON.parse(participant.metadata || "{}");
     if (meta.fullName) return meta.fullName;
     if (meta.username) return `@${meta.username}`;
-  } catch (e) {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (_e) {}
   return participant.identity || "Participant";
 }
 

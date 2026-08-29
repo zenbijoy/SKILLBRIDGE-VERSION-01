@@ -7,6 +7,7 @@ import { audit } from "../services/audit.js";
 import { env } from "../config/env.js";
 import { sanitizeIlike } from "../lib/query-helpers.js";
 import { cacheDelPattern } from "../lib/redis.js";
+import { adminSystemRoutes } from "./admin-system.js";
 
 export const adminRoutes = Router();
 
@@ -319,6 +320,8 @@ adminRoutes.get(
     res.json({ overrides: data ?? [] });
   }),
 );
+
+adminRoutes.use("/system", adminSystemRoutes);
 
 adminRoutes.get(
   "/system",

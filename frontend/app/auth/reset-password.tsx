@@ -77,6 +77,8 @@ export default function ResetPasswordScreen() {
             <PasswordField
               label="New password"
               leftIcon="lock-outline"
+              autoComplete="new-password"
+              textContentType="newPassword"
               value={password}
               onChangeText={setPassword}
               showRequirements
@@ -84,6 +86,8 @@ export default function ResetPasswordScreen() {
             <PasswordField
               label="Confirm password"
               leftIcon="lock-check-outline"
+              autoComplete="new-password"
+              textContentType="newPassword"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
             />

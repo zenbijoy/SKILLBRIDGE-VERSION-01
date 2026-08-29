@@ -280,6 +280,9 @@ export function Button({
   loading = false,
   icon,
   compact = false,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
 }: {
   title: string;
   onPress?: () => void;
@@ -288,6 +291,9 @@ export function Button({
   loading?: boolean;
   icon?: keyof typeof MaterialCommunityIcons.glyphMap;
   compact?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
 }) {
   const { colors } = useTheme();
   const styles = useStyles();
@@ -338,7 +344,12 @@ export function Button({
 
   return (
     <Pressable
+      accessible={true}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: disabled || loading, busy: loading }}
+      testID={testID}
       disabled={disabled || loading}
       onPress={handlePress}
       onPressIn={handlePressIn}
@@ -374,11 +385,15 @@ export function IconButton({
   onPress,
   label,
   badge,
+  accessibilityHint,
+  testID,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   onPress?: () => void;
   label: string;
   badge?: number;
+  accessibilityHint?: string;
+  testID?: string;
 }) {
   const { colors } = useTheme();
   const styles = useStyles();
@@ -389,7 +404,15 @@ export function IconButton({
   };
 
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={handlePress} style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.72 : 1 }]}>
+    <Pressable
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
+      testID={testID}
+      onPress={handlePress}
+      style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.72 : 1 }]}
+    >
       <MaterialCommunityIcons name={icon} size={23} color={colors.text} />
       {badge && badge > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{badge > 99 ? "99+" : badge}</Text></View> : null}
     </Pressable>
@@ -424,7 +447,7 @@ export function Field({
   multiline,
   ...props
 }: FieldProps) {
-  const { colors, radius } = useTheme();
+  const { colors } = useTheme();
   const styles = useStyles();
   const [isFocused, setIsFocused] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -686,11 +709,15 @@ export function SettingSwitch({
   detail,
   value,
   onValueChange,
+  accessibilityHint,
+  testID,
 }: {
   title: string;
   detail?: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
+  accessibilityHint?: string;
+  testID?: string;
 }) {
   const { colors } = useTheme();
   const handleToggle = (val: boolean) => {
@@ -706,6 +733,12 @@ export function SettingSwitch({
       <Switch
         value={value}
         onValueChange={handleToggle}
+        accessible={true}
+        accessibilityRole="switch"
+        accessibilityLabel={title}
+        accessibilityHint={accessibilityHint || detail}
+        accessibilityState={{ checked: value }}
+        testID={testID}
         trackColor={{ false: colors.border, true: colors.primarySoft }}
         thumbColor={value ? colors.primary : colors.muted}
       />
@@ -781,7 +814,7 @@ const makeStyles = (colors: AppPalette, radius: typeof defaultRadius) =>
     social: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
     buttonText: { color: colors.white, fontWeight: "800", fontSize: 15 },
     input: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 14, fontSize: 15, fontWeight: "500" },
-    inputContainer: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", overflow: "hidden" },
+    inputContainer: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", overflow: "hidden", flexGrow: 0, flexShrink: 0 },
     inputInner: { flex: 1, minHeight: 50, paddingHorizontal: 14, paddingVertical: 10, color: colors.text, fontSize: 15, fontWeight: "500" },
     center: { flex: 1, minHeight: 300, alignItems: "center", justifyContent: "center", gap: 12 },
     iconButton: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },

@@ -30,7 +30,8 @@ try {
         'learning_goals', 'goal_milestones', 'study_planner_preferences', 'study_plan_blocks',
         'calendar_reminders', 'tutor_availability_rules', 'tutor_availability_exceptions',
         'session_bookings', 'booking_status_history', 'saved_collections',
-        'challenge_definitions', 'challenge_progress', 'achievement_definitions', 'user_activity_events'
+        'challenge_definitions', 'challenge_progress', 'achievement_definitions', 'user_activity_events',
+        'admin_accounts', 'admin_invitations', 'admin_bootstrap_state', 'admin_audit_logs'
     ];
 
     const tablesRaw = query(containerName, `SELECT tablename FROM pg_tables WHERE schemaname = 'public';`);
@@ -129,7 +130,8 @@ try {
         WHERE n.nspname = 'public'
         AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
         AND p.proname IN (
-          'create_room_atomic', 'recompute_reputation', 'block_user_atomic', 'submit_review_atomic',
+          'create_room_atomic', 'join_room_service_atomic', 'leave_room_service_atomic',
+          'recompute_reputation', 'block_user_atomic', 'submit_review_atomic',
           'save_user_dashboard_layout_atomic', 'save_onboarding_progress_atomic',
           'save_notification_preferences_atomic', 'complete_guided_tour_step_atomic',
           'publish_experience_content_atomic'

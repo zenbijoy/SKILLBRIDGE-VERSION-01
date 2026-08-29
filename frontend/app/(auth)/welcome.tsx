@@ -5,12 +5,12 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useI18n } from "@/i18n";
@@ -114,7 +114,7 @@ export default function WelcomeCarouselScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={["top", "bottom", "left", "right"]}>
       {/* Top Header Bar with Skip */}
       <View style={styles.topBar}>
         <Text style={[styles.logoText, { color: colors.primary }]}>SkillBridge</Text>

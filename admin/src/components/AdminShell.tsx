@@ -28,7 +28,9 @@ type NavItem = {
 
 const nav: NavItem[] = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
+  { to: '/system-status', label: 'System Health', icon: Activity },
   { to: '/users', label: 'User 360', icon: Users },
+  { to: '/administrators', label: 'Administrators', icon: ShieldAlert },
   { to: '/moderation', label: 'Moderation', icon: ShieldAlert },
   { to: '/verification', label: 'Verification', icon: BadgeCheck },
   { to: '/support', label: 'Operations', icon: LifeBuoy },

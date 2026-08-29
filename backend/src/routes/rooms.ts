@@ -4,7 +4,7 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
 import { env } from "../config/env.js";
-import { cacheGet, cacheSet, redis } from "../lib/redis.js";
+import { cacheGet, cacheSet, redis, cacheDelPattern } from "../lib/redis.js";
 
 export const rooms = Router();
 
@@ -33,15 +33,7 @@ const limitSchema = z.coerce.number().int().min(1).max(100).default(20);
 
 // Invalidate room list cache
 async function invalidateRoomCache() {
-  if (!redis) return;
-  try {
-    const keys = await redis.keys("rooms:public:*");
-    if (keys.length > 0) {
-      await redis.del(...keys);
-    }
-  } catch {
-    // Ignore cache invalidation failures
-  }
+  await cacheDelPattern("rooms:public:*");
 }
 
 rooms.get(
@@ -105,6 +97,85 @@ rooms.post(
     if (fetchErr) throw fetchErr;
     res.status(201).json(room);
   }),
+);
+
+rooms.get(
+  "/invitations/received",
+  wrap(async (req, res) => {
+    const { data, error } = await admin
+      .from("room_invitations")
+      .select("*, room:rooms(title), inviter:profiles!room_invitations_inviter_id_fkey(username, full_name, avatar_url)")
+      .eq("invitee_id", req.userId!)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json(data);
+  })
+);
+
+rooms.get(
+  "/invitations/sent",
+  wrap(async (req, res) => {
+    const { data, error } = await admin
+      .from("room_invitations")
+      .select("*, room:rooms(title), invitee:profiles!room_invitations_invitee_id_fkey(username, full_name, avatar_url)")
+      .eq("inviter_id", req.userId!)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json(data);
+  })
+);
+
+rooms.post(
+  "/invitations/:id/accept",
+  wrap(async (req, res) => {
+    const inviteId = z.string().uuid().parse(req.params.id);
+    const { data: invite } = await admin
+      .from("room_invitations")
+      .select("room_id, invitee_id")
+      .eq("id", inviteId)
+      .eq("status", "pending")
+      .single();
+    if (!invite || invite.invitee_id !== req.userId) {
+      return res.status(404).json({ error: "Invitation not found or invalid" });
+    }
+    const { data: rpcData, error: rpcError } = await admin.rpc("join_room_service_atomic", {
+      p_room_id: invite.room_id,
+      p_user_id: req.userId!,
+    });
+    if (rpcError) throw rpcError;
+    await invalidateRoomCache();
+    res.json({ joined: true, room_id: invite.room_id });
+  })
+);
+
+rooms.post(
+  "/invitations/:id/decline",
+  wrap(async (req, res) => {
+    const inviteId = z.string().uuid().parse(req.params.id);
+    const { error } = await admin
+      .from("room_invitations")
+      .update({ status: "declined" })
+      .eq("id", inviteId)
+      .eq("invitee_id", req.userId!);
+    if (error) throw error;
+    res.json({ success: true });
+  })
+);
+
+rooms.post(
+  "/invitations/:id/revoke",
+  wrap(async (req, res) => {
+    const inviteId = z.string().uuid().parse(req.params.id);
+    const { error } = await admin
+      .from("room_invitations")
+      .delete()
+      .eq("id", inviteId)
+      .eq("inviter_id", req.userId!);
+    if (error) throw error;
+    res.json({ success: true });
+  })
 );
 
 rooms.get(
@@ -271,7 +342,18 @@ rooms.post(
   "/:id/invitations",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
-    const { invitee_id } = z.object({ invitee_id: z.string().uuid() }).parse(req.body);
+    const { username } = z.object({ username: z.string().min(1) }).parse(req.body);
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("username", username)
+      .single();
+
+    if (!profile) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const invitee_id = profile.id;
 
     if (invitee_id === req.userId!) {
       return res.status(400).json({ error: "Cannot invite yourself" });

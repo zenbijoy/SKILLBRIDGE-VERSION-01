@@ -1,4 +1,5 @@
 import { admin } from "../lib/db.js";
+import { logger } from "../lib/logger.js";
 
 export async function signedUpload(bucket: string, path: string) {
   const { data, error } = await admin.storage
@@ -22,7 +23,15 @@ export async function removeTree(
       .list(prefix, { limit: pageSize, offset });
 
     if (error) {
-      console.warn(`[STORAGE_WARN] Failed listing files in bucket ${bucket} prefix ${prefix}:`, error.message);
+      logger.warn(
+        {
+          event: "storage_list_files_failed",
+          bucket,
+          prefix,
+          err: error.message,
+        },
+        `Failed listing files in bucket ${bucket} prefix ${prefix}`,
+      );
       break;
     }
 
@@ -44,7 +53,15 @@ export async function removeTree(
     if (files.length > 0) {
       const { error: rmError } = await admin.storage.from(bucket).remove(files);
       if (rmError) {
-        console.warn(`[STORAGE_WARN] Failed removing files in bucket ${bucket}:`, rmError.message);
+        logger.warn(
+          {
+            event: "storage_remove_files_failed",
+            bucket,
+            filesCount: files.length,
+            err: rmError.message,
+          },
+          `Failed removing files in bucket ${bucket}`,
+        );
       }
     }
 

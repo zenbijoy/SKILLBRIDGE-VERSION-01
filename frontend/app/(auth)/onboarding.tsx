@@ -54,18 +54,23 @@ function FormField({
 }) {
   const { colors } = useTheme();
   return (
-    <View style={{ gap: 6, marginVertical: 4 }}>
+    <View style={{ gap: 6, marginVertical: 4, width: "100%", flexGrow: 0, flexShrink: 0 }}>
       <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>{label}</Text>
       <TextInput
         style={{
+          width: "100%",
+          height: 52,
+          minHeight: 52,
+          maxHeight: 52,
           backgroundColor: colors.surface,
           color: colors.text,
           borderWidth: 1,
           borderColor: colors.border,
           borderRadius: radius.md,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
+          paddingHorizontal: 14,
+          paddingVertical: 0,
           fontSize: 15,
+          textAlignVertical: "center",
         }}
         value={value}
         onChangeText={onChangeText}
@@ -386,9 +391,13 @@ export default function ProgressiveOnboardingScreen() {
   };
 
   return (
-    <Screen>
+    <Screen scroll={false} keyboardAvoiding={false}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Header Progress Tracker */}
           <View style={styles.header}>
             <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -745,8 +754,9 @@ export default function ProgressiveOnboardingScreen() {
 
 const styles = StyleSheet.create({
   scrollContent: {
+    flexGrow: 1,
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 48,
   },
   header: {
     marginBottom: 20,

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { removeTree } from "../services/storage.js";
+import { logger } from "../lib/logger.js";
+
 export const account = Router();
 account.delete(
   "/",
@@ -14,7 +16,15 @@ account.delete(
     const uid = req.userId!;
     for (const bucket of ["avatars", "resources", "attachments"]) {
       await removeTree(bucket, uid).catch((err) => {
-        console.warn(`[ACCOUNT_CLEANUP_WARN] Failed cleaning bucket ${bucket} for user ${uid}:`, err?.message);
+        logger.warn(
+          {
+            event: "account_cleanup_bucket_failed",
+            bucket,
+            userId: uid,
+            err: err?.message || err,
+          },
+          `Failed cleaning bucket ${bucket} for user ${uid}`,
+        );
       });
     }
     const { error } = await admin.auth.admin.deleteUser(uid);

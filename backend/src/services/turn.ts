@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { logger } from "../lib/logger.js";
 
 export interface IceServerConfig {
   urls: string | string[];
@@ -53,7 +54,13 @@ export async function generateCloudflareIceServers(): Promise<IceServersResponse
     );
 
     if (!response.ok) {
-      console.warn(`[TURN_WARN] Cloudflare TURN credential generation failed (${response.status}). Falling back to STUN.`);
+      logger.warn(
+        {
+          event: "turn_credential_generation_failed",
+          status: response.status,
+        },
+        "Cloudflare TURN credential generation failed, falling back to STUN",
+      );
       return {
         iceServers: DEFAULT_STUN_SERVERS,
         provider: "stun-default",
@@ -67,7 +74,13 @@ export async function generateCloudflareIceServers(): Promise<IceServersResponse
       provider: "cloudflare-turn",
     };
   } catch (err: any) {
-    console.warn(`[TURN_WARN] Could not reach Cloudflare TURN endpoint (${err?.message}). Falling back to STUN.`);
+    logger.warn(
+      {
+        event: "turn_endpoint_unreachable",
+        err: err?.message || err,
+      },
+      "Could not reach Cloudflare TURN endpoint, falling back to STUN",
+    );
     return {
       iceServers: DEFAULT_STUN_SERVERS,
       provider: "stun-default",

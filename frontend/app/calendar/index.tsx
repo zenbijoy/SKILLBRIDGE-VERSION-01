@@ -8,11 +8,14 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  Linking,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { useTheme } from "@/theme";
+import { supabase } from "@/lib/supabase";
 import { useI18n } from "@/i18n";
 import { GrowthHero } from "@/components/GrowthHero";
 import { GrowthEmptyState } from "@/components/GrowthEmptyState";
@@ -25,6 +28,7 @@ import {
   type AgendaItem,
   type CalendarReminder,
 } from "@/features/growth/growthApi";
+import { API_URL } from "@/lib/config";
 
 export default function CalendarScreen() {
   const { colors } = useTheme();
@@ -63,13 +67,48 @@ export default function CalendarScreen() {
     loadData();
   };
 
-  const handleExportIcs = () => {
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://skillbridge-api.onrender.com/api/v1";
+  const handleExportIcs = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        Alert.alert(t("common.error"), "You must be logged in to export.");
+        return;
+      }
 
-    const exportUrl = `${apiUrl}/calendar/export/ics`;
-    Linking.openURL(exportUrl).catch(() => {
-      Alert.alert(t("common.error"), "Could not open calendar export URL.");
-    });
+      const exportUrl = `${API_URL}/calendar/export/ics`;
+
+      if (Platform.OS === "web") {
+        const res = await fetch(exportUrl, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error("Failed to export ICS");
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "skillbridge_calendar.ics";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } else {
+        const fileUri = `${FileSystem.documentDirectory}skillbridge_calendar.ics`;
+        const { uri, status } = await FileSystem.downloadAsync(exportUrl, fileUri, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (status !== 200) throw new Error("Failed to download ICS file");
+        
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri);
+        } else {
+          Alert.alert("Success", "Calendar file saved to device.");
+        }
+      }
+    } catch (err: any) {
+      Alert.alert(t("common.error"), err.message || "Could not export calendar.");
+    }
   };
 
   const handleDismissReminder = async (id: string) => {

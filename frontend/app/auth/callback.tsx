@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { Text, StyleSheet } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/theme";
@@ -88,6 +88,7 @@ export default function AuthCallback() {
     }
 
     handleCallback();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
   if (errorMsg) {

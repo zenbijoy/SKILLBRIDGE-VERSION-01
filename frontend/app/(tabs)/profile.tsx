@@ -29,6 +29,7 @@ export default function ProfileScreen() {
       -1,
       true
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const orbStyle = useAnimatedStyle(() => ({

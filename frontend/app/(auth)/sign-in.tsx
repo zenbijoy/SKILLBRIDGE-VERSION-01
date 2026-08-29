@@ -101,6 +101,8 @@ export default function SignIn() {
               label="Email address"
               autoCapitalize="none"
               keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
               leftIcon="email-outline"
               value={email}
               onChangeText={setEmail}
@@ -108,6 +110,8 @@ export default function SignIn() {
             <PasswordField
               label="Password"
               leftIcon="lock-outline"
+              autoComplete="password"
+              textContentType="password"
               value={password}
               onChangeText={setPassword}
             />

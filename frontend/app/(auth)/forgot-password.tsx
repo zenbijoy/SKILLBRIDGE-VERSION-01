@@ -72,6 +72,8 @@ export default function ForgotPassword() {
                 label="Email address"
                 autoCapitalize="none"
                 keyboardType="email-address"
+                autoComplete="email"
+                textContentType="emailAddress"
                 leftIcon="email-outline"
                 value={email}
                 onChangeText={setEmail}

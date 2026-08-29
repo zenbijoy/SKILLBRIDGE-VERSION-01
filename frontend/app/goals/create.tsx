@@ -39,7 +39,7 @@ export default function CreateGoalScreen() {
   const [weeklyMinutes, setWeeklyMinutes] = useState("120");
   const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
   const [visibility, setVisibility] = useState<"private" | "connections" | "public">("private");
-  const [goalType, setGoalType] = useState<"learn" | "teach" | "verify" | "research" | "project">("learn");
+  const [goalType] = useState<"learn" | "teach" | "verify" | "research" | "project">("learn");
 
   const [milestones, setMilestones] = useState<MilestoneDraft[]>([
     { title: "Complete Foundations & Setup", weight: "50", description: "", target_date: "" },

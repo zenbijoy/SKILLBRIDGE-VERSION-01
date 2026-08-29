@@ -90,3 +90,59 @@ export interface SystemInfo {
     globalRateLimitPerMinute: number;
   };
 }
+
+export interface SystemHealthData {
+  timestamp: string;
+  server: {
+    uptimeSeconds: number;
+    startedAt: string;
+    isRecentRestart: boolean;
+    nodeVersion: string;
+    environment: string;
+  };
+  memory: {
+    rssMB: number;
+    heapTotalMB: number;
+    heapUsedMB: number;
+    externalMB: number;
+  };
+  rateLimit: {
+    globalLimitPerMinute: number;
+  };
+  services: {
+    database: {
+      status: "operational" | "degraded" | "unconfigured";
+      latencyMs: number | null;
+      error: string | null;
+    };
+    redis: {
+      status: "operational" | "degraded" | "disabled";
+      latencyMs: number | null;
+      metrics: {
+        status: string;
+        configured: boolean;
+      };
+    };
+    auth: {
+      status: "operational" | "degraded";
+      failuresLast5Min: number;
+      failuresPerMinute: number;
+      isAuthDegraded: boolean;
+    };
+    socketio: {
+      status: string;
+    };
+    push: {
+      status: "configured" | "unconfigured";
+    };
+    livekit: {
+      status: "configured" | "unconfigured";
+    };
+    ai: {
+      status: "configured" | "unconfigured";
+    };
+  };
+  issues: string[];
+  healthy: boolean;
+}
+

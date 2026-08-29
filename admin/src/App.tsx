@@ -13,26 +13,37 @@ const RulesEngine = lazy(() => import('./pages/RulesEngine'));
 const VerificationOverride = lazy(() => import('./pages/VerificationOverride'));
 const Login = lazy(() => import('./pages/Login'));
 const ProductExperience = lazy(() => import('./pages/ProductExperience'));
+const SystemHealth = lazy(() => import('./pages/SystemHealth'));
+const SetupOwner = lazy(() => import('./pages/SetupOwner').then(m => ({ default: m.SetupOwner })));
+const Administrators = lazy(() => import('./pages/Administrators').then(m => ({ default: m.Administrators })));
 
 function ProtectedApp() {
   return (
     <AuthGuard>
-      <AdminShell>
-        <Suspense fallback={<div className="panel"><div className="panel-body">Loading control plane…</div></div>}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/users" element={<User360 />} />
-            <Route path="/support" element={<SupportCenter />} />
-            <Route path="/moderation" element={<ModerationCenter />} />
-            <Route path="/rules" element={<RulesEngine />} />
-            <Route path="/experience" element={<ProductExperience />} />
-            <Route path="/verification" element={<VerificationOverride />} />
-            <Route path="/api-mgmt" element={<APIManagement />} />
-            <Route path="/db-ops" element={<DatabaseOperations />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </AdminShell>
+      <Routes>
+        <Route path="/setup-owner" element={<Suspense fallback={null}><SetupOwner /></Suspense>} />
+        <Route path="/*" element={
+          <AdminShell>
+            <Suspense fallback={<div className="panel"><div className="panel-body">Loading control plane…</div></div>}>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/system-status" element={<SystemHealth />} />
+                <Route path="/system-health" element={<SystemHealth />} />
+                <Route path="/users" element={<User360 />} />
+                <Route path="/administrators" element={<Administrators />} />
+                <Route path="/support" element={<SupportCenter />} />
+                <Route path="/moderation" element={<ModerationCenter />} />
+                <Route path="/rules" element={<RulesEngine />} />
+                <Route path="/experience" element={<ProductExperience />} />
+                <Route path="/verification" element={<VerificationOverride />} />
+                <Route path="/api-mgmt" element={<APIManagement />} />
+                <Route path="/db-ops" element={<DatabaseOperations />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </AdminShell>
+        } />
+      </Routes>
     </AuthGuard>
   );
 }

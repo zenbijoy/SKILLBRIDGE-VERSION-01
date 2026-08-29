@@ -39,7 +39,26 @@ const req = http.get('http://localhost:4000/health', (res) => {
                 if (readyRes.statusCode === 200) {
                     console.log(`[PASS] Readiness Check (Database reachable)`);
                     console.log(`Response: ${readyData}`);
-                    console.log("\n[SUCCESS] Smoke test completed.");
+
+                    // 4. Admin Bootstrap Status Check
+                    http.get('http://localhost:4000/api/v1/admin/bootstrap/status', (bootRes) => {
+                        let bootData = '';
+                        bootRes.on('data', chunk => bootData += chunk);
+                        bootRes.on('end', () => {
+                            if (bootRes.statusCode === 200) {
+                                console.log(`[PASS] Admin Bootstrap Endpoint Check`);
+                                console.log(`Response: ${bootData}`);
+                                console.log("\n[SUCCESS] Smoke test completed.");
+                            } else {
+                                console.log(`[FAIL] Admin Bootstrap Endpoint Check failed: ${bootRes.statusCode}`);
+                                console.log(`Response: ${bootData}`);
+                                process.exitCode = 1;
+                            }
+                        });
+                    }).on('error', (e) => {
+                        console.log(`[FAIL] Could not reach bootstrap endpoint. (${e.message})`);
+                        process.exitCode = 1;
+                    });
                 } else {
                     console.log(`[FAIL] Readiness Check failed: ${readyRes.statusCode}`);
                     console.log(`Response: ${readyData}`);

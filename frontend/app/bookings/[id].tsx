@@ -98,7 +98,8 @@ export default function BookingDetailScreen() {
   }
 
   const isTutor = currentUserId === booking.tutor_id;
-  const isLearner = currentUserId === booking.learner_id;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _isLearner = currentUserId === booking.learner_id;
 
   const startDate = new Date(booking.start_time);
   const dateFormatted = startDate.toLocaleDateString([], {

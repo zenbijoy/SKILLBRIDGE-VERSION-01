@@ -1,4 +1,5 @@
 import { admin } from "../lib/db.js";
+import { logger } from "../lib/logger.js";
 
 export async function audit(
   actorId: string,
@@ -18,7 +19,17 @@ export async function audit(
     });
 
   if (error) {
-    console.error(`[AUDIT_ERROR] Failed to persist audit log for action ${action}:`, error.message);
+    logger.error(
+      {
+        event: "audit_persist_failed",
+        actorId,
+        action,
+        targetType,
+        targetId,
+        err: error.message,
+      },
+      `Failed to persist audit log for action ${action}`,
+    );
     throw new Error(`Durable audit logging failed for ${action}: ${error.message}`);
   }
 }

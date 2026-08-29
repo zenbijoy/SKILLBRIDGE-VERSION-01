@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useLocalSearchParams, router } from "expo-router";
-import { View, Text, StyleSheet, FlatList, TextInput, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, TextInput, Pressable } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { YouTubePlayer } from "@/components/live/YouTubePlayer";
 import { Button, Card, H2, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
@@ -53,8 +53,10 @@ export default function BroadcastScreen() {
   const { colors } = useTheme();
   const [questions, setQuestions] = useState<Question[]>(SAMPLE_QUESTIONS);
   const [newQuestion, setNewQuestion] = useState("");
-  const [isQaOpen, setIsQaOpen] = useState(true);
-  const [isLiveKitStageActive, setIsLiveKitStageActive] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_isQaOpen, _setIsQaOpen] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_isLiveKitStageActive, _setIsLiveKitStageActive] = useState(false);
 
   const resolvedVideoId = videoId || "dQw4w9WgXcQ";
 

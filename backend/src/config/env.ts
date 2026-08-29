@@ -31,6 +31,7 @@ const schema = z.object({
   SUPABASE_ANON_KEY: z.string().min(10),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(10),
   REDIS_URL: optionalString,
+  REDIS_REQUIRED: booleanFromEnv.default(false),
   LIVEKIT_URL: optionalString,
   LIVEKIT_API_KEY: optionalString,
   LIVEKIT_API_SECRET: optionalString,
@@ -40,6 +41,13 @@ const schema = z.object({
   MAX_ROOM_CAPACITY: z.coerce.number().int().min(2).max(250).default(250),
   MAINTENANCE_MODE: booleanFromEnv.default(false),
   GLOBAL_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(30).max(5000).default(120),
+  // Logging & Observability
+  LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).optional(),
+  SENTRY_DSN: optionalString,
+  SENTRY_ENVIRONMENT: optionalString.default("development"),
+  SENTRY_RELEASE: optionalString,
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  API_VERSION: z.string().default("v1"),
   // WebRTC & Cloudflare TURN Settings
   P2P_CALLS_ENABLED: booleanFromEnv.default(true),
   CLOUDFLARE_TURN_ENABLED: booleanFromEnv.default(false),
@@ -48,6 +56,13 @@ const schema = z.object({
   TURN_CREDENTIAL_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(3600),
   CALL_RING_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(120).default(40),
   CALL_MAX_RECONNECT_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  // Admin Bootstrap
+  ADMIN_BOOTSTRAP_ENABLED: booleanFromEnv.default(false),
+  ADMIN_BOOTSTRAP_EMAIL: optionalString,
+  ADMIN_BOOTSTRAP_TEMP_PASSWORD: optionalString,
+  ADMIN_BOOTSTRAP_EXPIRES_AT: optionalString,
+  ADMIN_REQUIRE_MFA: booleanFromEnv.default(true),
+  ADMIN_APP_URL: optionalUrl,
 });
 
 export type AppEnv = z.infer<typeof schema>;

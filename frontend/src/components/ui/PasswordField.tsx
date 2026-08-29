@@ -57,6 +57,8 @@ export function PasswordField({ showRequirements, value = "", ...props }: Passwo
 const styles = StyleSheet.create({
   container: {
     width: "100%",
+    flexGrow: 0,
+    flexShrink: 0,
   },
   requirementsContainer: {
     marginTop: -8, // pull up slightly closer to the input

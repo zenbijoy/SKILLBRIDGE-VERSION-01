@@ -2,18 +2,9 @@ import { supabase } from "./supabase";
 import Constants from "expo-constants";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 
-// Production default: Render-hosted backend.
-// Never fall back to localhost — on Vercel that address is unreachable.
-const DEFAULT_API_URL = "https://skillbridge-api-pd9c.onrender.com/api/v1";
+import { API_URL } from "./config";
 
-const isDev = process.env.NODE_ENV !== "production";
-const expoApiUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
-
-const BASE = (
-  process.env.EXPO_PUBLIC_API_URL ??
-  (isDev ? expoApiUrl : undefined) ??
-  DEFAULT_API_URL
-).replace(/\/+$/, "");
+const BASE = API_URL;
 
 
 type ApiErrorBody = {

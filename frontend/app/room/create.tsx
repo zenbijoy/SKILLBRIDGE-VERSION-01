@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import type { Room } from "@/types";
 import { Button, Card, H1, H2, Muted, Row, Screen } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import MapPicker from "@/components/MapPicker";
 
 export default function CreateRoomScreen() {
   const { colors } = useTheme();
@@ -59,13 +60,13 @@ export default function CreateRoomScreen() {
         campus_location: mode !== "online" ? campusLocation.trim() : undefined,
       };
 
-      const res = await api<{ room: Room }>("/rooms", {
+      const res = await api<Room>("/rooms", {
         method: "POST",
         body: JSON.stringify(payload),
       });
 
       // Send initial invitations if any specified
-      if (inviteUsernames.trim() && res.room?.id) {
+      if (inviteUsernames.trim() && res?.id) {
         const usernames = inviteUsernames
           .split(",")
           .map((u) => u.trim().replace(/^@/, ""))
@@ -73,7 +74,7 @@ export default function CreateRoomScreen() {
 
         for (const username of usernames) {
           try {
-            await api(`/rooms/${res.room.id}/invitations`, {
+            await api(`/rooms/${res.id}/invitations`, {
               method: "POST",
               body: JSON.stringify({ username }),
             });
@@ -83,7 +84,7 @@ export default function CreateRoomScreen() {
         }
       }
 
-      return res.room;
+      return res;
     },
     onSuccess: (newRoom) => {
       qc.invalidateQueries({ queryKey: ["rooms"] });
@@ -297,6 +298,7 @@ export default function CreateRoomScreen() {
                 onChangeText={setCampusLocation}
                 maxLength={120}
               />
+              <MapPicker onLocationSelect={(loc) => setCampusLocation(loc)} />
             </View>
           )}
 

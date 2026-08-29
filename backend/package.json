@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "node --require ../scripts/node-userinfo-shim.cjs --require ../scripts/test-setup.cjs ./node_modules/tsx/dist/cli.mjs --test src/**/*.test.ts",
+    "test:coverage": "node --require ../scripts/node-userinfo-shim.cjs --require ../scripts/test-setup.cjs ./node_modules/tsx/dist/cli.mjs --test --experimental-test-coverage src/**/*.test.ts",
     "lint": "tsc --noEmit"
   },
   "engines": {

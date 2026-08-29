@@ -6,7 +6,7 @@ import Animated, { FadeInUp, useSharedValue, useAnimatedProps, withTiming, withD
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Dashboard, Profile } from "@/types";
-import { Button, Card, ErrorState, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
+import { Button, Card, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
 import { RoomCard } from "@/components/RoomCard";
 import { ProfileCard } from "@/components/ProfileCard";
 import { FeatureGrid } from "@/components/FeatureGrid";

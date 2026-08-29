@@ -4,6 +4,7 @@ import { AccessToken, WebhookReceiver } from "livekit-server-sdk";
 import { env } from "../config/env.js";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { logger } from "../lib/logger.js";
 
 export const live = Router();
 export const liveWebhooks = Router();
@@ -48,7 +49,14 @@ liveWebhooks.post("/", wrap(async (req, res) => {
         p_user_id: event.participant.identity,
       });
       if (rpcErr) {
-        console.error(`[LIVEKIT_WEBHOOK_ERROR] record_livekit_join failed:`, rpcErr.message);
+        logger.error(
+          {
+            event: "livekit_webhook_join_failed",
+            sessionId: meta.sessionId,
+            err: rpcErr.message,
+          },
+          "record_livekit_join RPC failed",
+        );
         throw rpcErr;
       }
     }
@@ -62,7 +70,14 @@ liveWebhooks.post("/", wrap(async (req, res) => {
         p_user_id: event.participant.identity,
       });
       if (rpcErr) {
-        console.error(`[LIVEKIT_WEBHOOK_ERROR] record_livekit_leave failed:`, rpcErr.message);
+        logger.error(
+          {
+            event: "livekit_webhook_leave_failed",
+            sessionId: meta.sessionId,
+            err: rpcErr.message,
+          },
+          "record_livekit_leave RPC failed",
+        );
         throw rpcErr;
       }
     }
@@ -78,7 +93,14 @@ liveWebhooks.post("/", wrap(async (req, res) => {
           .eq("id", sessionId)
           .eq("status", "live");
         if (updateErr) {
-          console.error(`[LIVEKIT_WEBHOOK_ERROR] room_finished session update failed:`, updateErr.message);
+          logger.error(
+            {
+              event: "livekit_room_finished_update_failed",
+              sessionId,
+              err: updateErr.message,
+            },
+            "room_finished session update failed",
+          );
         }
       }
     }
@@ -288,7 +310,15 @@ live.post(
         { callId, callerId, callerName, roomName, callType },
       );
     } catch (err) {
-      console.warn("Could not dispatch call push notification:", err);
+      logger.warn(
+        {
+          event: "call_push_notify_failed",
+          callId,
+          calleeId,
+          err: err instanceof Error ? err.message : err,
+        },
+        "Could not dispatch call push notification",
+      );
     }
 
     res.json({

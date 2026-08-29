@@ -19,7 +19,6 @@ import { growthIllustrations512 } from "@/assets/illustrations";
 import {
   fetchPlannerPreferences,
   updatePlannerPreferences,
-  type PlannerPreferences,
 } from "@/features/growth/growthApi";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

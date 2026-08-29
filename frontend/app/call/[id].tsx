@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { View, Text, StyleSheet, Image, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Image, Pressable } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useWebRTCCall } from "@/features/calls/hooks/useWebRTCCall";
 import { useCallStore } from "@/features/calls/store/callStore";
@@ -77,6 +77,7 @@ export default function CallScreen() {
     return () => {
       isCancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, name, avatar, type]);
 
   const formatDuration = (seconds: number) => {

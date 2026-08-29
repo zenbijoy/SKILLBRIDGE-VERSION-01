@@ -5,8 +5,11 @@ import compression from "compression";
 import { rateLimit } from "express-rate-limit";
 import type { Server as SocketServer } from "socket.io";
 import { env } from "./config/env.js";
+import { requestIdMiddleware } from "./middleware/requestId.js";
+import { httpLogger } from "./middleware/httpLogger.js";
 import { auth, requireRole } from "./middleware/auth.js";
 import { errors, notFound } from "./middleware/error.js";
+import { getOpenApiSpec, renderSwaggerHtml } from "./lib/openapi.js";
 import { dashboard } from "./routes/dashboard.js";
 import { profiles } from "./routes/profiles.js";
 import { connections } from "./routes/connections.js";
@@ -25,6 +28,7 @@ import { moderation } from "./routes/moderation.js";
 import { live, liveWebhooks } from "./routes/live.js";
 import { account } from "./routes/account.js";
 import { adminRoutes } from "./routes/admin.js";
+import { adminAccessRoutes } from "./routes/admin-access.js";
 import { ai } from "./routes/ai.js";
 import { catalog } from "./routes/catalog.js";
 import { clubs } from "./routes/clubs.js";
@@ -48,6 +52,10 @@ export function createApp(io?: SocketServer) {
 
   app.set("trust proxy", env.NODE_ENV === "production" ? 1 : false);
 
+  // Correlation ID & HTTP Logging middleware (Must be first in pipeline)
+  app.use(requestIdMiddleware);
+  app.use(httpLogger);
+
   // Bypass Express middleware pipeline for Socket.IO polling / transport requests
   app.use((req, _res, next) => {
     if (req.path?.startsWith("/socket.io") || req.url?.startsWith("/socket.io")) {
@@ -66,12 +74,14 @@ export function createApp(io?: SocketServer) {
     }),
   );
   app.use(cors({ origin: origins, credentials: true }));
-  app.use(express.json({
-    limit: "1mb",
-    verify: (req: any, _res, buf) => {
-      req.rawBody = buf.toString();
-    }
-  }));
+  app.use(
+    express.json({
+      limit: "1mb",
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString();
+      },
+    }),
+  );
 
   app.use(
     rateLimit({
@@ -89,6 +99,14 @@ export function createApp(io?: SocketServer) {
     standardHeaders: "draft-8",
     legacyHeaders: false,
     message: { error: "Too many requests. Please try again later." },
+  });
+
+  // OpenAPI Documentation
+  app.get("/openapi.json", (_req, res) => {
+    res.json(getOpenApiSpec());
+  });
+  app.get("/api-docs", (_req, res) => {
+    res.type("html").send(renderSwaggerHtml("/openapi.json"));
   });
 
   app.use("/health", health);
@@ -142,6 +160,7 @@ export function createApp(io?: SocketServer) {
   api.use("/progress", progress);
   api.use("/ct", ct);
   api.use("/calls", calls);
+  api.use("/admin", adminAccessRoutes);
   api.use("/admin", requireRole("moderator", "admin"), adminRoutes);
 
   app.use("/api/v1", api);

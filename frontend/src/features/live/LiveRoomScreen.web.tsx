@@ -23,7 +23,8 @@ export default function LiveRoomScreenWeb() {
   // Local Recording Hook
   const {
     isRecording,
-    recordingStatus,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    recordingStatus: _recordingStatus,
     durationSeconds,
     recordedBlob,
     startRecording,

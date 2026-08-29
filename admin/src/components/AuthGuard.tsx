@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import api from '../lib/api';
 
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<'loading' | 'authorized' | 'anonymous' | 'forbidden'>('loading');
+  const [state, setState] = useState<'loading' | 'authorized' | 'anonymous' | 'forbidden' | 'setup_required'>('loading');
   const location = useLocation();
 
   useEffect(() => {
@@ -19,8 +19,17 @@ export function AuthGuard({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        await api.get('/admin/stats');
-        if (alive) setState('authorized');
+        const res = await api.get('/admin/me');
+        if (!alive) return;
+        if (res.data.mustChangeCredentials) {
+          setState('setup_required');
+        } else if (res.data.status === 'suspended' || res.data.status === 'revoked') {
+          setState('forbidden');
+        } else if (res.data.role) {
+          setState('authorized');
+        } else {
+          setState('forbidden');
+        }
       } catch (error: unknown) {
         const status = (error as { response?: { status?: number } })?.response?.status;
         if (!alive) return;
@@ -74,6 +83,18 @@ export function AuthGuard({ children }: { children: ReactNode }) {
         </div>
       </div>
     );
+  }
+
+  if (state === 'setup_required') {
+    if (location.pathname !== '/setup-owner') {
+      return <Navigate to="/setup-owner" state={{ from: location }} replace />;
+    }
+    return <>{children}</>;
+  }
+
+  // Prevent accessing /setup-owner if not required
+  if (state === 'authorized' && location.pathname === '/setup-owner') {
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;

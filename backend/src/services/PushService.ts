@@ -1,4 +1,5 @@
 import { admin } from "../lib/db.js";
+import { logger } from "../lib/logger.js";
 
 export interface PushProvider {
   sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }): Promise<void>;
@@ -37,7 +38,15 @@ export class ExpoPushProvider implements PushProvider {
       });
 
       if (!response.ok) {
-        console.error("Expo push notification failed:", await response.text());
+        logger.error(
+          {
+            event: "expo_push_send_failed",
+            userId,
+            status: response.status,
+            err: await response.text(),
+          },
+          "Expo push notification HTTP failure",
+        );
         return;
       }
 
@@ -78,7 +87,14 @@ export class ExpoPushProvider implements PushProvider {
           .in("token", invalidTokens);
       }
     } catch (err) {
-      console.error("Error sending push notification:", err);
+      logger.error(
+        {
+          event: "push_notification_dispatch_error",
+          userId,
+          err: err instanceof Error ? err.message : err,
+        },
+        "Error sending push notification",
+      );
     }
   }
 
@@ -156,14 +172,20 @@ export class ExpoPushProvider implements PushProvider {
           .in("token", [...new Set(invalidTokens)]);
       }
     } catch (err) {
-      console.error("Error checking push receipts:", err);
+      logger.error(
+        {
+          event: "push_receipt_check_error",
+          err: err instanceof Error ? err.message : err,
+        },
+        "Error checking push receipts",
+      );
     }
   }
 }
 
 export class MockPushProvider implements PushProvider {
   async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }) {
-    console.log(`[MOCK PUSH] To: ${userId}, Title: ${message.title}`);
+    logger.debug({ event: "mock_push_dispatched", userId, title: message.title }, `[MOCK PUSH] To: ${userId}`);
   }
   async checkPendingReceipts() {}
 }

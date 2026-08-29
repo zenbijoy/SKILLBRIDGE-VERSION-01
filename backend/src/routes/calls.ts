@@ -6,6 +6,7 @@ import { wrap } from "../middleware/error.js";
 import { generateCloudflareIceServers } from "../services/turn.js";
 import { notifyUser } from "../services/push.js";
 import { env } from "../config/env.js";
+import { logger } from "../lib/logger.js";
 
 export const calls = Router();
 
@@ -293,7 +294,15 @@ calls.post(
         },
       );
     } catch (err) {
-      console.warn("[CALL_NOTIFY_WARN] Failed to dispatch call push notification:", err);
+      logger.warn(
+        {
+          event: "call_push_dispatch_failed",
+          callerId,
+          calleeId,
+          err: err instanceof Error ? err.message : err,
+        },
+        "Failed to dispatch call push notification",
+      );
     }
 
     res.status(201).json({

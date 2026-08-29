@@ -1,6 +1,7 @@
 import { io, Socket } from "socket.io-client";
 import { Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
+import { SOCKET_URL } from "./config";
 
 let socketInstance: Socket | null = null;
 
@@ -13,15 +14,7 @@ export function getSocket(): Socket | null {
     return socketInstance;
   }
 
-  const isDev = process.env.NODE_ENV !== "production";
-  const DEFAULT_API_URL = "https://skillbridge-api.onrender.com/api/v1";
-  
-  // Explicitly require prod URL, fallback to localhost only in dev
-  const url = (
-    process.env.EXPO_PUBLIC_API_URL ?? 
-    (isDev ? "http://localhost:4000/api/v1" : DEFAULT_API_URL)
-  ).replace("/api/v1", "");
-
+  const url = SOCKET_URL;
 
   socketInstance = io(url, {
     autoConnect: false,
