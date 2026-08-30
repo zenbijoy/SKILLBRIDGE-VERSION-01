@@ -5,6 +5,9 @@ import { wrap } from "../middleware/error.js";
 import { bidirectionalFilter, isBlocked } from "../lib/query-helpers.js";
 import type { UserSkillWithSkill } from "../types/database.js";
 import { cacheDelPattern } from "../lib/redis.js";
+import { logger } from "../lib/logger.js";
+import { sentry } from "../lib/sentry.js";
+
 export const profiles = Router();
 
 const onboardingSteps = [
@@ -66,15 +69,71 @@ profiles.get(
   }),
 );
 
+export async function ensureProfile(userId: string) {
+  let { data: profile, error } = await admin
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+
+  if (!profile) {
+    try {
+      const { data: userAuth } = await admin.auth.admin.getUserById(userId);
+      const metaName =
+        userAuth?.user?.user_metadata?.full_name ||
+        userAuth?.user?.user_metadata?.name ||
+        "New member";
+      const metaAvatar =
+        userAuth?.user?.user_metadata?.avatar_url ||
+        userAuth?.user?.user_metadata?.picture ||
+        null;
+      const baseUsername = "user_" + userId.replace(/-/g, "").slice(0, 10);
+
+      const { data: createdProfile, error: createError } = await admin
+        .from("profiles")
+        .upsert(
+          {
+            id: userId,
+            full_name: metaName,
+            avatar_url: metaAvatar,
+            username: baseUsername,
+            preferred_locale: "en",
+            study_mode_preference: "hybrid",
+            onboarding_step: "language",
+            onboarding_status: "not_started",
+            onboarding_version: 1,
+            onboarding_mission: "both",
+            onboarding_push_opt_in: true,
+            timezone: "Asia/Dhaka",
+          },
+          { onConflict: "id" },
+        )
+        .select("*")
+        .maybeSingle();
+
+      if (!createError && createdProfile) {
+        profile = createdProfile;
+        logger.info({ event: "profile_auto_provisioned", userId }, "Auto-provisioned missing profile row");
+      } else {
+        const { data: refetched } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+        profile = refetched;
+      }
+    } catch (provisionErr) {
+      logger.warn({ event: "profile_provision_failed", userId, err: provisionErr }, "Failed auto-provisioning profile row");
+      const { data: refetched } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+      profile = refetched;
+    }
+  }
+
+  return profile;
+}
+
 profiles.get(
   "/me",
   wrap(async (req, res) => {
-    const { data: profile, error } = await admin
-      .from("profiles")
-      .select("*")
-      .eq("id", req.userId!)
-      .single();
-    if (error) throw error;
+    const profile = await ensureProfile(req.userId!);
+
     const { data: skills, error: skillsError } = await admin
       .from("user_skills")
       .select("kind,proficiency,skills(name)")
@@ -97,6 +156,10 @@ profiles.get(
 profiles.post(
   "/me/onboarding/bulk",
   wrap(async (req, res) => {
+    const requestId =
+      (req.id ? String(req.id) : undefined) ||
+      (req.requestId ? String(req.requestId) : undefined) ||
+      (res.getHeader("X-Request-ID") ? String(res.getHeader("X-Request-ID")) : undefined);
     const body = z
       .object({
         full_name: z.string().trim().min(2).max(80).optional(),
@@ -115,7 +178,7 @@ profiles.post(
         profile_visibility: z.enum(["public", "connections", "private"]).optional(),
         preferred_locale: z.enum(["en", "bn"]).optional(),
         onboarding_step: z.enum(onboardingSteps).optional(),
-        onboarding_status: z.enum(["not_started", "in_progress", "completed", "skipped"]).optional(),
+        onboarding_status: z.enum(["not_started", "in_progress", "deferred", "completed", "skipped"]).optional(),
         onboarding_version: z.number().int().min(1).max(1000).optional(),
         onboarding_mission: z.enum(["learn", "teach", "both", "research"]).optional(),
         onboarding_push_opt_in: z.boolean().optional(),
@@ -135,14 +198,154 @@ profiles.post(
     });
 
     if (error) {
-      if (error.code === "23505") {
-        return res.status(409).json({ error: "Username is already taken" });
+      let statusCode = 500;
+      let errorAppCode = "INTERNAL_SERVER_ERROR";
+      let clientMessage = "Failed to save onboarding progress";
+
+      if (error.code === "23505" || /already taken|duplicate/i.test(error.message || "")) {
+        statusCode = 409;
+        errorAppCode = "RESOURCE_CONFLICT";
+        clientMessage = "Username is already taken";
+      } else if (error.message?.includes("Profile not found")) {
+        statusCode = 404;
+        errorAppCode = "RESOURCE_NOT_FOUND";
+        clientMessage = "Profile not found";
+      } else if (
+        error.code === "PGRST503" ||
+        error.code === "57P01" ||
+        error.code?.startsWith("08") ||
+        /connection|fetch failed|network|timeout|service unavailable/i.test(error.message || "")
+      ) {
+        statusCode = 503;
+        errorAppCode = "DATABASE_ERROR";
+        clientMessage = "Database service unavailable, please retry";
       }
-      throw error;
+
+      logger.error(
+        {
+          event: "onboarding_save_failed",
+          requestId,
+          userId: uid,
+          onboardingStep: profilePayload.onboarding_step || "unknown",
+          code: errorAppCode,
+          dbErrorCode: error.code || null,
+          err: {
+            message: error.message,
+            code: error.code,
+          },
+        },
+        "Onboarding progress save failed",
+      );
+
+      sentry.captureException(new Error(`Onboarding save failed: ${error.message}`), {
+        requestId,
+        route: req.originalUrl || req.path,
+        method: req.method,
+        user: { id: uid },
+        extra: {
+          onboardingStep: profilePayload.onboarding_step || "unknown",
+          dbErrorCode: error.code,
+          code: errorAppCode,
+        },
+      });
+
+      return res.status(statusCode).json({
+        success: false,
+        error: clientMessage,
+        code: errorAppCode,
+        message: clientMessage,
+        requestId,
+      });
     }
 
+    const result = data as {
+      profile: unknown;
+      completion_percent: number;
+      missing_fields: string[];
+      skills_known: string[];
+      skills_wanted: string[];
+    };
+
+    logger.info(
+      {
+        event:
+          profilePayload.onboarding_status === "deferred"
+            ? "onboarding_deferred"
+            : profilePayload.onboarding_status === "completed"
+            ? "onboarding_completed"
+            : "onboarding_step_saved",
+        requestId,
+        userId: uid,
+        step: profilePayload.onboarding_step,
+        status: profilePayload.onboarding_status,
+        completionPercent: result?.completion_percent,
+      },
+      "Onboarding progress saved successfully",
+    );
+
     await cacheDelPattern(`dashboard:${uid}:*`);
-    res.json({ success: true, ...(data as Record<string, unknown>) });
+
+    res.json({
+      success: true,
+      profile: result.profile,
+      completion_percent: result.completion_percent,
+      missing_fields: result.missing_fields,
+      skills_known: result.skills_known,
+      skills_wanted: result.skills_wanted,
+      requestId,
+    });
+  }),
+);
+
+// Explicit Defer Onboarding Endpoint
+profiles.post(
+  "/me/onboarding/defer",
+  wrap(async (req, res) => {
+    const requestId =
+      (req.id ? String(req.id) : undefined) ||
+      (req.requestId ? String(req.requestId) : undefined) ||
+      (res.getHeader("X-Request-ID") ? String(res.getHeader("X-Request-ID")) : undefined);
+
+    const uid = req.userId!;
+    const { data, error } = await admin.rpc("save_onboarding_progress_atomic", {
+      p_user_id: uid,
+      p_profile: { onboarding_status: "deferred" },
+      p_teach_skills: null,
+      p_learn_skills: null,
+    });
+
+    if (error) {
+      logger.error(
+        { event: "onboarding_save_failed", requestId, userId: uid, err: error },
+        "Defer onboarding failed",
+      );
+      return res.status(500).json({
+        success: false,
+        error: "Failed to defer onboarding",
+        requestId,
+      });
+    }
+
+    const result = data as {
+      profile: unknown;
+      completion_percent: number;
+      missing_fields: string[];
+    };
+
+    await cacheDelPattern(`dashboard:${uid}:*`);
+
+    logger.info(
+      { event: "onboarding_deferred", requestId, userId: uid },
+      "Onboarding deferred successfully",
+    );
+
+    res.json({
+      success: true,
+      profile: result.profile,
+      completion_percent: result.completion_percent,
+      missing_fields: result.missing_fields,
+      requestId,
+    });
   }),
 );
 

@@ -1,6 +1,6 @@
 import http from "node:http";
 import { Server as SocketServer } from "socket.io";
-import { env } from "./config/env.js";
+import { env, SUPABASE_PROJECT_REF } from "./config/env.js";
 import { createApp } from "./app.js";
 import { setupSocket, userConnections } from "./socket.js";
 import { startPushWorker } from "./workers/pushWorker.js";
@@ -104,6 +104,15 @@ process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
 if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_ENV !== "test") {
   const startServer = async () => {
     sentry.init();
+
+    logger.info(
+      {
+        event: "configuration_loaded",
+        supabaseProjectRef: SUPABASE_PROJECT_REF,
+        environment: env.NODE_ENV,
+      },
+      "Backend configuration loaded successfully",
+    );
 
     if (redis && redis.status === "wait") {
       try {

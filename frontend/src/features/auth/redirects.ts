@@ -5,20 +5,34 @@ import { Platform } from "react-native";
  * Generates the absolute URL for a given path inside the app.
  * This ensures OAuth and Magic Links return safely to the app or website.
  */
-export function getAuthCallbackUrl(path: string = "/auth/callback") {
+export function getAuthCallbackUrl(path: string = "/auth/callback"): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
   if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
-    // Return absolute origin for web
-    return `${window.location.origin}${path}`;
+    return `${window.location.origin}${normalizedPath}`;
   }
 
-  // Uses expo-linking to construct custom scheme or App Link
-  return Linking.createURL(path);
+  try {
+    // Uses expo-linking to construct custom scheme (e.g. skillbridge://auth/callback)
+    return Linking.createURL(normalizedPath, { scheme: "skillbridge" });
+  } catch {
+    // Deterministic fallback for test/bare environments without injected manifest
+    return `skillbridge://${normalizedPath.replace(/^\/+/, "")}`;
+  }
 }
 
-export function getResetPasswordRedirect() {
+/**
+ * Canonical helper for OAuth redirects
+ */
+export function getOAuthRedirectUrl(path: string = "/auth/callback"): string {
+  return getAuthCallbackUrl(path);
+}
+
+export function getResetPasswordRedirect(): string {
   return getAuthCallbackUrl("/auth/reset-password");
 }
 
-export function getSignUpRedirect() {
+export function getSignUpRedirect(): string {
   return getAuthCallbackUrl("/auth/callback");
 }
+

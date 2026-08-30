@@ -14,6 +14,8 @@ import { AppTextField, PasswordField, ScreenContainer } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
 import { getAuthCallbackUrl } from "@/features/auth/redirects";
+import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
+import { signInWithGoogle } from "@/features/auth/googleOAuth";
 
 export default function SignUp() {
   const { colors } = useTheme();
@@ -44,19 +46,32 @@ export default function SignUp() {
         [{ text: "OK", onPress: () => router.replace("/(auth)/sign-in") }]
       );
     } catch (e) {
-      Alert.alert(
-        "Sign up failed",
-        e instanceof Error ? e.message : "Try again"
-      );
+      logAuthFailure("auth_signup_failed", { error: e });
+      const classified = classifyAuthError(e);
+      Alert.alert(classified.title, classified.message);
     } finally {
       setBusy(false);
     }
   }
 
   async function handleSocial(provider: "google" | "facebook") {
+    if (busy) return;
     try {
       triggerHaptic();
       setBusy(true);
+      if (provider === "google") {
+        const result = await signInWithGoogle();
+        if (result.cancelled) {
+          // User intentionally cancelled or dismissed the browser session
+          return;
+        }
+        if (!result.success && result.error) {
+          Alert.alert(result.error.title, result.error.message);
+        }
+        return;
+      }
+
+      // Fallback for other OAuth providers
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -65,7 +80,8 @@ export default function SignUp() {
       });
       if (error) throw error;
     } catch (e) {
-      Alert.alert("Authentication failed", e instanceof Error ? e.message : "Try again");
+      const classified = classifyAuthError(e);
+      Alert.alert(classified.title, classified.message);
     } finally {
       setBusy(false);
     }

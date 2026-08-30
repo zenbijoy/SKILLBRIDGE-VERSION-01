@@ -133,7 +133,7 @@ create table public.event_applications (
 
 create table public.resources (
   id uuid primary key default gen_random_uuid(), room_id uuid references public.rooms(id) on delete cascade,
-  uploader_id uuid not null references public.profiles(id) on delete cascade, title text not null, url text not null, storage_path text,
+  uploader_id uuid not null references public.profiles(id) on delete cascade, title text not null, description text, url text not null, storage_path text,
   kind text not null default 'file' check(kind in ('note','slide','link','file','image')), created_at timestamptz not null default now()
 );
 create table public.saved_items (

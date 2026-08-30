@@ -13,6 +13,8 @@ import { supabase } from "@/lib/supabase";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
+import { calculateProfileCompletion, getResumeStep } from "@/features/profile/profileCompletion";
+
 export default function ProfileScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -45,15 +47,13 @@ export default function ProfileScreen() {
   });
 
   const p = profile.data?.profile;
-  const completion = p
-    ? Math.round(
-        (["full_name", "username", "bio", "avatar_url", "university", "department", "batch"].filter(
-          (key) => Boolean((p as any)[key]),
-        ).length /
-          7) *
-          100,
-      )
-    : 0;
+  const completionResult = calculateProfileCompletion(
+    p,
+    profile.data?.skillsKnown,
+    profile.data?.skillsWanted,
+  );
+  const completion = completionResult.completionPercent;
+  const resumeStep = getResumeStep(p, completionResult);
 
   return (
     <Screen
@@ -139,6 +139,57 @@ export default function ProfileScreen() {
             </Row>
           </Animated.View>
 
+          {/* Progressive Profile Completion Card */}
+          {!completionResult.isComplete ? (
+            <Animated.View entering={FadeInUp.delay(150).springify()}>
+              <Card tone="primary" style={{ gap: 10, borderWidth: 1, borderColor: colors.primary }}>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: colors.text }}>
+                      {t("onboarding.profileIncomplete")}
+                    </Text>
+                    <Muted style={{ fontSize: 13 }}>
+                      {t("onboarding.profileIncompleteHint")}
+                    </Muted>
+                  </View>
+                  <Pill tone="primary">{completion}%</Pill>
+                </Row>
+
+                <View style={s.progressTrack}>
+                  <View
+                    style={[
+                      s.progressBar,
+                      {
+                        width: `${completion}%`,
+                        backgroundColor: completion >= 80 ? colors.success : colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+
+                <Button
+                  testID="profile.continueSetup"
+                  title={t("onboarding.continueSetup")}
+                  compact
+                  icon="arrow-right"
+                  onPress={() => {
+                    triggerHaptic();
+                    router.push(`/(auth)/onboarding?step=${resumeStep}` as any);
+                  }}
+                />
+              </Card>
+            </Animated.View>
+          ) : (
+            <Animated.View entering={FadeInUp.delay(150).springify()}>
+              <Row style={{ justifyContent: "center", alignItems: "center", gap: 6, marginVertical: 4 }}>
+                <MaterialCommunityIcons name="check-decagram" size={18} color={colors.success} />
+                <Text style={{ color: colors.success, fontSize: 13, fontWeight: "700" }}>
+                  {t("onboarding.profileComplete")}
+                </Text>
+              </Row>
+            </Animated.View>
+          )}
+
           {/* Stats & Profile Health */}
           <Animated.View entering={FadeInUp.delay(200).springify()}>
             <Card tone="glow">
@@ -220,6 +271,20 @@ export default function ProfileScreen() {
 
           {/* Quick Actions */}
           <Animated.View entering={FadeInUp.delay(500).springify()} style={{ gap: 8 }}>
+            <Button
+              testID="profile.completeProfile"
+              title={
+                completionResult.isComplete
+                  ? t("onboarding.editProfileDetails")
+                  : t("onboarding.completeProfile")
+              }
+              variant="primary"
+              icon="account-edit-outline"
+              onPress={() => {
+                triggerHaptic();
+                router.push(`/(auth)/onboarding?step=${resumeStep}&mode=edit` as any);
+              }}
+            />
             <Button
               title={t("profile.edit")}
               variant="secondary"

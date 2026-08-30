@@ -23,7 +23,7 @@ export interface Profile {
   study_mode_preference?: RoomMode;
   preferred_locale?: "en" | "bn";
   onboarding_version?: number;
-  onboarding_status?: "not_started" | "in_progress" | "completed" | "skipped";
+  onboarding_status?: "not_started" | "in_progress" | "deferred" | "completed" | "skipped";
   onboarding_step?: string;
   onboarding_completed?: boolean;
   onboarding_mission?: "learn" | "teach" | "both" | "research";

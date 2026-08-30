@@ -725,10 +725,62 @@ create policy resources_member_write on storage.objects for insert to authentica
 -------------------------------------------------------------------------------
 
 create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$
+declare
+  v_base_username text;
+  v_final_username text;
+  v_suffix integer := 0;
+  v_full_name text;
 begin
-  insert into public.profiles(id, full_name, username)
-  values (new.id, coalesce(new.raw_user_meta_data->>'full_name','New member'), 'user_'||substr(replace(new.id::text,'-',''),1,10));
-  return new;
+  v_full_name := coalesce(nullif(btrim(NEW.raw_user_meta_data->>'full_name'), ''), 'New member');
+  v_base_username := 'user_' || substr(replace(NEW.id::text, '-', ''), 1, 10);
+  v_final_username := v_base_username;
+
+  while exists (
+    select 1 from public.profiles 
+    where lower(username) = lower(v_final_username) and id <> NEW.id
+  ) loop
+    v_suffix := v_suffix + 1;
+    v_final_username := substr(v_base_username, 1, 24) || '_' || v_suffix::text;
+  end loop;
+
+  insert into public.profiles (
+    id,
+    full_name,
+    username,
+    preferred_locale,
+    study_mode_preference,
+    onboarding_step,
+    onboarding_status,
+    onboarding_version,
+    onboarding_mission,
+    onboarding_push_opt_in,
+    timezone,
+    profile_completion_percent,
+    profile_missing_fields,
+    onboarding_completed
+  )
+  values (
+    NEW.id,
+    v_full_name,
+    v_final_username,
+    'en',
+    'hybrid',
+    'language',
+    'not_started',
+    1,
+    'both',
+    true,
+    'Asia/Dhaka',
+    0,
+    ARRAY['full_name', 'username', 'university', 'department', 'study_mode_preference', 'teach_skills', 'learn_skills']::text[],
+    false
+  )
+  on conflict (id) do update set
+    full_name = case when public.profiles.full_name is null or public.profiles.full_name = 'New member' then EXCLUDED.full_name else public.profiles.full_name end;
+
+  return NEW;
+exception when others then
+  return NEW;
 end $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
@@ -1717,6 +1769,9 @@ DECLARE
   v_was_completed boolean;
   v_existing_status text;
   v_requested_status text;
+  v_base_username text;
+  v_final_username text;
+  v_suffix integer := 0;
 BEGIN
   IF p_profile IS NULL OR jsonb_typeof(p_profile) <> 'object' THEN
     RAISE EXCEPTION 'Profile payload must be a JSON object';
@@ -1727,8 +1782,58 @@ BEGIN
   FROM public.profiles
   WHERE id = p_user_id
   FOR UPDATE;
+
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Profile not found';
+    v_base_username := 'user_' || substr(replace(p_user_id::text, '-', ''), 1, 10);
+    v_final_username := v_base_username;
+
+    WHILE EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE lower(username) = lower(v_final_username) AND id <> p_user_id
+    ) LOOP
+      v_suffix := v_suffix + 1;
+      v_final_username := substr(v_base_username, 1, 24) || '_' || v_suffix::text;
+    END LOOP;
+
+    INSERT INTO public.profiles (
+      id,
+      full_name,
+      username,
+      preferred_locale,
+      study_mode_preference,
+      onboarding_step,
+      onboarding_status,
+      onboarding_version,
+      onboarding_mission,
+      onboarding_push_opt_in,
+      timezone,
+      profile_completion_percent,
+      profile_missing_fields,
+      onboarding_completed
+    )
+    VALUES (
+      p_user_id,
+      coalesce(nullif(btrim(p_profile->>'full_name'), ''), 'New member'),
+      coalesce(nullif(lower(btrim(p_profile->>'username')), ''), v_final_username),
+      coalesce(p_profile->>'preferred_locale', 'en'),
+      coalesce(p_profile->>'study_mode_preference', 'hybrid'),
+      coalesce(p_profile->>'onboarding_step', 'language'),
+      coalesce(p_profile->>'onboarding_status', 'in_progress'),
+      coalesce((p_profile->>'onboarding_version')::integer, 1),
+      coalesce(p_profile->>'onboarding_mission', 'both'),
+      coalesce((p_profile->>'onboarding_push_opt_in')::boolean, true),
+      coalesce(p_profile->>'timezone', 'Asia/Dhaka'),
+      0,
+      ARRAY[]::text[],
+      false
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    SELECT onboarding_completed OR onboarding_status IN ('completed', 'skipped'), onboarding_status
+    INTO v_was_completed, v_existing_status
+    FROM public.profiles
+    WHERE id = p_user_id
+    FOR UPDATE;
   END IF;
 
   v_requested_status := p_profile->>'onboarding_status';

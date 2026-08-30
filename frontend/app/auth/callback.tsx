@@ -1,27 +1,63 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Text, StyleSheet } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/theme";
 import { Loading, Screen } from "@/components/ui";
+import { classifyAuthError, logAuthEvent, logAuthFailure } from "@/features/auth/authErrors";
 
 export default function AuthCallback() {
   const router = useRouter();
   const { colors } = useTheme();
   const params = useLocalSearchParams();
   const [errorMsg, setErrorMsg] = useState("");
+  const processedRef = useRef(false);
 
   useEffect(() => {
     async function handleCallback() {
+      if (processedRef.current) return;
+      processedRef.current = true;
+
       try {
+        logAuthEvent("oauth_google_callback_received", {
+          hasCode: Boolean(params.code),
+          hasTokens: Boolean(params.access_token && params.refresh_token),
+        });
+
+        // Check if session is already established
+        const { data: currentSession } = await supabase.auth.getSession();
+        if (currentSession?.session) {
+          if (params.type === "recovery") {
+            router.replace("/auth/reset-password" as any);
+            return;
+          }
+          router.replace("/(tabs)");
+          return;
+        }
+
         if (params.error) {
-          throw new Error(params.error_description?.toString() || "An error occurred during authentication.");
+          throw new Error(
+            params.error_description?.toString() ||
+              params.error?.toString() ||
+              "An error occurred during authentication."
+          );
         }
 
         // Handle OAuth code exchange (PKCE)
         if (params.code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(params.code.toString());
-          if (error) throw error;
+          const { error } = await supabase.auth.exchangeCodeForSession(
+            params.code.toString()
+          );
+          if (error) {
+            // Check once more in case another handler or listener completed it
+            const { data: fallbackSession } = await supabase.auth.getSession();
+            if (fallbackSession?.session) {
+              router.replace("/(tabs)");
+              return;
+            }
+            throw error;
+          }
+          logAuthEvent("oauth_google_session_created");
           router.replace("/(tabs)");
           return;
         }
@@ -33,20 +69,23 @@ export default function AuthCallback() {
             refresh_token: params.refresh_token.toString(),
           });
           if (error) throw error;
-          
+
           if (params.type === "recovery") {
             router.replace("/auth/reset-password" as any);
             return;
           }
-          
+
           router.replace("/(tabs)" as any);
           return;
         }
 
         // Handle Hash fragment on Web (e.g. #access_token=...&refresh_token=...)
         if (typeof window !== "undefined" && window.location?.hash) {
-          const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-          const hashError = hashParams.get("error_description") || hashParams.get("error");
+          const hashParams = new URLSearchParams(
+            window.location.hash.replace(/^#/, "")
+          );
+          const hashError =
+            hashParams.get("error_description") || hashParams.get("error");
           if (hashError) {
             throw new Error(hashError);
           }
@@ -78,18 +117,21 @@ export default function AuthCallback() {
           router.replace("/(tabs)" as any);
           return;
         }
-        
+
         // If we reach here, we didn't find required parameters
         throw new Error("Invalid or missing authentication tokens.");
       } catch (err) {
-        console.error("Auth callback error:", err);
-        setErrorMsg(err instanceof Error ? err.message : "Authentication failed.");
+        logAuthFailure("oauth_google_failed", {
+          provider: "callback",
+          error: err,
+        });
+        const classified = classifyAuthError(err);
+        setErrorMsg(classified.message);
       }
     }
 
     handleCallback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
+  }, [params, router]);
 
   if (errorMsg) {
     return (
@@ -130,3 +172,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+

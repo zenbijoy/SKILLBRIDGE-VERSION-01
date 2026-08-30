@@ -52,13 +52,21 @@ function Gate() {
     enabled: !loading && Boolean(session),
     staleTime: 30_000,
   });
-  const onboardingComplete = profileQuery.data?.profile.onboarding_status === "completed"
-    || profileQuery.data?.profile.onboarding_status === "skipped"
-    || profileQuery.data?.profile.onboarding_completed === true;
+  const onboardingStatus = profileQuery.data?.profile.onboarding_status;
+  const isFirstTimeUser =
+    onboardingStatus === "not_started" ||
+    (!onboardingStatus && !profileQuery.data?.profile.onboarding_completed);
+  const canAccessMainApp =
+    onboardingStatus === "completed" ||
+    onboardingStatus === "deferred" ||
+    onboardingStatus === "in_progress" ||
+    onboardingStatus === "skipped" ||
+    profileQuery.data?.profile.onboarding_completed === true;
+
   const experienceQuery = useQuery({
     queryKey: ["dashboard", "learn"],
     queryFn: () => api<Dashboard>("/dashboard?mode=learn"),
-    enabled: !loading && Boolean(session) && onboardingComplete,
+    enabled: !loading && Boolean(session) && Boolean(canAccessMainApp),
     staleTime: 30_000,
   });
   const guidedTourEnabled = experienceQuery.data?.featureFlags.guided_tour === true;
@@ -75,9 +83,25 @@ function Gate() {
       return;
     }
     if (profileQuery.isLoading || profileQuery.isError) return;
-    if (!onboardingComplete && !inOnboarding) router.replace("/(auth)/onboarding" as never);
-    if (onboardingComplete && inAuth && !inOnboarding) router.replace("/(tabs)");
-  }, [session, loading, segments, router, onboardingComplete, profileQuery.isError, profileQuery.isLoading]);
+
+    if (canAccessMainApp && inAuth && !inOnboarding) {
+      router.replace("/(tabs)");
+      return;
+    }
+
+    if (isFirstTimeUser && inAuth && !inOnboarding) {
+      router.replace("/(auth)/onboarding" as never);
+    }
+  }, [
+    session,
+    loading,
+    segments,
+    router,
+    canAccessMainApp,
+    isFirstTimeUser,
+    profileQuery.isError,
+    profileQuery.isLoading,
+  ]);
 
   useEffect(() => {
     if (!loading && session?.user.id && pushEnabled) {
@@ -100,7 +124,7 @@ function Gate() {
   }
 
   return (
-    <TourProvider enabled={Boolean(session) && onboardingComplete && guidedTourEnabled}>
+    <TourProvider enabled={Boolean(session) && canAccessMainApp && guidedTourEnabled}>
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: colors.bg },

@@ -10,17 +10,26 @@ const BASE = API_URL;
 type ApiErrorBody = {
   error?: string;
   message?: string;
+  code?: string;
+  requestId?: string;
   issues?: unknown;
 };
 
 export class ApiError extends Error {
+  public code?: string;
+  public requestId?: string;
+
   constructor(
     public status: number,
     message: string,
     public details?: unknown,
+    code?: string,
+    requestId?: string,
   ) {
     super(message);
     this.name = "ApiError";
+    this.code = code;
+    this.requestId = requestId;
   }
 }
 
@@ -91,10 +100,13 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body = await parseResponse(res);
   if (!res.ok) {
     const errorBody = asErrorBody(body);
+    const headerRequestId = res.headers.get("x-request-id") || undefined;
     throw new ApiError(
       res.status,
       errorBody.error ?? errorBody.message ?? `Request failed (${res.status})`,
       errorBody.issues,
+      errorBody.code,
+      errorBody.requestId ?? headerRequestId,
     );
   }
   return body as T;

@@ -68,3 +68,17 @@ const schema = z.object({
 export type AppEnv = z.infer<typeof schema>;
 export const env: AppEnv = schema.parse(process.env);
 
+export function getSupabaseProjectRef(url?: string): string {
+  if (!url) return "unknown";
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    const parts = host.split(".");
+    return (parts.length >= 3 && parts[0] ? parts[0] : host) || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export const SUPABASE_PROJECT_REF: string = getSupabaseProjectRef(env.SUPABASE_URL);
+

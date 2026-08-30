@@ -14,6 +14,7 @@ import { AppTextField, ScreenContainer } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
 import { getResetPasswordRedirect } from "@/features/auth/redirects";
+import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
 
 export default function ForgotPassword() {
   const { colors } = useTheme();
@@ -32,7 +33,9 @@ export default function ForgotPassword() {
       if (error) throw error;
       setSent(true);
     } catch (e) {
-      Alert.alert("Failed", e instanceof Error ? e.message : "Try again");
+      logAuthFailure("auth_reset_failed", { error: e });
+      const classified = classifyAuthError(e);
+      Alert.alert(classified.title, classified.message);
     } finally {
       setBusy(false);
     }

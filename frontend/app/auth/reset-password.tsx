@@ -13,6 +13,7 @@ import { Button, H1, Muted, triggerHaptic } from "@/components/ui";
 import { PasswordField, ScreenContainer } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
+import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
 
 export default function ResetPasswordScreen() {
   const { colors } = useTheme();
@@ -42,8 +43,10 @@ export default function ResetPasswordScreen() {
         "Your password has been reset successfully. Please sign in with your new password.",
         [{ text: "Sign In", onPress: () => router.replace("/(auth)/sign-in") }]
       );
-    } catch (e: any) {
-      Alert.alert("Reset Failed", e?.message || "Failed to update password. Please request a new link.");
+    } catch (e: unknown) {
+      logAuthFailure("auth_reset_failed", { error: e });
+      const classified = classifyAuthError(e);
+      Alert.alert(classified.title, classified.message);
     } finally {
       setBusy(false);
     }

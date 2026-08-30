@@ -1,14 +1,19 @@
 @echo off
 setlocal
-title SkillBridge - Expo Go Dev Server
+title SkillBridge - Expo Dev Server
 
 echo ===================================================
-echo   SkillBridge v2.0.1 - Launching for Expo Go
+echo   SkillBridge v2.0.1 - Launching Mobile Server
 echo ===================================================
 echo.
-echo [*] Backend: https://skillbridge-api-pd9c.onrender.com/api/v1
-echo [*] Supabase: wyqsoxkwmulhpcoslnoj.supabase.co
-echo.
+
+call node "%~dp0scripts\validate-mobile-env.mjs"
+if %ERRORLEVEL% neq 0 (
+    echo [-] Mobile environment validation failed. Check frontend\.env
+    pause
+    exit /b %ERRORLEVEL%
+)
+
 echo [*] Starting Metro Bundler with cleared cache...
 echo.
 

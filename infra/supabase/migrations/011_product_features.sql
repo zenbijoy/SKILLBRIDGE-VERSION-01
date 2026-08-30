@@ -41,6 +41,7 @@ ALTER TABLE public.research_projects ADD COLUMN IF NOT EXISTS fts tsvector GENER
 ) STORED;
 CREATE INDEX IF NOT EXISTS research_fts_idx ON public.research_projects USING GIN (fts);
 
+ALTER TABLE public.resources ADD COLUMN IF NOT EXISTS description text;
 -- Indexes for resources FTS
 ALTER TABLE public.resources ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS (
   to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, ''))
