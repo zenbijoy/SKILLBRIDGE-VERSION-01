@@ -4,6 +4,7 @@ import { env, SUPABASE_PROJECT_REF } from "./config/env.js";
 import { createApp } from "./app.js";
 import { setupSocket, userConnections } from "./socket.js";
 import { startPushWorker } from "./workers/pushWorker.js";
+import { startKeepAliveWorker } from "./workers/keepAlive.js";
 import { redis } from "./lib/redis.js";
 import { runAdminBootstrap } from "./services/admin-bootstrap.js";
 import { logger } from "./lib/logger.js";
@@ -141,6 +142,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_EN
     });
 
     startPushWorker();
+    startKeepAliveWorker();
   };
 
   startServer().catch((err) => {
