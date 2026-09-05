@@ -46,9 +46,26 @@ import { progress } from "./routes/progress.js";
 import { ct } from "./routes/ct.js";
 import { calls } from "./routes/calls.js";
 
+export function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true;
+
+  const lower = origin.toLowerCase().trim();
+  const configured = env.WEB_ORIGINS.split(",").map((x) => x.trim().toLowerCase());
+
+  // 1. Configured origins
+  if (configured.includes(lower)) return true;
+  // 2. All Vercel deployments (production, preview, branch previews)
+  if (/^https:\/\/[a-z0-9-_.]+\.vercel\.app$/i.test(lower)) return true;
+  // 3. All local development ports
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(lower)) return true;
+  // 4. Production domain and subdomains
+  if (/^https:\/\/(.*\.)?skillbridge\.app$/i.test(lower)) return true;
+
+  return false;
+}
+
 export function createApp(io?: SocketServer) {
   const app = express();
-  const origins = env.WEB_ORIGINS.split(",").map((x) => x.trim());
 
   app.set("trust proxy", env.NODE_ENV === "production" ? 1 : false);
 
@@ -73,7 +90,17 @@ export function createApp(io?: SocketServer) {
       },
     }),
   );
-  app.use(cors({ origin: origins, credentials: true }));
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        callback(null, isOriginAllowed(origin));
+      },
+      credentials: true,
+      methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+      optionsSuccessStatus: 204,
+    }),
+  );
   app.use(
     express.json({
       limit: "1mb",

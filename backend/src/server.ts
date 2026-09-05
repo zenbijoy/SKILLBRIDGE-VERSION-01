@@ -1,7 +1,7 @@
 import http from "node:http";
 import { Server as SocketServer } from "socket.io";
 import { env, SUPABASE_PROJECT_REF } from "./config/env.js";
-import { createApp } from "./app.js";
+import { createApp, isOriginAllowed } from "./app.js";
 import { setupSocket, userConnections } from "./socket.js";
 import { startPushWorker } from "./workers/pushWorker.js";
 import { startKeepAliveWorker } from "./workers/keepAlive.js";
@@ -10,11 +10,14 @@ import { runAdminBootstrap } from "./services/admin-bootstrap.js";
 import { logger } from "./lib/logger.js";
 import { sentry } from "./lib/sentry.js";
 
-const origins = env.WEB_ORIGINS.split(",").map((x) => x.trim());
-
 const server = http.createServer();
 const io = new SocketServer(server, {
-  cors: { origin: origins, credentials: true },
+  cors: {
+    origin: (origin, callback) => {
+      callback(null, isOriginAllowed(origin));
+    },
+    credentials: true,
+  },
 });
 
 const app = createApp(io);

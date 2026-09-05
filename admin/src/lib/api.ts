@@ -8,7 +8,7 @@ const baseURL = (rawApiUrl || (import.meta.env.DEV ? 'http://localhost:4000/api/
 
 const api = axios.create({
   baseURL,
-  timeout: 15_000,
+  timeout: 60_000,
   headers: { Accept: 'application/json' },
 });
 

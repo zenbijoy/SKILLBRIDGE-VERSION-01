@@ -80,6 +80,9 @@ export async function resetAuthFailureMetrics(): Promise<void> {
 }
 
 export async function auth(req: Request, res: Response, next: NextFunction) {
+  if (req.method === "OPTIONS") {
+    return next();
+  }
   if (req.originalUrl === "/api/v1/admin/bootstrap/status") {
     return next();
   }
