@@ -287,11 +287,13 @@ search.get(
     const nextCursor = cursor + limit < allResults.length ? cursor + limit : null;
 
     // Privacy-preserving Search Analytics ingestion (asynchronous fire-and-forget)
-    void admin.from("search_analytics_events").insert({
-      search_query_normalized: q.toLowerCase().trim().slice(0, 100),
-      result_count: allResults.length,
-      category: kind !== "all" ? kind : null,
-    }).then(() => {}).catch(() => {});
+    void Promise.resolve(
+      admin.from("search_analytics_events").insert({
+        search_query_normalized: q.toLowerCase().trim().slice(0, 100),
+        result_count: allResults.length,
+        category: kind !== "all" ? kind : null,
+      }),
+    ).catch(() => {});
 
     res.json({
       results: paginated,

@@ -44,76 +44,62 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO service_
 -- 4. Public and Authenticated Table-Level Privileges
 -- PostgreSQL requires table-level privilege before RLS can filter rows.
 -- RLS remains 100% active and guarantees users cannot access unauthorized data.
+DO $$
+DECLARE
+  tbl text;
+  public_catalog_tables text[] := ARRAY[
+    'skills', 'profiles', 'rooms', 'reviews', 'clubs', 'club_members',
+    'events', 'achievements', 'user_achievements', 'quizzes', 'quiz_questions',
+    'dashboard_configs', 'experience_content_sets', 'challenge_definitions',
+    'achievement_definitions', 'feature_flags', 'announcements', 'research_projects',
+    'research_publications', 'app_version_control'
+  ];
+  authenticated_member_tables text[] := ARRAY[
+    'user_skills', 'room_members', 'room_invitations', 'messages', 'message_reactions',
+    'message_delivery_receipts', 'conversations', 'conversation_members',
+    'connection_requests', 'connections', 'blocks', 'sessions', 'session_participants',
+    'teaching_requests', 'event_applications', 'resources', 'saved_items',
+    'saved_collections', 'points_ledger', 'quiz_attempts', 'notifications',
+    'device_tokens', 'push_receipts', 'user_settings', 'user_dashboard_layouts',
+    'learning_goals', 'goal_milestones', 'session_bookings', 'booking_status_history',
+    'challenge_progress', 'calls', 'tutor_availability_rules', 'tutor_availability_exceptions',
+    'study_plan_blocks', 'study_planner_preferences', 'calendar_reminders',
+    'notification_preferences', 'user_activity_events', 'research_members',
+    'saved_research_projects', 'research_collaboration_requests', 'announcement_dismissals'
+  ];
+  rls_enforce_tables text[] := ARRAY[
+    'profiles', 'skills', 'user_skills', 'connection_requests', 'connections',
+    'blocks', 'conversations', 'conversation_members', 'messages', 'rooms',
+    'room_members', 'sessions', 'session_participants', 'reviews', 'reports',
+    'user_settings', 'audit_logs', 'user_dashboard_layouts', 'learning_goals',
+    'session_bookings', 'calls', 'moderation_cases', 'notification_campaigns',
+    'search_analytics_events', 'app_version_control'
+  ];
+BEGIN
+  -- 4.1 Public catalog tables (Readable by anyone, writes restricted by RLS)
+  FOREACH tbl IN ARRAY public_catalog_tables LOOP
+    IF to_regclass(format('public.%I', tbl)) IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT ON TABLE public.%I TO anon, authenticated', tbl);
+    END IF;
+  END LOOP;
 
--- Public catalog tables (Readable by anyone, writes restricted by RLS)
-GRANT SELECT ON TABLE public.skills TO anon, authenticated;
-GRANT SELECT ON TABLE public.profiles TO anon, authenticated;
-GRANT SELECT ON TABLE public.rooms TO anon, authenticated;
-GRANT SELECT ON TABLE public.reviews TO anon, authenticated;
-GRANT SELECT ON TABLE public.clubs TO anon, authenticated;
-GRANT SELECT ON TABLE public.club_members TO anon, authenticated;
-GRANT SELECT ON TABLE public.events TO anon, authenticated;
-GRANT SELECT ON TABLE public.achievements TO anon, authenticated;
-GRANT SELECT ON TABLE public.user_achievements TO anon, authenticated;
-GRANT SELECT ON TABLE public.quizzes TO anon, authenticated;
-GRANT SELECT ON TABLE public.dashboard_widget_configs TO anon, authenticated;
-GRANT SELECT ON TABLE public.guided_tour_steps TO anon, authenticated;
-GRANT SELECT ON TABLE public.experience_content TO anon, authenticated;
-GRANT SELECT ON TABLE public.learning_challenges TO anon, authenticated;
+  -- 4.2 Authenticated Member Tables (Governed by user_id = auth.uid() RLS policies)
+  FOREACH tbl IN ARRAY authenticated_member_tables LOOP
+    IF to_regclass(format('public.%I', tbl)) IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO authenticated', tbl);
+    END IF;
+  END LOOP;
 
--- Authenticated Member Tables (Governed by user_id = auth.uid() RLS policies)
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.user_skills TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.room_members TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.messages TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.conversations TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.conversation_members TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.connection_requests TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.connections TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.blocks TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.sessions TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.session_participants TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.teaching_requests TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.event_applications TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.resources TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.saved_items TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.points_ledger TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.quiz_attempts TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.notifications TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.device_tokens TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.user_settings TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.dashboard_user_layouts TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.user_guided_tour_progress TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.experience_interactions TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.learning_goals TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.learning_milestones TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.session_bookings TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.user_challenge_claims TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.call_sessions TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.call_signaling_messages TO authenticated;
+  -- 4.3 Reports (Users can insert their own reports and read their own reports)
+  IF to_regclass('public.reports') IS NOT NULL THEN
+    EXECUTE 'GRANT SELECT, INSERT ON TABLE public.reports TO authenticated';
+  END IF;
 
--- Reports (Users can insert their own reports and read their own reports)
-GRANT SELECT, INSERT ON TABLE public.reports TO authenticated;
+  -- 5. Explicitly Re-verify RLS Is Enabled on All Present Tables
+  FOREACH tbl IN ARRAY rls_enforce_tables LOOP
+    IF to_regclass(format('public.%I', tbl)) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+    END IF;
+  END LOOP;
+END $$;
 
--- 5. Explicitly Re-verify RLS Is Enabled on Critical Tables
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.skills ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_skills ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.connection_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.connections ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.blocks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.conversation_members ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.room_members ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.session_participants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.dashboard_user_layouts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.experience_interactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.learning_goals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.session_bookings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.call_sessions ENABLE ROW LEVEL SECURITY;
