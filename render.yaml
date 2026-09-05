@@ -3,7 +3,7 @@ services:
   - type: web
     name: skillbridge-api
     runtime: docker
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /api/v1/health
     dockerContext: ./backend
@@ -23,7 +23,9 @@ services:
       - key: REDIS_URL
         sync: false
       - key: REDIS_REQUIRED
-        value: "true"
+        value: "false"
+      - key: KEEP_ALIVE_ENABLED
+        value: "false"
       - key: WEB_ORIGINS
         sync: false
       - key: LIVEKIT_URL

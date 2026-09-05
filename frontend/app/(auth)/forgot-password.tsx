@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import {
   Alert,
   StyleSheet,
@@ -18,8 +18,9 @@ import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
 
 export default function ForgotPassword() {
   const { colors } = useTheme();
+  const params = useLocalSearchParams<{ email?: string }>();
   
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(params?.email ? decodeURIComponent(params.email) : "");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
 

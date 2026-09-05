@@ -5,6 +5,8 @@
   "scripts": {
     "setup": "npm ci --prefix frontend && npm ci --prefix backend && npm ci --prefix admin",
     "dev:backend": "npm run dev --prefix backend",
+    "dev:usb": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-usb.ps1",
+    "android:dev-build": "powershell -ExecutionPolicy Bypass -File ./scripts/build-dev-android.ps1",
     "dev:web": "npm run web --prefix frontend",
     "dev:admin": "npm run dev --prefix admin",
     "frontend": "npm run start --prefix frontend",
@@ -28,5 +30,12 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "expo": "~46.0.21",
+    "react": "18.0.0",
+    "react-dom": "18.0.0",
+    "react-native": "0.69.9",
+    "react-native-web": "~0.18.7"
   }
 }

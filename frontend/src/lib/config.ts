@@ -98,3 +98,19 @@ if (isProduction) {
 export const SUPABASE_URL = rawSupabaseUrl || (!isProduction ? 'https://dev.supabase.co' : '');
 export const SUPABASE_ANON_KEY = rawSupabaseAnonKey || (!isProduction ? 'dev-anon-key' : '');
 export const SUPABASE_PROJECT_REF = getSupabaseProjectRef(SUPABASE_URL);
+
+// 5. Resolve Google Sign-In Configuration
+const expoGoogleWebClientId = Constants.expoConfig?.extra?.googleWebClientId as string | undefined;
+const expoGoogleIosClientId = Constants.expoConfig?.extra?.googleIosClientId as string | undefined;
+
+export const GOOGLE_WEB_CLIENT_ID = (
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ??
+  (!isProduction ? expoGoogleWebClientId : '') ??
+  ''
+).trim();
+
+export const GOOGLE_IOS_CLIENT_ID = (
+  process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ??
+  (!isProduction ? expoGoogleIosClientId : '') ??
+  ''
+).trim();

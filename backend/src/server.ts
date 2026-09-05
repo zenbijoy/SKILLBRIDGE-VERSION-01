@@ -120,11 +120,14 @@ if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_EN
         await redis.connect();
         logger.info({ event: "redis_connected" }, "Redis connected successfully.");
       } catch (err) {
-        logger.error({ event: "redis_connection_failed", err }, "Failed to connect to Redis");
-        if (env.REDIS_REQUIRED) process.exit(1);
+        logger.warn({ event: "redis_connection_failed", err: (err as Error).message }, "Failed to connect to Redis; continuing in degraded cache mode");
+        if (env.REDIS_REQUIRED) {
+          logger.fatal({ event: "redis_required_fatal" }, "REDIS_REQUIRED is true and Redis connection failed. Exiting.");
+          process.exit(1);
+        }
       }
     } else if (!redis && env.REDIS_REQUIRED) {
-      logger.error({ event: "redis_required_missing" }, "REDIS_URL is not set but REDIS_REQUIRED is true.");
+      logger.fatal({ event: "redis_required_missing" }, "REDIS_URL is not set but REDIS_REQUIRED is true. Exiting.");
       process.exit(1);
     }
 

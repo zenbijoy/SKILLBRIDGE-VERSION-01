@@ -8,7 +8,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
-import { triggerHaptic } from "@/components/ui";
+import { triggerHaptic } from "./haptics";
 
 export interface AppTextFieldProps extends TextInputProps {
   label: string;

@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { supabase } from "@/lib/supabase";
+import { GOOGLE_WEB_CLIENT_ID, GOOGLE_IOS_CLIENT_ID } from "@/lib/config";
 import { getOAuthRedirectUrl } from "./redirects";
 import {
   classifyAuthError,
@@ -8,6 +9,14 @@ import {
   logAuthFailure,
   type ClassifiedAuthError,
 } from "./authErrors";
+import {
+  isNativeGoogleSignInSupported,
+  getNativeGoogleSigninModule,
+  nativeStatusCodes,
+  resetNativeGoogleSignInCache,
+} from "./nativeGoogleSignIn";
+
+export { nativeStatusCodes as statusCodes };
 
 // Complete auth session on web if inside a popup or redirect return
 if (Platform.OS === "web") {
@@ -32,7 +41,6 @@ export function parseOAuthCallbackUrl(url: string): OAuthCallbackResult {
   if (!url) return { type: "none" };
 
   try {
-    // Extract query string and hash fragment
     let queryStr = "";
     let hashStr = "";
 
@@ -120,19 +128,46 @@ export function resetGoogleOAuthBusyState(): void {
   isOAuthInProgress = false;
 }
 
+let isGoogleSigninConfigured = false;
+
 /**
- * Initiates production-hardened Google OAuth flow.
+ * Ensures GoogleSignin is configured with the Web Client ID and optional iOS Client ID.
+ */
+export function configureGoogleSignIn(): void {
+  if (isGoogleSigninConfigured || Platform.OS === "web") return;
+  const nativeModule = getNativeGoogleSigninModule();
+  if (!nativeModule?.GoogleSignin) return;
+
+  try {
+    nativeModule.GoogleSignin.configure({
+      webClientId: GOOGLE_WEB_CLIENT_ID || undefined,
+      iosClientId: GOOGLE_IOS_CLIENT_ID || undefined,
+      scopes: ["profile", "email"],
+      offlineAccess: true,
+    });
+    isGoogleSigninConfigured = true;
+  } catch (err) {
+    console.warn("[GoogleSignIn] Failed to configure native Google Sign-In:", err);
+  }
+}
+
+export function resetGoogleSignInConfigState(): void {
+  isGoogleSigninConfigured = false;
+  resetNativeGoogleSignInCache();
+}
+
+/**
+ * Initiates production-hardened Google Sign-In flow across all platforms:
  *
- * Flow:
- * Native (Android / iOS):
- *   1. Generates PKCE code verifier and Supabase authorize URL (skipBrowserRedirect: true)
- *   2. Opens in-app browser auth session via WebBrowser.openAuthSessionAsync
- *   3. Captures returned deep link (skillbridge://auth/callback?code=...)
- *   4. Exchanges PKCE code for Supabase session and stores it securely
- *   5. Emits real-time auth state to AuthProvider
+ * 1. Web:
+ *    Triggers standard Supabase browser redirect OAuth flow.
  *
- * Web:
- *   1. Triggers standard Supabase browser redirect
+ * 2. Native with compiled RNGoogleSignin TurboModule (Android / iOS):
+ *    Invokes Native Google Sign-In / Credential Manager via GoogleSignin.signIn()
+ *    Obtains Google ID Token -> authenticates with Supabase via signInWithIdToken
+ *
+ * 3. Native Fallback (Expo Go or dev client without compiled RNGoogleSignin):
+ *    Opens WebBrowser auth session with Supabase OAuth and exchanges PKCE / tokens cleanly.
  */
 export async function signInWithGoogle(): Promise<GoogleOAuthResult> {
   if (isOAuthInProgress) {
@@ -153,13 +188,16 @@ export async function signInWithGoogle(): Promise<GoogleOAuthResult> {
 
   try {
     const platform = Platform.OS;
-    const redirectTo = getOAuthRedirectUrl("/auth/callback");
 
-    logAuthEvent("oauth_google_started", {
-      provider: "google",
-      platform,
-    });
+    // 1. Web Platform (Browser Redirect Flow)
     if (platform === "web") {
+      logAuthEvent("oauth_google_started", {
+        provider: "google",
+        platform,
+        flow: "web_oauth",
+      });
+
+      const redirectTo = getOAuthRedirectUrl("/auth/callback");
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -177,35 +215,94 @@ export async function signInWithGoogle(): Promise<GoogleOAuthResult> {
       return { success: true, cancelled: false };
     }
 
-    // Native Platform (Android / iOS)
+    // 2. Native Platform with compiled RNGoogleSignin module
+    const nativeModule = isNativeGoogleSignInSupported() ? getNativeGoogleSigninModule() : null;
+
+    if (nativeModule?.GoogleSignin) {
+      logAuthEvent("oauth_google_started", {
+        provider: "google",
+        platform,
+        flow: "native_id_token",
+      });
+
+      configureGoogleSignIn();
+
+      // Verify Google Play Services on Android
+      if (platform === "android") {
+        await nativeModule.GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
+
+      // Trigger native Google Sign-In modal / Android Credential Manager
+      const response = await nativeModule.GoogleSignin.signIn();
+
+      if (response?.type === "cancelled") {
+        logAuthEvent("oauth_google_cancelled", {
+          provider: "google",
+          platform,
+        });
+        return { success: false, cancelled: true };
+      }
+
+      const idToken = response?.data?.idToken;
+      if (!idToken) {
+        throw new Error("No ID token returned by Google authentication.");
+      }
+
+      logAuthEvent("oauth_google_callback_received", {
+        provider: "google",
+        platform,
+        flow: "native_id_token",
+      });
+
+      // Exchange Google ID Token with Supabase
+      const { data: authData, error: signInError } = await supabase.auth.signInWithIdToken({
+        provider: "google",
+        token: idToken,
+      });
+
+      if (signInError) {
+        throw signInError;
+      }
+
+      if (!authData?.session) {
+        throw new Error("Failed to establish Supabase session from Google ID token.");
+      }
+
+      logAuthEvent("oauth_google_session_created", {
+        provider: "google",
+        platform,
+        flow: "native_id_token",
+      });
+
+      return { success: true, cancelled: false };
+    }
+
+    // 3. Native Platform Fallback (e.g. Expo Go or dev client without compiled RNGoogleSignin)
+    logAuthEvent("oauth_google_started", {
+      provider: "google",
+      platform,
+      flow: "mobile_browser_oauth",
+    });
+
+    const redirectTo = getOAuthRedirectUrl("/auth/callback");
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo,
-        skipBrowserRedirect: true,
         queryParams: {
           prompt: "select_account",
         },
+        skipBrowserRedirect: true,
       },
     });
 
-    if (error) {
-      throw error;
-    }
-
+    if (error) throw error;
     if (!data?.url) {
-      throw new Error("No authorization URL returned by authentication provider.");
+      throw new Error("Failed to generate Google OAuth URL.");
     }
 
-    logAuthEvent("oauth_google_browser_opened", {
-      provider: "google",
-      platform,
-    });
-
-    // Open native browser auth session
     const authResult = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
-    // Handle user cancellation / dismissal gracefully
     if (authResult.type === "cancel" || authResult.type === "dismiss") {
       logAuthEvent("oauth_google_cancelled", {
         provider: "google",
@@ -214,60 +311,55 @@ export async function signInWithGoogle(): Promise<GoogleOAuthResult> {
       return { success: false, cancelled: true };
     }
 
-    if (authResult.type !== "success" || !authResult.url) {
-      throw new Error("Browser session closed without returning authentication credentials.");
-    }
-
-    logAuthEvent("oauth_google_callback_received", {
-      provider: "google",
-      platform,
-    });
-
-    // Parse returned deep link
-    const parsed = parseOAuthCallbackUrl(authResult.url);
-
-    if (parsed.type === "error") {
-      throw new Error(parsed.errorDescription || parsed.error || "Authentication callback returned an error.");
-    }
-
-    if (parsed.type === "code") {
-      // Modern PKCE flow
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
-        parsed.code
-      );
-      if (exchangeError) {
-        throw exchangeError;
-      }
-    } else if (parsed.type === "tokens") {
-      // Implicit token fallback
-      const { error: setSessionError } = await supabase.auth.setSession({
-        access_token: parsed.accessToken,
-        refresh_token: parsed.refreshToken,
-      });
-      if (setSessionError) {
-        throw setSessionError;
-      }
-    } else {
-      // If no code or tokens found in callback URL, check if session was already established
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session) {
-        throw new Error("No valid authentication code or tokens found in callback.");
+    if (authResult.type === "success" && authResult.url) {
+      const parsed = parseOAuthCallbackUrl(authResult.url);
+      if (parsed.type === "code") {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(parsed.code);
+        if (exchangeError) throw exchangeError;
+        logAuthEvent("oauth_google_session_created", {
+          provider: "google",
+          platform,
+          flow: "mobile_browser_oauth",
+        });
+        return { success: true, cancelled: false };
+      } else if (parsed.type === "tokens") {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: parsed.accessToken,
+          refresh_token: parsed.refreshToken,
+        });
+        if (sessionError) throw sessionError;
+        logAuthEvent("oauth_google_session_created", {
+          provider: "google",
+          platform,
+          flow: "mobile_browser_oauth",
+        });
+        return { success: true, cancelled: false };
+      } else if (parsed.type === "error") {
+        throw new Error(parsed.errorDescription || parsed.error);
       }
     }
-
-    // Verify session
-    const { data: finalSessionData } = await supabase.auth.getSession();
-    if (!finalSessionData?.session) {
-      throw new Error("Failed to initialize authenticated session.");
-    }
-
-    logAuthEvent("oauth_google_session_created", {
-      provider: "google",
-      platform,
-    });
 
     return { success: true, cancelled: false };
-  } catch (err) {
+  } catch (err: any) {
+    // Check if cancellation
+    const isCancelled =
+      err?.code === nativeStatusCodes.SIGN_IN_CANCELLED ||
+      err?.code === "12501" ||
+      err?.code === 12501 ||
+      (typeof err?.message === "string" && (
+        err.message.toLowerCase().includes("cancelled") ||
+        err.message.toLowerCase().includes("canceled") ||
+        err.message.toLowerCase().includes("dismissed")
+      ));
+
+    if (isCancelled) {
+      logAuthEvent("oauth_google_cancelled", {
+        provider: "google",
+        platform: Platform.OS,
+      });
+      return { success: false, cancelled: true };
+    }
+
     const classified = classifyAuthError(err);
     logAuthFailure("oauth_google_failed", {
       provider: "google",

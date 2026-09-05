@@ -53,6 +53,39 @@ function asErrorBody(value: unknown): ApiErrorBody {
   return value && typeof value === "object" ? (value as ApiErrorBody) : {};
 }
 
+const MAX_COLD_START_RETRIES = 2;
+
+async function fetchWithColdStartRetry(url: string, init: RequestInit): Promise<Response> {
+  let attempt = 0;
+  while (attempt <= MAX_COLD_START_RETRIES) {
+    attempt++;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60_000); // 60s cold-start budget for free tier
+    const effectiveSignal = init.signal || controller.signal;
+
+    try {
+      const res = await fetch(url, { ...init, signal: effectiveSignal });
+      clearTimeout(timeoutId);
+
+      // If Render returns transient 502/503 during cold start boot, retry with backoff
+      if ((res.status === 502 || res.status === 503) && attempt <= MAX_COLD_START_RETRIES) {
+        await new Promise((r) => setTimeout(r, attempt * 1500));
+        continue;
+      }
+      return res;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      const isAbort = error?.name === "AbortError";
+      if (!isAbort && attempt <= MAX_COLD_START_RETRIES) {
+        await new Promise((r) => setTimeout(r, attempt * 1500));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Unable to connect to SkillBridge server after multiple attempts.");
+}
+
 async function requestWithHeaders(path: string, init: RequestInit, accessToken?: string) {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -65,11 +98,11 @@ async function requestWithHeaders(path: string, init: RequestInit, accessToken?:
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   try {
-    return await fetch(`${BASE}${normalizedPath}`, { ...init, headers });
+    return await fetchWithColdStartRetry(`${BASE}${normalizedPath}`, { ...init, headers });
   } catch (error) {
     throw new ApiError(
       0,
-      "Cannot reach the SkillBridge API. Check your connection and EXPO_PUBLIC_API_URL.",
+      "Cannot reach the SkillBridge API. The server may be waking up. Please retry in a moment.",
       error,
     );
   }

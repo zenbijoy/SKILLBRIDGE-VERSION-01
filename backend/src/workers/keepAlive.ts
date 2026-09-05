@@ -1,22 +1,28 @@
+import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
 /**
  * Render Free Tier Keep-Alive Worker
- * Automatically pings the server health endpoint every 10 minutes to prevent Render free instance sleep.
+ * Only activates if KEEP_ALIVE_ENABLED is explicitly true.
+ * By default on development Render Free Tier, this is disabled to allow natural sleep.
  */
 export function startKeepAliveWorker(): () => void {
+  // Only run keepalive if explicitly enabled in environment
+  if (process.env.NODE_ENV === "test" || !env.KEEP_ALIVE_ENABLED) {
+    logger.info(
+      { event: "keepalive_worker_disabled", keepAliveEnabled: env.KEEP_ALIVE_ENABLED },
+      "Keep-alive worker is disabled. Render free web service is allowed to sleep naturally.",
+    );
+    return () => {};
+  }
+
   const serviceUrl =
     process.env.RENDER_EXTERNAL_URL ||
     process.env.API_BASE_URL ||
     "https://skillbridge-api-pd9c.onrender.com";
 
   const targetUrl = `${serviceUrl.replace(/\/+$/, "")}/health`;
-  const PING_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes (Render spins down after 15 mins)
-
-  // Only run keepalive in production when deployed
-  if (process.env.NODE_ENV === "test") {
-    return () => {};
-  }
+  const PING_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
   logger.info(
     { event: "keepalive_worker_started", targetUrl, intervalMs: PING_INTERVAL_MS },

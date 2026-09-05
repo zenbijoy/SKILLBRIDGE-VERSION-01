@@ -32,6 +32,7 @@ const schema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(10),
   REDIS_URL: optionalString,
   REDIS_REQUIRED: booleanFromEnv.default(false),
+  KEEP_ALIVE_ENABLED: booleanFromEnv.default(false),
   LIVEKIT_URL: optionalString,
   LIVEKIT_API_KEY: optionalString,
   LIVEKIT_API_SECRET: optionalString,

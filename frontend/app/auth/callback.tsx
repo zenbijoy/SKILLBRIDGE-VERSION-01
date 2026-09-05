@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Text, StyleSheet } from "react-native";
+import { Text, StyleSheet, View, Platform, TouchableOpacity } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
-import { useTheme } from "@/theme";
-import { Loading, Screen } from "@/components/ui";
+import { useTheme, spacing } from "@/theme";
+import { Button, Loading, Screen } from "@/components/ui";
 import { classifyAuthError, logAuthEvent, logAuthFailure } from "@/features/auth/authErrors";
 
 export default function AuthCallback() {
@@ -11,6 +12,8 @@ export default function AuthCallback() {
   const { colors } = useTheme();
   const params = useLocalSearchParams();
   const [errorMsg, setErrorMsg] = useState("");
+  const [isMobileWeb, setIsMobileWeb] = useState(false);
+  const [appLaunchAttempted, setAppLaunchAttempted] = useState(false);
   const processedRef = useRef(false);
 
   useEffect(() => {
@@ -24,17 +27,7 @@ export default function AuthCallback() {
           hasTokens: Boolean(params.access_token && params.refresh_token),
         });
 
-        // Check if session is already established
-        const { data: currentSession } = await supabase.auth.getSession();
-        if (currentSession?.session) {
-          if (params.type === "recovery") {
-            router.replace("/auth/reset-password" as any);
-            return;
-          }
-          router.replace("/(tabs)");
-          return;
-        }
-
+        // 1. Check for explicit error parameters
         if (params.error) {
           throw new Error(
             params.error_description?.toString() ||
@@ -43,44 +36,35 @@ export default function AuthCallback() {
           );
         }
 
-        // Handle OAuth code exchange (PKCE)
+        let authenticated = false;
+
+        // 2. Handle OAuth code exchange (PKCE)
         if (params.code) {
           const { error } = await supabase.auth.exchangeCodeForSession(
             params.code.toString()
           );
           if (error) {
-            // Check once more in case another handler or listener completed it
             const { data: fallbackSession } = await supabase.auth.getSession();
-            if (fallbackSession?.session) {
-              router.replace("/(tabs)");
-              return;
+            if (!fallbackSession?.session) {
+              throw error;
             }
-            throw error;
           }
+          authenticated = true;
           logAuthEvent("oauth_google_session_created");
-          router.replace("/(tabs)");
-          return;
         }
 
-        // Handle Magic Link / Recovery from query params
-        if (params.access_token && params.refresh_token) {
+        // 3. Handle Magic Link / Tokens from query parameters
+        if (!authenticated && params.access_token && params.refresh_token) {
           const { error } = await supabase.auth.setSession({
             access_token: params.access_token.toString(),
             refresh_token: params.refresh_token.toString(),
           });
           if (error) throw error;
-
-          if (params.type === "recovery") {
-            router.replace("/auth/reset-password" as any);
-            return;
-          }
-
-          router.replace("/(tabs)" as any);
-          return;
+          authenticated = true;
         }
 
-        // Handle Hash fragment on Web (e.g. #access_token=...&refresh_token=...)
-        if (typeof window !== "undefined" && window.location?.hash) {
+        // 4. Handle Hash fragment on Web (e.g. #access_token=...&refresh_token=...)
+        if (!authenticated && typeof window !== "undefined" && window.location?.hash) {
           const hashParams = new URLSearchParams(
             window.location.hash.replace(/^#/, "")
           );
@@ -92,7 +76,6 @@ export default function AuthCallback() {
 
           const accessToken = hashParams.get("access_token");
           const refreshToken = hashParams.get("refresh_token");
-          const type = hashParams.get("type");
 
           if (accessToken && refreshToken) {
             const { error } = await supabase.auth.setSession({
@@ -100,26 +83,67 @@ export default function AuthCallback() {
               refresh_token: refreshToken,
             });
             if (error) throw error;
-
-            if (type === "recovery") {
-              router.replace("/auth/reset-password" as any);
-              return;
-            }
-
-            router.replace("/(tabs)" as any);
-            return;
+            authenticated = true;
           }
         }
 
-        // Check if Supabase JS already automatically initialized a session from URL
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData?.session) {
+        // 5. Check if session was already established or restored
+        if (!authenticated) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            authenticated = true;
+          }
+        }
+
+        if (!authenticated) {
+          throw new Error("Invalid or missing authentication tokens.");
+        }
+
+        // Handle Password Recovery redirect
+        if (params.type === "recovery") {
+          router.replace("/auth/reset-password" as any);
+          return;
+        }
+
+        // Native App: Navigate directly to Tabs
+        if (Platform.OS !== "web") {
           router.replace("/(tabs)" as any);
           return;
         }
 
-        // If we reach here, we didn't find required parameters
-        throw new Error("Invalid or missing authentication tokens.");
+        // Web Environment: Check if user is on a mobile device
+        const isMobile =
+          typeof navigator !== "undefined" &&
+          /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent
+          );
+
+        if (isMobile && typeof window !== "undefined") {
+          setIsMobileWeb(true);
+          setAppLaunchAttempted(true);
+
+          // Deep link to reopen the installed native app
+          const appDeepLink = `skillbridge://auth/callback${window.location.search || ""}${window.location.hash || ""}`;
+
+          // Try launching the native app
+          try {
+            window.location.href = appDeepLink;
+          } catch {
+            // Ignore browser navigation blocks
+          }
+
+          // Fallback: If user remains in web browser after 2.5s, proceed to web app
+          const fallbackTimer = setTimeout(() => {
+            if (typeof document !== "undefined" && !document.hidden) {
+              router.replace("/(tabs)" as any);
+            }
+          }, 2500);
+
+          return () => clearTimeout(fallbackTimer);
+        } else {
+          // Desktop Web: Smoothly proceed into web dashboard
+          router.replace("/(tabs)" as any);
+        }
       } catch (err) {
         logAuthFailure("oauth_google_failed", {
           provider: "callback",
@@ -133,23 +157,69 @@ export default function AuthCallback() {
     handleCallback();
   }, [params, router]);
 
+  const handleOpenNativeApp = () => {
+    if (typeof window !== "undefined") {
+      const appDeepLink = `skillbridge://auth/callback${window.location.search || ""}${window.location.hash || ""}`;
+      window.location.href = appDeepLink;
+    }
+  };
+
+  const handleContinueOnWeb = () => {
+    router.replace("/(tabs)" as any);
+  };
+
   if (errorMsg) {
     return (
       <Screen contentStyle={styles.container}>
-        <Text style={[styles.error, { color: colors.danger }]}>{errorMsg}</Text>
-        <Text
-          style={[styles.link, { color: colors.primary }]}
-          onPress={() => router.replace("/(auth)/sign-in" as any)}
-        >
-          Return to Sign In
-        </Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.danger} />
+          <Text style={[styles.title, { color: colors.text }]}>Authentication Error</Text>
+          <Text style={[styles.error, { color: colors.danger }]}>{errorMsg}</Text>
+          <View style={styles.btnWrapper}>
+            <Button
+              title="Return to Sign In"
+              onPress={() => router.replace("/(auth)/sign-in" as any)}
+            />
+          </View>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (isMobileWeb && appLaunchAttempted) {
+    return (
+      <Screen contentStyle={styles.container}>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <MaterialCommunityIcons name="check-decagram" size={54} color={colors.primary} />
+          <Text style={[styles.title, { color: colors.text }]}>Authentication Confirmed!</Text>
+          <Text style={[styles.subtitle, { color: colors.muted }]}>
+            Attempting to open the SkillBridge mobile app...
+          </Text>
+
+          <View style={styles.btnWrapper}>
+            <Button
+              title="Open SkillBridge App"
+              onPress={handleOpenNativeApp}
+            />
+          </View>
+
+          <TouchableOpacity
+            onPress={handleContinueOnWeb}
+            style={styles.webFallbackBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.webFallbackText, { color: colors.textSecondary }]}>
+              App not installed? <Text style={{ color: colors.primary, fontWeight: "600" }}>Continue on Web</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
       </Screen>
     );
   }
 
   return (
     <Screen contentStyle={styles.container}>
-      <Loading label="Authenticating..." />
+      <Loading label="Authenticating your session..." />
     </Screen>
   );
 }
@@ -159,17 +229,45 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    padding: spacing.xl,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 440,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: spacing.xl,
+    alignItems: "center",
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: spacing.md,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: spacing.xs,
+    lineHeight: 20,
   },
   error: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 14,
     textAlign: "center",
-    marginBottom: 16,
+    marginTop: spacing.sm,
+    lineHeight: 20,
   },
-  link: {
-    fontSize: 15,
-    fontWeight: "700",
+  btnWrapper: {
+    width: "100%",
+    marginTop: spacing.lg,
+  },
+  webFallbackBtn: {
+    marginTop: spacing.lg,
+    paddingVertical: spacing.xs,
+  },
+  webFallbackText: {
+    fontSize: 14,
   },
 });
+
 

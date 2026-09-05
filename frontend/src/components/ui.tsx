@@ -21,7 +21,6 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { radius as defaultRadius, spacing, useTheme, type AppPalette } from "@/theme";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import Animated, {
@@ -35,20 +34,16 @@ import Animated, {
 import { AppTextField } from "./ui/AppTextField";
 import { PasswordField } from "./ui/PasswordField";
 import { ScreenContainer } from "./ui/ScreenContainer";
+import { triggerHaptic } from "./ui/haptics";
+import { SkillBridgeLoader, type SkillBridgeLoaderProps } from "./ui/SkillBridgeLoader";
 
-export { AppTextField, PasswordField, ScreenContainer };
+export { AppTextField, PasswordField, ScreenContainer, triggerHaptic, SkillBridgeLoader };
+export type { SkillBridgeLoaderProps };
 
 /** Memoize StyleSheet.create() so it only recalculates on theme change. */
 function useStyles() {
   const { colors, radius } = useTheme();
   return useMemo(() => makeStyles(colors, radius), [colors, radius]);
-}
-
-export function triggerHaptic() {
-  const hapticsEnabled = usePreferencesStore.getState().haptics;
-  if (hapticsEnabled && Platform.OS !== "web") {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  }
 }
 
 export function Screen({
@@ -586,15 +581,8 @@ export function Field({
   );
 }
 
-export function Loading({ label = "Loading SkillBridge…" }: { label?: string }) {
-  const { colors } = useTheme();
-  const styles = useStyles();
-  return (
-    <View style={styles.center}>
-      <ActivityIndicator size="large" color={colors.primary} />
-      <Muted>{label}</Muted>
-    </View>
-  );
+export function Loading({ label }: { label?: string }) {
+  return <SkillBridgeLoader size="large" message={label} />;
 }
 
 export function Empty({

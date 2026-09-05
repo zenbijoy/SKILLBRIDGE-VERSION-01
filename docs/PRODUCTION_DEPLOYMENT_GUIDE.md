@@ -74,11 +74,12 @@ Alternatively, use the combined migration script `infra/supabase/migrations/merg
 ## 3. Tier 2: Managed Redis on Render (Cache & Realtime)
 
 ### 3.1 Setup on Render
-1. In the Render Dashboard, click **New + -> Redis**.
-2. Name: `skillbridge-redis`.
-3. Plan: **Starter** (or higher depending on load).
+1. In the Render Dashboard, click **New + -> Key Value** (or Redis).
+2. Name: `skillbridge-redis-free`.
+3. Plan: **Free** (25 MB RAM, 50 connections, `allkeys-lru`, persistence off).
 4. Eviction Policy: `allkeys-lru` (Least Recently Used).
-5. Copy the **Internal Redis Connection String** (e.g. `redis://red-xxxx:6379`).
+5. Copy the **Internal Redis Connection String** and set it in your Render Web Service Environment as `REDIS_URL`.
+   *(Note: `REDIS_REQUIRED=false` ensures graceful fallback if Redis is waking up).*
 
 ### 3.2 Redis Features Enabled in SkillBridge
 - **Skill Catalog & Category Caching**: `catalog:skills` cached with 1-hour TTL.

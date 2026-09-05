@@ -1,9 +1,6 @@
-name: Keep Render Service Awake
+name: Manual Ping Render Service
 
 on:
-  schedule:
-    # Run every 10 minutes
-    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 jobs:

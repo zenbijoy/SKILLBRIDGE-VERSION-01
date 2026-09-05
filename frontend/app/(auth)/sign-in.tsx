@@ -13,16 +13,18 @@ import { Button, H1, Muted, triggerHaptic } from "@/components/ui";
 import { AppTextField, PasswordField, ScreenContainer } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
-import { getAuthCallbackUrl } from "@/features/auth/redirects";
 import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
 import { signInWithGoogle } from "@/features/auth/googleOAuth";
+import { useLocalSearchParams } from "expo-router";
 
 export default function SignIn() {
   const { colors } = useTheme();
+  const params = useLocalSearchParams<{ email?: string }>();
   
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(params?.email ? decodeURIComponent(params.email) : "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+
 
   async function submit() {
     try {
@@ -45,31 +47,19 @@ export default function SignIn() {
     }
   }
 
-  async function handleSocial(provider: "google" | "facebook") {
+  async function handleGoogleSignIn() {
     if (busy) return;
     try {
       triggerHaptic();
       setBusy(true);
-      if (provider === "google") {
-        const result = await signInWithGoogle();
-        if (result.cancelled) {
-          // User intentionally cancelled or dismissed the browser session
-          return;
-        }
-        if (!result.success && result.error) {
-          Alert.alert(result.error.title, result.error.message);
-        }
+      const result = await signInWithGoogle();
+      if (result.cancelled) {
+        // User intentionally cancelled or dismissed the browser session
         return;
       }
-
-      // Fallback for other OAuth providers
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: getAuthCallbackUrl("/auth/callback"),
-        },
-      });
-      if (error) throw error;
+      if (!result.success && result.error) {
+        Alert.alert(result.error.title, result.error.message);
+      }
     } catch (e) {
       const classified = classifyAuthError(e);
       Alert.alert(classified.title, classified.message);
@@ -148,12 +138,12 @@ export default function SignIn() {
             </View>
 
             <View style={s.socialRow}>
-              <View style={{ flex: 1 }}>
-                <Button variant="social" icon="google" title="Google" onPress={() => handleSocial("google")} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button variant="social" icon="facebook" title="Facebook" onPress={() => handleSocial("facebook")} />
-              </View>
+              <Button
+                variant="social"
+                icon="google"
+                title="Continue with Google"
+                onPress={handleGoogleSignIn}
+              />
             </View>
 
             <TouchableOpacity
@@ -228,3 +218,5 @@ const s = StyleSheet.create({
     padding: 8,
   }
 });
+
+export { ErrorBoundary } from "./_layout";

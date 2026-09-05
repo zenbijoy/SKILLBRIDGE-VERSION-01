@@ -37,8 +37,13 @@ export function classifyAuthError(error: unknown): ClassifiedAuthError {
 
   const normalized = rawMessage.toLowerCase();
 
+  const code = (error as { code?: string | number })?.code;
+
   // 1. User Cancellation
   if (
+    code === '12501' ||
+    code === 12501 ||
+    code === 'SIGN_IN_CANCELLED' ||
     normalized.includes('cancelled') ||
     normalized.includes('canceled') ||
     normalized.includes('dismissed') ||
@@ -56,7 +61,66 @@ export function classifyAuthError(error: unknown): ClassifiedAuthError {
     };
   }
 
+  // 1b. Google Play Services Unavailable
+  if (
+    code === 'PLAY_SERVICES_NOT_AVAILABLE' ||
+    normalized.includes('play services not available') ||
+    normalized.includes('play_services_not_available')
+  ) {
+    return {
+      category: 'OAUTH_UNKNOWN',
+      title: 'Google Play Services unavailable',
+      message: 'Google Play Services is not available or outdated on this device.',
+      rawMessage,
+      isNetworkError: false,
+    };
+  }
+
+  // 1c. Google Sign-In In Progress
+  if (
+    code === 'IN_PROGRESS' ||
+    normalized.includes('in_progress') ||
+    normalized.includes('already in progress')
+  ) {
+    return {
+      category: 'OAUTH_UNKNOWN',
+      title: 'Please wait',
+      message: 'A sign-in request is already in progress.',
+      rawMessage,
+      isNetworkError: false,
+    };
+  }
+
   // 2. Provider Disabled / Configuration Error
+  if (
+    code === 'DEVELOPER_ERROR' ||
+    code === 10 ||
+    code === '10' ||
+    normalized.includes('developer_error')
+  ) {
+    return {
+      category: 'OAUTH_CONFIG_ERROR',
+      title: 'Configuration error',
+      message: 'Google sign-in configuration error. Please verify SHA-1 and Client ID settings.',
+      rawMessage,
+      isNetworkError: false,
+    };
+  }
+
+  // 2b. Missing ID Token
+  if (
+    normalized.includes('no id token') ||
+    normalized.includes('missing id token')
+  ) {
+    return {
+      category: 'OAUTH_UNKNOWN',
+      title: 'Sign in failed',
+      message: 'No ID token returned by Google authentication.',
+      rawMessage,
+      isNetworkError: false,
+    };
+  }
+
   if (
     normalized.includes('provider is not enabled') ||
     normalized.includes('provider disabled') ||
@@ -296,6 +360,7 @@ export function logAuthEvent(
     isNewUser?: boolean;
     hasCode?: boolean;
     hasTokens?: boolean;
+    flow?: string;
   } = {}
 ): void {
   const classified = details.error ? classifyAuthError(details.error) : undefined;
@@ -305,6 +370,7 @@ export function logAuthEvent(
     console.warn(`[AUTH] ${event}:`, {
       provider: details.provider || 'google',
       platform: details.platform,
+      flow: details.flow,
       category: details.category || classified?.category,
       isNetworkError: classified?.isNetworkError,
       isCancelled: classified?.isCancelled,

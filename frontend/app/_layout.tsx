@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-rou
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import * as SplashScreen from "expo-splash-screen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { registerPush, useNotificationRouting } from "@/lib/notifications";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
@@ -14,6 +15,10 @@ import { TourProvider } from "@/features/tour/TourContext";
 import { TourOverlay } from "@/features/tour/TourOverlay";
 import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal";
 import { useI18n } from "@/i18n";
+import { SkillBridgeLoader } from "@/components/ui";
+
+// Prevent native splash screen from hiding prematurely until session initialization completes
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Global error listener for web production diagnostic reporting
 if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -119,8 +124,15 @@ function Gate() {
     return () => disconnectSocket();
   }, [loading, session]);
 
+  // Hide native splash screen once initial session resolution completes
+  useEffect(() => {
+    if (!loading) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [loading]);
+
   if (loading) {
-    return null; // Return null or splash screen to avoid flash
+    return <SkillBridgeLoader fullScreen size="hero" />;
   }
 
   return (

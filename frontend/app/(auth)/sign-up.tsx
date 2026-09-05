@@ -13,7 +13,7 @@ import { Button, H1, Muted, triggerHaptic } from "@/components/ui";
 import { AppTextField, PasswordField, ScreenContainer } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { spacing, useTheme } from "@/theme";
-import { getAuthCallbackUrl } from "@/features/auth/redirects";
+import { getEmailConfirmationUrl } from "@/features/auth/redirects";
 import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
 import { signInWithGoogle } from "@/features/auth/googleOAuth";
 
@@ -25,60 +25,87 @@ export default function SignUp() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
+  function showExistingEmailAlert(targetEmail: string) {
+    Alert.alert(
+      "Account Already Exists",
+      `An account with "${targetEmail}" is already registered. Would you like to sign in instead, or use a different email?`,
+      [
+        {
+          text: "Use Different Email",
+          style: "cancel",
+          onPress: () => {
+            setEmail("");
+          },
+        },
+        {
+          text: "Forgot Password?",
+          onPress: () => {
+            router.push(`/(auth)/forgot-password?email=${encodeURIComponent(targetEmail)}` as any);
+          },
+        },
+        {
+          text: "Sign In",
+          onPress: () => {
+            router.replace(`/(auth)/sign-in?email=${encodeURIComponent(targetEmail)}` as any);
+          },
+        },
+      ]
+    );
+  }
+
   async function submit() {
     try {
       triggerHaptic();
       setBusy(true);
       
-      const { error } = await supabase.auth.signUp({
-        email: email.trim(),
+      const targetEmail = email.trim();
+      const { data, error } = await supabase.auth.signUp({
+        email: targetEmail,
         password,
         options: {
           data: { full_name: name.trim() },
-          emailRedirectTo: getAuthCallbackUrl("/auth/callback"),
+          emailRedirectTo: getEmailConfirmationUrl("/auth/callback"),
         },
       });
       if (error) throw error;
+
+      // Handle case where Supabase returns empty identities for an existing email without throwing
+      if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        showExistingEmailAlert(targetEmail);
+        return;
+      }
       
       Alert.alert(
         "Check your email",
         "We sent a verification link to your email. Please verify your account before signing in.",
-        [{ text: "OK", onPress: () => router.replace("/(auth)/sign-in") }]
+        [{ text: "OK", onPress: () => router.replace(`/(auth)/sign-in?email=${encodeURIComponent(targetEmail)}` as any) }]
       );
     } catch (e) {
       logAuthFailure("auth_signup_failed", { error: e });
       const classified = classifyAuthError(e);
+      if (classified.category === "AUTH_EMAIL_ALREADY_REGISTERED") {
+        showExistingEmailAlert(email.trim());
+        return;
+      }
       Alert.alert(classified.title, classified.message);
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleSocial(provider: "google" | "facebook") {
+  async function handleGoogleSignUp() {
     if (busy) return;
     try {
       triggerHaptic();
       setBusy(true);
-      if (provider === "google") {
-        const result = await signInWithGoogle();
-        if (result.cancelled) {
-          // User intentionally cancelled or dismissed the browser session
-          return;
-        }
-        if (!result.success && result.error) {
-          Alert.alert(result.error.title, result.error.message);
-        }
+      const result = await signInWithGoogle();
+      if (result.cancelled) {
+        // User intentionally cancelled or dismissed the browser session
         return;
       }
-
-      // Fallback for other OAuth providers
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: getAuthCallbackUrl("/auth/callback"),
-        },
-      });
-      if (error) throw error;
+      if (!result.success && result.error) {
+        Alert.alert(result.error.title, result.error.message);
+      }
     } catch (e) {
       const classified = classifyAuthError(e);
       Alert.alert(classified.title, classified.message);
@@ -158,12 +185,12 @@ export default function SignUp() {
             </View>
 
             <View style={s.socialRow}>
-              <View style={{ flex: 1 }}>
-                <Button variant="social" icon="google" title="Google" onPress={() => handleSocial("google")} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button variant="social" icon="facebook" title="Facebook" onPress={() => handleSocial("facebook")} />
-              </View>
+              <Button
+                variant="social"
+                icon="google"
+                title="Sign up with Google"
+                onPress={handleGoogleSignUp}
+              />
             </View>
 
             <TouchableOpacity
@@ -231,3 +258,5 @@ const s = StyleSheet.create({
     padding: 8,
   }
 });
+
+export { ErrorBoundary } from "./_layout";

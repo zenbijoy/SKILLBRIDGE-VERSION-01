@@ -1,0 +1,48 @@
+version: "1"
+services:
+  - type: web
+    name: skillbridge-api
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: REDIS_REQUIRED
+        value: "false"
+      - key: WEB_ORIGINS
+        sync: false
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: EXPO_PUSH_ACCESS_TOKEN
+        sync: false
+      - key: CLOUDFLARE_TURN_ENABLED
+        sync: false
+      - key: CLOUDFLARE_TURN_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false
+      - key: MAX_ROOM_CAPACITY
+        value: "250"
+      - key: MAINTENANCE_MODE
+        value: "false"
+      - key: GLOBAL_RATE_LIMIT_PER_MINUTE
+        value: "120"
