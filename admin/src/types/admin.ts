@@ -55,6 +55,7 @@ export interface AuditLog {
   target_type: string;
   target_id?: string | null;
   metadata?: Record<string, unknown>;
+  ip_address?: string | null;
   created_at: string;
 }
 

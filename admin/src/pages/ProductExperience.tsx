@@ -1,9 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BellRing, Flag, LayoutDashboard, RefreshCw, Save, Sparkles } from 'lucide-react';
+import { BellRing, Flag, LayoutDashboard, RefreshCw, Save, Smartphone, Sparkles } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
+
+type VersionControlConfig = {
+  id: string;
+  min_supported_version: string;
+  recommended_version: string;
+  maintenance_mode: boolean;
+  maintenance_message: string;
+  update_prompt_enabled: boolean;
+  update_title: string;
+  update_message: string;
+  store_url_android: string | null;
+  store_url_ios: string | null;
+};
+
+type VersionAdoptionItem = {
+  version: string;
+  count: number;
+};
 
 type DashboardConfig = {
   id: string;
@@ -73,16 +91,33 @@ export default function ProductExperience() {
   const [contentLocale, setContentLocale] = useState<(typeof LOCALES)[number]>('en');
   const [contentJson, setContentJson] = useState('[]');
 
+  // Version Control & Release Ops
+  const [versionConfig, setVersionConfig] = useState<VersionControlConfig>({
+    id: 'default',
+    min_supported_version: '2.0.0',
+    recommended_version: '2.1.0',
+    maintenance_mode: false,
+    maintenance_message: 'SkillBridge is currently undergoing scheduled platform maintenance.',
+    update_prompt_enabled: true,
+    update_title: 'New Version Available',
+    update_message: 'A new version of SkillBridge is ready with performance upgrades and new collaboration tools.',
+    store_url_android: null,
+    store_url_ios: null,
+  });
+  const [versionAdoption, setVersionAdoption] = useState<VersionAdoptionItem[]>([]);
+  const [savingVersion, setSavingVersion] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [profileResponse, widgetResponse, announcementResponse, flagResponse, contentResponse] = await Promise.all([
+      const [profileResponse, widgetResponse, announcementResponse, flagResponse, contentResponse, versionResponse] = await Promise.all([
         api.get<{ profile: { roles: string[] } }>('/profiles/me'),
         api.get<{ configs: DashboardConfig[] }>('/admin/dashboard-configs'),
         api.get<{ announcements: Announcement[] }>('/admin/announcements'),
         api.get<{ flags: FeatureFlag[] }>('/admin/feature-flags'),
         api.get<{ contentSets: ContentSet[] }>('/admin/experience-content'),
+        api.get<{ config: VersionControlConfig; adoption: VersionAdoptionItem[] }>('/admin/version-control').catch(() => null),
       ]);
       setCanAdminister(profileResponse.data.profile.roles.includes('admin'));
       setWidgets(widgetResponse.data.configs.map((item) => ({
@@ -96,6 +131,12 @@ export default function ProductExperience() {
         target_roles: item.target_roles?.length ? item.target_roles : [...AUDIENCE_ROLES],
       })));
       setContentSets(contentResponse.data.contentSets);
+      if (versionResponse?.data?.config) {
+        setVersionConfig(versionResponse.data.config);
+      }
+      if (versionResponse?.data?.adoption) {
+        setVersionAdoption(versionResponse.data.adoption);
+      }
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : 'Failed to load product experience configuration');
     } finally {
@@ -199,6 +240,31 @@ export default function ProductExperience() {
     `Announcement ${announcement.is_active ? 'archived' : 'reactivated'}.`,
   );
 
+  const handleSaveVersionControl = async () => {
+    setSavingVersion(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await api.patch<{ success: boolean; config: VersionControlConfig }>('/admin/version-control', {
+        min_supported_version: versionConfig.min_supported_version,
+        recommended_version: versionConfig.recommended_version,
+        maintenance_mode: versionConfig.maintenance_mode,
+        maintenance_message: versionConfig.maintenance_message,
+        update_prompt_enabled: versionConfig.update_prompt_enabled,
+        update_title: versionConfig.update_title,
+        update_message: versionConfig.update_message,
+        store_url_android: versionConfig.store_url_android || null,
+        store_url_ios: versionConfig.store_url_ios || null,
+      });
+      setVersionConfig(res.data.config);
+      setNotice('App version and release policies saved successfully. Client cache purged.');
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Failed to save version control settings');
+    } finally {
+      setSavingVersion(false);
+    }
+  };
+
   const publishContent = () => void perform(`content:${contentType}:${contentLocale}`, async () => {
     let content: unknown;
     try { content = JSON.parse(contentJson); }
@@ -222,6 +288,170 @@ export default function ProductExperience() {
       {!loading && !canAdminister ? <div className="notice notice-warning mb-4">Read-only view. Product experience changes require the administrator role.</div> : null}
 
       {!loading ? <div className="grid gap-5">
+        {/* App Version & Release Control Panel */}
+        <section className="panel panel-flat">
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title flex items-center gap-2">
+                <Smartphone size={18} /> App Version & Release Operations
+              </h2>
+              <p className="panel-subtitle">
+                Configure minimum and recommended client versions, maintenance locks, update prompts, and monitor client adoption.
+              </p>
+            </div>
+            <StatusBadge value={versionConfig.maintenance_mode ? 'maintenance active' : `v${versionConfig.min_supported_version}+ enforced`} />
+          </div>
+          <div className="panel-body grid gap-4 lg:grid-cols-2">
+            {/* Version & Maintenance Controls */}
+            <div className="grid gap-3 rounded-xl border border-slate-200 p-4">
+              <h3 className="font-bold text-sm text-slate-800">Release Version Constraints</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Minimum Supported Version</label>
+                  <input
+                    disabled={!canAdminister}
+                    className="form-input text-xs"
+                    value={versionConfig.min_supported_version}
+                    onChange={(e) => setVersionConfig((prev) => ({ ...prev, min_supported_version: e.target.value }))}
+                    placeholder="e.g. 2.0.0"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">Clients below this version are forced to update.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Recommended Version</label>
+                  <input
+                    disabled={!canAdminister}
+                    className="form-input text-xs"
+                    value={versionConfig.recommended_version}
+                    onChange={(e) => setVersionConfig((prev) => ({ ...prev, recommended_version: e.target.value }))}
+                    placeholder="e.g. 2.1.0"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">Recommended target version for user upgrade prompts.</p>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <strong className="text-xs text-slate-800">Maintenance Mode</strong>
+                    <p className="text-[11px] text-slate-500">Lock non-admin client access during system upgrades</p>
+                  </div>
+                  <button
+                    disabled={!canAdminister}
+                    type="button"
+                    onClick={() => setVersionConfig((prev) => ({ ...prev, maintenance_mode: !prev.maintenance_mode }))}
+                    className={versionConfig.maintenance_mode ? 'btn-primary bg-rose-600 hover:bg-rose-500 text-xs py-1 px-3' : 'btn-secondary text-xs py-1 px-3'}
+                  >
+                    {versionConfig.maintenance_mode ? 'Active (Locking Access)' : 'Disabled'}
+                  </button>
+                </div>
+                {versionConfig.maintenance_mode ? (
+                  <textarea
+                    disabled={!canAdminister}
+                    className="form-input text-xs min-h-16 mt-1"
+                    value={versionConfig.maintenance_message}
+                    onChange={(e) => setVersionConfig((prev) => ({ ...prev, maintenance_message: e.target.value }))}
+                    placeholder="Maintenance explanation displayed to users"
+                  />
+                ) : null}
+              </div>
+
+              <div className="pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <strong className="text-xs text-slate-800">Update Prompt Notification</strong>
+                    <p className="text-[11px] text-slate-500">Display friendly upgrade dialog when an update is available</p>
+                  </div>
+                  <button
+                    disabled={!canAdminister}
+                    type="button"
+                    onClick={() => setVersionConfig((prev) => ({ ...prev, update_prompt_enabled: !prev.update_prompt_enabled }))}
+                    className={versionConfig.update_prompt_enabled ? 'btn-secondary text-emerald-600 text-xs py-1 px-3' : 'btn-secondary text-xs py-1 px-3'}
+                  >
+                    {versionConfig.update_prompt_enabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+                {versionConfig.update_prompt_enabled ? (
+                  <div className="grid gap-2 mt-1">
+                    <input
+                      disabled={!canAdminister}
+                      className="form-input text-xs"
+                      value={versionConfig.update_title}
+                      onChange={(e) => setVersionConfig((prev) => ({ ...prev, update_title: e.target.value }))}
+                      placeholder="Update Dialog Title"
+                    />
+                    <textarea
+                      disabled={!canAdminister}
+                      className="form-input text-xs min-h-16"
+                      value={versionConfig.update_message}
+                      onChange={(e) => setVersionConfig((prev) => ({ ...prev, update_message: e.target.value }))}
+                      placeholder="Update Dialog Message"
+                    />
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                disabled={!canAdminister || savingVersion}
+                onClick={handleSaveVersionControl}
+                className="btn-primary w-fit mt-2 flex items-center gap-2 text-xs"
+              >
+                <Save size={14} />
+                <span>{savingVersion ? 'Saving…' : 'Save Version Policies'}</span>
+              </button>
+            </div>
+
+            {/* Client Version Adoption Breakdown */}
+            <div className="rounded-xl border border-slate-200 p-4 flex flex-col justify-between">
+              <div>
+                <h3 className="font-bold text-sm text-slate-800">Client Telemetry & Version Adoption</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Active device installations registered via push tokens grouped by client build version.
+                </p>
+
+                {versionAdoption.length > 0 ? (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500">
+                          <th className="pb-2 font-semibold">Client Build</th>
+                          <th className="pb-2 font-semibold text-right">Active Devices</th>
+                          <th className="pb-2 font-semibold text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {versionAdoption.map((item) => (
+                          <tr key={item.version}>
+                            <td className="py-2 font-mono font-medium text-slate-800">{item.version}</td>
+                            <td className="py-2 text-right font-mono font-semibold text-indigo-600">{item.count}</td>
+                            <td className="py-2 text-right">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                item.version >= versionConfig.min_supported_version
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-red-50 text-red-700'
+                              }`}>
+                                {item.version >= versionConfig.min_supported_version ? 'Supported' : 'Outdated'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="mt-6 rounded-lg bg-slate-50 p-4 text-center text-xs text-slate-500">
+                    No client device tokens with version telemetry registered yet.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-400">
+                Real database counts. Version adoption metrics are derived directly from verified device push registrations.
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="panel panel-flat">
           <div className="panel-header"><div><h2 className="panel-title flex items-center gap-2"><LayoutDashboard size={18} /> Dashboard widgets</h2><p className="panel-subtitle">Global availability and required-widget policy. User ordering remains personalized.</p></div><StatusBadge value={`${widgets.filter((item) => item.is_enabled).length} enabled`} /></div>
           <div className="panel-body grid gap-3 md:grid-cols-2">

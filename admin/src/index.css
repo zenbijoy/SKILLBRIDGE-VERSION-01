@@ -48,7 +48,11 @@ a { color: inherit; }
   background: rgba(255,255,255,.035); display: flex; align-items: center; gap: 8px; font-size: 11px; color: #9fb0ca;
 }
 .environment-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 4px rgba(52,211,153,.10); }
-.sidebar-nav { display: flex; flex-direction: column; gap: 5px; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; max-height: calc(100vh - 180px); }
+.sidebar-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b;
+  padding: 12px 10px 4px; margin-top: 4px;
+}
 .sidebar-link {
   min-height: 42px; padding: 0 12px; border-radius: 11px; display: flex; align-items: center; gap: 11px;
   color: #aebbd0; text-decoration: none; font-size: 13px; font-weight: 650; transition: .16s ease;

@@ -8,6 +8,17 @@ import { env } from "../config/env.js";
 import { sanitizeIlike } from "../lib/query-helpers.js";
 import { cacheDelPattern } from "../lib/redis.js";
 import { adminSystemRoutes } from "./admin-system.js";
+import { adminAnalyticsRoutes } from "./admin-analytics.js";
+import { adminSkillsRoutes } from "./admin-skills.js";
+import { adminLearningRoutes } from "./admin-learning.js";
+import { adminCommunityRoutes } from "./admin-community.js";
+import { adminCampaignsRoutes } from "./admin-campaigns.js";
+import { adminTrustCasesRoutes } from "./admin-trust-cases.js";
+import { adminAlertsRoutes } from "./admin-alerts.js";
+import { adminDiscoveryRoutes } from "./admin-discovery.js";
+import { adminDataQualityRoutes } from "./admin-data-quality.js";
+import { adminPrivacyRoutes } from "./admin-privacy.js";
+import { adminCacheRoutes } from "./admin-cache.js";
 
 export const adminRoutes = Router();
 
@@ -236,13 +247,71 @@ adminRoutes.get(
 adminRoutes.get(
   "/audit-logs",
   wrap(async (req, res) => {
-    const { page, limit, from, to } = pagination(req.query as Record<string, unknown>);
+    const isCsvExport = req.query.export === "csv";
+    const limitMax = isCsvExport ? 2000 : 100;
+    const page = pageSchema.parse(req.query.page ?? 1);
+    const limit = z.coerce.number().int().min(1).max(limitMax).default(isCsvExport ? 1000 : 20).parse(req.query.limit ?? (isCsvExport ? 1000 : 20));
+    const from = (page - 1) * limit;
+    const to = page * limit - 1;
+
     const action = z.string().trim().max(120).optional().parse(req.query.action);
+    const actorId = z.string().trim().max(100).optional().parse(req.query.actor_id);
+    const targetType = z.string().trim().max(60).optional().parse(req.query.target_type);
+    const targetId = z.string().trim().max(120).optional().parse(req.query.target_id);
+    const fromDate = z.string().trim().datetime({ offset: true }).optional().parse(req.query.from_date);
+    const toDate = z.string().trim().datetime({ offset: true }).optional().parse(req.query.to_date);
+
     let query = db.from("audit_logs").select("*", { count: "exact" });
     if (action) query = query.ilike("action", `%${sanitizeIlike(action)}%`);
+    if (actorId) query = query.eq("actor_id", actorId);
+    if (targetType) query = query.eq("target_type", targetType);
+    if (targetId) query = query.eq("target_id", targetId);
+    if (fromDate) query = query.gte("created_at", fromDate);
+    if (toDate) query = query.lte("created_at", toDate);
+
     const { data, count, error } = await query.order("created_at", { ascending: false }).range(from, to);
     if (error) throw error;
-    res.json({ logs: data ?? [], total: count ?? 0, page, limit });
+
+    // Sanitize metadata to prevent leaking any tokens/passwords/service keys/urls
+    const sanitizedLogs = (data ?? []).map((row) => {
+      const meta = (row.metadata && typeof row.metadata === "object") ? { ...row.metadata } : {};
+      const SENSITIVE_KEYS = ["token", "password", "secret", "authorization", "auth", "key", "service_role", "redis_url", "cookie"];
+      for (const k of Object.keys(meta)) {
+        if (SENSITIVE_KEYS.some((s) => k.toLowerCase().includes(s))) {
+          meta[k] = "[REDACTED]";
+        }
+      }
+      return {
+        ...row,
+        metadata: meta,
+      };
+    });
+
+    if (isCsvExport) {
+      const headers = ["id", "created_at", "actor_id", "action", "target_type", "target_id", "ip_address", "metadata"];
+      const escapeCsv = (val: unknown) => {
+        if (val === null || val === undefined) return '""';
+        const str = typeof val === "object" ? JSON.stringify(val) : String(val);
+        return `"${str.replace(/"/g, '""')}"`;
+      };
+      const rows = sanitizedLogs.map((log) => [
+        escapeCsv(log.id),
+        escapeCsv(log.created_at),
+        escapeCsv(log.actor_id),
+        escapeCsv(log.action),
+        escapeCsv(log.target_type),
+        escapeCsv(log.target_id),
+        escapeCsv(log.ip_address),
+        escapeCsv(log.metadata),
+      ].join(","));
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="audit_logs_${new Date().toISOString().slice(0, 10)}.csv"`);
+      return res.status(200).send(csvContent);
+    }
+
+    res.json({ logs: sanitizedLogs, total: count ?? 0, page, limit });
   }),
 );
 
@@ -322,6 +391,17 @@ adminRoutes.get(
 );
 
 adminRoutes.use("/system", adminSystemRoutes);
+adminRoutes.use("/analytics", adminAnalyticsRoutes);
+adminRoutes.use("/skills-intelligence", adminSkillsRoutes);
+adminRoutes.use("/learning-ops", adminLearningRoutes);
+adminRoutes.use("/community", adminCommunityRoutes);
+adminRoutes.use("/campaigns", adminCampaignsRoutes);
+adminRoutes.use("/trust-cases", adminTrustCasesRoutes);
+adminRoutes.use("/alerts", adminAlertsRoutes);
+adminRoutes.use("/discovery-insights", adminDiscoveryRoutes);
+adminRoutes.use("/data-quality", adminDataQualityRoutes);
+adminRoutes.use("/privacy", adminPrivacyRoutes);
+adminRoutes.use("/cache", adminCacheRoutes);
 
 adminRoutes.get(
   "/system",
@@ -370,6 +450,79 @@ adminRoutes.post(
     if (error) throw error;
     await audit(req.userId!, "admin.rbac.assign", "user", user_id, { role_id });
     res.status(201).json(data);
+  }),
+);
+
+// Version & App Release Operations Control
+adminRoutes.get(
+  "/version-control",
+  wrap(async (_req, res) => {
+    const { data: config } = await db.from("app_version_control").select("*").eq("id", "default").maybeSingle();
+
+    // Query real adoption metrics from user_push_tokens if available
+    const { data: tokens } = await db.from("user_push_tokens").select("app_version");
+    const adoptionMap = new Map<string, number>();
+    if (tokens && tokens.length > 0) {
+      for (const t of tokens) {
+        if (t.app_version) {
+          adoptionMap.set(t.app_version, (adoptionMap.get(t.app_version) ?? 0) + 1);
+        }
+      }
+    }
+    const adoption = Array.from(adoptionMap.entries()).map(([version, count]) => ({ version, count })).sort((a, b) => b.count - a.count);
+
+    res.json({
+      config: config ?? {
+        id: "default",
+        min_supported_version: "2.0.0",
+        recommended_version: "2.1.0",
+        maintenance_mode: false,
+        maintenance_message: "SkillBridge is undergoing scheduled maintenance.",
+        update_prompt_enabled: true,
+        update_title: "New Version Available",
+        update_message: "Please update your application to continue accessing all features.",
+        store_url_android: null,
+        store_url_ios: null,
+      },
+      adoption,
+    });
+  }),
+);
+
+adminRoutes.patch(
+  "/version-control",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const body = z.object({
+      min_supported_version: semverSchema.optional(),
+      recommended_version: semverSchema.optional(),
+      maintenance_mode: z.boolean().optional(),
+      maintenance_message: z.string().trim().min(5).max(500).optional(),
+      update_prompt_enabled: z.boolean().optional(),
+      update_title: z.string().trim().min(2).max(100).optional(),
+      update_message: z.string().trim().min(5).max(500).optional(),
+      store_url_android: z.string().url().nullable().optional(),
+      store_url_ios: z.string().url().nullable().optional(),
+    }).strict().refine((val) => Object.keys(val).length > 0, "At least one update field is required").parse(req.body);
+
+    const { data, error } = await db
+      .from("app_version_control")
+      .upsert({
+        id: "default",
+        ...body,
+        updated_at: new Date().toISOString(),
+        updated_by: req.userId,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await audit(req.userId!, "admin.version_control.update", "app_version_control", "default", body);
+    await cacheDelPattern("config:*");
+    await cacheDelPattern("dashboard:*");
+
+    res.json({ success: true, config: data });
   }),
 );
 
