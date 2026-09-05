@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { supabase } from './supabase';
+import { supabase, sanitizeEnvString } from './supabase';
 
 // Local dev default: http://localhost:4000/api/v1
 // Production default: Render-hosted backend. Never fall back to localhost in production.
-const baseURL = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api/v1' : 'https://skillbridge-api-pd9c.onrender.com/api/v1')).replace(/\/+$/, '');
+const rawApiUrl = sanitizeEnvString(import.meta.env.VITE_API_URL);
+const baseURL = (rawApiUrl || (import.meta.env.DEV ? 'http://localhost:4000/api/v1' : 'https://skillbridge-api-pd9c.onrender.com/api/v1')).replace(/\/+$/, '');
 
 const api = axios.create({
   baseURL,
