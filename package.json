@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "setup": "npm ci --prefix frontend && npm ci --prefix backend && npm ci --prefix admin",
+    "dev": "npm run dev:usb",
+    "dev:clear": "cd frontend && npx expo start --dev-client --clear",
+    "dev:usb": "powershell -ExecutionPolicy Bypass -File ./scripts/start-usb-dev.ps1",
     "dev:backend": "npm run dev --prefix backend",
-    "dev:usb": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-usb.ps1",
     "android:dev-build": "powershell -ExecutionPolicy Bypass -File ./scripts/build-dev-android.ps1",
     "dev:web": "npm run web --prefix frontend",
     "dev:admin": "npm run dev --prefix admin",

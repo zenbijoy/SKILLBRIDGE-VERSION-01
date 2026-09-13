@@ -67,23 +67,16 @@ $targetSerial = $physicalDevices[0]
 $model = (& $adbCmd -s $targetSerial shell getprop ro.product.model).Trim()
 Write-Host "[+] Target physical device: $model ($targetSerial)" -ForegroundColor Green
 
-# 3. Setup Virtual Drive S: to prevent Windows 260 character path limit in CMake / Ninja
+# 3. Setup build directory directly in frontend (preserves single C: drive root for React Native Codegen)
 $frontendDir = (Resolve-Path (Join-Path $PSScriptRoot "..\frontend")).Path
 $buildDir = $frontendDir
 
+# Ensure any existing S: mapping is unmapped to prevent path root collisions
 try {
-    # Check if S: drive is already mapped to frontend
-    $existingS = Get-PSDrive S -ErrorAction SilentlyContinue
-    if (-not $existingS) {
-        Write-Host "[*] Mapping virtual drive S: -> $frontendDir (to avoid CMake MAX_PATH limit)..." -ForegroundColor Yellow
-        subst S: "$frontendDir"
+    if (Get-PSDrive S -ErrorAction SilentlyContinue) {
+        subst S: /D 2>$null | Out-Null
     }
-    if (Test-Path "S:\package.json") {
-        $buildDir = "S:\"
-    }
-} catch {
-    Write-Host "[-] Could not map virtual drive S:, using default directory." -ForegroundColor Yellow
-}
+} catch {}
 
 Set-Location $buildDir
 

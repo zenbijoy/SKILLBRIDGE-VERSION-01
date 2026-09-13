@@ -7,6 +7,6 @@ echo   SkillBridge - USB Fast Refresh Dev Server
 echo ===================================================
 echo.
 
-powershell -ExecutionPolicy Bypass -File "%~dp0scripts\dev-usb.ps1"
+powershell -ExecutionPolicy Bypass -File "%~dp0scripts\start-usb-dev.ps1"
 
 pause

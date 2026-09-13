@@ -5,7 +5,9 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --dev-client",
-    "dev:usb": "powershell -ExecutionPolicy Bypass -File ../scripts/dev-usb.ps1",
+    "dev": "expo start --dev-client",
+    "dev:clear": "expo start --dev-client --clear",
+    "dev:usb": "powershell -ExecutionPolicy Bypass -File ../scripts/start-usb-dev.ps1",
     "android:dev-build": "powershell -ExecutionPolicy Bypass -File ../scripts/build-dev-android.ps1",
     "android": "expo run:android",
     "ios": "expo run:ios",
