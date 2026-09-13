@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -225,15 +225,15 @@ export default function CampusFeedScreen() {
       </Row>
 
       {/* Hidden File Input for Web */}
-      {Platform.OS === "web" && (
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          style={{ display: "none" }}
-          onChange={handleFileSelect}
-        />
-      )}
+      {Platform.OS === "web" && typeof document !== "undefined"
+        ? (React.createElement("input" as any, {
+            ref: fileInputRef,
+            type: "file",
+            accept: "image/jpeg,image/png,image/webp,image/gif",
+            style: { display: "none" },
+            onChange: handleFileSelect,
+          }) as any)
+        : null}
 
       {/* Composer Card */}
       {showComposer && (

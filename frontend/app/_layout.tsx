@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
-import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform, LogBox } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { registerPush, useNotificationRouting } from "@/lib/notifications";
@@ -19,6 +19,12 @@ import { SkillBridgeLoader } from "@/components/ui";
 
 // Prevent native splash screen from hiding prematurely until session initialization completes
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+LogBox.ignoreLogs([
+  "Failed to register push token",
+  "Unable to get Firebase Messaging instance",
+  "Push token registration",
+]);
 
 // Global error listener for web production diagnostic reporting
 if (Platform.OS === "web" && typeof window !== "undefined") {

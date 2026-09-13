@@ -46,7 +46,7 @@ export async function registerPush(): Promise<string | null> {
     if (device.token_fingerprint) await AsyncStorage.setItem(DEVICE_FP_KEY, device.token_fingerprint);
     return token;
   } catch (error) {
-    console.error("Failed to register push token:", error);
+    console.warn("Push token registration skipped or failed in dev build:", error);
     return null;
   }
 }
