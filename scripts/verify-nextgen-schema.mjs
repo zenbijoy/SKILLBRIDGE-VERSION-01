@@ -3,12 +3,15 @@
 // Verifies presence of migrations 028 and 029 tables, columns, and RLS policies.
 // =============================================================================
 
-import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
+import { createRequire } from "module";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const backendRequire = createRequire(path.resolve(__dirname, "../backend/package.json"));
+const { createClient } = backendRequire("@supabase/supabase-js");
+const dotenv = backendRequire("dotenv");
+
 dotenv.config({ path: path.resolve(__dirname, "../backend/.env") });
 
 const supabaseUrl = process.env.SUPABASE_URL;
