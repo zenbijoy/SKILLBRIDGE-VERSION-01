@@ -85,6 +85,21 @@ const schema = z.object({
   ADMIN_BOOTSTRAP_EXPIRES_AT: optionalString,
   ADMIN_REQUIRE_MFA: booleanFromEnv.default(true),
   ADMIN_APP_URL: optionalUrl,
+  // Cloudflare R2 Storage
+  R2_ACCOUNT_ID: optionalString,
+  R2_ACCESS_KEY_ID: optionalString,
+  R2_SECRET_ACCESS_KEY: optionalString,
+  R2_BUCKET_NAME: optionalString,
+  R2_PUBLIC_DOMAIN: optionalString,
+  // Phase 4: YouTube OAuth & Media Automation
+  YOUTUBE_CLIENT_ID: optionalString,
+  YOUTUBE_CLIENT_SECRET: optionalString,
+  YOUTUBE_REDIRECT_URI: optionalUrl,
+  OAUTH_TOKEN_ENCRYPTION_KEY: optionalString,
+  YOUTUBE_API_KEY: optionalString,
+  YOUTUBE_OAUTH_ENABLED: booleanFromEnv.default(false),
+  LIVEKIT_RECORDING_AUTOMATION: booleanFromEnv.default(false),
+  RICH_FEED_MEDIA: booleanFromEnv.default(true),
 });
 
 export type AppEnv = z.infer<typeof schema>;

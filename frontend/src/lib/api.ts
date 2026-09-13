@@ -126,6 +126,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (refreshData?.session?.access_token) {
       res = await requestWithHeaders(path, init, refreshData.session.access_token);
     } else {
+      try {
+        const { disconnectSocket } = await import("./socket");
+        disconnectSocket();
+      } catch {}
       await supabase.auth.signOut();
     }
   }

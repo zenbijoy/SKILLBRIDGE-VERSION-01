@@ -21,6 +21,7 @@ type AIMatch = {
 };
 
 const explore = [
+  ["newspaper-variant-outline", "Campus Feed", "/feed", "Realtime student community posts & discussions"],
   ["flask-outline", "Research Hub", "/research", "Collaborate on papers & projects"],
   ["calendar-star", "Campus Events", "/events", "Workshops, hackathons & talks"],
   ["account-multiple-outline", "Connections", "/connections", "Find peers & skill partners"],

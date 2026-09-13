@@ -10,6 +10,7 @@ import type { Profile } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import { Button, Card, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
+import { disconnectSocket } from "@/lib/socket";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
@@ -309,6 +310,7 @@ export default function ProfileScreen() {
               icon="logout"
               onPress={async () => {
                 triggerHaptic();
+                disconnectSocket();
                 await supabase.auth.signOut();
                 qc.clear();
                 if (Platform.OS === "web" && typeof window !== "undefined") {

@@ -7,6 +7,7 @@ import {
   View,
   ActivityIndicator,
   ScrollView,
+  TextInput,
 } from "react-native";
 import {
   AudioSession,
@@ -122,30 +123,58 @@ function ParticipantTile({
   );
 }
 
+import { decodeLivePacket, encodeLivePacket } from "./liveDataPacket";
+
 function Stage({ lowDataMode }: { lowDataMode: boolean }) {
   const room = useRoomContext();
-  const allTracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare]);
   const participants = useParticipants();
+  const allTracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false },
+  );
+
   const tracks = lowDataMode
     ? allTracks.filter((t) => t.source === Track.Source.ScreenShare)
     : allTracks;
 
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  const [transientChats, setTransientChats] = useState<{ id: string; senderName: string; text: string }[]>([]);
+  const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; senderName: string }[]>([]);
 
   useEffect(() => {
     if (!room) return;
     const handleDataReceived = (payload: Uint8Array, participant: any) => {
       try {
-        const text = new TextDecoder().decode(payload);
-        if (text.includes("RAISE_HAND") && participant) {
-          setRaisedHands((prev) => new Set(prev).add(participant.identity));
-          setTimeout(() => {
-            setRaisedHands((prev) => {
-              const next = new Set(prev);
-              next.delete(participant.identity);
-              return next;
-            });
-          }, 6000);
+        const packet = decodeLivePacket(payload);
+        if (packet) {
+          if (packet.type === "hand_raise") {
+            const ident = packet.senderId || participant?.identity;
+            if (ident) {
+              setRaisedHands((prev) => new Set(prev).add(ident));
+              setTimeout(() => {
+                setRaisedHands((prev) => {
+                  const next = new Set(prev);
+                  next.delete(ident);
+                  return next;
+                });
+              }, 6000);
+            }
+          } else if (packet.type === "chat") {
+            const msg = { id: Math.random().toString(), senderName: packet.senderName, text: packet.text };
+            setTransientChats((prev) => [...prev.slice(-3), msg]);
+            setTimeout(() => {
+              setTransientChats((prev) => prev.filter((m) => m.id !== msg.id));
+            }, 6000);
+          } else if (packet.type === "reaction") {
+            const rx = { id: Math.random().toString(), emoji: packet.emoji, senderName: packet.senderName };
+            setFloatingReactions((prev) => [...prev.slice(-4), rx]);
+            setTimeout(() => {
+              setFloatingReactions((prev) => prev.filter((r) => r.id !== rx.id));
+            }, 3000);
+          }
         }
       } catch (e) {
         console.warn("Failed to process data message", e);
@@ -198,6 +227,29 @@ function Stage({ lowDataMode }: { lowDataMode: boolean }) {
           ))}
         </ScrollView>
       )}
+
+      {/* Transient Chat Overlay */}
+      {transientChats.length > 0 && (
+        <View style={s.transientChatContainer} pointerEvents="none">
+          {transientChats.map((msg) => (
+            <View key={msg.id} style={s.transientChatBubble}>
+              <Text style={s.transientSender}>{msg.senderName}</Text>
+              <Text style={s.transientText}>{msg.text}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Floating Reactions Overlay */}
+      {floatingReactions.length > 0 && (
+        <View style={s.reactionsOverlay} pointerEvents="none">
+          {floatingReactions.map((rx) => (
+            <View key={rx.id} style={s.reactionBadge}>
+              <Text style={{ fontSize: 24 }}>{rx.emoji}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -216,6 +268,8 @@ function Controls({
   const [mic, setMic] = useState(canPublish);
   const [share, setShare] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
+  const [quickChatText, setQuickChatText] = useState("");
+  const [showChatInput, setShowChatInput] = useState(false);
 
   async function toggle(kind: "cam" | "mic" | "share" | "flip") {
     if (!canPublish && kind !== "flip") {
@@ -254,12 +308,53 @@ function Controls({
 
   async function raiseHand() {
     try {
-      const payload = new TextEncoder().encode(JSON.stringify({ type: "RAISE_HAND", timestamp: Date.now() }));
-      await room.localParticipant.publishData(payload, { reliable: true });
+      const packet = encodeLivePacket({
+        version: 1,
+        type: "hand_raise",
+        timestamp: Date.now(),
+        senderId: room.localParticipant.identity,
+        senderName: room.localParticipant.name || "Student",
+      });
+      await room.localParticipant.publishData(packet as any, { reliable: true });
       setHandRaised(true);
       setTimeout(() => setHandRaised(false), 6000);
     } catch (e) {
       console.warn("Failed to send hand raise", e);
+    }
+  }
+
+  async function sendReaction(emoji: string) {
+    try {
+      const packet = encodeLivePacket({
+        version: 1,
+        type: "reaction",
+        emoji,
+        timestamp: Date.now(),
+        senderId: room.localParticipant.identity,
+        senderName: room.localParticipant.name || "Peer",
+      });
+      await room.localParticipant.publishData(packet as any, { reliable: false });
+    } catch (e) {
+      console.warn("Failed to send reaction", e);
+    }
+  }
+
+  async function sendTransientChat() {
+    if (!quickChatText.trim()) return;
+    try {
+      const packet = encodeLivePacket({
+        version: 1,
+        type: "chat",
+        text: quickChatText.trim(),
+        timestamp: Date.now(),
+        senderId: room.localParticipant.identity,
+        senderName: room.localParticipant.name || "Student",
+      });
+      await room.localParticipant.publishData(packet as any, { reliable: true });
+      setQuickChatText("");
+      setShowChatInput(false);
+    } catch (e) {
+      console.warn("Failed to send live chat", e);
     }
   }
 
@@ -276,6 +371,51 @@ function Controls({
 
   return (
     <View style={s.controls}>
+      {/* Quick Reaction Bar */}
+      <Row style={{ justifyContent: "center", gap: 12, marginBottom: 8 }}>
+        {["👏", "❤️", "💡", "🔥"].map((emoji) => (
+          <Button
+            key={emoji}
+            title={emoji}
+            variant="secondary"
+            compact
+            onPress={() => sendReaction(emoji)}
+          />
+        ))}
+        <Button
+          title={showChatInput ? "Close Chat" : "💬 Live Chat"}
+          variant="secondary"
+          compact
+          onPress={() => setShowChatInput(!showChatInput)}
+        />
+      </Row>
+
+      {/* Transient Quick Chat Input */}
+      {showChatInput && (
+        <Row style={{ gap: 8, marginBottom: 8, paddingHorizontal: 12 }}>
+          <View style={{ flex: 1 }}>
+            <TextInput
+              style={{
+                backgroundColor: colors.surface,
+                color: colors.text,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: colors.border,
+                fontSize: 13,
+              }}
+              placeholder="Transient live message (disappears in 6s)..."
+              placeholderTextColor={colors.muted}
+              value={quickChatText}
+              onChangeText={setQuickChatText}
+              onSubmitEditing={sendTransientChat}
+            />
+          </View>
+          <Button title="Send" variant="primary" compact onPress={sendTransientChat} />
+        </Row>
+      )}
+
       <Row style={{ flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
         {canPublish ? (
           <>
@@ -572,6 +712,41 @@ const s = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  transientChatContainer: {
+    position: "absolute",
+    bottom: 16,
+    left: 16,
+    maxWidth: "70%",
+    gap: 6,
+  },
+  transientChatBubble: {
+    backgroundColor: "rgba(0,0,0,0.75)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  transientSender: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  transientText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+  },
+  reactionsOverlay: {
+    position: "absolute",
+    top: 20,
+    right: 20,
+    gap: 8,
+  },
+  reactionBadge: {
+    backgroundColor: "rgba(0,0,0,0.6)",
+    padding: 6,
+    borderRadius: 20,
   },
 });
 

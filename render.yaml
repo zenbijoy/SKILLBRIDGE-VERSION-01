@@ -42,6 +42,16 @@ services:
         sync: false
       - key: CLOUDFLARE_TURN_API_TOKEN
         sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_DOMAIN
+        sync: false
       - key: MAX_ROOM_CAPACITY
         value: "250"
       - key: MAINTENANCE_MODE

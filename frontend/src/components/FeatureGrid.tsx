@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { radius, useTheme } from "@/theme";
 
 const items: [keyof typeof MaterialCommunityIcons.glyphMap, string, Href][] = [
+  ["newspaper-variant-outline", "Campus Feed", "/feed" as any],
   ["help-circle-outline", "Ask help", "/rooms"],
   ["account-group-outline", "Start room", "/rooms"],
   ["calendar-clock", "Schedule", "/schedule"],

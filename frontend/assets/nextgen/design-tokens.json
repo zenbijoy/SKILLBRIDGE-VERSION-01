@@ -1,0 +1,58 @@
+{
+  "brand": {
+    "blue": "#53A9FE",
+    "cyan": "#57B3FE",
+    "violet": "#703AF0",
+    "purple": "#844FF5",
+    "bridge": "#B8ADF9",
+    "magenta": "#C23DBD",
+    "pink": "#F765B6",
+    "pinkLight": "#FC6FB3",
+    "midnight": "#08101E",
+    "surfaceDark": "#0F1A2E",
+    "surface2": "#11243A",
+    "white": "#FFFFFF",
+    "bg": "#F7F9FC",
+    "ink": "#101828",
+    "muted": "#667085",
+    "success": "#12B76A",
+    "warning": "#F59E0B",
+    "danger": "#E5484D",
+    "info": "#0284C7"
+  },
+  "radius": {
+    "xs": 8,
+    "sm": 10,
+    "md": 14,
+    "lg": 18,
+    "xl": 24,
+    "hero": 32,
+    "pill": 999
+  },
+  "spacing": {
+    "xxs": 4,
+    "xs": 6,
+    "sm": 10,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "xxl": 48
+  },
+  "motion": {
+    "microMs": 140,
+    "fastMs": 220,
+    "standardMs": 320,
+    "heroFloatMs": 3200,
+    "spring": {
+      "damping": 18,
+      "stiffness": 180
+    }
+  },
+  "assetRules": {
+    "defaultIllustrationRatio": "3:2",
+    "emptyStateRatio": "4:3",
+    "onboardingRatio": "9:16",
+    "maxGifLoopSeconds": 3,
+    "respectReduceMotion": true
+  }
+}

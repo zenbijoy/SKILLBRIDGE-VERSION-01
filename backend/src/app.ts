@@ -45,6 +45,8 @@ import { activity } from "./routes/activity.js";
 import { progress } from "./routes/progress.js";
 import { ct } from "./routes/ct.js";
 import { calls } from "./routes/calls.js";
+import { feed } from "./routes/feed.js";
+import { integrations, handleYouTubeCallback } from "./routes/integrations.js";
 
 export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true;
@@ -141,6 +143,7 @@ export function createApp(io?: SocketServer) {
   app.use("/webhooks/live", liveWebhooks);
   app.use("/api/v1/experience", experience);
   app.use("/api/v1/achievements/verify", achievementsPublic);
+  app.use("/api/v1/integrations/youtube/callback", handleYouTubeCallback);
 
   const api = express.Router();
   api.use(auth);
@@ -187,6 +190,8 @@ export function createApp(io?: SocketServer) {
   api.use("/progress", progress);
   api.use("/ct", ct);
   api.use("/calls", calls);
+  api.use("/feed", feed);
+  api.use("/integrations", integrations);
   api.use("/admin", adminAccessRoutes);
   api.use("/admin", requireRole("moderator", "admin"), adminRoutes);
 

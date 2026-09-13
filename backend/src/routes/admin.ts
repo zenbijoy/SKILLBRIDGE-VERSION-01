@@ -19,6 +19,11 @@ import { adminDiscoveryRoutes } from "./admin-discovery.js";
 import { adminDataQualityRoutes } from "./admin-data-quality.js";
 import { adminPrivacyRoutes } from "./admin-privacy.js";
 import { adminCacheRoutes } from "./admin-cache.js";
+import { getStorageStatus } from "../services/storage.js";
+import { RedisService } from "../services/RedisService.js";
+import { fetchYouTubeVideoMetadata } from "../services/youtubeService.js";
+import { processBatch } from "../services/jobQueue.js";
+import { cleanupOrphanedMedia } from "../services/mediaCleanupService.js";
 
 export const adminRoutes = Router();
 
@@ -781,5 +786,356 @@ adminRoutes.post(
     });
     await cacheDelPattern("dashboard:*");
     res.status(201).json(published);
+  }),
+);
+
+// -----------------------------------------------------------------------------
+// NEXT-GEN OPERATIONS CONTROL PLANE
+// -----------------------------------------------------------------------------
+
+adminRoutes.get(
+  "/nextgen/telemetry",
+  wrap(async (_req, res) => {
+    const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
+
+    const [roomsRes, questionsRes, recordingsRes, negotiationsRes, reportsRes] = await Promise.all([
+      db.from("rooms").select("*", { count: "exact", head: true }),
+      db.from("room_questions").select("*", { count: "exact", head: true }).gte("created_at", oneDayAgo),
+      db.from("room_recordings").select("*", { count: "exact", head: true }),
+      db.from("club_clash_negotiations").select("*", { count: "exact", head: true }).in("status", ["pending", "countered"]),
+      db.from("reports").select("*", { count: "exact", head: true }).eq("status", "open"),
+    ]);
+
+    res.json({
+      activeRooms: roomsRes.count ?? 0,
+      questionsToday: questionsRes.count ?? 0,
+      totalRecordings: recordingsRes.count ?? 0,
+      openClashNegotiations: negotiationsRes.count ?? 0,
+      pendingReports: reportsRes.count ?? 0,
+      timestamp: new Date().toISOString(),
+    });
+  }),
+);
+
+adminRoutes.get(
+  "/nextgen/providers",
+  wrap(async (_req, res) => {
+    const storageStatus = getStorageStatus();
+    const redisMetrics = RedisService.getMetrics();
+    const rawRedisStatus = RedisService.getStatus();
+
+    res.json({
+      supabase: {
+        status: env.SUPABASE_URL ? "healthy" : "unconfigured",
+        url: env.SUPABASE_URL ? "configured" : "missing",
+      },
+      storage: {
+        activeProvider: storageStatus.provider,
+        available: storageStatus.available,
+        r2Configured: storageStatus.r2Configured,
+        publicDomain: storageStatus.publicDomain,
+      },
+      redis: {
+        status: rawRedisStatus,
+        metrics: redisMetrics,
+      },
+      livekit: {
+        status: env.LIVEKIT_URL ? "configured" : "disabled",
+      },
+      livekitEgress: {
+        status: env.LIVEKIT_RECORDING_AUTOMATION ? "active" : "disabled_feature_flag",
+        automatedRecordings: env.LIVEKIT_RECORDING_AUTOMATION,
+      },
+      youtube: {
+        status: env.YOUTUBE_OAUTH_ENABLED ? "configured" : "manual_only",
+        oauthEnabled: env.YOUTUBE_OAUTH_ENABLED,
+        hasApiKey: Boolean(env.YOUTUBE_API_KEY),
+        hasOAuthSecrets: Boolean(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET),
+      },
+      pushNotifications: {
+        status: env.EXPO_PUSH_ACCESS_TOKEN ? "configured" : "fallback_unauthenticated",
+      },
+      edgeGateway: {
+        status: "active",
+        routesCached: 8,
+        swrEnabled: true,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }),
+);
+
+// GET /api/v1/admin/nextgen/recordings
+adminRoutes.get(
+  "/nextgen/recordings",
+  wrap(async (req, res) => {
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const offset = (page - 1) * limit;
+
+    const [recRes, countRes] = await Promise.all([
+      db
+        .from("room_recordings")
+        .select(`
+          *,
+          room:rooms(id, title),
+          uploader:profiles!room_recordings_uploader_id_fkey(id, full_name, username, avatar_url)
+        `)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1),
+      db.from("room_recordings").select("*", { count: "exact", head: true }),
+    ]);
+
+    res.json({
+      recordings: recRes.data || [],
+      total: countRes.count || 0,
+      page,
+      limit,
+    });
+  }),
+);
+
+// POST /api/v1/admin/nextgen/recordings/:id/sync
+adminRoutes.post(
+  "/nextgen/recordings/:id/sync",
+  wrap(async (req, res) => {
+    const recId = z.string().uuid().parse(req.params.id);
+    const { data: rec, error } = await db
+      .from("room_recordings")
+      .select("*")
+      .eq("id", recId)
+      .single();
+
+    if (error || !rec) {
+      return res.status(404).json({ error: "Recording not found" });
+    }
+
+    if (!rec.youtube_video_id) {
+      return res.status(400).json({ error: "Recording does not have a YouTube video ID" });
+    }
+
+    const meta = await fetchYouTubeVideoMetadata(rec.youtube_video_id);
+    const updatePayload: Record<string, any> = {
+      title: meta.title || rec.title,
+      description: meta.description || rec.description,
+      thumbnail_url: meta.thumbnailUrl || rec.thumbnail_url,
+      provider_metadata: meta,
+      status: "ready",
+      last_synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (meta.durationSeconds) updatePayload.duration_seconds = meta.durationSeconds;
+    if (meta.channelId) updatePayload.youtube_channel_id = meta.channelId;
+    if (meta.publishedAt) updatePayload.published_at = meta.publishedAt;
+    if (meta.privacyStatus) updatePayload.privacy_status = meta.privacyStatus;
+
+    const { data: updated, error: updateErr } = await db
+      .from("room_recordings")
+      .update(updatePayload)
+      .eq("id", recId)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+    res.json({ recording: updated, synced: true });
+  }),
+);
+
+// GET /api/v1/admin/nextgen/youtube-connections
+adminRoutes.get(
+  "/nextgen/youtube-connections",
+  wrap(async (_req, res) => {
+    const { data, error } = await db
+      .from("youtube_connections")
+      .select(`
+        id,
+        user_id,
+        channel_id,
+        channel_title,
+        channel_custom_url,
+        channel_thumbnail_url,
+        status,
+        created_at,
+        last_synced_at,
+        user:profiles!youtube_connections_user_id_fkey(id, full_name, username)
+      `)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ connections: data || [] });
+  }),
+);
+
+// GET /api/v1/admin/nextgen/jobs
+adminRoutes.get(
+  "/nextgen/jobs",
+  wrap(async (_req, res) => {
+    const { data, error } = await db
+      .from("background_jobs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+    res.json({ jobs: data || [] });
+  }),
+);
+
+// POST /api/v1/admin/nextgen/jobs/run
+adminRoutes.post(
+  "/nextgen/jobs/run",
+  wrap(async (req, res) => {
+    const limit = Math.min(20, Math.max(1, parseInt(req.body?.limit as string, 10) || 5));
+    const stats = await processBatch(limit);
+    res.json({ stats, executedAt: new Date().toISOString() });
+  }),
+);
+
+// POST /api/v1/admin/nextgen/media/cleanup
+adminRoutes.post(
+  "/nextgen/media/cleanup",
+  wrap(async (req, res) => {
+    const cutoffHours = Math.max(1, parseInt(req.body?.cutoffHours as string, 10) || 24);
+    const result = await cleanupOrphanedMedia({ cutoffHours });
+    res.json({ result, executedAt: new Date().toISOString() });
+  }),
+);
+
+adminRoutes.post(
+  "/moderation/action",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        reportId: z.string().uuid(),
+        action: z.enum(["resolve", "dismiss", "delete_content", "warn_user", "ban_user"]),
+        notes: z.string().max(1000).optional(),
+      })
+      .parse(req.body);
+
+    const { data: report } = await db
+      .from("reports")
+      .select("*")
+      .eq("id", body.reportId)
+      .single();
+
+    if (!report) {
+      return res.status(404).json({ error: "Report not found" });
+    }
+
+    const newStatus = body.action === "dismiss" ? "dismissed" : "resolved";
+
+    await db
+      .from("reports")
+      .update({
+        status: newStatus,
+        resolved_at: new Date().toISOString(),
+        resolver_id: req.userId!,
+      })
+      .eq("id", body.reportId);
+
+    // Handle content removal if requested
+    if (body.action === "delete_content") {
+      if (report.target_type === "post") {
+        await db.from("campus_posts").delete().eq("id", report.target_id);
+      } else if (report.target_type === "comment") {
+        await db.from("campus_post_comments").delete().eq("id", report.target_id);
+      } else if (report.target_type === "question") {
+        await db.from("room_questions").delete().eq("id", report.target_id);
+      } else if (report.target_type === "answer") {
+        await db.from("room_question_answers").delete().eq("id", report.target_id);
+      }
+    }
+
+    await db.from("moderation_audit_logs").insert({
+      admin_id: req.userId!,
+      action: body.action,
+      entity_type: report.target_type,
+      entity_id: report.target_id,
+      reason: body.notes || report.reason,
+      details: { reportId: body.reportId, previousStatus: report.status },
+    });
+
+    await audit(req.userId!, `admin.moderation.${body.action}`, report.target_type, report.target_id, {
+      reportId: body.reportId,
+      notes: body.notes,
+    });
+
+    res.json({ success: true, reportId: body.reportId, status: newStatus, action: body.action });
+  }),
+);
+
+adminRoutes.post(
+  "/moderation/reveal-identity",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        reportId: z.string().uuid().optional(),
+        entityType: z.enum(["post", "comment"]),
+        entityId: z.string().uuid(),
+        justification: z.string().min(10).max(500),
+      })
+      .parse(req.body);
+
+    const { data: mapRecord } = await db
+      .from("anonymous_author_map")
+      .select("real_user_id, scoped_handle, created_at")
+      .eq("entity_type", body.entityType)
+      .eq("entity_id", body.entityId)
+      .maybeSingle();
+
+    if (!mapRecord) {
+      return res.status(404).json({ error: "No anonymous author record found for this entity" });
+    }
+
+    const { data: profile } = await db
+      .from("profiles")
+      .select("id, full_name, username, email, department, role, created_at")
+      .eq("id", mapRecord.real_user_id)
+      .single();
+
+    await db.from("moderation_audit_logs").insert({
+      admin_id: req.userId!,
+      action: "identity_revealed",
+      entity_type: body.entityType,
+      entity_id: body.entityId,
+      reason: body.justification,
+      details: {
+        reportId: body.reportId,
+        revealedUserId: mapRecord.real_user_id,
+        scopedHandle: mapRecord.scoped_handle,
+      },
+    });
+
+    await audit(req.userId!, "admin.moderation.reveal_identity", body.entityType, body.entityId, {
+      reportId: body.reportId,
+      justification: body.justification,
+      revealedUserId: mapRecord.real_user_id,
+    });
+
+    res.json({
+      success: true,
+      scopedHandle: mapRecord.scoped_handle,
+      realUser: profile,
+      revealedAt: new Date().toISOString(),
+    });
+  }),
+);
+
+adminRoutes.get(
+  "/moderation/audit-logs",
+  wrap(async (req, res) => {
+    const { page, limit, from, to } = pagination(req.query as Record<string, unknown>);
+    const { data, count, error } = await db
+      .from("moderation_audit_logs")
+      .select(`
+        *,
+        admin:profiles!moderation_audit_logs_admin_id_fkey(id, full_name, username, avatar_url)
+      `, { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    res.json({ logs: data ?? [], total: count ?? 0, page, limit });
   }),
 );

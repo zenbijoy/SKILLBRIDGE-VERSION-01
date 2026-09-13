@@ -25,6 +25,7 @@ import {
   Sparkles,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import api from '../lib/api';
@@ -91,6 +92,7 @@ const navigationSections: NavSection[] = [
       { to: '/rules', label: 'Runtime Policy', icon: SlidersHorizontal },
       { to: '/api-mgmt', label: 'Integrations', icon: ServerCog },
       { to: '/db-ops', label: 'Audit Explorer V2', icon: Database },
+      { to: '/nextgen', label: 'Next-Gen Operations', icon: Zap },
     ],
   },
 ];

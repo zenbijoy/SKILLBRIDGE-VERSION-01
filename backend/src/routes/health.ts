@@ -2,12 +2,13 @@ import { Router } from "express";
 import { admin } from "../lib/db.js";
 import { env } from "../config/env.js";
 import { RedisService } from "../services/RedisService.js";
+import { getStorageStatus } from "../services/storage.js";
 
 export const health = Router();
 
-// Liveness Probe (GET /health and GET /api/v1/health)
-// Rapidly tells Render/Docker that the Node process is running
-health.get("/", (_req, res) => {
+// Liveness Probe (GET /health, GET /health/live, GET /api/v1/health/live)
+// Rapidly tells Render/Docker/Edge that the Node process is running
+const livenessHandler = (_req: any, res: any) => {
   res.json({
     success: true,
     status: "ok",
@@ -16,7 +17,10 @@ health.get("/", (_req, res) => {
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
   });
-});
+};
+
+health.get("/", livenessHandler);
+health.get("/live", livenessHandler);
 
 // Readiness Probe (GET /health/ready and GET /api/v1/health/ready)
 // Verifies external service connectivity without coupling to private user data
@@ -50,13 +54,17 @@ health.get("/ready", async (_req, res) => {
           ? "degraded"
           : "disabled";
 
+  const storageStatus = getStorageStatus();
+
   const servicesData: Record<string, string> = {
     api: "healthy",
     supabase: supabaseStatus,
     database: supabaseStatus,
     redis: redisStatus,
     socketio: "healthy",
-    storage: supabaseStatus,
+    storage: storageStatus.available ? "healthy" : "degraded",
+    r2: storageStatus.r2Configured ? "healthy" : "disabled",
+    edgeGateway: "supported",
     push: env.EXPO_PUSH_ACCESS_TOKEN ? "enabled" : "disabled",
     livekit: env.LIVEKIT_URL ? "enabled" : "disabled",
     firebase: "disabled",
@@ -80,6 +88,10 @@ health.get("/ready", async (_req, res) => {
     status: overallStatus,
     data: servicesData,
     services: servicesData,
+    storage: {
+      activeProvider: storageStatus.provider,
+      r2Configured: storageStatus.r2Configured,
+    },
     redisMetrics: RedisService.getMetrics(),
     timestamp: new Date().toISOString(),
   });

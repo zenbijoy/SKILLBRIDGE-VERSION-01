@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, Button, H1, H2, Muted, Screen, triggerHaptic } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
+import { disconnectSocket } from "@/lib/socket";
 import { useSession } from "@/hooks/useSession";
 import { useI18n } from "@/i18n";
 
@@ -18,6 +19,7 @@ export default function SecuritySettings() {
     try {
       setLoading(true);
       triggerHaptic();
+      disconnectSocket();
       await supabase.auth.signOut();
       queryClient.clear();
 

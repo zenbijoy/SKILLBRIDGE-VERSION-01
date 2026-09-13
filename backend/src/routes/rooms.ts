@@ -5,6 +5,15 @@ import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
 import { env } from "../config/env.js";
 import { cacheGet, cacheSet, redis, cacheDelPattern } from "../lib/redis.js";
+import { NotificationService } from "../services/notificationService.js";
+import { qaQuestionLimiter, qaAnswerLimiter, recordingLimiter } from "../middleware/rateLimiters.js";
+import { logDomainEvent } from "../lib/domainLogger.js";
+import {
+  extractYouTubeVideoId,
+  fetchYouTubeVideoMetadata,
+  getYouTubeWatchUrl,
+} from "../services/youtubeService.js";
+import { enqueueJob } from "../services/jobQueue.js";
 
 export const rooms = Router();
 
@@ -494,5 +503,511 @@ rooms.post(
 
     await invalidateRoomCache();
     res.json({ left: true, member_count: rpcData?.member_count ?? 1 });
+  }),
+);
+
+// -----------------------------------------------------------------------------
+// ROOM Q&A BOARD
+// -----------------------------------------------------------------------------
+
+// GET /api/v1/rooms/:id/questions - List room questions
+rooms.get(
+  "/:id/questions",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data, error } = await admin
+      .from("room_questions")
+      .select(`
+        *,
+        author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url),
+        answers:room_question_answers(
+          id, body, is_accepted, upvotes_count, created_at,
+          author:profiles!room_question_answers_author_id_fkey(id, full_name, username, avatar_url)
+        )
+      `)
+      .eq("room_id", roomId)
+      .order("is_resolved", { ascending: true })
+      .order("upvotes_count", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ questions: data ?? [] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/questions - Post a new question
+rooms.post(
+  "/:id/questions",
+  qaQuestionLimiter,
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        title: z.string().min(3).max(200),
+        body: z.string().min(3).max(3000),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member) {
+      return res.status(403).json({ error: "Join room before asking questions" });
+    }
+
+    const { data, error } = await admin
+      .from("room_questions")
+      .insert({
+        room_id: roomId,
+        author_id: req.userId!,
+        title: body.title,
+        body: body.body,
+      })
+      .select(`
+        *,
+        author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    logDomainEvent({
+      event: "question_created",
+      roomId,
+      questionId: data.id,
+      isAnonymous: false,
+    });
+
+    res.status(201).json({ question: data });
+  }),
+);
+
+// POST /api/v1/rooms/:id/questions/:qId/answers - Post an answer
+rooms.post(
+  "/:id/questions/:qId/answers",
+  qaAnswerLimiter,
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const qId = z.string().uuid().parse(req.params.qId);
+    const body = z.object({ body: z.string().min(2).max(4000) }).parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member) {
+      return res.status(403).json({ error: "Join room before answering questions" });
+    }
+
+    const { data, error } = await admin
+      .from("room_question_answers")
+      .insert({
+        question_id: qId,
+        author_id: req.userId!,
+        body: body.body,
+      })
+      .select(`
+        *,
+        author:profiles!room_question_answers_author_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Notify question author of new answer
+    void (async () => {
+      try {
+        const { data: q } = await admin
+          .from("room_questions")
+          .select("author_id, title")
+          .eq("id", qId)
+          .maybeSingle();
+
+        if (q && q.author_id !== req.userId!) {
+          void NotificationService.dispatch({
+            userId: q.author_id,
+            type: "QUESTION_ANSWERED",
+            title: "New Answer on Your Question",
+            body: `Someone replied to: "${q.title.slice(0, 50)}"`,
+            entityType: "question",
+            entityId: qId,
+            data: { roomId, questionId: qId, answerId: data.id, route: "room", targetTab: "qa" },
+          });
+        }
+      } catch {}
+    })();
+
+    res.status(201).json({ answer: data });
+  }),
+);
+
+// POST /api/v1/rooms/:id/questions/:qId/vote - Toggle upvote
+rooms.post(
+  "/:id/questions/:qId/vote",
+  wrap(async (req, res) => {
+    const qId = z.string().uuid().parse(req.params.qId);
+
+    const { data: existing } = await admin
+      .from("room_question_votes")
+      .select("question_id")
+      .eq("question_id", qId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    let voted = false;
+    if (existing) {
+      await admin.from("room_question_votes").delete().eq("question_id", qId).eq("user_id", req.userId!);
+      voted = false;
+    } else {
+      await admin.from("room_question_votes").insert({ question_id: qId, user_id: req.userId! });
+      voted = true;
+    }
+
+    // Refresh count
+    const { count } = await admin
+      .from("room_question_votes")
+      .select("*", { count: "exact", head: true })
+      .eq("question_id", qId);
+
+    await admin
+      .from("room_questions")
+      .update({ upvotes_count: count ?? 0 })
+      .eq("id", qId);
+
+    res.json({ success: true, voted, upvotes_count: count ?? 0 });
+  }),
+);
+
+// PATCH /api/v1/rooms/:id/questions/:qId/answers/:aId/accept - Mark accepted solution
+rooms.patch(
+  "/:id/questions/:qId/answers/:aId/accept",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const qId = z.string().uuid().parse(req.params.qId);
+    const aId = z.string().uuid().parse(req.params.aId);
+
+    // Fetch question to check author
+    const { data: question } = await admin
+      .from("room_questions")
+      .select("author_id")
+      .eq("id", qId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!question) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    // Check room role
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    const isQuestionAuthor = question.author_id === req.userId!;
+    const isRoomLeader = member && ["owner", "teacher", "moderator"].includes(member.role);
+
+    if (!isQuestionAuthor && !isRoomLeader) {
+      return res.status(403).json({ error: "Only the question author or room host can accept a solution" });
+    }
+
+    // Verify answer belongs to question
+    const { data: answer } = await admin
+      .from("room_question_answers")
+      .select("id, author_id")
+      .eq("id", aId)
+      .eq("question_id", qId)
+      .maybeSingle();
+
+    if (!answer) {
+      return res.status(404).json({ error: "Answer not found for this question" });
+    }
+
+    // Reset any previous accepted answer for this question
+    await admin
+      .from("room_question_answers")
+      .update({ is_accepted: false })
+      .eq("question_id", qId);
+
+    // Mark target answer accepted
+    await admin
+      .from("room_question_answers")
+      .update({ is_accepted: true })
+      .eq("id", aId);
+
+    // Mark question resolved with accepted answer ID
+    const { data: updatedQuestion, error } = await admin
+      .from("room_questions")
+      .update({
+        is_resolved: true,
+        accepted_answer_id: aId,
+      })
+      .eq("id", qId)
+      .select(`
+        *,
+        author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    if (answer.author_id && answer.author_id !== req.userId!) {
+      void NotificationService.dispatch({
+        userId: answer.author_id,
+        type: "ANSWER_ACCEPTED",
+        title: "Your Answer Was Accepted! 🎉",
+        body: "Your answer was marked as the accepted solution.",
+        priority: "high",
+        entityType: "answer",
+        entityId: aId,
+        data: { roomId, questionId: qId, answerId: aId, route: "room", targetTab: "qa" },
+      });
+    }
+
+    logDomainEvent({
+      event: "answer_accepted",
+      roomId,
+      questionId: qId,
+      answerId: aId,
+    });
+
+    res.json({ success: true, question: updatedQuestion, accepted_answer_id: aId });
+  }),
+);
+
+// -----------------------------------------------------------------------------
+// ROOM RECORDINGS (YOUTUBE ARCHIVE)
+// -----------------------------------------------------------------------------
+
+function extractYouTubeId(urlOrId: string): string | null {
+  const trimmed = urlOrId.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+  return match?.[1] ?? null;
+}
+
+// GET /api/v1/rooms/:id/recordings - List recordings
+rooms.get(
+  "/:id/recordings",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data, error } = await admin
+      .from("room_recordings")
+      .select(`
+        *,
+        uploader:profiles!room_recordings_uploader_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ recordings: data ?? [] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/recordings - Add YouTube recording
+rooms.post(
+  "/:id/recordings",
+  recordingLimiter,
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        title: z.string().min(1).max(200).optional(),
+        description: z.string().max(2000).optional().default(""),
+        youtubeUrl: z.string().min(5),
+        durationSeconds: z.number().int().nonnegative().optional().default(0),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator", "admin"].includes(member.role)) {
+      return res.status(403).json({ error: "Room owner or moderator required to post recordings" });
+    }
+
+    const videoId = extractYouTubeVideoId(body.youtubeUrl);
+    if (!videoId) {
+      return res.status(400).json({ error: "Invalid YouTube URL or Video ID" });
+    }
+
+    // Check duplicate recording in room
+    const { data: existingRec } = await admin
+      .from("room_recordings")
+      .select("id")
+      .eq("room_id", roomId)
+      .eq("youtube_video_id", videoId)
+      .maybeSingle();
+
+    if (existingRec) {
+      return res.status(409).json({ error: "This recording has already been added to this study room" });
+    }
+
+    // Fetch video metadata with quota-aware fallback
+    const meta = await fetchYouTubeVideoMetadata(videoId);
+    const canonicalUrl = getYouTubeWatchUrl(videoId);
+    const finalTitle = body.title?.trim() ? body.title.trim() : meta.title;
+    const finalDuration = body.durationSeconds > 0 ? body.durationSeconds : (meta.durationSeconds || 0);
+
+    const { data, error } = await admin
+      .from("room_recordings")
+      .insert({
+        room_id: roomId,
+        uploader_id: req.userId!,
+        title: finalTitle,
+        description: body.description || meta.description,
+        youtube_video_id: videoId,
+        youtube_url: canonicalUrl,
+        duration_seconds: finalDuration,
+        thumbnail_url: meta.thumbnailUrl,
+        source_type: "youtube",
+        status: "ready",
+        youtube_channel_id: meta.channelId,
+        published_at: meta.publishedAt,
+        privacy_status: meta.privacyStatus || "unlisted",
+        provider_metadata: meta,
+        last_synced_at: new Date().toISOString(),
+      })
+      .select(`
+        *,
+        uploader:profiles!room_recordings_uploader_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    logDomainEvent({
+      event: "recording_added",
+      roomId,
+      recordingId: data.id,
+      durationSeconds: finalDuration,
+      provider: "youtube",
+    });
+
+    res.status(201).json({ recording: data });
+  }),
+);
+
+// POST /api/v1/rooms/:id/recordings/:recId/sync - Resync recording metadata
+rooms.post(
+  "/:id/recordings/:recId/sync",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const recId = z.string().uuid().parse(req.params.recId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator", "admin"].includes(member.role)) {
+      return res.status(403).json({ error: "Room owner or moderator required to sync recordings" });
+    }
+
+    const { data: rec, error: fetchErr } = await admin
+      .from("room_recordings")
+      .select("*")
+      .eq("id", recId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (fetchErr || !rec) {
+      return res.status(404).json({ error: "Recording not found in room" });
+    }
+
+    if (!rec.youtube_video_id) {
+      return res.status(400).json({ error: "Recording does not have a linked YouTube video ID" });
+    }
+
+    // Refresh metadata directly and schedule background job
+    const meta = await fetchYouTubeVideoMetadata(rec.youtube_video_id);
+
+    const updatePayload: Record<string, any> = {
+      title: meta.title || rec.title,
+      description: meta.description || rec.description,
+      thumbnail_url: meta.thumbnailUrl || rec.thumbnail_url,
+      provider_metadata: meta,
+      status: "ready",
+      last_synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (meta.durationSeconds) updatePayload.duration_seconds = meta.durationSeconds;
+    if (meta.channelId) updatePayload.youtube_channel_id = meta.channelId;
+    if (meta.publishedAt) updatePayload.published_at = meta.publishedAt;
+    if (meta.privacyStatus) updatePayload.privacy_status = meta.privacyStatus;
+
+    const { data: updated, error: updateErr } = await admin
+      .from("room_recordings")
+      .update(updatePayload)
+      .eq("id", recId)
+      .select(`
+        *,
+        uploader:profiles!room_recordings_uploader_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({ recording: updated, synced: true });
+  }),
+);
+
+// DELETE /api/v1/rooms/:id/recordings/:recId - Delete recording
+rooms.delete(
+  "/:id/recordings/:recId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const recId = z.string().uuid().parse(req.params.recId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    const { data: rec } = await admin
+      .from("room_recordings")
+      .select("uploader_id")
+      .eq("id", recId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!rec) {
+      return res.status(404).json({ error: "Recording not found" });
+    }
+
+    const isHostOrMod = member && ["owner", "moderator", "admin"].includes(member.role);
+    const isUploader = rec.uploader_id === req.userId;
+
+    if (!isHostOrMod && !isUploader) {
+      return res.status(403).json({ error: "Permission denied to delete this recording" });
+    }
+
+    const { error: delErr } = await admin
+      .from("room_recordings")
+      .delete()
+      .eq("id", recId)
+      .eq("room_id", roomId);
+
+    if (delErr) throw delErr;
+
+    res.json({ success: true, message: "Recording deleted successfully" });
   }),
 );

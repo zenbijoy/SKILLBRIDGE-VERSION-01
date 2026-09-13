@@ -1,0 +1,822 @@
+[
+  {
+    "path": "README.md",
+    "type": "md",
+    "bytes": 976
+  },
+  {
+    "path": "avatar-frames/club-admin.png",
+    "type": "png",
+    "bytes": 10454
+  },
+  {
+    "path": "avatar-frames/mentor.png",
+    "type": "png",
+    "bytes": 9897
+  },
+  {
+    "path": "avatar-frames/verified.png",
+    "type": "png",
+    "bytes": 9552
+  },
+  {
+    "path": "avatar-frames/researcher.png",
+    "type": "png",
+    "bytes": 10095
+  },
+  {
+    "path": "avatar-frames/streak-7.png",
+    "type": "png",
+    "bytes": 10149
+  },
+  {
+    "path": "avatar-frames/creator.png",
+    "type": "png",
+    "bytes": 10031
+  },
+  {
+    "path": "avatar-frames/founder.png",
+    "type": "png",
+    "bytes": 9874
+  },
+  {
+    "path": "avatar-frames/streak-30.png",
+    "type": "png",
+    "bytes": 10596
+  },
+  {
+    "path": "avatar-frames/event-host.png",
+    "type": "png",
+    "bytes": 10155
+  },
+  {
+    "path": "avatar-frames/top-helper.png",
+    "type": "png",
+    "bytes": 9550
+  },
+  {
+    "path": "empty-states/no-mentors.png",
+    "type": "png",
+    "bytes": 19158
+  },
+  {
+    "path": "empty-states/no-answers.png",
+    "type": "png",
+    "bytes": 19300
+  },
+  {
+    "path": "empty-states/no-bookmarks.png",
+    "type": "png",
+    "bytes": 20844
+  },
+  {
+    "path": "empty-states/no-campus-feed.png",
+    "type": "png",
+    "bytes": 19074
+  },
+  {
+    "path": "empty-states/no-achievements.png",
+    "type": "png",
+    "bytes": 20782
+  },
+  {
+    "path": "empty-states/no-recording-search.png",
+    "type": "png",
+    "bytes": 19245
+  },
+  {
+    "path": "empty-states/no-upcoming-events.png",
+    "type": "png",
+    "bytes": 19669
+  },
+  {
+    "path": "empty-states/no-clashes.png",
+    "type": "png",
+    "bytes": 19146
+  },
+  {
+    "path": "decorative-elements/decor-06.png",
+    "type": "png",
+    "bytes": 3853
+  },
+  {
+    "path": "decorative-elements/decor-13.png",
+    "type": "png",
+    "bytes": 5506
+  },
+  {
+    "path": "decorative-elements/decor-09.png",
+    "type": "png",
+    "bytes": 5587
+  },
+  {
+    "path": "decorative-elements/decor-07.png",
+    "type": "png",
+    "bytes": 4075
+  },
+  {
+    "path": "decorative-elements/decor-02.png",
+    "type": "png",
+    "bytes": 3854
+  },
+  {
+    "path": "decorative-elements/decor-04.png",
+    "type": "png",
+    "bytes": 3369
+  },
+  {
+    "path": "decorative-elements/decor-08.png",
+    "type": "png",
+    "bytes": 3367
+  },
+  {
+    "path": "decorative-elements/decor-03.png",
+    "type": "png",
+    "bytes": 4043
+  },
+  {
+    "path": "decorative-elements/decor-20.png",
+    "type": "png",
+    "bytes": 3368
+  },
+  {
+    "path": "decorative-elements/decor-05.png",
+    "type": "png",
+    "bytes": 5858
+  },
+  {
+    "path": "decorative-elements/decor-17.png",
+    "type": "png",
+    "bytes": 5122
+  },
+  {
+    "path": "decorative-elements/decor-16.png",
+    "type": "png",
+    "bytes": 3372
+  },
+  {
+    "path": "decorative-elements/decor-14.png",
+    "type": "png",
+    "bytes": 3854
+  },
+  {
+    "path": "decorative-elements/decor-12.png",
+    "type": "png",
+    "bytes": 3372
+  },
+  {
+    "path": "decorative-elements/decor-15.png",
+    "type": "png",
+    "bytes": 4007
+  },
+  {
+    "path": "decorative-elements/decor-11.png",
+    "type": "png",
+    "bytes": 4040
+  },
+  {
+    "path": "decorative-elements/decor-19.png",
+    "type": "png",
+    "bytes": 4010
+  },
+  {
+    "path": "decorative-elements/decor-01.png",
+    "type": "png",
+    "bytes": 6117
+  },
+  {
+    "path": "decorative-elements/decor-10.png",
+    "type": "png",
+    "bytes": 3854
+  },
+  {
+    "path": "decorative-elements/decor-18.png",
+    "type": "png",
+    "bytes": 3854
+  },
+  {
+    "path": "notifications/clash-resolved.png",
+    "type": "png",
+    "bytes": 15718
+  },
+  {
+    "path": "notifications/recording-ready.png",
+    "type": "png",
+    "bytes": 15266
+  },
+  {
+    "path": "notifications/class-starting.png",
+    "type": "png",
+    "bytes": 15035
+  },
+  {
+    "path": "notifications/event-reminder.png",
+    "type": "png",
+    "bytes": 13856
+  },
+  {
+    "path": "notifications/material-added.png",
+    "type": "png",
+    "bytes": 14803
+  },
+  {
+    "path": "notifications/achievement-unlocked.png",
+    "type": "png",
+    "bytes": 15166
+  },
+  {
+    "path": "notifications/mentor-replied.png",
+    "type": "png",
+    "bytes": 15131
+  },
+  {
+    "path": "notifications/clash-detected.png",
+    "type": "png",
+    "bytes": 14869
+  },
+  {
+    "path": "notifications/club-invite.png",
+    "type": "png",
+    "bytes": 15020
+  },
+  {
+    "path": "notifications/question-accepted.png",
+    "type": "png",
+    "bytes": 16095
+  },
+  {
+    "path": "stickers/bookworm.png",
+    "type": "png",
+    "bytes": 6416
+  },
+  {
+    "path": "stickers/campus-creator.png",
+    "type": "png",
+    "bytes": 6043
+  },
+  {
+    "path": "stickers/exam-ready.png",
+    "type": "png",
+    "bytes": 5763
+  },
+  {
+    "path": "stickers/community-first.png",
+    "type": "png",
+    "bytes": 6173
+  },
+  {
+    "path": "stickers/early-bird.png",
+    "type": "png",
+    "bytes": 5790
+  },
+  {
+    "path": "stickers/verified-mentor.png",
+    "type": "png",
+    "bytes": 5627
+  },
+  {
+    "path": "stickers/focus-mode.png",
+    "type": "png",
+    "bytes": 6070
+  },
+  {
+    "path": "stickers/club-star.png",
+    "type": "png",
+    "bytes": 6016
+  },
+  {
+    "path": "stickers/night-owl.png",
+    "type": "png",
+    "bytes": 6294
+  },
+  {
+    "path": "stickers/lab-survivor.png",
+    "type": "png",
+    "bytes": 5332
+  },
+  {
+    "path": "stickers/debug-hero.png",
+    "type": "png",
+    "bytes": 5715
+  },
+  {
+    "path": "stickers/study-streak.png",
+    "type": "png",
+    "bytes": 5992
+  },
+  {
+    "path": "stickers/answer-accepted.png",
+    "type": "png",
+    "bytes": 5929
+  },
+  {
+    "path": "stickers/mentor-approved.png",
+    "type": "png",
+    "bytes": 5944
+  },
+  {
+    "path": "stickers/resource-hero.png",
+    "type": "png",
+    "bytes": 5912
+  },
+  {
+    "path": "stickers/top-helper.png",
+    "type": "png",
+    "bytes": 5299
+  },
+  {
+    "path": "stickers/event-organizer.png",
+    "type": "png",
+    "bytes": 6564
+  },
+  {
+    "path": "stickers/attendance-ace.png",
+    "type": "png",
+    "bytes": 5802
+  },
+  {
+    "path": "reaction-stickers/love.png",
+    "type": "png",
+    "bytes": 4210
+  },
+  {
+    "path": "reaction-stickers/helpful.png",
+    "type": "png",
+    "bytes": 3924
+  },
+  {
+    "path": "reaction-stickers/wow.png",
+    "type": "png",
+    "bytes": 4193
+  },
+  {
+    "path": "reaction-stickers/relatable.png",
+    "type": "png",
+    "bytes": 4418
+  },
+  {
+    "path": "reaction-stickers/agree.png",
+    "type": "png",
+    "bytes": 4454
+  },
+  {
+    "path": "reaction-stickers/bookmark.png",
+    "type": "png",
+    "bytes": 4482
+  },
+  {
+    "path": "reaction-stickers/insightful.png",
+    "type": "png",
+    "bytes": 4401
+  },
+  {
+    "path": "reaction-stickers/solved.png",
+    "type": "png",
+    "bytes": 4818
+  },
+  {
+    "path": "reaction-stickers/cheer.png",
+    "type": "png",
+    "bytes": 3990
+  },
+  {
+    "path": "reaction-stickers/respect.png",
+    "type": "png",
+    "bytes": 4590
+  },
+  {
+    "path": "reaction-stickers/confused.png",
+    "type": "png",
+    "bytes": 5052
+  },
+  {
+    "path": "reaction-stickers/thanks.png",
+    "type": "png",
+    "bytes": 4725
+  },
+  {
+    "path": "feature-cards/clash-detector.png",
+    "type": "png",
+    "bytes": 18494
+  },
+  {
+    "path": "feature-cards/progress.png",
+    "type": "png",
+    "bytes": 17658
+  },
+  {
+    "path": "feature-cards/mentor-match.png",
+    "type": "png",
+    "bytes": 17689
+  },
+  {
+    "path": "feature-cards/club-hub.png",
+    "type": "png",
+    "bytes": 16375
+  },
+  {
+    "path": "feature-cards/study-plan.png",
+    "type": "png",
+    "bytes": 18186
+  },
+  {
+    "path": "feature-cards/verified-club.png",
+    "type": "png",
+    "bytes": 18119
+  },
+  {
+    "path": "feature-cards/resource-upload.png",
+    "type": "png",
+    "bytes": 18227
+  },
+  {
+    "path": "feature-cards/search.png",
+    "type": "png",
+    "bytes": 17536
+  },
+  {
+    "path": "feature-cards/push-alerts.png",
+    "type": "png",
+    "bytes": 18179
+  },
+  {
+    "path": "feature-cards/negotiation.png",
+    "type": "png",
+    "bytes": 20288
+  },
+  {
+    "path": "feature-cards/qa-board.png",
+    "type": "png",
+    "bytes": 19552
+  },
+  {
+    "path": "feature-cards/live-session.png",
+    "type": "png",
+    "bytes": 17297
+  },
+  {
+    "path": "feature-cards/campus-feed.png",
+    "type": "png",
+    "bytes": 18145
+  },
+  {
+    "path": "feature-cards/recordings.png",
+    "type": "png",
+    "bytes": 18184
+  },
+  {
+    "path": "feature-cards/calendar.png",
+    "type": "png",
+    "bytes": 18422
+  },
+  {
+    "path": "feature-cards/safe-mode.png",
+    "type": "png",
+    "bytes": 18321
+  },
+  {
+    "path": "feature-cards/achievement.png",
+    "type": "png",
+    "bytes": 18378
+  },
+  {
+    "path": "feature-cards/materials-hub.png",
+    "type": "png",
+    "bytes": 17522
+  },
+  {
+    "path": "feature-cards/general-chat.png",
+    "type": "png",
+    "bytes": 17045
+  },
+  {
+    "path": "feature-cards/anonymous-post.png",
+    "type": "png",
+    "bytes": 19633
+  },
+  {
+    "path": "previews/ai-generated-pack-preview.png",
+    "type": "png",
+    "bytes": 1906766
+  },
+  {
+    "path": "previews/contact-sheet.jpg",
+    "type": "jpg",
+    "bytes": 118559
+  },
+  {
+    "path": "backgrounds/sunrise-campus.png",
+    "type": "png",
+    "bytes": 87787
+  },
+  {
+    "path": "backgrounds/deep-night.png",
+    "type": "png",
+    "bytes": 164153
+  },
+  {
+    "path": "backgrounds/mint-study.png",
+    "type": "png",
+    "bytes": 53027
+  },
+  {
+    "path": "backgrounds/club-night.png",
+    "type": "png",
+    "bytes": 102234
+  },
+  {
+    "path": "backgrounds/aurora-blue.png",
+    "type": "png",
+    "bytes": 98843
+  },
+  {
+    "path": "backgrounds/exam-night.png",
+    "type": "png",
+    "bytes": 66626
+  },
+  {
+    "path": "backgrounds/midnight-blue.png",
+    "type": "png",
+    "bytes": 211814
+  },
+  {
+    "path": "backgrounds/soft-lilac.png",
+    "type": "png",
+    "bytes": 98330
+  },
+  {
+    "path": "backgrounds/aurora-pink.png",
+    "type": "png",
+    "bytes": 161920
+  },
+  {
+    "path": "backgrounds/rose-study.png",
+    "type": "png",
+    "bytes": 45239
+  },
+  {
+    "path": "backgrounds/ocean-focus.png",
+    "type": "png",
+    "bytes": 102009
+  },
+  {
+    "path": "backgrounds/soft-sky.png",
+    "type": "png",
+    "bytes": 100681
+  },
+  {
+    "path": "hero-banners/social-feed.png",
+    "type": "png",
+    "bytes": 99376
+  },
+  {
+    "path": "hero-banners/mentor-network.png",
+    "type": "png",
+    "bytes": 88126
+  },
+  {
+    "path": "hero-banners/event-discovery.png",
+    "type": "png",
+    "bytes": 104870
+  },
+  {
+    "path": "hero-banners/focus-mode.png",
+    "type": "png",
+    "bytes": 72829
+  },
+  {
+    "path": "hero-banners/materials-vault.png",
+    "type": "png",
+    "bytes": 75762
+  },
+  {
+    "path": "hero-banners/achievement.png",
+    "type": "png",
+    "bytes": 127775
+  },
+  {
+    "path": "hero-banners/recording-library.png",
+    "type": "png",
+    "bytes": 81443
+  },
+  {
+    "path": "hero-banners/safe-community.png",
+    "type": "png",
+    "bytes": 76701
+  },
+  {
+    "path": "hero-banners/study-together.png",
+    "type": "png",
+    "bytes": 83644
+  },
+  {
+    "path": "hero-banners/live-class.png",
+    "type": "png",
+    "bytes": 100769
+  },
+  {
+    "path": "hero-banners/club-os.png",
+    "type": "png",
+    "bytes": 83219
+  },
+  {
+    "path": "hero-banners/qa-community.png",
+    "type": "png",
+    "bytes": 104605
+  },
+  {
+    "path": "section-banners/fresh-materials.png",
+    "type": "png",
+    "bytes": 54233
+  },
+  {
+    "path": "section-banners/club-events.png",
+    "type": "png",
+    "bytes": 53705
+  },
+  {
+    "path": "section-banners/upcoming-session.png",
+    "type": "png",
+    "bytes": 52732
+  },
+  {
+    "path": "section-banners/top-questions.png",
+    "type": "png",
+    "bytes": 77136
+  },
+  {
+    "path": "section-banners/weekly-progress.png",
+    "type": "png",
+    "bytes": 93720
+  },
+  {
+    "path": "section-banners/recordings-ready.png",
+    "type": "png",
+    "bytes": 79283
+  },
+  {
+    "path": "section-banners/mentor-picks.png",
+    "type": "png",
+    "bytes": 51967
+  },
+  {
+    "path": "section-banners/campus-trending.png",
+    "type": "png",
+    "bytes": 78616
+  },
+  {
+    "path": "docs/ANTIGRAVITY_INTEGRATION.md",
+    "type": "md",
+    "bytes": 410
+  },
+  {
+    "path": "badges/clash-resolved.png",
+    "type": "png",
+    "bytes": 4978
+  },
+  {
+    "path": "badges/exam-week.png",
+    "type": "png",
+    "bytes": 5130
+  },
+  {
+    "path": "badges/official-event.png",
+    "type": "png",
+    "bytes": 5295
+  },
+  {
+    "path": "badges/safe-space.png",
+    "type": "png",
+    "bytes": 5283
+  },
+  {
+    "path": "badges/active-today.png",
+    "type": "png",
+    "bytes": 5732
+  },
+  {
+    "path": "badges/verified-answer.png",
+    "type": "png",
+    "bytes": 5733
+  },
+  {
+    "path": "badges/newcomer.png",
+    "type": "png",
+    "bytes": 5100
+  },
+  {
+    "path": "badges/mentor-choice.png",
+    "type": "png",
+    "bytes": 5449
+  },
+  {
+    "path": "badges/new-recording.png",
+    "type": "png",
+    "bytes": 5705
+  },
+  {
+    "path": "badges/top-10.png",
+    "type": "png",
+    "bytes": 4451
+  },
+  {
+    "path": "badges/featured-resource.png",
+    "type": "png",
+    "bytes": 4551
+  },
+  {
+    "path": "badges/campus-trending.png",
+    "type": "png",
+    "bytes": 4739
+  },
+  {
+    "path": "animations/gif/reaction-burst.gif",
+    "type": "gif",
+    "bytes": 29927
+  },
+  {
+    "path": "animations/gif/celebrate-burst.gif",
+    "type": "gif",
+    "bytes": 29927
+  },
+  {
+    "path": "animations/gif/achievement-unlocked.gif",
+    "type": "gif",
+    "bytes": 20476
+  },
+  {
+    "path": "animations/gif/answer-accepted.gif",
+    "type": "gif",
+    "bytes": 20547
+  },
+  {
+    "path": "animations/gif/network-reconnect.gif",
+    "type": "gif",
+    "bytes": 38190
+  },
+  {
+    "path": "animations/gif/verified.gif",
+    "type": "gif",
+    "bytes": 20530
+  },
+  {
+    "path": "animations/gif/mentor-reply.gif",
+    "type": "gif",
+    "bytes": 20736
+  },
+  {
+    "path": "animations/gif/club-join.gif",
+    "type": "gif",
+    "bytes": 20530
+  },
+  {
+    "path": "animations/gif/event-reminder.gif",
+    "type": "gif",
+    "bytes": 20476
+  },
+  {
+    "path": "animations/gif/bookmark-saved.gif",
+    "type": "gif",
+    "bytes": 20476
+  },
+  {
+    "path": "animations/gif/calendar-shift.gif",
+    "type": "gif",
+    "bytes": 40324
+  },
+  {
+    "path": "animations/gif/progress-ring.gif",
+    "type": "gif",
+    "bytes": 38190
+  },
+  {
+    "path": "animations/gif/question-pop.gif",
+    "type": "gif",
+    "bytes": 20736
+  },
+  {
+    "path": "animations/gif/focus-start.gif",
+    "type": "gif",
+    "bytes": 20519
+  },
+  {
+    "path": "animations/gif/clash-resolved.gif",
+    "type": "gif",
+    "bytes": 40324
+  },
+  {
+    "path": "animations/gif/recording-ready.gif",
+    "type": "gif",
+    "bytes": 20609
+  },
+  {
+    "path": "animations/gif/room-join.gif",
+    "type": "gif",
+    "bytes": 40140
+  },
+  {
+    "path": "animations/gif/sync-orbit.gif",
+    "type": "gif",
+    "bytes": 45026
+  }
+]

@@ -1,0 +1,575 @@
+{
+  "version": "1.0.0",
+  "brandSource": "current SkillBridge repo brand tokens",
+  "assetCount": 142,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2351
+    },
+    {
+      "path": "animations/gif/live-pulse.gif",
+      "bytes": 109539
+    },
+    {
+      "path": "animations/gif/loader-orbit.gif",
+      "bytes": 149804
+    },
+    {
+      "path": "animations/gif/success-confetti.gif",
+      "bytes": 80606
+    },
+    {
+      "path": "animations/gif/typing-dots.gif",
+      "bytes": 22299
+    },
+    {
+      "path": "animations/gif/upload-progress.gif",
+      "bytes": 40655
+    },
+    {
+      "path": "animations/lottie/attention-pulse.json",
+      "bytes": 2235
+    },
+    {
+      "path": "animations/lottie/live-pulse.json",
+      "bytes": 2229
+    },
+    {
+      "path": "animations/lottie/loader-pulse.json",
+      "bytes": 2231
+    },
+    {
+      "path": "animations/lottie/success-pulse.json",
+      "bytes": 2233
+    },
+    {
+      "path": "backgrounds/png/dots-dark.png",
+      "bytes": 8487
+    },
+    {
+      "path": "backgrounds/png/dots-light.png",
+      "bytes": 8471
+    },
+    {
+      "path": "backgrounds/png/focus-dark.png",
+      "bytes": 89792
+    },
+    {
+      "path": "backgrounds/png/focus-light.png",
+      "bytes": 94190
+    },
+    {
+      "path": "backgrounds/png/grid-dark.png",
+      "bytes": 7353
+    },
+    {
+      "path": "backgrounds/png/grid-light.png",
+      "bytes": 7354
+    },
+    {
+      "path": "backgrounds/png/mesh-dark.png",
+      "bytes": 22689
+    },
+    {
+      "path": "backgrounds/png/mesh-light.png",
+      "bytes": 21248
+    },
+    {
+      "path": "backgrounds/svg/dots-dark.svg",
+      "bytes": 1325
+    },
+    {
+      "path": "backgrounds/svg/dots-light.svg",
+      "bytes": 1325
+    },
+    {
+      "path": "backgrounds/svg/focus-dark.svg",
+      "bytes": 1538
+    },
+    {
+      "path": "backgrounds/svg/focus-light.svg",
+      "bytes": 1538
+    },
+    {
+      "path": "backgrounds/svg/grid-dark.svg",
+      "bytes": 1325
+    },
+    {
+      "path": "backgrounds/svg/grid-light.svg",
+      "bytes": 1325
+    },
+    {
+      "path": "backgrounds/svg/mesh-dark.svg",
+      "bytes": 1466
+    },
+    {
+      "path": "backgrounds/svg/mesh-light.svg",
+      "bytes": 1466
+    },
+    {
+      "path": "badges/png/contributor.png",
+      "bytes": 6608
+    },
+    {
+      "path": "badges/png/founder.png",
+      "bytes": 5353
+    },
+    {
+      "path": "badges/png/host.png",
+      "bytes": 4787
+    },
+    {
+      "path": "badges/png/live-now.png",
+      "bytes": 4329
+    },
+    {
+      "path": "badges/png/mentor.png",
+      "bytes": 5646
+    },
+    {
+      "path": "badges/png/resolved.png",
+      "bytes": 6042
+    },
+    {
+      "path": "badges/png/streak.png",
+      "bytes": 5513
+    },
+    {
+      "path": "badges/png/top-helper.png",
+      "bytes": 5050
+    },
+    {
+      "path": "badges/png/trusted.png",
+      "bytes": 5083
+    },
+    {
+      "path": "badges/png/verified-club.png",
+      "bytes": 4644
+    },
+    {
+      "path": "badges/svg/contributor.svg",
+      "bytes": 563
+    },
+    {
+      "path": "badges/svg/founder.svg",
+      "bytes": 559
+    },
+    {
+      "path": "badges/svg/host.svg",
+      "bytes": 556
+    },
+    {
+      "path": "badges/svg/live-now.svg",
+      "bytes": 558
+    },
+    {
+      "path": "badges/svg/mentor.svg",
+      "bytes": 558
+    },
+    {
+      "path": "badges/svg/resolved.svg",
+      "bytes": 562
+    },
+    {
+      "path": "badges/svg/streak.svg",
+      "bytes": 560
+    },
+    {
+      "path": "badges/svg/top-helper.svg",
+      "bytes": 564
+    },
+    {
+      "path": "badges/svg/trusted.svg",
+      "bytes": 561
+    },
+    {
+      "path": "badges/svg/verified-club.svg",
+      "bytes": 562
+    },
+    {
+      "path": "brand/skillbridge-nextgen-mark-transparent.svg",
+      "bytes": 1176
+    },
+    {
+      "path": "brand/skillbridge-nextgen-mark.svg",
+      "bytes": 1234
+    },
+    {
+      "path": "brand/skillbridge-nextgen-wordmark-dark.svg",
+      "bytes": 987
+    },
+    {
+      "path": "design-tokens.json",
+      "bytes": 1084
+    },
+    {
+      "path": "empty-states/png/error-safe.png",
+      "bytes": 38886
+    },
+    {
+      "path": "empty-states/png/no-chat.png",
+      "bytes": 39874
+    },
+    {
+      "path": "empty-states/png/no-clubs.png",
+      "bytes": 40661
+    },
+    {
+      "path": "empty-states/png/no-materials.png",
+      "bytes": 37850
+    },
+    {
+      "path": "empty-states/png/no-notifications.png",
+      "bytes": 36824
+    },
+    {
+      "path": "empty-states/png/no-posts.png",
+      "bytes": 37970
+    },
+    {
+      "path": "empty-states/png/no-recordings.png",
+      "bytes": 40161
+    },
+    {
+      "path": "empty-states/png/no-rooms.png",
+      "bytes": 37612
+    },
+    {
+      "path": "empty-states/png/no-search.png",
+      "bytes": 38849
+    },
+    {
+      "path": "empty-states/png/offline.png",
+      "bytes": 37856
+    },
+    {
+      "path": "empty-states/svg/error-safe.svg",
+      "bytes": 1829
+    },
+    {
+      "path": "empty-states/svg/no-chat.svg",
+      "bytes": 2023
+    },
+    {
+      "path": "empty-states/svg/no-clubs.svg",
+      "bytes": 1971
+    },
+    {
+      "path": "empty-states/svg/no-materials.svg",
+      "bytes": 1904
+    },
+    {
+      "path": "empty-states/svg/no-notifications.svg",
+      "bytes": 1810
+    },
+    {
+      "path": "empty-states/svg/no-posts.svg",
+      "bytes": 2004
+    },
+    {
+      "path": "empty-states/svg/no-recordings.svg",
+      "bytes": 1839
+    },
+    {
+      "path": "empty-states/svg/no-rooms.svg",
+      "bytes": 2018
+    },
+    {
+      "path": "empty-states/svg/no-search.svg",
+      "bytes": 1814
+    },
+    {
+      "path": "empty-states/svg/offline.svg",
+      "bytes": 1842
+    },
+    {
+      "path": "icons/svg/achievement.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/ai.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/analytics.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/anonymous.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/calendar.svg",
+      "bytes": 610
+    },
+    {
+      "path": "icons/svg/chat.svg",
+      "bytes": 651
+    },
+    {
+      "path": "icons/svg/club.svg",
+      "bytes": 608
+    },
+    {
+      "path": "icons/svg/discovery.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/download.svg",
+      "bytes": 535
+    },
+    {
+      "path": "icons/svg/event.svg",
+      "bytes": 610
+    },
+    {
+      "path": "icons/svg/feed.svg",
+      "bytes": 651
+    },
+    {
+      "path": "icons/svg/home.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/live.svg",
+      "bytes": 505
+    },
+    {
+      "path": "icons/svg/materials.svg",
+      "bytes": 535
+    },
+    {
+      "path": "icons/svg/mentor.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/moderation.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/notification.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/privacy.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/profile.svg",
+      "bytes": 608
+    },
+    {
+      "path": "icons/svg/question.svg",
+      "bytes": 497
+    },
+    {
+      "path": "icons/svg/recording.svg",
+      "bytes": 478
+    },
+    {
+      "path": "icons/svg/resolved.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/search.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/settings.svg",
+      "bytes": 448
+    },
+    {
+      "path": "icons/svg/upload.svg",
+      "bytes": 535
+    },
+    {
+      "path": "icons/svg/vote.svg",
+      "bytes": 448
+    },
+    {
+      "path": "illustrations/png/ai-companion.png",
+      "bytes": 110714
+    },
+    {
+      "path": "illustrations/png/clash-engine.png",
+      "bytes": 112010
+    },
+    {
+      "path": "illustrations/png/club-os.png",
+      "bytes": 121700
+    },
+    {
+      "path": "illustrations/png/discovery.png",
+      "bytes": 120466
+    },
+    {
+      "path": "illustrations/png/home-network.png",
+      "bytes": 118907
+    },
+    {
+      "path": "illustrations/png/live-class.png",
+      "bytes": 114499
+    },
+    {
+      "path": "illustrations/png/materials-hub.png",
+      "bytes": 118504
+    },
+    {
+      "path": "illustrations/png/mentor-growth.png",
+      "bytes": 108611
+    },
+    {
+      "path": "illustrations/png/qna-board.png",
+      "bytes": 116144
+    },
+    {
+      "path": "illustrations/png/recordings.png",
+      "bytes": 110080
+    },
+    {
+      "path": "illustrations/png/social-feed.png",
+      "bytes": 116599
+    },
+    {
+      "path": "illustrations/png/study-room.png",
+      "bytes": 111962
+    },
+    {
+      "path": "illustrations/svg/ai-companion.svg",
+      "bytes": 4512
+    },
+    {
+      "path": "illustrations/svg/clash-engine.svg",
+      "bytes": 4674
+    },
+    {
+      "path": "illustrations/svg/club-os.svg",
+      "bytes": 4661
+    },
+    {
+      "path": "illustrations/svg/discovery.svg",
+      "bytes": 4519
+    },
+    {
+      "path": "illustrations/svg/home-network.svg",
+      "bytes": 4509
+    },
+    {
+      "path": "illustrations/svg/live-class.svg",
+      "bytes": 4556
+    },
+    {
+      "path": "illustrations/svg/materials-hub.svg",
+      "bytes": 4585
+    },
+    {
+      "path": "illustrations/svg/mentor-growth.svg",
+      "bytes": 4501
+    },
+    {
+      "path": "illustrations/svg/qna-board.svg",
+      "bytes": 4548
+    },
+    {
+      "path": "illustrations/svg/recordings.svg",
+      "bytes": 4524
+    },
+    {
+      "path": "illustrations/svg/social-feed.svg",
+      "bytes": 4694
+    },
+    {
+      "path": "illustrations/svg/study-room.svg",
+      "bytes": 4706
+    },
+    {
+      "path": "integration/ExampleAssetUsage.tsx",
+      "bytes": 576
+    },
+    {
+      "path": "integration/assetMap.ts",
+      "bytes": 1092
+    },
+    {
+      "path": "notifications/png/clash-warning.png",
+      "bytes": 21042
+    },
+    {
+      "path": "notifications/png/club-verified.png",
+      "bytes": 19726
+    },
+    {
+      "path": "notifications/png/live-started.png",
+      "bytes": 18831
+    },
+    {
+      "path": "notifications/png/question-answered.png",
+      "bytes": 21800
+    },
+    {
+      "path": "notifications/svg/clash-warning.svg",
+      "bytes": 1972
+    },
+    {
+      "path": "notifications/svg/club-verified.svg",
+      "bytes": 1948
+    },
+    {
+      "path": "notifications/svg/live-started.svg",
+      "bytes": 1945
+    },
+    {
+      "path": "notifications/svg/question-answered.svg",
+      "bytes": 1959
+    },
+    {
+      "path": "onboarding/png/01-connect.png",
+      "bytes": 102029
+    },
+    {
+      "path": "onboarding/png/02-learn.png",
+      "bytes": 103288
+    },
+    {
+      "path": "onboarding/png/03-build.png",
+      "bytes": 104263
+    },
+    {
+      "path": "onboarding/png/04-safe.png",
+      "bytes": 105896
+    },
+    {
+      "path": "onboarding/svg/01-connect.svg",
+      "bytes": 2652
+    },
+    {
+      "path": "onboarding/svg/02-learn.svg",
+      "bytes": 2555
+    },
+    {
+      "path": "onboarding/svg/03-build.svg",
+      "bytes": 2676
+    },
+    {
+      "path": "onboarding/svg/04-safe.svg",
+      "bytes": 2598
+    },
+    {
+      "path": "skeletons/svg/club-card.svg",
+      "bytes": 805
+    },
+    {
+      "path": "skeletons/svg/feed-card.svg",
+      "bytes": 805
+    },
+    {
+      "path": "skeletons/svg/profile-card.svg",
+      "bytes": 805
+    },
+    {
+      "path": "skeletons/svg/room-dashboard.svg",
+      "bytes": 805
+    }
+  ]
+}

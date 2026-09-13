@@ -8,6 +8,9 @@ import type { Profile, Room, Session } from "@/types";
 import { Button, Card, Empty, ErrorState, Field, H1, H2, Muted, Pill, Row, Screen, Skeleton } from "@/components/ui";
 import { TextPromptModal } from "@/components/feedback/TextPromptModal";
 import { radius, useTheme } from "@/theme";
+import { RoomQABoard } from "@/features/room/RoomQABoard";
+import { RoomRecordings } from "@/features/room/RoomRecordings";
+import { RoomMaterialsHub } from "@/features/room/RoomMaterialsHub";
 
 type Detail = {
   room: Room;
@@ -22,6 +25,7 @@ export default function RoomDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"overview" | "qa" | "materials" | "recordings">("overview");
   const [volunteerNote, setVolunteerNote] = useState("");
   const [showVolunteerForm, setShowVolunteerForm] = useState(false);
   const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
@@ -68,6 +72,8 @@ export default function RoomDetail() {
   if (room.isLoading) return <Screen><Skeleton height={150} /><Skeleton height={120} /><Skeleton height={120} /></Screen>;
   if (room.isError) return <Screen><ErrorState detail={(room.error as Error).message} onRetry={() => room.refetch()} /></Screen>;
   if (!d) return <Screen><Empty title="Room unavailable" detail="This room may have been removed or you may not have access." /></Screen>;
+
+  const isHost = ["owner", "teacher"].includes(d.myMembership?.role ?? "");
 
   async function submitReview() {
     if (!reviewSessionId) return;
@@ -146,149 +152,194 @@ export default function RoomDetail() {
         {d.room.scheduled_at ? <View style={s.infoRow}><MaterialCommunityIcons name="calendar-clock" size={19} color={colors.primary} /><Muted>{new Date(d.room.scheduled_at).toLocaleString()}</Muted></View> : null}
       </Card>
 
-      {!d.myMembership ? <Button title={join.isPending ? "Joining…" : "Join room"} onPress={() => join.mutate()} disabled={join.isPending} /> : <Button title={leave.isPending ? "Leaving…" : "Leave room"} variant="secondary" onPress={() => leave.mutate()} disabled={leave.isPending} />}
+      <Row style={s.tabBar}>
+        {[
+          { key: "overview", label: "Overview", icon: "information-outline" },
+          { key: "qa", label: "Q&A", icon: "comment-question-outline" },
+          { key: "materials", label: "Materials", icon: "folder-outline" },
+          { key: "recordings", label: "Recordings", icon: "youtube" },
+        ].map((t) => (
+          <Pressable
+            key={t.key}
+            onPress={() => setActiveTab(t.key as any)}
+            style={[
+              s.tabItem,
+              activeTab === t.key && { borderBottomColor: colors.primary, borderBottomWidth: 2 }
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={t.icon as any}
+              size={16}
+              color={activeTab === t.key ? colors.primary : colors.muted}
+            />
+            <Text style={[s.tabText, { color: activeTab === t.key ? colors.primary : colors.muted }]}>
+              {t.label}
+            </Text>
+          </Pressable>
+        ))}
+      </Row>
 
-      {d.myMembership ? (
-        <Card>
-          <H2>Room actions</H2>
-          <View style={s.actionGrid}>
-            {d.room.conversation_id ? <Action icon="message-text-outline" label="Room chat" onPress={() => router.push(`/chat/${d.room.conversation_id}` as any)} /> : null}
-            {d.room.status === "live" ? <Action icon="video-outline" label="Live class" onPress={() => router.push(`/live/${id}` as any)} /> : null}
-            {["owner", "teacher", "moderator"].includes(d.myMembership.role) ? <Action icon="account-plus-outline" label="Invite peer" onPress={() => setShowInviteModal(true)} /> : null}
-            {["owner", "teacher"].includes(d.myMembership.role) ? <Action icon="calendar-plus" label="Schedule" onPress={() => router.push(`/room/${id}/schedule` as any)} /> : null}
-            <Action icon="book-plus-outline" label="Resource" onPress={() => setShowResourcePrompt(true)} />
-          </View>
-        </Card>
-      ) : null}
-
-      {d.myMembership ? (
+      {activeTab === "overview" && (
         <>
-          {!showVolunteerForm ? <Button title="Volunteer to teach" variant="secondary" onPress={() => setShowVolunteerForm(true)} /> : (
-            <Card tone="primary">
-              <H2>Volunteer to teach</H2>
-              <Muted>Explain briefly why you're a good fit for this topic.</Muted>
-              <Field placeholder="Optional note" value={volunteerNote} onChangeText={setVolunteerNote} multiline numberOfLines={3} />
-              <Row><Button title="Cancel" variant="ghost" onPress={() => setShowVolunteerForm(false)} /><Button title={volunteer.isPending ? "Sending…" : "Submit"} disabled={volunteer.isPending} onPress={() => volunteer.mutate()} /></Row>
-            </Card>
-          )}
-        </>
-      ) : null}
+          {!d.myMembership ? <Button title={join.isPending ? "Joining…" : "Join room"} onPress={() => join.mutate()} disabled={join.isPending} /> : <Button title={leave.isPending ? "Leaving…" : "Leave room"} variant="secondary" onPress={() => leave.mutate()} disabled={leave.isPending} />}
 
-      <H2>Room members ({d.members.length})</H2>
-      {d.members.length === 0 ? <Muted>No members listed.</Muted> : (
-        <View style={{ gap: 8, marginVertical: 8 }}>
-          {d.members.map((member) => (
-            <Pressable key={member.id} onPress={() => router.push(`/user/${member.id}` as any)}>
-              <Card tone="soft" style={{ padding: 12 }}>
+          {d.myMembership ? (
+            <Card>
+              <H2>Room actions</H2>
+              <View style={s.actionGrid}>
+                {d.room.conversation_id ? <Action icon="message-text-outline" label="Room chat" onPress={() => router.push(`/chat/${d.room.conversation_id}` as any)} /> : null}
+                {d.room.status === "live" ? <Action icon="video-outline" label="Live class" onPress={() => router.push(`/live/${id}` as any)} /> : null}
+                {["owner", "teacher", "moderator"].includes(d.myMembership.role) ? <Action icon="account-plus-outline" label="Invite peer" onPress={() => setShowInviteModal(true)} /> : null}
+                {["owner", "teacher"].includes(d.myMembership.role) ? <Action icon="calendar-plus" label="Schedule" onPress={() => router.push(`/room/${id}/schedule` as any)} /> : null}
+                <Action icon="book-plus-outline" label="Resource" onPress={() => setShowResourcePrompt(true)} />
+              </View>
+            </Card>
+          ) : null}
+
+          {d.myMembership ? (
+            <>
+              {!showVolunteerForm ? <Button title="Volunteer to teach" variant="secondary" onPress={() => setShowVolunteerForm(true)} /> : (
+                <Card tone="primary">
+                  <H2>Volunteer to teach</H2>
+                  <Muted>Explain briefly why you're a good fit for this topic.</Muted>
+                  <Field placeholder="Optional note" value={volunteerNote} onChangeText={setVolunteerNote} multiline numberOfLines={3} />
+                  <Row><Button title="Cancel" variant="ghost" onPress={() => setShowVolunteerForm(false)} /><Button title={volunteer.isPending ? "Sending…" : "Submit"} disabled={volunteer.isPending} onPress={() => volunteer.mutate()} /></Row>
+                </Card>
+              )}
+            </>
+          ) : null}
+
+          <H2>Room members ({d.members.length})</H2>
+          {d.members.length === 0 ? <Muted>No members listed.</Muted> : (
+            <View style={{ gap: 8, marginVertical: 8 }}>
+              {d.members.map((member) => (
+                <Pressable key={member.id} onPress={() => router.push(`/user/${member.id}` as any)}>
+                  <Card tone="soft" style={{ padding: 12 }}>
+                    <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                      <View style={{ gap: 2 }}>
+                        <Text style={[s.infoText, { color: colors.text }]}>{member.full_name || `@${member.username}`}</Text>
+                        <Muted>@{member.username} · {member.reputation || 0} rep</Muted>
+                      </View>
+                      <Pill tone={member.id === d.room.owner_id ? "primary" : "default"}>
+                        {member.id === d.room.owner_id ? "OWNER" : "MEMBER"}
+                      </Pill>
+                    </Row>
+                  </Card>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          <H2>Teaching requests</H2>
+          {d.teachingRequests.length === 0 ? <Muted>No pending teaching requests.</Muted> : d.teachingRequests.map((request) => (
+            <Card key={request.id}>
+              <Text style={[s.infoText, { color: colors.text }]}>{request.volunteer.full_name}</Text>
+              <Muted>Status: {request.status}</Muted>
+              {d.myMembership?.role === "owner" && request.status === "pending" ? (
+                <Row>
+                  <Button title="Accept" compact onPress={() => api(`/rooms/${id}/teach/${request.id}`, { method: "PATCH", body: JSON.stringify({ status: "accepted" }) }).then(() => qc.invalidateQueries({ queryKey: ["room", id] })).catch((error) => Alert.alert("Could not update", error.message))} />
+                  <Button title="Reject" compact variant="secondary" onPress={() => api(`/rooms/${id}/teach/${request.id}`, { method: "PATCH", body: JSON.stringify({ status: "rejected" }) }).then(() => qc.invalidateQueries({ queryKey: ["room", id] })).catch((error) => Alert.alert("Could not update", error.message))} />
+                </Row>
+              ) : null}
+              {d.myMembership && request.volunteer.id === d.myMembership.user_id && request.status === "pending" ? <Button title="Cancel request" compact variant="secondary" onPress={() => api(`/rooms/${id}/teach/${request.id}`, { method: "DELETE" }).then(() => qc.invalidateQueries({ queryKey: ["room", id] })).catch((error) => Alert.alert("Could not cancel", error.message))} /> : null}
+            </Card>
+          ))}
+
+          <H2>Scheduled sessions</H2>
+          {d.sessions.length === 0 ? <Muted>No sessions scheduled.</Muted> : d.sessions.map((session) => {
+            const isTeacher = session.teacher_id === d.myMembership?.user_id;
+            return (
+              <Card key={session.id} tone={session.status === "live" ? "glow" : "default"}>
                 <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ gap: 2 }}>
-                    <Text style={[s.infoText, { color: colors.text }]}>{member.full_name || `@${member.username}`}</Text>
-                    <Muted>@{member.username} · {member.reputation || 0} rep</Muted>
-                  </View>
-                  <Pill tone={member.id === d.room.owner_id ? "primary" : "default"}>
-                    {member.id === d.room.owner_id ? "OWNER" : "MEMBER"}
+                  <Text style={[s.infoText, { color: colors.text, fontWeight: "800" }]}>{new Date(session.starts_at).toLocaleString()}</Text>
+                  <Pill tone={session.status === "live" ? "danger" : session.status === "scheduled" ? "primary" : "default"}>
+                    {session.status === "live" ? "● LIVE NOW" : session.status.toUpperCase()}
                   </Pill>
                 </Row>
-              </Card>
-            </Pressable>
-          ))}
-        </View>
-      )}
+                <Muted>{session.mode.toUpperCase()} session · Status: {session.status}</Muted>
 
-      <H2>Teaching requests</H2>
-      {d.teachingRequests.length === 0 ? <Muted>No pending teaching requests.</Muted> : d.teachingRequests.map((request) => (
-        <Card key={request.id}>
-          <Text style={[s.infoText, { color: colors.text }]}>{request.volunteer.full_name}</Text>
-          <Muted>Status: {request.status}</Muted>
-          {d.myMembership?.role === "owner" && request.status === "pending" ? (
-            <Row>
-              <Button title="Accept" compact onPress={() => api(`/rooms/${id}/teach/${request.id}`, { method: "PATCH", body: JSON.stringify({ status: "accepted" }) }).then(() => qc.invalidateQueries({ queryKey: ["room", id] })).catch((error) => Alert.alert("Could not update", error.message))} />
-              <Button title="Reject" compact variant="secondary" onPress={() => api(`/rooms/${id}/teach/${request.id}`, { method: "PATCH", body: JSON.stringify({ status: "rejected" }) }).then(() => qc.invalidateQueries({ queryKey: ["room", id] })).catch((error) => Alert.alert("Could not update", error.message))} />
-            </Row>
-          ) : null}
-          {d.myMembership && request.volunteer.id === d.myMembership.user_id && request.status === "pending" ? <Button title="Cancel request" compact variant="secondary" onPress={() => api(`/rooms/${id}/teach/${request.id}`, { method: "DELETE" }).then(() => qc.invalidateQueries({ queryKey: ["room", id] })).catch((error) => Alert.alert("Could not cancel", error.message))} /> : null}
-        </Card>
-      ))}
-
-      <H2>Scheduled sessions</H2>
-      {d.sessions.length === 0 ? <Muted>No sessions scheduled.</Muted> : d.sessions.map((session) => {
-        const isTeacher = session.teacher_id === d.myMembership?.user_id;
-        const isHost = ["owner", "teacher"].includes(d.myMembership?.role ?? "");
-        return (
-          <Card key={session.id} tone={session.status === "live" ? "glow" : "default"}>
-            <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={[s.infoText, { color: colors.text, fontWeight: "800" }]}>{new Date(session.starts_at).toLocaleString()}</Text>
-              <Pill tone={session.status === "live" ? "danger" : session.status === "scheduled" ? "primary" : "default"}>
-                {session.status === "live" ? "● LIVE NOW" : session.status.toUpperCase()}
-              </Pill>
-            </Row>
-            <Muted>{session.mode.toUpperCase()} session · Status: {session.status}</Muted>
-
-            <Row style={{ gap: 8, marginTop: 8 }}>
-              {session.status === "scheduled" && (isTeacher || isHost) ? (
-                <Button
-                  title="Start Live Class 🔴"
-                  compact
-                  variant="primary"
-                  onPress={() =>
-                    api(`/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ status: "live" }) })
-                      .then(() => {
-                        qc.invalidateQueries({ queryKey: ["room", id] });
-                        router.push(`/live/${session.id}` as any);
-                      })
-                      .catch((err) => Alert.alert("Error starting class", err.message))
-                  }
-                />
-              ) : null}
-
-              {session.status === "live" ? (
-                <>
-                  <Button
-                    title="Join Live Class 🔴"
-                    compact
-                    variant="primary"
-                    onPress={() => router.push(`/live/${session.id}` as any)}
-                  />
-                  {(isTeacher || isHost) ? (
+                <Row style={{ gap: 8, marginTop: 8 }}>
+                  {session.status === "scheduled" && (isTeacher || isHost) ? (
                     <Button
-                      title="End Session 🏁"
+                      title="Start Live Class 🔴"
                       compact
-                      variant="secondary"
+                      variant="primary"
                       onPress={() =>
-                        api(`/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ status: "completed" }) })
-                          .then(() => qc.invalidateQueries({ queryKey: ["room", id] }))
-                          .catch((err) => Alert.alert("Error ending class", err.message))
+                        api(`/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ status: "live" }) })
+                          .then(() => {
+                            qc.invalidateQueries({ queryKey: ["room", id] });
+                            router.push(`/live/${session.id}` as any);
+                          })
+                          .catch((err) => Alert.alert("Error starting class", err.message))
                       }
                     />
                   ) : null}
-                </>
-              ) : null}
 
-              {session.status === "completed" && !isTeacher ? (
-                <Button
-                  title="Review session ⭐"
-                  compact
-                  variant="secondary"
-                  onPress={() => { setReviewSessionId(session.id); setRatingValue(""); }}
-                />
-              ) : null}
-            </Row>
-          </Card>
-        );
-      })}
+                  {session.status === "live" ? (
+                    <>
+                      <Button
+                        title="Join Live Class 🔴"
+                        compact
+                        variant="primary"
+                        onPress={() => router.push(`/live/${session.id}` as any)}
+                      />
+                      {(isTeacher || isHost) ? (
+                        <Button
+                          title="End Session 🏁"
+                          compact
+                          variant="secondary"
+                          onPress={() =>
+                            api(`/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ status: "completed" }) })
+                              .then(() => qc.invalidateQueries({ queryKey: ["room", id] }))
+                              .catch((err) => Alert.alert("Error ending class", err.message))
+                          }
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
 
-      <H2>Resources</H2>
-      {d.resources.length === 0 ? <Muted>No resources available.</Muted> : d.resources.map((resource) => (
-        <Pressable key={resource.id} onPress={() => void openResource(resource.id, resource.url)}>
-          <Card>
-            <View style={s.resourceRow}>
-              <View style={[s.resourceIcon, { backgroundColor: colors.primarySoft }]}><MaterialCommunityIcons name="link-variant" size={21} color={colors.primary} /></View>
-              <View style={{ flex: 1, gap: 3 }}><Text style={[s.infoText, { color: colors.text }]}>{resource.title}</Text><Muted numberOfLines={1}>{resource.url}</Muted></View>
-              <MaterialCommunityIcons name="open-in-new" size={19} color={colors.muted} />
-            </View>
-          </Card>
-        </Pressable>
-      ))}
+                  {session.status === "completed" && !isTeacher ? (
+                    <Button
+                      title="Review session ⭐"
+                      compact
+                      variant="secondary"
+                      onPress={() => { setReviewSessionId(session.id); setRatingValue(""); }}
+                    />
+                  ) : null}
+                </Row>
+              </Card>
+            );
+          })}
+
+          <H2>Resources</H2>
+          {d.resources.length === 0 ? <Muted>No resources available.</Muted> : d.resources.map((resource) => (
+            <Pressable key={resource.id} onPress={() => void openResource(resource.id, resource.url)}>
+              <Card>
+                <View style={s.resourceRow}>
+                  <View style={[s.resourceIcon, { backgroundColor: colors.primarySoft }]}><MaterialCommunityIcons name="link-variant" size={21} color={colors.primary} /></View>
+                  <View style={{ flex: 1, gap: 3 }}><Text style={[s.infoText, { color: colors.text }]}>{resource.title}</Text><Muted numberOfLines={1}>{resource.url}</Muted></View>
+                  <MaterialCommunityIcons name="open-in-new" size={19} color={colors.muted} />
+                </View>
+              </Card>
+            </Pressable>
+          ))}
+        </>
+      )}
+
+      {activeTab === "qa" && (
+        <RoomQABoard roomId={id!} isMember={Boolean(d.myMembership)} />
+      )}
+
+      {activeTab === "materials" && (
+        <RoomMaterialsHub roomId={id!} isMember={Boolean(d.myMembership)} resources={d.resources} />
+      )}
+
+      {activeTab === "recordings" && (
+        <RoomRecordings
+          roomId={id!}
+          isModerator={Boolean(d.myMembership && ["owner", "teacher", "moderator"].includes(d.myMembership.role))}
+        />
+      )}
 
       <TextPromptModal visible={Boolean(reviewSessionId)} title="Rate this session" detail="Enter a whole number from 1 to 5." value={ratingValue} onChangeText={setRatingValue} keyboardType="number-pad" placeholder="1–5" submitLabel="Submit review" onCancel={() => { setReviewSessionId(null); setRatingValue(""); }} onSubmit={() => void submitReview()} />
       <TextPromptModal visible={showResourcePrompt} title="Add a resource link" detail="File picking can be added later without blocking Android users. For now, add a safe web resource URL." value={resourceUrl} onChangeText={setResourceUrl} keyboardType="url" placeholder="https://..." submitLabel="Add resource" onCancel={() => { setShowResourcePrompt(false); setResourceUrl(""); }} onSubmit={() => void addResource()} />
@@ -314,4 +365,7 @@ const s = StyleSheet.create({
   action: { width: "47%", minHeight: 70, borderRadius: radius.md, padding: 12, alignItems: "center", justifyContent: "center", gap: 6 },
   resourceRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   resourceIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  tabBar: { flexDirection: "row", borderBottomWidth: 1, borderColor: "rgba(128,128,128,0.2)", marginVertical: 12 },
+  tabItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 10 },
+  tabText: { fontSize: 13, fontWeight: "700" },
 });

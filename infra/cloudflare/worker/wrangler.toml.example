@@ -1,0 +1,15 @@
+name = "skillbridge-edge-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+ORIGIN_URL = "https://skillbridge-api.onrender.com"
+APP_VERSION = "2.0.1"
+CACHE_PURGE_ENABLED = "true"
+
+# Optional: bind KV namespace if distributed persistent cache is required
+# [[kv_namespaces]]
+# binding = "EDGE_CACHE"
+# id = "<kv_namespace_id>"

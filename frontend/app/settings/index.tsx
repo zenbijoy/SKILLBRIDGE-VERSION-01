@@ -40,6 +40,13 @@ export default function SettingsHomeScreen() {
           keywords: "skills teach learn research topics expertise",
           onPress: () => router.push("/settings/skills" as any),
         },
+        {
+          icon: "youtube",
+          title: "Integrations & Channels",
+          detail: "Connect your YouTube channel for study room recordings",
+          keywords: "youtube channel recording video stream integration oauth",
+          onPress: () => router.push("/settings/integrations" as any),
+        },
       ],
     },
     {

@@ -28,6 +28,7 @@ const Alerts = lazy(() => import('./pages/Alerts'));
 const DiscoveryInsights = lazy(() => import('./pages/DiscoveryInsights'));
 const DataQuality = lazy(() => import('./pages/DataQuality'));
 const PrivacyOps = lazy(() => import('./pages/PrivacyOps'));
+const NextGenOperations = lazy(() => import('./pages/NextGenOperations'));
 
 function ProtectedApp() {
   return (
@@ -79,6 +80,7 @@ function ProtectedApp() {
                   <Route path="/rules" element={<RulesEngine />} />
                   <Route path="/api-mgmt" element={<APIManagement />} />
                   <Route path="/db-ops" element={<DatabaseOperations />} />
+                  <Route path="/nextgen" element={<NextGenOperations />} />
 
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

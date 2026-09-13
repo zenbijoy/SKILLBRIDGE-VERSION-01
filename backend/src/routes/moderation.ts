@@ -2,7 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { reportLimiter } from "../middleware/rateLimiters.js";
+
 export const moderation = Router();
+
 moderation.post(
   "/block/:id",
   wrap(async (req, res) => {
@@ -20,6 +23,7 @@ moderation.post(
     res.status(201).json({ blocked: true });
   }),
 );
+
 moderation.delete(
   "/block/:id",
   wrap(async (req, res) => {
@@ -31,12 +35,25 @@ moderation.delete(
     res.status(204).end();
   }),
 );
+
 moderation.post(
   "/report",
+  reportLimiter,
   wrap(async (req, res) => {
     const b = z
       .object({
-        target_type: z.enum(["user", "message", "room", "event", "resource"]),
+        target_type: z.enum([
+          "user",
+          "message",
+          "room",
+          "event",
+          "resource",
+          "post",
+          "comment",
+          "question",
+          "answer",
+          "club_announcement",
+        ]),
         target_id: z.string().uuid(),
         reason: z.string().min(5).max(500),
         details: z.string().max(2000).optional(),
