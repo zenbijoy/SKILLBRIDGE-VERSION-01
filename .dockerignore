@@ -1,0 +1,15 @@
+node_modules
+*/node_modules
+frontend
+admin
+android
+.git
+.idea
+*.apk
+*.log
+dist
+*/dist
+.env
+backend/.env
+frontend/.env
+admin/.env
