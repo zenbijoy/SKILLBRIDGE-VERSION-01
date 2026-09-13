@@ -1,22 +1,43 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const sanitizeString = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim().replace(/^["']|["']$/g, "").trim();
+  return trimmed === "" ? undefined : trimmed;
+};
+
 const optionalUrl = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim() === "" ? undefined : value,
+  (value) => {
+    const s = sanitizeString(value);
+    return s ? s.replace(/\/+$/, "") : undefined;
+  },
   z.string().url().optional(),
 );
 
 const optionalString = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim() === "" ? undefined : value,
+  sanitizeString,
   z.string().optional(),
+);
+
+const requiredString = (minLen = 1) =>
+  z.preprocess(
+    sanitizeString,
+    z.string().min(minLen),
+  );
+
+const requiredUrl = z.preprocess(
+  (value) => {
+    const s = sanitizeString(value);
+    return s ? s.replace(/\/+$/, "") : undefined;
+  },
+  z.string().url(),
 );
 
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return false;
-  const normalized = value.trim().toLowerCase();
+  const normalized = value.trim().replace(/^["']|["']$/g, "").toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   return false;
 }, z.boolean());
@@ -27,9 +48,9 @@ const schema = z.object({
     .default("development"),
   PORT: z.coerce.number().default(4000),
   WEB_ORIGINS: z.string().default("http://localhost:8081"),
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_ANON_KEY: z.string().min(10),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(10),
+  SUPABASE_URL: requiredUrl,
+  SUPABASE_ANON_KEY: requiredString(10),
+  SUPABASE_SERVICE_ROLE_KEY: requiredString(10),
   REDIS_URL: optionalString,
   REDIS_REQUIRED: booleanFromEnv.default(false),
   KEEP_ALIVE_ENABLED: booleanFromEnv.default(false),
@@ -67,7 +88,24 @@ const schema = z.object({
 });
 
 export type AppEnv = z.infer<typeof schema>;
-export const env: AppEnv = schema.parse(process.env);
+
+const parseResult = schema.safeParse(process.env);
+if (!parseResult.success) {
+  console.error("\n=================================================================");
+  console.error("❌ CRITICAL ENVIRONMENT CONFIGURATION ERROR (SkillBridge Backend)");
+  console.error("=================================================================");
+  console.error("The backend failed to start because required environment variables are");
+  console.error("missing or invalid in your Render Service Dashboard:\n");
+  for (const issue of parseResult.error.issues) {
+    const field = issue.path.join(".");
+    console.error(`  👉 [${field}]: ${issue.message}`);
+  }
+  console.error("\nPlease add these in Render -> Your Service -> Environment tab.");
+  console.error("=================================================================\n");
+  process.exit(1);
+}
+
+export const env: AppEnv = parseResult.data;
 
 export function getSupabaseProjectRef(url?: string): string {
   if (!url) return "unknown";
