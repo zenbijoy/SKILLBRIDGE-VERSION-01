@@ -138,9 +138,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     const errorBody = asErrorBody(body);
     const headerRequestId = res.headers.get("x-request-id") || undefined;
+    let message = errorBody.message ?? errorBody.error ?? `Request failed (${res.status})`;
+
+    if (errorBody.issues && typeof errorBody.issues === "object") {
+      const issuesObj = errorBody.issues as Record<string, any>;
+      if (issuesObj.fieldErrors && typeof issuesObj.fieldErrors === "object") {
+        const fieldMsgs = Object.entries(issuesObj.fieldErrors)
+          .map(([field, errs]) => `${field}: ${Array.isArray(errs) ? errs.join(", ") : String(errs)}`)
+          .join("; ");
+        if (fieldMsgs) {
+          message = `${errorBody.error || "Validation failed"} (${fieldMsgs})`;
+        }
+      } else if (Array.isArray(issuesObj.formErrors) && issuesObj.formErrors.length > 0) {
+        message = `${errorBody.error || "Validation failed"}: ${issuesObj.formErrors.join(", ")}`;
+      }
+    }
+
     throw new ApiError(
       res.status,
-      errorBody.error ?? errorBody.message ?? `Request failed (${res.status})`,
+      message,
       errorBody.issues,
       errorBody.code,
       errorBody.requestId ?? headerRequestId,

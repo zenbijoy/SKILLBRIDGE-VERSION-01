@@ -101,12 +101,16 @@ export default function CreateRoomScreen() {
   });
 
   const handleSubmit = () => {
-    if (!title.trim()) {
-      Alert.alert("Missing Title", "Please provide a name for your study room.");
+    if (title.trim().length < 3) {
+      Alert.alert("Title Too Short", "Please provide a room title with at least 3 characters.");
       return;
     }
-    if (!topic.trim()) {
-      Alert.alert("Missing Subject/Topic", "Please provide a topic (e.g. Algorithms, Organic Chemistry).");
+    if (topic.trim().length < 2) {
+      Alert.alert("Topic Too Short", "Please provide a subject or topic with at least 2 characters.");
+      return;
+    }
+    if ((mode === "offline" || mode === "hybrid") && !campusLocation.trim()) {
+      Alert.alert("Campus Location Required", "Please specify where on campus this room will meet.");
       return;
     }
     createMutation.mutate();

@@ -212,21 +212,30 @@ export default function RoomDetail() {
           <H2>Room members ({d.members.length})</H2>
           {d.members.length === 0 ? <Muted>No members listed.</Muted> : (
             <View style={{ gap: 8, marginVertical: 8 }}>
-              {d.members.map((member) => (
-                <Pressable key={member.id} onPress={() => router.push(`/user/${member.id}` as any)}>
-                  <Card tone="soft" style={{ padding: 12 }}>
-                    <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                      <View style={{ gap: 2 }}>
-                        <Text style={[s.infoText, { color: colors.text }]}>{member.full_name || `@${member.username}`}</Text>
-                        <Muted>@{member.username} · {member.reputation || 0} rep</Muted>
-                      </View>
-                      <Pill tone={member.id === d.room.owner_id ? "primary" : "default"}>
-                        {member.id === d.room.owner_id ? "OWNER" : "MEMBER"}
-                      </Pill>
-                    </Row>
-                  </Card>
-                </Pressable>
-              ))}
+              {d.members.map((member: any, idx) => {
+                const p = member?.profiles || member;
+                const memId = member?.id || p?.id || member?.user_id || `mem-${idx}`;
+                const fullName = p?.full_name || member?.full_name || `@${p?.username || member?.username || "user"}`;
+                const username = p?.username || member?.username || "user";
+                const reputation = p?.reputation ?? member?.reputation ?? 0;
+                const isOwner = memId === d.room.owner_id || member?.role === "owner";
+
+                return (
+                  <Pressable key={memId} onPress={() => router.push(`/user/${memId}` as any)}>
+                    <Card tone="soft" style={{ padding: 12 }}>
+                      <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                        <View style={{ gap: 2 }}>
+                          <Text style={[s.infoText, { color: colors.text }]}>{fullName}</Text>
+                          <Muted>@{username} · {reputation} rep</Muted>
+                        </View>
+                        <Pill tone={isOwner ? "primary" : "default"}>
+                          {isOwner ? "OWNER" : "MEMBER"}
+                        </Pill>
+                      </Row>
+                    </Card>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
 

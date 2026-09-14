@@ -19,18 +19,18 @@ export const rooms = Router();
 
 const createSchema = z
   .object({
-    title: z.string().min(4).max(120),
-    description: z.string().max(1000),
-    topic: z.string().min(2).max(100),
+    title: z.string().trim().min(3, "Title must be at least 3 characters").max(120),
+    description: z.string().max(1000).optional().default(""),
+    topic: z.string().trim().min(2, "Topic must be at least 2 characters").max(100),
     visibility: z.enum(["public", "private", "invite_only"]).default("public"),
-    mode: z.enum(["online", "offline", "hybrid"]).default("hybrid"),
+    mode: z.enum(["online", "offline", "hybrid"]).default("online"),
     capacity: z.number().int().min(2).max(env.MAX_ROOM_CAPACITY).default(30),
     tags: z.array(z.string().max(40)).max(10).default([]),
     rules: z.string().max(1000).optional().default(""),
-    campus_location: z.string().max(200).optional(),
+    campus_location: z.string().max(200).optional().nullable(),
   })
   .refine(
-    (data) => data.mode === "online" || (data.campus_location && data.campus_location.trim().length > 0),
+    (data) => data.mode === "online" || (Boolean(data.campus_location) && data.campus_location!.trim().length > 0),
     {
       message: "Campus location is required for offline or hybrid learning rooms",
       path: ["campus_location"],
@@ -82,16 +82,19 @@ rooms.post(
   "/",
   wrap(async (req, res) => {
     const body = createSchema.parse(req.body);
+    const resolvedDescription = body.description?.trim() || `Peer study and collaboration room for ${body.topic.trim()}`;
+    const sanitizedLocation = body.mode === "online" ? null : (body.campus_location?.trim() || null);
+
     const { data: v_room_id, error } = await admin.rpc("create_room_atomic", {
-      p_title: body.title,
-      p_description: body.description,
-      p_topic: body.topic,
+      p_title: body.title.trim(),
+      p_description: resolvedDescription,
+      p_topic: body.topic.trim(),
       p_visibility: body.visibility,
       p_mode: body.mode,
       p_capacity: body.capacity,
       p_tags: body.tags,
-      p_rules: body.rules,
-      p_campus_location: body.campus_location,
+      p_rules: body.rules ?? "",
+      p_campus_location: sanitizedLocation,
       p_owner_id: req.userId!,
     });
     if (error) throw error;
@@ -226,10 +229,24 @@ rooms.get(
     ]);
     if (room.visibility !== "public" && !membership)
       return res.status(403).json({ error: "Room is private" });
+
+    const normalizedMembers = (members ?? []).map((m: any) => {
+      const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
+      return {
+        id: p?.id ?? m.user_id,
+        user_id: m.user_id ?? p?.id,
+        role: m.role,
+        full_name: p?.full_name ?? "Member",
+        username: p?.username ?? "user",
+        avatar_url: p?.avatar_url ?? null,
+        reputation: p?.reputation ?? 0,
+      };
+    });
+
     res.json({
       room,
       membership,
-      members: members ?? [],
+      members: normalizedMembers,
       teachingRequests: teach ?? [],
       sessions: sessions ?? [],
       resources: resources ?? [],
