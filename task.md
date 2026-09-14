@@ -67,3 +67,14 @@
 - [x] **Automated Tests**: 182 passed / 0 failed (including Adversarial Security, Real Postgres, LiveKit, Edge Cache, Next-Gen Phase 1-4)
 - [x] **Backend & Admin Builds**: Successful production bundle creation (`dist/`)
 - [x] **Expo Web Export**: 100% Successful static generation across all 90 routes (`dist/`)
+
+## Room OS Redesign (Checkpoint 4)
+- [x] **Room OS**: Full redesign of `room/[id].tsx` — sticky header, 4-tab navigation, session sub-tabs
+  - [x] Room OS Header: room icon, title, status pill, mode badge, stat strip (members/sessions/resources/capacity), CTA row (Join/Chat/Leave/Live)
+  - [x] Tab bar: Overview, Sessions, Materials, Chat (animated active indicator)
+  - [x] Overview tab: room description + tags, volunteer-to-teach form, teaching requests with owner accept/reject, member list with role badges (OWNER/TEACHER/MOD/MEMBER)
+  - [x] Sessions tab: sub-tabs (Upcoming, Q&A, Recordings) — Start/Join/End live class, session review
+  - [x] Materials tab: delegates to `RoomMaterialsHub`
+  - [x] Chat tab: new `RoomChatTab` component — inline real-time room chat, lazy socket (only connects when Chat tab opened)
+- [x] **TypeScript**: 0 errors on full `tsc --noEmit` check
+
