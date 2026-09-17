@@ -2,6 +2,7 @@
   "name": "skillbridge-root",
   "version": "3.0.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "setup": "npm ci --prefix frontend && npm ci --prefix backend && npm ci --prefix admin",
     "dev": "npm run dev:usb",
