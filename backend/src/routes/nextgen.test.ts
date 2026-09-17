@@ -65,19 +65,33 @@ test("Next-Gen API Routes Test Suite", async (t) => {
     assert.ok(typeof status.available === "boolean");
   });
 
-  await t.test("YouTube ID Extractor - parses standard, short, and shorts URLs", () => {
-    const extractYouTubeId = (url: string): string | null => {
-      const match =
-        url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/) ||
-        url.match(/^[a-zA-Z0-9_-]{11}$/);
-      return match ? match[1] || match[0] : null;
-    };
+  await t.test("GET /api/v1/profiles/me/privacy - rejects unauthenticated requests", async () => {
+    const res = await request.get("/api/v1/profiles/me/privacy");
+    assert.strictEqual(res.status, 401);
+  });
 
-    assert.strictEqual(extractYouTubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-    assert.strictEqual(extractYouTubeId("https://youtu.be/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-    assert.strictEqual(extractYouTubeId("https://www.youtube.com/shorts/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-    assert.strictEqual(extractYouTubeId("https://youtube.com/embed/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-    assert.strictEqual(extractYouTubeId("dQw4w9WgXcQ"), "dQw4w9WgXcQ");
-    assert.strictEqual(extractYouTubeId("not-a-valid-youtube-link"), null);
+  await t.test("PATCH /api/v1/profiles/me/privacy - rejects unauthenticated requests", async () => {
+    const res = await request.patch("/api/v1/profiles/me/privacy").send({ profile_visibility: "connections" });
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test("GET /api/v1/notifications - rejects unauthenticated requests", async () => {
+    const res = await request.get("/api/v1/notifications");
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test("GET /api/v1/search - rejects unauthenticated requests", async () => {
+    const res = await request.get("/api/v1/search?q=test");
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test("Privacy Service - self messaging and calling is always allowed", async () => {
+    const { canUserMessage, canUserCall } = await import("../services/privacyService.js");
+    const sameUserId = "11111111-1111-1111-1111-111111111111";
+    const msg = await canUserMessage(sameUserId, sameUserId);
+    assert.strictEqual(msg.allowed, true);
+    const call = await canUserCall(sameUserId, sameUserId);
+    assert.strictEqual(call.allowed, true);
   });
 });
+

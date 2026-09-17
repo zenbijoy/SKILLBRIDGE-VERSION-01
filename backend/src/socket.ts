@@ -64,20 +64,27 @@ export function setupSocket(io: SocketServer) {
       }
     });
 
-    socket.on("conversation:join", async ({ conversationId }) => {
-      if (typeof conversationId !== "string") return;
+    const handleJoin = async (payload: any) => {
+      const convId = payload?.conversationId || payload?.conversation_id;
+      if (typeof convId !== "string") return;
       const { data } = await admin
         .from("conversation_members")
         .select("id")
-        .eq("conversation_id", conversationId)
+        .eq("conversation_id", convId)
         .eq("user_id", socket.data.userId)
         .maybeSingle();
-      if (data) socket.join(`conversation:${conversationId}`);
-    });
+      if (data) socket.join(`conversation:${convId}`);
+    };
 
-    socket.on("conversation:leave", ({ conversationId }) =>
-      socket.leave(`conversation:${conversationId}`),
-    );
+    const handleLeave = (payload: any) => {
+      const convId = payload?.conversationId || payload?.conversation_id;
+      if (typeof convId === "string") socket.leave(`conversation:${convId}`);
+    };
+
+    socket.on("conversation:join", handleJoin);
+    socket.on("join_conversation", handleJoin);
+    socket.on("conversation:leave", handleLeave);
+    socket.on("leave_conversation", handleLeave);
 
     socket.on("typing:start", ({ conversationId }) => {
       if (typeof conversationId !== "string") return;

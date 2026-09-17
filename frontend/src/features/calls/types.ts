@@ -60,5 +60,6 @@ export interface ActiveCallState {
   isSpeakerOn: boolean;
   isFrontCamera: boolean;
   dataSaverEnabled: boolean;
+  isMinimized?: boolean;
   metrics?: QualityMetrics;
 }

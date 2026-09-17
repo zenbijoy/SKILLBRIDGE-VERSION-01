@@ -31,13 +31,15 @@ import Animated, {
   withRepeat,
   withSequence,
 } from "react-native-reanimated";
+import { useOptionalAutoHideNavigation } from "@/navigation/AutoHideNavigationContext";
+import { AutoHideHeader } from "./navigation/AutoHideHeader";
 import { AppTextField } from "./ui/AppTextField";
 import { PasswordField } from "./ui/PasswordField";
 import { ScreenContainer } from "./ui/ScreenContainer";
 import { triggerHaptic } from "./ui/haptics";
 import { SkillBridgeLoader, type SkillBridgeLoaderProps } from "./ui/SkillBridgeLoader";
 
-export { AppTextField, PasswordField, ScreenContainer, triggerHaptic, SkillBridgeLoader };
+export { AppTextField, PasswordField, ScreenContainer, triggerHaptic, SkillBridgeLoader, AutoHideHeader };
 export type { SkillBridgeLoaderProps };
 
 /** Memoize StyleSheet.create() so it only recalculates on theme change. */
@@ -48,23 +50,28 @@ function useStyles() {
 
 export function Screen({
   children,
+  header,
   scroll = true,
   contentStyle,
   onRefresh,
   refreshing = false,
   keyboardAvoiding = true,
+  autoHideNav = true,
 }: {
   children: ReactNode;
+  header?: ReactNode;
   scroll?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   onRefresh?: () => void | Promise<void>;
   refreshing?: boolean;
   keyboardAvoiding?: boolean;
+  autoHideNav?: boolean;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useStyles();
   const [internalRefreshing, setInternalRefreshing] = useState(false);
+  const autoHideNavContext = useOptionalAutoHideNavigation();
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -78,13 +85,45 @@ export function Screen({
   };
 
   const isRefreshing = refreshing || internalRefreshing;
-  const content = <View style={[styles.content, contentStyle]}>{children}</View>;
+
+  const hasFloatingHeader = Boolean(header && autoHideNav);
+  const topInsetCalculated = hasFloatingHeader
+    ? (autoHideNavContext?.headerHeight && autoHideNavContext.headerHeight > 0
+        ? autoHideNavContext.headerHeight
+        : Math.max(insets.top, 8) + 52)
+    : 0;
+
+  const content = (
+    <View
+      style={[
+        styles.content,
+        hasFloatingHeader && { paddingTop: 6 },
+        contentStyle,
+      ]}
+    >
+      {children}
+    </View>
+  );
+
+  const bottomPaddingCalculated =
+    Math.max(insets.bottom, 24) +
+    (autoHideNavContext?.bottomNavHeight ? autoHideNavContext.bottomNavHeight - 16 : 24);
 
   const body = (
-    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
+    <SafeAreaView
+      style={styles.safe}
+      edges={hasFloatingHeader ? ["left", "right"] : ["top", "left", "right"]}
+    >
+      {hasFloatingHeader ? <AutoHideHeader>{header}</AutoHideHeader> : null}
       {scroll ? (
-        <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(insets.bottom, 24) + 24 }]}
+        <Animated.ScrollView
+          onScroll={autoHideNav && autoHideNavContext ? autoHideNavContext.scrollHandler : undefined}
+          scrollEventThrottle={16}
+          contentContainerStyle={[
+            styles.scroll,
+            hasFloatingHeader && { paddingTop: topInsetCalculated },
+            { paddingBottom: bottomPaddingCalculated },
+          ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
@@ -96,14 +135,20 @@ export function Screen({
                 tintColor={colors.primary}
                 colors={[colors.primary, colors.primary2]}
                 progressBackgroundColor={colors.surface}
+                progressViewOffset={hasFloatingHeader ? topInsetCalculated + 6 : undefined}
               />
             ) : undefined
           }
         >
           {content}
-        </ScrollView>
+        </Animated.ScrollView>
       ) : (
-        <View style={{ flex: 1, paddingBottom: Math.max(insets.bottom, 10) }}>
+        <View
+          style={[
+            { flex: 1, paddingBottom: Math.max(insets.bottom, 10) },
+            hasFloatingHeader && { paddingTop: topInsetCalculated },
+          ]}
+        >
           {content}
         </View>
       )}
@@ -590,33 +635,49 @@ export function Empty({
   detail,
   actionTitle,
   onAction,
-  illustration,
+  illustration: _illustration,
+  icon = "tray-alert",
+  animation,
 }: {
   title: string;
   detail: string;
   actionTitle?: string;
   onAction?: () => void;
   illustration?: ImageSourcePropType;
+  icon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  animation?: ImageSourcePropType;
 }) {
   const { colors } = useTheme();
   return (
-    <Card tone="soft" style={{ alignItems: "center", paddingVertical: 32, gap: 10 }}>
-      {illustration ? (
+    <Card tone="soft" style={{ alignItems: "center", paddingVertical: 28, gap: 10 }}>
+      {animation ? (
         <Image
-          source={illustration}
-          style={{ width: 140, height: 140, marginBottom: 4 }}
+          source={animation}
+          style={{ width: 64, height: 64, marginBottom: 2 }}
           resizeMode="contain"
           accessible={false}
           accessibilityElementsHidden={true}
           importantForAccessibility="no"
         />
       ) : (
-        <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${colors.primary}18`, alignItems: "center", justifyContent: "center" }}>
-          <MaterialCommunityIcons name="tray" size={30} color={colors.primary} />
+        <View
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: `${colors.primary}18`,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: `${colors.primary}33`,
+            marginBottom: 2,
+          }}
+        >
+          <MaterialCommunityIcons name={icon} size={28} color={colors.primary} />
         </View>
       )}
-      <H2 style={{ textAlign: "center" }}>{title}</H2>
-      <Muted style={{ textAlign: "center", maxWidth: 280 }}>{detail}</Muted>
+      <H2 style={{ textAlign: "center", fontSize: 18, fontWeight: "700" }}>{title}</H2>
+      <Muted style={{ textAlign: "center", maxWidth: 280, fontSize: 13, lineHeight: 18 }}>{detail}</Muted>
       {actionTitle ? <Button title={actionTitle} variant="secondary" onPress={onAction} compact /> : null}
     </Card>
   );

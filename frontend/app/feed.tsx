@@ -19,7 +19,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Card, Pill, Row, Screen, Button, ErrorState } from "@/components/ui";
 import { useTheme, radius } from "@/theme";
-import { nextGenBadges, nextGenEmptyStates, nextGenEmptyStatesV2 } from "@/assets/nextgen";
+import { nextGenBadges, nextGenAnimations } from "@/assets/nextgen";
 import type { Profile } from "@/types";
 
 export type PostAttachment = {
@@ -370,8 +370,8 @@ export default function CampusFeedScreen() {
       ) : posts.length === 0 ? (
         <Card style={styles.emptyCard}>
           <Image
-            source={nextGenEmptyStates.noPosts}
-            style={{ width: 90, height: 90 }}
+            source={nextGenAnimations.livePulse}
+            style={{ width: 64, height: 64, marginBottom: 8 }}
             resizeMode="contain"
           />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>The campus wall is quiet</Text>

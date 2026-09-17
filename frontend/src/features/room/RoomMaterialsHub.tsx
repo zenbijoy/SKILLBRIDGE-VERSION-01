@@ -5,7 +5,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Card, Pill, Row } from "@/components/ui";
 import { useTheme, radius } from "@/theme";
-import { nextGenEmptyStates } from "@/assets/nextgen";
+import { nextGenAnimationsV2 } from "@/assets/nextgen";
 
 export type MaterialResource = {
   id: string;
@@ -154,8 +154,8 @@ export function RoomMaterialsHub({
       {resources.length === 0 ? (
         <Card style={styles.emptyCard}>
           <Image
-            source={nextGenEmptyStates.noMaterials}
-            style={{ width: 90, height: 90 }}
+            source={nextGenAnimationsV2.bookmarkSaved}
+            style={{ width: 64, height: 64, marginBottom: 8 }}
             resizeMode="contain"
           />
           <Text style={[styles.emptyText, { color: colors.text }]}>

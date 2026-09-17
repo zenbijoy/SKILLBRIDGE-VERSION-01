@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import { Button, Card, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { router } from "expo-router";
-import { nextGenEmptyStates } from "@/assets/nextgen";
 
 export type NotificationItem = {
   id: string;
@@ -316,13 +315,11 @@ export default function Notifications() {
       ))}
 
       {filteredList.length === 0 && !notifications.isLoading ? (
-        <View style={s.emptyBox}>
-          <Image source={nextGenEmptyStates.noNotifications} style={s.emptyImage} resizeMode="contain" />
-          <Empty
-            title="No notifications in this view"
-            detail="You're all caught up! You'll receive real-time alerts when study rooms open, questions are resolved, or clashes are negotiated."
-          />
-        </View>
+        <Empty
+          icon="bell-check-outline"
+          title="No notifications in this view"
+          detail="You're all caught up! You'll receive real-time alerts when study rooms open, questions are resolved, or clashes are negotiated."
+        />
       ) : null}
     </Screen>
   );

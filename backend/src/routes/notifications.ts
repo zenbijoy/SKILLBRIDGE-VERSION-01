@@ -20,14 +20,47 @@ const preferenceSchema = z.object({
 notifications.get(
   "/",
   wrap(async (req, res) => {
-    const { data, error } = await admin
+    const category = (req.query.category as string || "all").toLowerCase();
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || "25", 10) || 25, 1), 50);
+    const cursor = typeof req.query.cursor === "string" && req.query.cursor.trim() ? req.query.cursor.trim() : null;
+
+    let query = admin
       .from("notifications")
       .select("*")
-      .eq("user_id", req.userId!)
+      .eq("user_id", req.userId!);
+
+    if (cursor) {
+      query = query.lt("created_at", cursor);
+    }
+
+    if (category === "mentions") {
+      query = query.or("kind.ilike.%mention%,kind.ilike.%reply%");
+    } else if (category === "rooms") {
+      query = query.or("kind.ilike.%room%,kind.ilike.%session%,kind.ilike.%announcement%,kind.ilike.%question%,kind.ilike.%answer%,kind.ilike.%material%");
+    } else if (category === "calls") {
+      query = query.or("kind.ilike.%call%");
+    } else if (category === "updates") {
+      query = query.or("kind.ilike.%connection%,kind.ilike.%system%,kind.ilike.%club%,kind.ilike.%research%,kind.ilike.%feed%,kind.ilike.%achievement%,kind.ilike.%clash%");
+    }
+
+    const { data, error } = await query
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(limit + 1);
+
     if (error) throw error;
-    res.json({ notifications: data ?? [] });
+
+    const rawList = data ?? [];
+    const hasMore = rawList.length > limit;
+    const notificationsList = hasMore ? rawList.slice(0, limit) : rawList;
+    const nextCursor = hasMore && notificationsList.length > 0
+      ? notificationsList[notificationsList.length - 1].created_at
+      : null;
+
+    res.json({
+      notifications: notificationsList,
+      nextCursor,
+      category,
+    });
   }),
 );
 

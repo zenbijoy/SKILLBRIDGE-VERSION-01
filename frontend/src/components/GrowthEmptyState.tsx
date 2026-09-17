@@ -7,10 +7,13 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius, spacing } from "@/theme";
 
 interface GrowthEmptyStateProps {
-  illustration: ImageSourcePropType;
+  illustration?: ImageSourcePropType;
+  icon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  animation?: ImageSourcePropType;
   title: string;
   detail: string;
   actionTitle?: string;
@@ -19,12 +22,13 @@ interface GrowthEmptyStateProps {
 }
 
 export function GrowthEmptyState({
-  illustration,
+  illustration: _illustration,
+  icon = "compass-outline",
+  animation,
   title,
   detail,
   actionTitle,
   onAction,
-  illustrationSize = 160,
 }: GrowthEmptyStateProps) {
   const { colors, isDark } = useTheme();
 
@@ -38,14 +42,32 @@ export function GrowthEmptyState({
         },
       ]}
     >
-      <Image
-        source={illustration}
-        style={{ width: illustrationSize, height: illustrationSize }}
-        resizeMode="contain"
-        accessible={false}
-        accessibilityElementsHidden={true}
-        importantForAccessibility="no"
-      />
+      {animation ? (
+        <Image
+          source={animation}
+          style={{ width: 64, height: 64, marginBottom: 4 }}
+          resizeMode="contain"
+          accessible={false}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no"
+        />
+      ) : (
+        <View
+          style={{
+            width: 58,
+            height: 58,
+            borderRadius: 29,
+            backgroundColor: `${colors.primary}18`,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: `${colors.primary}33`,
+            marginBottom: 4,
+          }}
+        >
+          <MaterialCommunityIcons name={icon} size={28} color={colors.primary} />
+        </View>
+      )}
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
       <Text style={[styles.detail, { color: colors.textSecondary }]}>{detail}</Text>
       {actionTitle && onAction ? (

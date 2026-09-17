@@ -4,6 +4,7 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
 import { assertUuid } from "../lib/query-helpers.js";
+import { ensureResearchWorkspace } from "../services/spaceWorkspaceService.js";
 
 export const research = Router();
 
@@ -100,14 +101,63 @@ research.get(
     const id = z.string().uuid().parse(req.params.id);
     const { data, error } = await admin
       .from("research_projects")
-      .select("*, owner:profiles!research_projects_owner_id_fkey(id, full_name, username, avatar_url)")
+      .select("*, owner:profiles!research_projects_owner_id_fkey(id, full_name, username, avatar_url, university, department)")
       .eq("id", id)
       .single();
     if (error) throw error;
     if (data.visibility === "private" && data.owner_id !== req.userId) {
-      return res.status(403).json({ error: "Private project" });
+      // Check if user is an accepted member
+      const { data: member } = await admin
+        .from("research_members")
+        .select("role")
+        .eq("project_id", id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      if (!member) {
+        return res.status(403).json({ error: "Private project" });
+      }
     }
-    res.json(data);
+
+    // Fetch members
+    const { data: members } = await admin
+      .from("research_members")
+      .select("id, role, user:profiles(id, full_name, username, avatar_url)")
+      .eq("project_id", id);
+
+    const isOwner = data.owner_id === req.userId;
+    const isMember = isOwner || (members ?? []).some((m: any) => m.user?.id === req.userId);
+
+    // If owner or member, resolve or ensure workspace roomId
+    let roomId = (data as any).room_id;
+    if (!roomId && (isOwner || isMember)) {
+      try {
+        roomId = await ensureResearchWorkspace(id, data.owner_id);
+      } catch {}
+    }
+
+    // Check my application status if not a member
+    let myApplication = null;
+    if (!isMember) {
+      const { data: app } = await admin
+        .from("research_collaboration_requests")
+        .select("id, status")
+        .eq("project_id", id)
+        .eq("requester_id", req.userId!)
+        .maybeSingle();
+      myApplication = app ?? null;
+    }
+
+    res.json({
+      project: {
+        ...data,
+        room_id: roomId,
+        is_member: isMember,
+        is_owner: isOwner,
+        members: members ?? [],
+      },
+      myApplication,
+    });
   }),
 );
 
@@ -205,6 +255,7 @@ research.patch(
       
     if (error) throw error;
     
+    let roomId: string | null = null;
     if (status === "accepted") {
       // 1. Insert into research_members table
       await admin
@@ -217,10 +268,76 @@ research.patch(
         .select()
         .maybeSingle();
 
-      // 2. Notify user
-      await notifyUser(request.requester_id, "Collaboration Accepted", "Your collaboration request was accepted.", "research", { projectId: request.project_id });
+      // 2. Idempotently ensure private research workspace exists
+      const ownerId = (request.project as any).owner_id;
+      roomId = await ensureResearchWorkspace(request.project_id, ownerId);
+
+      // 3. Add accepted collaborator into room_members
+      if (roomId) {
+        await admin.from("room_members").upsert({
+          room_id: roomId,
+          user_id: request.requester_id,
+          role: "member",
+        } as any);
+      }
+
+      // 4. Notify both parties
+      await notifyUser(request.requester_id, "Collaboration Accepted 🎉", "Your collaboration request was accepted! You now have access to the Research Workspace.", "research", { projectId: request.project_id, roomId });
+      await notifyUser(ownerId, "New Team Member 🔬", "A new collaborator has joined your research workspace.", "research", { projectId: request.project_id, roomId });
     }
     
-    res.json(data);
+    res.json({ ...data, roomId });
+  }),
+);
+
+// GET /api/v1/research/projects/:id/workspace - Retrieve or lazily provision workspace for members
+research.get(
+  "/projects/:id/workspace",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: project } = await admin
+      .from("research_projects")
+      .select("id, owner_id, visibility, room_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    // Verify caller is owner or accepted collaborator
+    const isOwner = project.owner_id === req.userId;
+    const { data: member } = await admin
+      .from("research_members")
+      .select("role")
+      .eq("project_id", id)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!isOwner && !member) {
+      return res.status(403).json({ error: "Access denied. Only accepted collaborators can open the research workspace." });
+    }
+
+    const roomId = await ensureResearchWorkspace(id, project.owner_id);
+    res.json({ roomId });
+  }),
+);
+
+// POST /api/v1/research/projects/:id/workspace - Explicitly provision workspace
+research.post(
+  "/projects/:id/workspace",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: project } = await admin
+      .from("research_projects")
+      .select("id, owner_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (project.owner_id !== req.userId) {
+      return res.status(403).json({ error: "Only project owner can provision workspace" });
+    }
+
+    const roomId = await ensureResearchWorkspace(id, project.owner_id);
+    res.status(201).json({ roomId });
   }),
 );

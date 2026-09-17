@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Alert, Image, Linking, Pressable, StyleSheet, Text, View, TextInput } from "react-native";
 import Animated, { FadeInUp, useSharedValue, useAnimatedProps, withTiming, withDelay } from "react-native-reanimated";
@@ -10,18 +10,40 @@ import { Button, Card, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, tr
 import { RoomCard } from "@/components/RoomCard";
 import { ProfileCard } from "@/components/ProfileCard";
 import { FeatureGrid } from "@/components/FeatureGrid";
-import { PremiumHero } from "@/components/PremiumHero";
-import { AppHeader } from "@/components/navigation/AppHeader";
+import { HomeNavbar } from "@/components/home/HomeNavbar";
+import { AnimatedGreeting } from "@/components/home/AnimatedGreeting";
+import { FeaturedHeroCarousel } from "@/components/home/FeaturedHeroCarousel";
+import { PersonalizedHomeFeed } from "@/components/home/PersonalizedHomeFeed";
+import { PostComposerModal, type AudienceType } from "@/components/home/PostComposerModal";
 import { useAppStore } from "@/state/useAppStore";
+import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
-import { spotIllustrations } from "@/assets/illustrations";
+import { nextGenAnimations, nextGenAnimationsV2 } from "@/assets/nextgen";
 
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { t, language } = useI18n();
-  const { mode, setMode } = useAppStore();
+  const qc = useQueryClient();
+  const { mode, setMode, cachedProfile, setCachedProfile } = useAppStore();
+  const showHomeFeed = usePreferencesStore((state) => state.showHomeFeed);
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
+  const [composerVisible, setComposerVisible] = useState(false);
+  const [composerOptions, setComposerOptions] = useState<{
+    initialTag?: string;
+    initialAudience?: AudienceType;
+    openMediaImmediately?: boolean;
+  }>({});
+
+  const handleOpenComposer = (opts?: {
+    initialTag?: string;
+    initialAudience?: AudienceType;
+    openMediaImmediately?: boolean;
+  }) => {
+    triggerHaptic();
+    setComposerOptions(opts || {});
+    setComposerVisible(true);
+  };
 
   const dashboard = useQuery({
     queryKey: ["dashboard", mode],
@@ -33,8 +55,22 @@ export default function HomeScreen() {
     queryFn: () => api<{ profile: Profile }>("/profiles/me"),
   });
 
+  useEffect(() => {
+    if (me.data?.profile) {
+      setCachedProfile({
+        id: me.data.profile.id,
+        full_name: me.data.profile.full_name,
+        avatar_url: me.data.profile.avatar_url,
+        bio: me.data.profile.bio,
+      });
+    }
+  }, [me.data?.profile, setCachedProfile]);
+
   const d = dashboard.data;
-  const firstName = me.data?.profile.full_name?.split(/\s+/)[0] ?? t("home.learnerFallback");
+  const firstName =
+    me.data?.profile.full_name?.split(/\s+/)[0] ??
+    cachedProfile?.full_name?.split(/\s+/)[0] ??
+    t("home.learnerFallback");
 
   const visibleWidgets = [...(d?.layout.widgets ?? [])]
     .filter((widget) => widget.visible)
@@ -57,15 +93,20 @@ export default function HomeScreen() {
     }
   };
 
+  const [greetingKey, setGreetingKey] = useState(0);
+
+  const handleRefresh = async () => {
+    setGreetingKey((prev) => prev + 1);
+    await Promise.all([dashboard.refetch(), me.refetch()]);
+  };
+
   return (
-    <Screen
-      onRefresh={async () => {
-        await Promise.all([dashboard.refetch(), me.refetch()]);
-      }}
-      refreshing={dashboard.isRefetching || me.isRefetching}
-    >
-      {/* Top Header with Universal Search */}
-      <AppHeader searchPlaceholder={t("common.searchEverything")} />
+    <View style={{ flex: 1 }}>
+      <Screen
+        header={<HomeNavbar />}
+        onRefresh={handleRefresh}
+        refreshing={dashboard.isRefetching || me.isRefetching}
+      >
 
       {dashboard.isError ? (
         <Card tone="accent" style={{ marginBottom: 8, padding: 10 }}>
@@ -120,45 +161,9 @@ export default function HomeScreen() {
 
           case "greeting_hero":
             return (
-              <View key="greeting_hero" style={{ gap: 12 }}>
-                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ gap: 2 }}>
-                    <Text style={[styles.greeting, { color: colors.text }]}>
-                      {t("home.hello")}, {firstName} 👋
-                    </Text>
-                    <Muted>{mode === "learn" ? t("home.learnSubtitle") : t("home.teachSubtitle")}</Muted>
-                  </View>
-                  {d?.featureFlags.dashboard_customization !== false ? <Pressable
-                    onPress={() => {
-                      triggerHaptic();
-                      router.push("/dashboard/customize" as any);
-                    }}
-                    style={[styles.customizeButton, { borderColor: colors.border }]}
-                  >
-                    <MaterialCommunityIcons name="tune-variant" size={18} color={colors.primary} />
-                  </Pressable> : null}
-                </Row>
-
-                <PremiumHero
-                  eyebrow={t("home.networkEyebrow")}
-                  title={mode === "learn" ? t("home.learnTitle") : t("home.teachTitle")}
-                  detail={mode === "learn" ? t("home.learnHeroDetail") : t("home.teachHeroDetail")}
-                >
-                  <View style={styles.modeWrap}>
-                    <Button
-                      title={t("home.learn")}
-                      variant={mode === "learn" ? "primary" : "ghost"}
-                      onPress={() => setMode("learn")}
-                      compact
-                    />
-                    <Button
-                      title={t("home.teach")}
-                      variant={mode === "teach" ? "primary" : "ghost"}
-                      onPress={() => setMode("teach")}
-                      compact
-                    />
-                  </View>
-                </PremiumHero>
+              <View key="greeting_hero" style={{ gap: 10 }}>
+                <AnimatedGreeting key={greetingKey} name={firstName} mode={mode} />
+                <FeaturedHeroCarousel mode={mode} />
               </View>
             );
 
@@ -168,7 +173,7 @@ export default function HomeScreen() {
               <Card key="profile_quest" tone="glow" style={styles.questCard}>
                 <Row style={{ alignItems: "center", gap: 12, marginBottom: 8 }}>
                   <Image
-                    source={spotIllustrations.dashboardBoost}
+                    source={nextGenAnimationsV2.progressRing}
                     style={{ width: 44, height: 44 }}
                     resizeMode="contain"
                     accessible={false}
@@ -295,7 +300,7 @@ export default function HomeScreen() {
 
           case "campus_events":
             return (
-              <View key="campus_events">
+              <View key="campus_events" style={{ gap: 8 }}>
                 <SectionHeader
                   title={t("home.events")}
                   action={t("common.seeAll")}
@@ -332,10 +337,18 @@ export default function HomeScreen() {
             return (
               <Card key="leaderboard_preview" tone="glow" style={{ marginTop: 8 }}>
                 <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ gap: 2 }}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>{t("home.leaderboardTitle")}</Text>
-                    <Muted>{t("home.leaderboardDetail")}</Muted>
-                  </View>
+                  <Row style={{ alignItems: "center", gap: 12, flex: 1 }}>
+                    <Image
+                      source={nextGenAnimationsV2.celebrateBurst}
+                      style={{ width: 38, height: 38 }}
+                      resizeMode="contain"
+                      accessible={false}
+                    />
+                    <View style={{ gap: 2, flex: 1 }}>
+                      <Text style={[styles.itemTitle, { color: colors.text }]}>{t("home.leaderboardTitle")}</Text>
+                      <Muted>{t("home.leaderboardDetail")}</Muted>
+                    </View>
+                  </Row>
                   <Button
                     title={t("home.viewLeaderboard")}
                     compact
@@ -359,7 +372,85 @@ export default function HomeScreen() {
           </Animated.View>
         );
       })}
+
+      {/* Personalized Algorithmic Community & Campus Social Feed */}
+      {showHomeFeed ? (
+        <PersonalizedHomeFeed
+          currentUser={me.data?.profile}
+          onOpenComposer={handleOpenComposer}
+        />
+      ) : (
+        <Card style={{ marginTop: 16, padding: 16, alignItems: "center", gap: 8 }}>
+          <MaterialCommunityIcons name="newspaper-variant-outline" size={26} color={colors.muted} />
+          <Text style={{ fontSize: 13, color: colors.muted, textAlign: "center" }}>
+            {t("feed.feedHiddenNotice")}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              triggerHaptic();
+              router.push("/dashboard/customize" as any);
+            }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: radius.pill,
+              backgroundColor: colors.primarySoft,
+              marginTop: 4,
+            }}
+          >
+            <MaterialCommunityIcons name="tune-variant" size={16} color={colors.primary} />
+            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "700" }}>
+              {t("feed.customize")}
+            </Text>
+          </Pressable>
+        </Card>
+      )}
     </Screen>
+
+    {/* Fixed Floating Action Button (+) for Instant Post Creation */}
+    {showHomeFeed ? (
+      <Animated.View
+        entering={FadeInUp.springify().damping(12)}
+        style={[
+          styles.floatingFabContainer,
+          {
+            backgroundColor: colors.primary,
+            shadowColor: colors.primary,
+          },
+        ]}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("feed.createPost")}
+          onPress={() => handleOpenComposer()}
+          style={({ pressed }) => [
+            styles.floatingFabPressable,
+            { transform: [{ scale: pressed ? 0.90 : 1 }] },
+          ]}
+        >
+          <MaterialCommunityIcons name="plus" size={30} color="#FFFFFF" />
+        </Pressable>
+      </Animated.View>
+    ) : null}
+
+    {/* Post Composer Modal */}
+    <PostComposerModal
+      visible={composerVisible}
+      onClose={() => setComposerVisible(false)}
+      currentUser={me.data?.profile}
+      initialAudience={composerOptions.initialAudience}
+      initialTag={composerOptions.initialTag}
+      openMediaImmediately={composerOptions.openMediaImmediately}
+      onPostCreated={() => {
+        qc.invalidateQueries({ queryKey: ["campus-feed"] });
+        dashboard.refetch();
+      }}
+    />
+  </View>
   );
 }
 
@@ -488,5 +579,25 @@ const styles = StyleSheet.create({
   announcementBody: {
     fontSize: 13,
     marginTop: 2,
+  },
+  floatingFabContainer: {
+    position: "absolute",
+    bottom: 108,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    zIndex: 999,
+  },
+  floatingFabPressable: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

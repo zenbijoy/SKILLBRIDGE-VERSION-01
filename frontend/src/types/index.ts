@@ -59,6 +59,11 @@ export interface Room {
   tags: string[];
   status: "open" | "scheduled" | "live" | "completed" | "cancelled";
   conversation_id?: string | null;
+  created_at?: string | null;
+  enabled_modules?: string[];
+  default_landing_tab?: string;
+  appearance?: Record<string, any>;
+  is_archived?: boolean;
 }
 
 export interface Session {
@@ -174,3 +179,155 @@ export interface Dashboard {
     sessionsAttended: number;
   };
 }
+
+export type RoomPostType = "discussion" | "question" | "announcement" | "poll" | "resource" | "event" | "help" | "achievement";
+
+export interface RoomPost {
+  id: string;
+  room_id: string;
+  author_id: string;
+  author: Profile;
+  type: RoomPostType;
+  title?: string | null;
+  body: string;
+  metadata: Record<string, any>;
+  is_pinned: boolean;
+  comments_enabled: boolean;
+  likes_count: number;
+  comments_count: number;
+  my_reaction?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoomPostComment {
+  id: string;
+  post_id: string;
+  author_id: string;
+  author: Profile;
+  parent_comment_id?: string | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoomPermissions {
+  role: string | null;
+  isOwner: boolean;
+  isMember: boolean;
+  canPost: boolean;
+  canAnnounce: boolean;
+  canPin: boolean;
+  canModerate: boolean;
+  canStartLive: boolean;
+  canUploadResource: boolean;
+  canManageMembers: boolean;
+  canManageRoles: boolean;
+  canManageChannels: boolean;
+}
+
+export type ChannelType = "text" | "announcement" | "question" | "resource" | "media" | "voice";
+
+export interface RoomChannel {
+  id: string;
+  room_id: string;
+  name: string;
+  slug: string;
+  type: ChannelType;
+  description: string;
+  position: number;
+  is_default: boolean;
+  is_archived: boolean;
+  conversation_id?: string | null;
+  unread_count?: number;
+  active_participants?: number;
+}
+
+export interface RoomPinnedItem {
+  id: string;
+  room_id: string;
+  item_type: "post" | "announcement" | "question" | "resource" | "event" | "message" | "video";
+  item_id: string;
+  title: string;
+  subtitle?: string;
+  pinned_by: string;
+  pinner?: Profile;
+  created_at: string;
+}
+
+export interface VideoProgress {
+  recording_id: string;
+  last_position_seconds: number;
+  duration_seconds: number;
+  completed: boolean;
+  updated_at: string;
+}
+
+export interface VideoPlaylist {
+  id: string;
+  room_id: string;
+  title: string;
+  description?: string;
+  position: number;
+  items?: {
+    position: number;
+    recording: any;
+  }[];
+}
+
+export interface RoomModerationReport {
+  id: string;
+  reporter_id: string;
+  reporter?: Profile;
+  target_type: string;
+  target_id: string;
+  reason: string;
+  details?: string;
+  status: string;
+  created_at: string;
+}
+
+export interface RoomModerationLog {
+  id: string;
+  room_id: string;
+  actor_id: string;
+  actor?: Profile;
+  action: string;
+  target_type: string;
+  target_id: string;
+  reason?: string;
+  created_at: string;
+}
+
+export interface RoomAnalytics {
+  active_members_7d: number;
+  active_members_30d: number;
+  posts_count_7d: number;
+  messages_count_7d: number;
+  questions_count_7d: number;
+  solved_questions_rate: number;
+  retention_rate_30d: number;
+  top_contributors: {
+    user_id: string;
+    full_name: string;
+    avatar_url?: string;
+    score: number;
+  }[];
+}
+
+export interface RoomInvite {
+  id: string;
+  room_id: string;
+  code: string;
+  max_uses?: number | null;
+  uses_count: number;
+  expires_at?: string | null;
+  is_revoked: boolean;
+  created_at: string;
+}
+
+export type RoomFeedItem =
+  | { kind: "post"; item: RoomPost }
+  | { kind: "question"; item: { id: string; room_id: string; title: string; body: string; is_resolved: boolean; upvotes_count: number; created_at: string; author: Profile } };
+
+

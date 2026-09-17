@@ -1,9 +1,10 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Room } from "@/types";
 import { Card, Muted, Pill, Row, triggerHaptic } from "./ui";
 import { radius, useTheme } from "@/theme";
+import { nextGenBadges, nextGenAnimations } from "@/assets/nextgen";
 
 export function RoomCard({ room }: { room: Room }) {
   const { colors } = useTheme();
@@ -28,9 +29,24 @@ export function RoomCard({ room }: { room: Room }) {
       <Card tone={isLive ? "glow" : "default"} style={[s.cardContainer, isLive && { borderColor: `${colors.danger}60` }]}>
         <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
           <Row style={{ gap: 6, flexWrap: "wrap", flex: 1 }}>
-            <Pill tone={isLive ? "danger" : room.status === "scheduled" ? "warning" : "primary"}>
-              {isLive ? "● LIVE CLASS" : room.status === "scheduled" ? "UPCOMING" : "OPEN"}
-            </Pill>
+            {isLive ? (
+              <Row style={{ alignItems: "center", gap: 5 }}>
+                <Image
+                  source={nextGenAnimations.livePulse}
+                  style={{ width: 14, height: 14 }}
+                  resizeMode="contain"
+                />
+                <Image
+                  source={nextGenBadges.liveNow}
+                  style={{ width: 76, height: 22 }}
+                  resizeMode="contain"
+                />
+              </Row>
+            ) : (
+              <Pill tone={room.status === "scheduled" ? "warning" : "primary"}>
+                {room.status === "scheduled" ? "UPCOMING" : "OPEN"}
+              </Pill>
+            )}
             <Pill tone="info">
               {room.mode === "online" ? "🌐 Online" : room.mode === "offline" ? "📍 Campus" : "⚡ Hybrid"}
             </Pill>

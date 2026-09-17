@@ -488,17 +488,18 @@ profiles.post(
 profiles.get(
   "/me/privacy",
   wrap(async (req, res) => {
-    const { data: p } = await admin
-      .from("profiles")
-      .select("profile_visibility")
-      .eq("id", req.userId!)
-      .single();
+    const { getUserPrivacySettings } = await import("../services/privacyService.js");
+    const privacy = await getUserPrivacySettings(req.userId!);
     const { data: b } = await admin
       .from("blocks")
       .select("blocked_id,profiles!blocks_blocked_id_fkey(id,full_name)")
       .eq("blocker_id", req.userId!);
     res.json({
-      visibility: p?.profile_visibility ?? "public",
+      visibility: privacy.profile_visibility,
+      profile_visibility: privacy.profile_visibility,
+      who_can_message: privacy.who_can_message,
+      who_can_call: privacy.who_can_call,
+      presence_visibility: privacy.presence_visibility,
       blocked: (b ?? []).map((x: any) => x.profiles),
     });
   }),
@@ -508,17 +509,16 @@ profiles.patch(
   wrap(async (req, res) => {
     const body = z
       .object({
-        profile_visibility: z.enum(["public", "connections", "private"]),
+        profile_visibility: z.enum(["public", "connections", "private"]).optional(),
+        who_can_message: z.enum(["everyone", "connections", "nobody"]).optional(),
+        who_can_call: z.enum(["everyone", "connections", "nobody"]).optional(),
+        presence_visibility: z.enum(["everyone", "connections", "nobody"]).optional(),
       })
       .parse(req.body);
-    const { data, error } = await admin
-      .from("profiles")
-      .update(body)
-      .eq("id", req.userId!)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ profile: data });
+
+    const { updateUserPrivacySettings } = await import("../services/privacyService.js");
+    const updated = await updateUserPrivacySettings(req.userId!, body);
+    res.json({ privacy: updated, profile: { profile_visibility: updated.profile_visibility } });
   }),
 );
 profiles.get(
@@ -564,6 +564,29 @@ profiles.get(
       p_user_a: req.userId!,
       p_user_b: id,
     });
+
+    // Calculate mutual rooms / shared spaces
+    let mutualRooms: { id: string; title: string; topic?: string }[] = [];
+    try {
+      const { data: myRooms } = await admin
+        .from("room_members")
+        .select("room_id")
+        .eq("user_id", req.userId!);
+      const myRoomIds = (myRooms ?? []).map((r: any) => r.room_id);
+
+      if (myRoomIds.length > 0) {
+        const { data: shared } = await admin
+          .from("room_members")
+          .select("room_id, rooms!room_members_room_id_fkey(id, title, topic, visibility)")
+          .eq("user_id", id)
+          .in("room_id", myRoomIds);
+
+        mutualRooms = (shared ?? [])
+          .map((s: any) => s.rooms)
+          .filter(Boolean);
+      }
+    } catch {}
+
     const userSkills = (skills ?? []) as unknown as UserSkillWithSkill[];
     res.json({
       profile,
@@ -574,6 +597,8 @@ profiles.get(
       })),
       mutualCount: mutualCount ?? 0,
       connectionStatus: edge ? "accepted" : (connection?.status ?? "none"),
+      mutualRooms,
+      mutualRoomsCount: mutualRooms.length,
     });
   }),
 );

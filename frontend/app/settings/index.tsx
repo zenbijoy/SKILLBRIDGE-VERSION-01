@@ -8,7 +8,6 @@ import { useI18n } from "@/i18n";
 import { radius, useTheme } from "@/theme";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { useTour } from "@/features/tour/TourContext";
-import { spotIllustrations } from "@/assets/illustrations";
 
 export default function SettingsHomeScreen() {
   const { colors } = useTheme();
@@ -172,7 +171,7 @@ export default function SettingsHomeScreen() {
 
       {Boolean(query) && totalMatches === 0 ? (
         <Empty
-          illustration={spotIllustrations.profileControl}
+          icon="cog-outline"
           title={t("settings.noMatches") || "No settings found"}
           detail={`No settings match "${search.trim()}". Try searching for profile, theme, or notifications.`}
         />

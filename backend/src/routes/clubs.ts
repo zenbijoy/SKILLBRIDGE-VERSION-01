@@ -5,8 +5,10 @@ import { wrap } from "../middleware/error.js";
 import { NotificationService } from "../services/notificationService.js";
 import { negotiationLimiter } from "../middleware/rateLimiters.js";
 import { logDomainEvent } from "../lib/domainLogger.js";
+import { ensureClubWorkspace } from "../services/spaceWorkspaceService.js";
 
 export const clubs = Router();
+
 clubs.get(
   "/",
   wrap(async (_req, res) => {
@@ -19,6 +21,7 @@ clubs.get(
     res.json({ clubs: data ?? [] });
   }),
 );
+
 clubs.get(
   "/mine",
   wrap(async (req, res) => {
@@ -28,6 +31,72 @@ clubs.get(
       .eq("user_id", req.userId!);
     if (error) throw error;
     res.json({ memberships: data ?? [] });
+  }),
+);
+
+// GET /api/v1/clubs/:id - Club details with workspace linkage and membership state
+clubs.get(
+  "/:id",
+  wrap(async (req, res) => {
+    const clubId = z.string().uuid().parse(req.params.id);
+    const { data: club, error } = await admin
+      .from("clubs")
+      .select("*, members:club_members(user_id, role, profiles(id, full_name, username, avatar_url))")
+      .eq("id", clubId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!club) return res.status(404).json({ error: "Club not found" });
+
+    // Ensure workspace roomId
+    let roomId = (club as any).room_id;
+    if (!roomId) {
+      try {
+        roomId = await ensureClubWorkspace(clubId, req.userId!);
+      } catch {}
+    }
+
+    // Get my membership
+    const myMember = (club.members || []).find((m: any) => m.user_id === req.userId);
+
+    // Get upcoming events
+    const { data: events } = await admin
+      .from("events")
+      .select("*")
+      .eq("club_id", clubId)
+      .order("starts_at", { ascending: true })
+      .limit(10);
+
+    res.json({
+      club: {
+        ...club,
+        room_id: roomId,
+        my_role: myMember?.role ?? null,
+        is_member: Boolean(myMember),
+        member_count: club.members?.length ?? 0,
+      },
+      events: events ?? [],
+    });
+  }),
+);
+
+// GET /api/v1/clubs/:id/workspace - Retrieve or lazily provision Room OS workspace
+clubs.get(
+  "/:id/workspace",
+  wrap(async (req, res) => {
+    const clubId = z.string().uuid().parse(req.params.id);
+    const roomId = await ensureClubWorkspace(clubId, req.userId!);
+    res.json({ roomId });
+  }),
+);
+
+// POST /api/v1/clubs/:id/workspace - Explicitly provision Room OS workspace
+clubs.post(
+  "/:id/workspace",
+  wrap(async (req, res) => {
+    const clubId = z.string().uuid().parse(req.params.id);
+    const roomId = await ensureClubWorkspace(clubId, req.userId!);
+    res.status(201).json({ roomId });
   }),
 );
 clubs.post(

@@ -44,9 +44,11 @@ import { achievements, achievementsPublic } from "./routes/achievements.js";
 import { activity } from "./routes/activity.js";
 import { progress } from "./routes/progress.js";
 import { ct } from "./routes/ct.js";
-import { calls } from "./routes/calls.js";
+import { calls, callsRouter } from "./routes/calls.js";
 import { feed } from "./routes/feed.js";
 import { integrations, handleYouTubeCallback } from "./routes/integrations.js";
+import { help } from "./routes/help.js";
+import { shares } from "./routes/shares.js";
 
 export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true;
@@ -189,8 +191,10 @@ export function createApp(io?: SocketServer) {
   api.use("/activity", activity);
   api.use("/progress", progress);
   api.use("/ct", ct);
-  api.use("/calls", calls);
+  api.use("/calls", io ? callsRouter(io) : calls);
   api.use("/feed", feed);
+  api.use("/help", help);
+  api.use("/shares", shares);
   api.use("/integrations", integrations);
   api.use("/admin", adminAccessRoutes);
   api.use("/admin", requireRole("moderator", "admin"), adminRoutes);

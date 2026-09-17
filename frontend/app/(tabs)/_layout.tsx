@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Platform, BackHandler, ToastAndroid } from "react-native";
+import { Platform, BackHandler, ToastAndroid, StyleSheet, View } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from "react-native-reanimated";
@@ -28,12 +28,43 @@ const Icon = ({ name, color, focused }: { name: keyof typeof MaterialCommunityIc
   );
 };
 
+import { BottomTabBar, type BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
+import { useAutoHideNavigation } from "@/navigation/AutoHideNavigationContext";
+
+function AutoHideTabBar(props: BottomTabBarProps) {
+  const { bottomNavAnimatedStyle, isNavVisible, setBottomNavHeight } = useAutoHideNavigation();
+
+  return (
+    <Animated.View
+      onLayout={(e) => {
+        const h = e.nativeEvent.layout.height;
+        if (h > 0) {
+          setBottomNavHeight(h);
+        }
+      }}
+      style={[
+        tabLayoutStyles.animatedTabBar,
+        bottomNavAnimatedStyle,
+      ]}
+      pointerEvents={isNavVisible ? "auto" : "none"}
+    >
+      <BottomTabBar {...props} />
+    </Animated.View>
+  );
+}
+
 export default function TabsLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useI18n();
+  const { resetNavigation } = useAutoHideNavigation();
+
+  // Ensure navigation is visible on route / tab change
+  useEffect(() => {
+    resetNavigation();
+  }, [pathname, resetNavigation]);
 
   const conversations = useQuery({
     queryKey: ["conversations"],
@@ -79,6 +110,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <AutoHideTabBar {...props} />}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -104,7 +136,19 @@ export default function TabsLayout() {
       <Tabs.Screen name="discover" options={{ title: t("nav.discover"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "compass" : "compass-outline"} color={color} focused={focused} /> }} />
       <Tabs.Screen name="rooms" options={{ title: t("nav.rooms"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "account-group" : "account-group-outline"} color={color} focused={focused} /> }} />
       <Tabs.Screen name="inbox" options={{ title: t("nav.inbox"), tabBarBadge: unread > 0 ? (unread > 99 ? "99+" : unread) : undefined, tabBarBadgeStyle: { backgroundColor: colors.danger, color: colors.white, fontSize: 10 }, tabBarIcon: ({ color, focused }) => <Icon name={focused ? "message-text" : "message-text-outline"} color={color} focused={focused} /> }} />
-      <Tabs.Screen name="profile" options={{ title: t("nav.profile"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "account-circle" : "account-circle-outline"} color={color} focused={focused} /> }} />
+      <Tabs.Screen name="tools" options={{ title: t("nav.tools"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "toolbox" : "toolbox-outline"} color={color} focused={focused} /> }} />
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const tabLayoutStyles = StyleSheet.create({
+  animatedTabBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+  },
+});
+

@@ -14,6 +14,7 @@ import type { Dashboard, Profile } from "@/types";
 import { TourProvider } from "@/features/tour/TourContext";
 import { TourOverlay } from "@/features/tour/TourOverlay";
 import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal";
+import { ActiveCallBanner } from "@/features/calls/components/ActiveCallBanner";
 import { useI18n } from "@/i18n";
 import { SkillBridgeLoader } from "@/components/ui";
 
@@ -176,6 +177,7 @@ function Gate() {
       </Stack>
       <TourOverlay />
       <IncomingCallModal />
+      <ActiveCallBanner />
     </TourProvider>
   );
 }
@@ -199,16 +201,21 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
+import { AutoHideNavigationProvider } from "@/navigation/AutoHideNavigationContext";
+
 export default function Layout() {
   return (
     <QueryClientProvider client={client}>
       <AuthProvider>
-        <ThemedStatusBar />
-        <Gate />
+        <AutoHideNavigationProvider>
+          <ThemedStatusBar />
+          <Gate />
+        </AutoHideNavigationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
 }
+
 
 const layoutStyles = StyleSheet.create({
   errorContainer: {

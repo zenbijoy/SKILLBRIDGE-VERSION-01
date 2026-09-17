@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Profile } from "@/types";
-import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton } from "@/components/ui";
+import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
 
@@ -23,6 +23,9 @@ type ResearchDetail = {
     looking_for_collaborators: boolean;
     collaboration_requirements?: string;
     created_at: string;
+    room_id?: string;
+    is_member?: boolean;
+    is_owner?: boolean;
     members?: { id: string; user: Profile; role: string }[];
   };
   calls?: {
@@ -193,8 +196,60 @@ export default function ResearchDetailScreen() {
           )}
         </Card>
 
-        {/* Collaboration Requirements & Apply CTA */}
-        {d.looking_for_collaborators && !isOwner && (
+        {/* Research Team / Members */}
+        {d.members && d.members.length > 0 && (
+          <Card style={styles.card}>
+            <H2 style={styles.sectionTitle}>Research Team ({d.members.length})</H2>
+            {d.members.map((m) => (
+              <Pressable
+                key={m.id}
+                onPress={() => router.push(`/user/${m.user?.id}` as any)}
+                style={{ flexDirection: "row", alignItems: "center", paddingVertical: 8, gap: 10 }}
+              >
+                <View style={[styles.avatar, { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="account" size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: colors.text }}>{m.user?.full_name || "Researcher"}</Text>
+                  <Muted style={{ fontSize: 12 }}>@{m.user?.username || "researcher"}</Muted>
+                </View>
+                <Pill tone={m.role === "lead" ? "accent" : "default"}>{m.role.toUpperCase()}</Pill>
+              </Pressable>
+            ))}
+          </Card>
+        )}
+
+        {/* Workspace Card for Owner & Accepted Collaborators */}
+        {(isOwner || projectQuery.data?.project?.is_member) && (
+          <Card tone="glow" style={styles.card}>
+            <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <H2 style={styles.sectionTitle}>Research Workspace</H2>
+              <Pill tone="accent">PRIVATE LAB</Pill>
+            </Row>
+            <Text style={[styles.descText, { color: colors.text, marginBottom: 12 }]}>
+              Dedicated Room OS workspace for paper discussion, dataset links, shared media, and team meetings.
+            </Text>
+            <Button
+              title="Open Research Workspace 🔬"
+              onPress={async () => {
+                triggerHaptic();
+                if (d.room_id) {
+                  router.push(`/room/${d.room_id}` as any);
+                } else {
+                  try {
+                    const res = await api<{ roomId: string }>(`/research/projects/${id}/workspace`);
+                    router.push(`/room/${res.roomId}` as any);
+                  } catch (e: any) {
+                    Alert.alert("Workspace", e.message || "Could not access workspace.");
+                  }
+                }
+              }}
+            />
+          </Card>
+        )}
+
+        {/* Collaboration Requirements & Apply CTA for Non-members */}
+        {!isOwner && !projectQuery.data?.project?.is_member && (
           <Card tone="glow" style={styles.card}>
             <H2 style={styles.sectionTitle}>Collaboration Openings</H2>
             {d.collaboration_requirements && (
@@ -203,40 +258,52 @@ export default function ResearchDetailScreen() {
               </Text>
             )}
 
-            {!showApplyModal ? (
-              <Button
-                title="Apply to Collaborate 🔬"
-                onPress={() => setShowApplyModal(true)}
-              />
-            ) : (
-              <View style={styles.applyForm}>
-                <Text style={[styles.subLabel, { color: colors.text }]}>Statement of Interest & Background</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-                  placeholder="Explain your relevant coursework, research background, or skills..."
-                  placeholderTextColor={colors.muted}
-                  value={applyNote}
-                  onChangeText={setApplyNote}
-                  multiline
-                  numberOfLines={4}
+            {projectQuery.data?.myApplication?.status === "pending" ? (
+              <Card tone="soft" style={{ padding: 12, alignItems: "center" }}>
+                <MaterialCommunityIcons name="clock-outline" size={24} color={colors.warning} />
+                <Text style={{ fontWeight: "700", color: colors.text, marginTop: 4 }}>Application Under Review</Text>
+                <Muted style={{ fontSize: 12, textAlign: "center", marginTop: 2 }}>
+                  The lead investigator is reviewing your statement. You'll receive a notification when accepted.
+                </Muted>
+              </Card>
+            ) : d.looking_for_collaborators ? (
+              !showApplyModal ? (
+                <Button
+                  title="Apply to Collaborate 🔬"
+                  onPress={() => setShowApplyModal(true)}
                 />
-                <Row style={{ gap: 10, marginTop: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Button
-                      title="Cancel"
-                      variant="ghost"
-                      onPress={() => setShowApplyModal(false)}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Button
-                      title={applyMutation.isPending ? "Submitting..." : "Send Application"}
-                      onPress={() => applyMutation.mutate()}
-                      disabled={applyMutation.isPending || !applyNote.trim()}
-                    />
-                  </View>
-                </Row>
-              </View>
+              ) : (
+                <View style={styles.applyForm}>
+                  <Text style={[styles.subLabel, { color: colors.text }]}>Statement of Interest & Background</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                    placeholder="Explain your relevant coursework, research background, or skills..."
+                    placeholderTextColor={colors.muted}
+                    value={applyNote}
+                    onChangeText={setApplyNote}
+                    multiline
+                    numberOfLines={4}
+                  />
+                  <Row style={{ gap: 10, marginTop: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Button
+                        title="Cancel"
+                        variant="ghost"
+                        onPress={() => setShowApplyModal(false)}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Button
+                        title={applyMutation.isPending ? "Submitting..." : "Send Application"}
+                        onPress={() => applyMutation.mutate()}
+                        disabled={applyMutation.isPending || !applyNote.trim()}
+                      />
+                    </View>
+                  </Row>
+                </View>
+              )
+            ) : (
+              <Muted>This project is not currently accepting new collaborator applications.</Muted>
             )}
           </Card>
         )}

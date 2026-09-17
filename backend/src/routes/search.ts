@@ -16,9 +16,22 @@ export type SearchResult = {
   metadata: Record<string, string | number | boolean | null>;
 };
 
+const normalizeKind = (val: unknown) => {
+  if (typeof val !== "string") return "all";
+  const map: Record<string, string> = {
+    people: "person",
+    rooms: "room",
+    events: "event",
+    skills: "skill",
+    clubs: "club",
+    resources: "resource",
+  };
+  return map[val.toLowerCase()] || val.toLowerCase();
+};
+
 const searchQuerySchema = z.object({
   q: z.string().min(1).max(100),
-  kind: z.enum(["all", "person", "room", "event", "skill", "club", "research", "resource"]).default("all"),
+  kind: z.preprocess(normalizeKind, z.enum(["all", "person", "room", "event", "skill", "club", "research", "resource"]).default("all")),
   cursor: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   campus: z.string().optional(),

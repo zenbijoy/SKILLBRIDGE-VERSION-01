@@ -1,5 +1,7 @@
 import { Router } from "express";
+import crypto from "crypto";
 import { z } from "zod";
+import { AccessToken } from "livekit-server-sdk";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
@@ -1026,5 +1028,1467 @@ rooms.delete(
     if (delErr) throw delErr;
 
     res.json({ success: true, message: "Recording deleted successfully" });
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOM OS CORE: POSTS, COMMENTS, REACTIONS, PERMISSIONS & MEMBER OPS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/v1/rooms/:id/permissions - Server-authoritative capabilities
+rooms.get(
+  "/:id/permissions",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const uid = req.userId;
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("owner_id, visibility, status")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    let memberRole: string | null = null;
+    if (uid) {
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", uid)
+        .maybeSingle();
+      if (member) memberRole = member.role;
+    }
+
+    const isOwner = uid === room.owner_id || memberRole === "owner";
+    const isTeacher = memberRole === "teacher";
+    const isMod = memberRole === "moderator";
+    const isMember = Boolean(memberRole);
+
+    res.json({
+      role: memberRole,
+      isOwner,
+      isMember,
+      canPost: isMember,
+      canAnnounce: isOwner || isTeacher || isMod,
+      canPin: isOwner || isTeacher || isMod,
+      canModerate: isOwner || isMod,
+      canStartLive: isOwner || isTeacher,
+      canUploadResource: isMember,
+      canManageMembers: isOwner || isMod,
+      canManageRoles: isOwner,
+      canManageChannels: isOwner || isTeacher || isMod,
+    });
+  }),
+);
+
+// GET /api/v1/rooms/:id/posts - Keyset-paginated Room OS posts
+rooms.get(
+  "/:id/posts",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+    const cursor = req.query.cursor as string | undefined;
+    const type = req.query.type as string | undefined;
+
+    // Check room access
+    const { data: room } = await admin.from("rooms").select("visibility").eq("id", roomId).maybeSingle();
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    if (room.visibility !== "public") {
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+      if (!member) return res.status(403).json({ error: "Join room to view posts" });
+    }
+
+    let query = admin
+      .from("room_posts")
+      .select(`
+        *,
+        author:profiles!room_posts_author_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .eq("room_id", roomId)
+      .neq("status", "deleted")
+      .order("is_pinned", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(limit + 1);
+
+    if (cursor) {
+      query = query.lt("created_at", cursor);
+    }
+    if (type) {
+      query = query.eq("type", type);
+    }
+
+    const { data: rawPosts, error } = await query;
+    if (error) throw error;
+
+    const posts = rawPosts ?? [];
+    const hasMore = posts.length > limit;
+    const items = hasMore ? posts.slice(0, limit) : posts;
+    const nextCursor = hasMore ? items[items.length - 1]?.created_at : null;
+
+    // Fetch user reactions if signed in
+    const postIds = items.map((p) => p.id);
+    const userReactions = new Map<string, string>();
+
+    if (req.userId && postIds.length > 0) {
+      const { data: reactions } = await admin
+        .from("room_post_reactions")
+        .select("post_id, reaction_type")
+        .eq("user_id", req.userId)
+        .in("post_id", postIds);
+
+      for (const r of reactions ?? []) {
+        userReactions.set(r.post_id, r.reaction_type);
+      }
+    }
+
+    const formattedPosts = items.map((p) => ({
+      ...p,
+      my_reaction: userReactions.get(p.id) ?? null,
+    }));
+
+    res.json({ posts: formattedPosts, next_cursor: nextCursor });
+  }),
+);
+
+// POST /api/v1/rooms/:id/posts - Create Room Post
+rooms.post(
+  "/:id/posts",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        title: z.string().trim().max(160).optional(),
+        body: z.string().trim().min(1, "Post body cannot be empty").max(10000),
+        type: z
+          .enum(["discussion", "question", "announcement", "poll", "resource", "event", "help", "achievement"])
+          .default("discussion"),
+        metadata: z.record(z.string(), z.any()).optional().default({}),
+      })
+      .parse(req.body);
+
+    // Verify membership
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member) {
+      return res.status(403).json({ error: "Join room to publish posts" });
+    }
+
+    // Role check for announcements
+    if (body.type === "announcement" && !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Only room leaders can publish announcements" });
+    }
+
+    const { data: post, error } = await admin
+      .from("room_posts")
+      .insert({
+        room_id: roomId,
+        author_id: req.userId!,
+        type: body.type,
+        title: body.title || null,
+        body: body.body,
+        metadata: body.metadata,
+        is_pinned: body.type === "announcement",
+      })
+      .select(`
+        *,
+        author:profiles!room_posts_author_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Log domain event
+    logDomainEvent({
+      event: "room_post_created",
+      roomId,
+      postId: post.id,
+      postType: body.type,
+    });
+
+    res.status(201).json({ post });
+  }),
+);
+
+// PATCH /api/v1/rooms/:id/posts/:postId/pin - Pin or unpin post
+rooms.patch(
+  "/:id/posts/:postId/pin",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const postId = z.string().uuid().parse(req.params.postId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Only room leaders can pin posts" });
+    }
+
+    const { data: post } = await admin.from("room_posts").select("is_pinned").eq("id", postId).eq("room_id", roomId).single();
+    if (!post) return res.status(404).json({ error: "Post not found" });
+
+    const nextPinned = !post.is_pinned;
+    const { data: updated, error } = await admin
+      .from("room_posts")
+      .update({ is_pinned: nextPinned, updated_at: new Date().toISOString() })
+      .eq("id", postId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ post: updated });
+  }),
+);
+
+// DELETE /api/v1/rooms/:id/posts/:postId - Soft delete post
+rooms.delete(
+  "/:id/posts/:postId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const postId = z.string().uuid().parse(req.params.postId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    const { data: post } = await admin.from("room_posts").select("author_id").eq("id", postId).eq("room_id", roomId).single();
+    if (!post) return res.status(404).json({ error: "Post not found" });
+
+    const isAuthor = post.author_id === req.userId!;
+    const isLeader = member && ["owner", "moderator"].includes(member.role);
+
+    if (!isAuthor && !isLeader) {
+      return res.status(403).json({ error: "Permission denied to delete post" });
+    }
+
+    const { error } = await admin
+      .from("room_posts")
+      .update({ status: "deleted", deleted_at: new Date().toISOString() })
+      .eq("id", postId);
+
+    if (error) throw error;
+    res.status(204).send();
+  }),
+);
+
+// GET /api/v1/rooms/:id/posts/:postId/comments - Fetch post comments
+rooms.get(
+  "/:id/posts/:postId/comments",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const postId = z.string().uuid().parse(req.params.postId);
+
+    const { data: comments, error } = await admin
+      .from("room_post_comments")
+      .select(`
+        *,
+        author:profiles!room_post_comments_author_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .eq("post_id", postId)
+      .neq("status", "deleted")
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    res.json({ comments: comments ?? [] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/posts/:postId/comments - Add comment
+rooms.post(
+  "/:id/posts/:postId/comments",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const postId = z.string().uuid().parse(req.params.postId);
+    const body = z
+      .object({
+        body: z.string().trim().min(1, "Comment cannot be empty").max(2000),
+        parent_comment_id: z.string().uuid().optional().nullable(),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member) {
+      return res.status(403).json({ error: "Join room to comment" });
+    }
+
+    const { data: comment, error } = await admin
+      .from("room_post_comments")
+      .insert({
+        post_id: postId,
+        author_id: req.userId!,
+        parent_comment_id: body.parent_comment_id || null,
+        body: body.body,
+      })
+      .select(`
+        *,
+        author:profiles!room_post_comments_author_id_fkey(id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Increment comments_count
+    const { count } = await admin
+      .from("room_post_comments")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", postId)
+      .neq("status", "deleted");
+
+    await admin.from("room_posts").update({ comments_count: count ?? 0 }).eq("id", postId);
+
+    res.status(201).json({ comment });
+  }),
+);
+
+// POST /api/v1/rooms/:id/posts/:postId/reactions - Toggle reaction
+rooms.post(
+  "/:id/posts/:postId/reactions",
+  wrap(async (req, res) => {
+    const postId = z.string().uuid().parse(req.params.postId);
+    const body = z.object({ reaction_type: z.string().min(1).default("helpful") }).parse(req.body || {});
+
+    const { data: existing } = await admin
+      .from("room_post_reactions")
+      .select("post_id")
+      .eq("post_id", postId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    let reacted = false;
+    if (existing) {
+      await admin.from("room_post_reactions").delete().eq("post_id", postId).eq("user_id", req.userId!);
+      reacted = false;
+    } else {
+      await admin.from("room_post_reactions").insert({
+        post_id: postId,
+        user_id: req.userId!,
+        reaction_type: body.reaction_type,
+      });
+      reacted = true;
+    }
+
+    const { count } = await admin
+      .from("room_post_reactions")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", postId);
+
+    const likesCount = count ?? 0;
+    await admin.from("room_posts").update({ likes_count: likesCount }).eq("id", postId);
+
+    res.json({ success: true, reacted, reaction_type: body.reaction_type, likes_count: likesCount });
+  }),
+);
+
+// PATCH /api/v1/rooms/:id/members/:memberId/role - Promote/demote room role
+rooms.patch(
+  "/:id/members/:memberId/role",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const targetUserId = z.string().uuid().parse(req.params.memberId);
+    const body = z.object({ role: z.enum(["teacher", "moderator", "member"]) }).parse(req.body);
+
+    const { data: requester } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!requester || requester.role !== "owner") {
+      return res.status(403).json({ error: "Only the room owner can manage member roles" });
+    }
+
+    const { data: updated, error } = await admin
+      .from("room_members")
+      .update({ role: body.role })
+      .eq("room_id", roomId)
+      .eq("user_id", targetUserId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, role: updated.role });
+  }),
+);
+
+// DELETE /api/v1/rooms/:id/members/:memberId - Remove member from room
+rooms.delete(
+  "/:id/members/:memberId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const targetUserId = z.string().uuid().parse(req.params.memberId);
+
+    const { data: requester } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!requester || !["owner", "moderator"].includes(requester.role)) {
+      return res.status(403).json({ error: "Permission denied to remove member" });
+    }
+
+    // Protect owner from removal
+    const { data: target } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", targetUserId)
+      .maybeSingle();
+
+    if (target?.role === "owner") {
+      return res.status(400).json({ error: "Cannot remove room owner" });
+    }
+
+    const { error } = await admin
+      .from("room_members")
+      .delete()
+      .eq("room_id", roomId)
+      .eq("user_id", targetUserId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROMPT 5: ADVANCED ROOM COLLABORATION ENDPOINTS
+// Channels, Pinned Hub, Video Playlists & Progress, Moderation & Analytics
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/v1/rooms/:id/channels - List room channels (auto-seeds #general if empty)
+rooms.get(
+  "/:id/channels",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, conversation_id, visibility, owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    const { data: existingChannels, error } = await admin
+      .from("room_channels")
+      .select("*")
+      .eq("room_id", roomId)
+      .eq("is_archived", false)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+
+    if (existingChannels && existingChannels.length > 0) {
+      return res.json({ channels: existingChannels });
+    }
+
+    // Auto-seed default #general channel if none exists
+    const { data: seededChannel, error: seedErr } = await admin
+      .from("room_channels")
+      .insert({
+        room_id: roomId,
+        name: "general",
+        slug: "general",
+        type: "text",
+        description: "General discussion for this room",
+        position: 0,
+        is_default: true,
+        conversation_id: room.conversation_id,
+        created_by: room.owner_id,
+      })
+      .select()
+      .single();
+
+    if (seedErr) {
+      const { data: retryChannels } = await admin
+        .from("room_channels")
+        .select("*")
+        .eq("room_id", roomId)
+        .order("position", { ascending: true });
+      return res.json({ channels: retryChannels ?? [] });
+    }
+
+    res.json({ channels: [seededChannel] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/channels - Create new channel
+rooms.post(
+  "/:id/channels",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        name: z.string().trim().min(2).max(50),
+        type: z.enum(["text", "announcement", "question", "resource", "media", "voice"]).default("text"),
+        description: z.string().max(300).optional().default(""),
+        position: z.number().int().optional().default(0),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Unauthorized to create channels" });
+    }
+
+    const slug = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+    let channelConvId: string | null = null;
+    if (["text", "announcement"].includes(body.type)) {
+      const { data: conv } = await admin
+        .from("conversations")
+        .insert({
+          kind: "room",
+          title: `#${slug}`,
+        })
+        .select("id")
+        .single();
+      if (conv) channelConvId = conv.id;
+    }
+
+    const { data: channel, error } = await admin
+      .from("room_channels")
+      .insert({
+        room_id: roomId,
+        name: body.name.trim(),
+        slug,
+        type: body.type,
+        description: body.description,
+        position: body.position,
+        is_default: false,
+        created_by: req.userId!,
+        conversation_id: channelConvId,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        return res.status(409).json({ error: "A channel with this name already exists in this room" });
+      }
+      throw error;
+    }
+
+    res.status(201).json({ channel });
+  }),
+);
+
+// PATCH /api/v1/rooms/:id/channels/:channelId - Update channel
+rooms.patch(
+  "/:id/channels/:channelId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const channelId = z.string().uuid().parse(req.params.channelId);
+    const body = z
+      .object({
+        name: z.string().trim().min(2).max(50).optional(),
+        description: z.string().max(300).optional(),
+        position: z.number().int().optional(),
+        is_archived: z.boolean().optional(),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Unauthorized to modify channels" });
+    }
+
+    const updateData: Record<string, any> = {};
+    if (body.name) {
+      updateData.name = body.name.trim();
+      updateData.slug = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    }
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.position !== undefined) updateData.position = body.position;
+    if (body.is_archived !== undefined) updateData.is_archived = body.is_archived;
+
+    const { data: updated, error } = await admin
+      .from("room_channels")
+      .update(updateData)
+      .eq("id", channelId)
+      .eq("room_id", roomId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ channel: updated });
+  }),
+);
+
+// DELETE /api/v1/rooms/:id/channels/:channelId - Delete channel
+rooms.delete(
+  "/:id/channels/:channelId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const channelId = z.string().uuid().parse(req.params.channelId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Unauthorized to delete channels" });
+    }
+
+    const { data: targetChannel } = await admin
+      .from("room_channels")
+      .select("is_default")
+      .eq("id", channelId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!targetChannel) return res.status(404).json({ error: "Channel not found" });
+    if (targetChannel.is_default) {
+      return res.status(400).json({ error: "Cannot delete the default channel" });
+    }
+
+    const { error } = await admin
+      .from("room_channels")
+      .delete()
+      .eq("id", channelId)
+      .eq("room_id", roomId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  }),
+);
+
+// GET /api/v1/rooms/:id/search - Scoped Contextual In-Room Search
+rooms.get(
+  "/:id/search",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const q = z.string().min(1).max(100).parse(req.query.q);
+    const category = z
+      .enum(["all", "posts", "messages", "questions", "files", "videos", "members", "announcements"])
+      .default("all")
+      .parse(req.query.category || "all");
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, conversation_id, visibility")
+      .eq("id", roomId)
+      .maybeSingle();
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    if (room.visibility !== "public") {
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+      if (!member) return res.status(403).json({ error: "Must be a room member to search" });
+    }
+
+    const results: any[] = [];
+    const tasks: Promise<void>[] = [];
+
+    // Posts & Announcements
+    if (["all", "posts", "announcements"].includes(category)) {
+      tasks.push(
+        (async () => {
+          let query = admin
+            .from("room_posts")
+            .select("id, type, title, body, created_at, author:profiles!room_posts_author_id_fkey(full_name, username)")
+            .eq("room_id", roomId)
+            .or(`title.ilike.%${q}%,body.ilike.%${q}%`)
+            .limit(limit);
+
+          if (category === "announcements") {
+            query = query.eq("type", "announcement");
+          }
+
+          const { data } = await query;
+          (data ?? []).forEach((p: any) => {
+            results.push({
+              id: p.id,
+              kind: p.type === "announcement" ? "announcement" : "post",
+              title: p.title || (p.body ? p.body.slice(0, 60) : "Untitled Post"),
+              subtitle: `${p.type.toUpperCase()} • by ${p.author?.full_name || "Unknown"}`,
+              targetTab: "posts",
+              metadata: { postId: p.id, type: p.type },
+            });
+          });
+        })(),
+      );
+    }
+
+    // Messages
+    if (["all", "messages"].includes(category) && room.conversation_id) {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
+            .from("messages")
+            .select("id, body, created_at, sender:profiles!messages_sender_id_fkey(full_name, username)")
+            .eq("conversation_id", room.conversation_id)
+            .ilike("body", `%${q}%`)
+            .limit(limit);
+
+          (data ?? []).forEach((m: any) => {
+            results.push({
+              id: m.id,
+              kind: "message",
+              title: m.body ? m.body.slice(0, 80) : "Message",
+              subtitle: `Chat • by ${m.sender?.full_name || "Unknown"}`,
+              targetTab: "chat",
+              metadata: { messageId: m.id },
+            });
+          });
+        })(),
+      );
+    }
+
+    // Questions
+    if (["all", "questions"].includes(category)) {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
+            .from("room_questions")
+            .select("id, title, body, is_resolved, created_at, author:profiles!room_questions_author_id_fkey(full_name)")
+            .eq("room_id", roomId)
+            .or(`title.ilike.%${q}%,body.ilike.%${q}%`)
+            .limit(limit);
+
+          (data ?? []).forEach((item: any) => {
+            results.push({
+              id: item.id,
+              kind: "question",
+              title: item.title,
+              subtitle: `Q&A • ${item.is_resolved ? "✓ Resolved" : "Open"}`,
+              targetTab: "learn",
+              metadata: { questionId: item.id },
+            });
+          });
+        })(),
+      );
+    }
+
+    // Files
+    if (["all", "files"].includes(category)) {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
+            .from("resources")
+            .select("id, title, kind, url, created_at")
+            .eq("room_id", roomId)
+            .ilike("title", `%${q}%`)
+            .limit(limit);
+
+          (data ?? []).forEach((item: any) => {
+            results.push({
+              id: item.id,
+              kind: "file",
+              title: item.title,
+              subtitle: `File • ${item.kind || "document"}`,
+              targetTab: "media",
+              metadata: { fileId: item.id, url: item.url },
+            });
+          });
+        })(),
+      );
+    }
+
+    // Videos
+    if (["all", "videos"].includes(category)) {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
+            .from("room_recordings")
+            .select("id, title, duration_seconds, youtube_url, created_at")
+            .eq("room_id", roomId)
+            .ilike("title", `%${q}%`)
+            .limit(limit);
+
+          (data ?? []).forEach((item: any) => {
+            results.push({
+              id: item.id,
+              kind: "video",
+              title: item.title,
+              subtitle: `Video • ${Math.round(item.duration_seconds / 60)} min`,
+              targetTab: "media",
+              metadata: { videoId: item.id, youtubeUrl: item.youtube_url },
+            });
+          });
+        })(),
+      );
+    }
+
+    // Members
+    if (["all", "members"].includes(category)) {
+      tasks.push(
+        (async () => {
+          const { data } = await admin
+            .from("room_members")
+            .select("user_id, role, profile:profiles!room_members_user_id_fkey(id, full_name, username, avatar_url, university)")
+            .eq("room_id", roomId);
+
+          (data ?? []).forEach((m: any) => {
+            const p = m.profile;
+            if (p && (p.full_name?.toLowerCase().includes(q.toLowerCase()) || p.username?.toLowerCase().includes(q.toLowerCase()))) {
+              results.push({
+                id: p.id,
+                kind: "member",
+                title: p.full_name || `@${p.username}`,
+                subtitle: `Member • ${m.role.toUpperCase()} ${p.university ? `• ${p.university}` : ""}`,
+                targetTab: "more",
+                metadata: { userId: p.id, role: m.role },
+              });
+            }
+          });
+        })(),
+      );
+    }
+
+    await Promise.all(tasks);
+    res.json({ results: results.slice(0, limit), total: results.length, query: q, category });
+  }),
+);
+
+// GET /api/v1/rooms/:id/pinned - List pinned items
+rooms.get(
+  "/:id/pinned",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data, error } = await admin
+      .from("room_pinned_items")
+      .select("*, pinner:profiles!room_pinned_items_pinned_by_fkey(id, full_name, username)")
+      .eq("room_id", roomId)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ pinnedItems: data ?? [] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/pinned - Pin an item to central hub
+rooms.post(
+  "/:id/pinned",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        item_type: z.enum(["post", "announcement", "question", "resource", "event", "message", "video"]),
+        item_id: z.string().uuid(),
+        title: z.string().min(1).max(200),
+        subtitle: z.string().max(200).optional().default(""),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Only room hosts or moderators can pin items" });
+    }
+
+    const { data: pinned, error } = await admin
+      .from("room_pinned_items")
+      .insert({
+        room_id: roomId,
+        item_type: body.item_type,
+        item_id: body.item_id,
+        title: body.title,
+        subtitle: body.subtitle,
+        pinned_by: req.userId!,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (body.item_type === "post" || body.item_type === "announcement") {
+      await admin.from("room_posts").update({ is_pinned: true }).eq("id", body.item_id);
+    }
+
+    res.status(201).json({ pinned });
+  }),
+);
+
+// DELETE /api/v1/rooms/:id/pinned/:pinnedId - Unpin item
+rooms.delete(
+  "/:id/pinned/:pinnedId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const pinnedId = z.string().uuid().parse(req.params.pinnedId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Only room hosts or moderators can unpin items" });
+    }
+
+    const { data: target } = await admin
+      .from("room_pinned_items")
+      .select("item_type, item_id")
+      .eq("id", pinnedId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!target) return res.status(404).json({ error: "Pinned item not found" });
+
+    const { error } = await admin
+      .from("room_pinned_items")
+      .delete()
+      .eq("id", pinnedId)
+      .eq("room_id", roomId);
+
+    if (error) throw error;
+
+    if (target.item_type === "post" || target.item_type === "announcement") {
+      await admin.from("room_posts").update({ is_pinned: false }).eq("id", target.item_id);
+    }
+
+    res.json({ success: true });
+  }),
+);
+
+// POST /api/v1/rooms/:id/voice/token - Generate audio-first LiveKit token for Voice Room
+rooms.post(
+  "/:id/voice/token",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+
+    if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_URL) {
+      return res.status(503).json({
+        error: "LiveKit voice service is not configured",
+        code: "LIVEKIT_NOT_CONFIGURED",
+      });
+    }
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member) {
+      return res.status(403).json({ error: "Join the room first to enter voice" });
+    }
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("full_name, username, avatar_url")
+      .eq("id", req.userId!)
+      .maybeSingle();
+
+    const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : req.userId!);
+    const roomName = `skillbridge-voice-${roomId}`;
+
+    const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+      identity: req.userId!,
+      name: participantName,
+      ttl: "4h",
+      metadata: JSON.stringify({
+        roomId,
+        mode: "voice",
+        role: member.role,
+        fullName: profile?.full_name,
+        avatarUrl: profile?.avatar_url,
+      }),
+    });
+
+    at.addGrant({
+      roomJoin: true,
+      room: roomName,
+      canSubscribe: true,
+      canPublish: true,
+      canPublishData: true,
+    });
+
+    res.json({
+      url: env.LIVEKIT_URL,
+      token: await at.toJwt(),
+      roomName,
+      participantName,
+      canPublish: true,
+    });
+  }),
+);
+
+// GET /api/v1/rooms/:id/voice/active - Active voice presence
+rooms.get(
+  "/:id/voice/active",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    res.json({
+      active: false,
+      participantCount: 0,
+      roomName: `skillbridge-voice-${roomId}`,
+    });
+  }),
+);
+
+// GET /api/v1/rooms/:id/videos/playlists - Video playlists
+rooms.get(
+  "/:id/videos/playlists",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: playlists, error } = await admin
+      .from("room_video_playlists")
+      .select(`
+        id, title, description, position, created_at,
+        items:room_video_playlist_items(
+          position,
+          recording:room_recordings(*)
+        )
+      `)
+      .eq("room_id", roomId)
+      .order("position", { ascending: true });
+
+    if (error) throw error;
+    res.json({ playlists: playlists ?? [] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/videos/playlists - Create playlist
+rooms.post(
+  "/:id/videos/playlists",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        title: z.string().trim().min(2).max(100),
+        description: z.string().max(500).optional().default(""),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Unauthorized to create playlists" });
+    }
+
+    const { data: playlist, error } = await admin
+      .from("room_video_playlists")
+      .insert({
+        room_id: roomId,
+        title: body.title.trim(),
+        description: body.description,
+        created_by: req.userId!,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ playlist });
+  }),
+);
+
+// POST /api/v1/rooms/:id/videos/playlists/:playlistId/items - Add to playlist
+rooms.post(
+  "/:id/videos/playlists/:playlistId/items",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const playlistId = z.string().uuid().parse(req.params.playlistId);
+    const body = z.object({ recordingId: z.string().uuid(), position: z.number().int().optional().default(0) }).parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Unauthorized to modify playlist items" });
+    }
+
+    const { error } = await admin
+      .from("room_video_playlist_items")
+      .upsert({
+        playlist_id: playlistId,
+        recording_id: body.recordingId,
+        position: body.position,
+      });
+
+    if (error) throw error;
+    res.json({ success: true });
+  }),
+);
+
+// GET /api/v1/rooms/:id/videos/progress - User watch progress
+rooms.get(
+  "/:id/videos/progress",
+  wrap(async (req, res) => {
+    const { data, error } = await admin
+      .from("user_video_progress")
+      .select("recording_id, last_position_seconds, duration_seconds, completed, updated_at")
+      .eq("user_id", req.userId!);
+
+    if (error) throw error;
+    res.json({ progress: data ?? [] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/videos/progress - Checkpoint watch progress
+rooms.post(
+  "/:id/videos/progress",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        recordingId: z.string().uuid(),
+        lastPositionSeconds: z.number().int().nonnegative(),
+        durationSeconds: z.number().int().nonnegative(),
+        completed: z.boolean().optional().default(false),
+      })
+      .parse(req.body);
+
+    const { error } = await admin
+      .from("user_video_progress")
+      .upsert(
+        {
+          user_id: req.userId!,
+          recording_id: body.recordingId,
+          last_position_seconds: body.lastPositionSeconds,
+          duration_seconds: body.durationSeconds,
+          completed: body.completed,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,recording_id" },
+      );
+
+    if (error) throw error;
+    res.json({ success: true });
+  }),
+);
+
+// GET /api/v1/rooms/:id/moderation/reports - Room moderation reports
+rooms.get(
+  "/:id/moderation/reports",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Only owners and moderators can access room reports" });
+    }
+
+    const { data: reports, error } = await admin
+      .from("reports")
+      .select("*, reporter:profiles!reports_reporter_id_fkey(full_name, username)")
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (error) throw error;
+    res.json({ reports: reports ?? [] });
+  }),
+);
+
+// POST /api/v1/rooms/:id/moderation/actions - Execute moderation action
+rooms.post(
+  "/:id/moderation/actions",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        action: z.enum(["dismiss_report", "remove_content", "warn_user", "mute_user", "remove_user", "ban_user"]),
+        targetType: z.string(),
+        targetId: z.string().uuid(),
+        reason: z.string().max(500).optional().default(""),
+        reportId: z.string().uuid().optional(),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Permission denied for moderation actions" });
+    }
+
+    if (body.action === "remove_content") {
+      if (body.targetType === "post" || body.targetType === "announcement") {
+        await admin.from("room_posts").delete().eq("id", body.targetId).eq("room_id", roomId);
+      } else if (body.targetType === "comment") {
+        await admin.from("room_post_comments").delete().eq("id", body.targetId);
+      }
+    } else if (body.action === "remove_user" || body.action === "ban_user") {
+      await admin.from("room_members").delete().eq("room_id", roomId).eq("user_id", body.targetId);
+    }
+
+    if (body.reportId) {
+      await admin.from("reports").update({ status: "resolved" }).eq("id", body.reportId);
+    }
+
+    const { data: log, error } = await admin
+      .from("room_moderation_logs")
+      .insert({
+        room_id: roomId,
+        actor_id: req.userId!,
+        action: body.action,
+        target_type: body.targetType,
+        target_id: body.targetId,
+        reason: body.reason,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, log });
+  }),
+);
+
+// GET /api/v1/rooms/:id/moderation/logs - Moderation audit trail
+rooms.get(
+  "/:id/moderation/logs",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Only owners and moderators can view moderation logs" });
+    }
+
+    const { data: logs, error } = await admin
+      .from("room_moderation_logs")
+      .select("*, actor:profiles!room_moderation_logs_actor_id_fkey(full_name, username)")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+    res.json({ logs: logs ?? [] });
+  }),
+);
+
+// GET /api/v1/rooms/:id/analytics - Lightweight server-aggregated metrics
+rooms.get(
+  "/:id/analytics",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const period = z.enum(["7d", "30d"]).default("7d").parse(req.query.period || "7d");
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator", "teacher"].includes(member.role)) {
+      return res.status(403).json({ error: "Only room hosts and moderators can view analytics" });
+    }
+
+    const days = period === "30d" ? 30 : 7;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const [membersCountRes, postsCountRes, questionsCountRes, recordingsCountRes] = await Promise.all([
+      admin.from("room_members").select("user_id", { count: "exact", head: true }).eq("room_id", roomId),
+      admin.from("room_posts").select("id", { count: "exact", head: true }).eq("room_id", roomId).gte("created_at", since),
+      admin.from("room_questions").select("id", { count: "exact", head: true }).eq("room_id", roomId).gte("created_at", since),
+      admin.from("room_recordings").select("id", { count: "exact", head: true }).eq("room_id", roomId),
+    ]);
+
+    res.json({
+      analytics: {
+        period,
+        activeMembers: membersCountRes.count ?? 0,
+        postsCount: postsCountRes.count ?? 0,
+        questionsCount: questionsCountRes.count ?? 0,
+        recordingsCount: recordingsCountRes.count ?? 0,
+      },
+    });
+  }),
+);
+
+// PATCH /api/v1/rooms/:id/settings - Room customization & modules
+rooms.patch(
+  "/:id/settings",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        enabled_modules: z.array(z.string()).optional(),
+        default_landing_tab: z.enum(["posts", "chat", "learn", "media"]).optional(),
+        appearance: z.record(z.string(), z.any()).optional(),
+        is_archived: z.boolean().optional(),
+      })
+      .parse(req.body);
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room || room.owner_id !== req.userId!) {
+      return res.status(403).json({ error: "Only the room owner can modify room settings" });
+    }
+
+    const { data: updated, error } = await admin
+      .from("rooms")
+      .update(body)
+      .eq("id", roomId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ room: updated });
+  }),
+);
+
+// POST /api/v1/rooms/:id/invites - Create invite code
+rooms.post(
+  "/:id/invites",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        maxUses: z.number().int().positive().optional(),
+        expiresInHours: z.number().int().positive().optional(),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Unauthorized to generate invites" });
+    }
+
+    const code = crypto.randomBytes(4).toString("hex").toUpperCase();
+    const expiresAt = body.expiresInHours
+      ? new Date(Date.now() + body.expiresInHours * 3600 * 1000).toISOString()
+      : null;
+
+    const { data: invite, error } = await admin
+      .from("room_invites")
+      .insert({
+        room_id: roomId,
+        code,
+        created_by: req.userId!,
+        max_uses: body.maxUses || null,
+        expires_at: expiresAt,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ invite });
+  }),
+);
+
+// GET /api/v1/rooms/:id/invites - List active invites
+rooms.get(
+  "/:id/invites",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: invites, error } = await admin
+      .from("room_invites")
+      .select("*")
+      .eq("room_id", roomId)
+      .eq("is_revoked", false)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ invites: invites ?? [] });
+  }),
+);
+
+// DELETE /api/v1/rooms/:id/invites/:inviteId - Revoke invite
+rooms.delete(
+  "/:id/invites/:inviteId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const inviteId = z.string().uuid().parse(req.params.inviteId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Unauthorized to revoke invites" });
+    }
+
+    const { error } = await admin
+      .from("room_invites")
+      .update({ is_revoked: true })
+      .eq("id", inviteId)
+      .eq("room_id", roomId);
+
+    if (error) throw error;
+    res.json({ success: true });
   }),
 );

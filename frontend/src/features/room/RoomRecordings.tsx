@@ -16,7 +16,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Card, Row, ErrorState, Pill } from "@/components/ui";
 import { useTheme, radius } from "@/theme";
-import { nextGenEmptyStates, nextGenEmptyStatesV2 } from "@/assets/nextgen";
+import { nextGenAnimationsV2 } from "@/assets/nextgen";
 import type { Profile } from "@/types";
 
 export type Recording = {
@@ -249,8 +249,8 @@ export function RoomRecordings({ roomId, isModerator }: { roomId: string; isMode
       ) : filteredRecordings.length === 0 ? (
         <Card style={styles.emptyCard}>
           <Image
-            source={nextGenEmptyStatesV2?.noRecordingSearch || nextGenEmptyStates.noRecordings}
-            style={{ width: 90, height: 90 }}
+            source={nextGenAnimationsV2.recordingReady}
+            style={{ width: 64, height: 64, marginBottom: 8 }}
             resizeMode="contain"
           />
           <Text style={[styles.emptyText, { color: colors.text }]}>

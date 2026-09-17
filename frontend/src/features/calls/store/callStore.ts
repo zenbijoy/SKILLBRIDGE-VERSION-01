@@ -41,6 +41,7 @@ interface CallStoreState {
   toggleCameraFacing: () => void;
   setDataSaver: (enabled: boolean) => void;
   setMetrics: (metrics: QualityMetrics) => void;
+  setMinimized: (minimized: boolean) => void;
   resetCall: () => void;
 }
 
@@ -109,6 +110,9 @@ export const useCallStore = create<CallStoreState>((set) => ({
 
   setMetrics: (metrics) =>
     set((state) => (state.activeCall ? { activeCall: { ...state.activeCall, metrics } } : {})),
+
+  setMinimized: (isMinimized) =>
+    set((state) => (state.activeCall ? { activeCall: { ...state.activeCall, isMinimized } } : {})),
 
   resetCall: () => set({ activeCall: null, incomingCall: null }),
 }));

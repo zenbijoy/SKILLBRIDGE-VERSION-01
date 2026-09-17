@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import type { Profile } from "@/types";
 import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
-import { spotIllustrations } from "@/assets/illustrations";
+import { nextGenAnimationsV2 } from "@/assets/nextgen";
 
 type LeaderProfile = Profile & {
   sessions_taught?: number;
@@ -307,8 +307,8 @@ export default function Leaderboard() {
 
             <View style={{ alignItems: "center", marginVertical: 8 }}>
               <Image
-                source={spotIllustrations.leaderboardVictory}
-                style={{ width: 90, height: 90 }}
+                source={nextGenAnimationsV2.celebrateBurst}
+                style={{ width: 72, height: 72 }}
                 resizeMode="contain"
                 accessible={false}
                 accessibilityElementsHidden={true}

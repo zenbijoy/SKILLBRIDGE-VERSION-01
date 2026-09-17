@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -8,11 +8,13 @@ import type { Dashboard, DashboardWidget } from "@/types";
 import { radius, useTheme } from "@/theme";
 import { Button, Card, ErrorState, H1, H2, Muted, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { useI18n } from "@/i18n";
+import { usePreferencesStore } from "@/state/usePreferencesStore";
 
 export default function CustomizeDashboardScreen() {
   const { colors } = useTheme();
   const { t, language } = useI18n();
   const qc = useQueryClient();
+  const { showHomeFeed, setShowHomeFeed } = usePreferencesStore();
   const presets = ["balanced", "learner", "tutor", "researcher", "community"].map((id) => ({
     id,
     title: t(`dashboard.preset${id.charAt(0).toUpperCase()}${id.slice(1)}`),
@@ -184,6 +186,30 @@ export default function CustomizeDashboardScreen() {
                 </Text>
               </Pressable>
             ))}
+          </Row>
+        </Card>
+
+        {/* Home Feed Visibility Toggle */}
+        <Card style={{ marginTop: 12 }}>
+          <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <View style={{ flex: 1, gap: 4, paddingRight: 12 }}>
+              <Row style={{ alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="newspaper-variant-outline" size={20} color={colors.primary} />
+                <H2 style={{ fontSize: 16 }}>{t("feed.showHomeFeed")}</H2>
+              </Row>
+              <Muted style={{ fontSize: 12 }}>
+                {t("feed.showHomeFeedDetail")}
+              </Muted>
+            </View>
+            <Switch
+              value={showHomeFeed}
+              onValueChange={(val) => {
+                triggerHaptic();
+                setShowHomeFeed(val);
+              }}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={showHomeFeed ? "#FFFFFF" : colors.muted}
+            />
           </Row>
         </Card>
 

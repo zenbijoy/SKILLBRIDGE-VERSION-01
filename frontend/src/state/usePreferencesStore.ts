@@ -22,6 +22,7 @@ interface PreferencesState {
   downloadOnWifiOnly: boolean;
   pushEnabled: boolean;
   recentSearches: string[];
+  showHomeFeed: boolean;
   setTheme: (theme: ThemePreference) => void;
   setAccentColor: (accent: AccentColor) => void;
   setCardStyle: (style: CardStyle) => void;
@@ -34,7 +35,9 @@ interface PreferencesState {
   setAutoplayMedia: (enabled: boolean) => void;
   setDownloadOnWifiOnly: (enabled: boolean) => void;
   setPushEnabled: (enabled: boolean) => void;
+  setShowHomeFeed: (enabled: boolean) => void;
   addRecentSearch: (query: string) => void;
+  removeRecentSearch: (query: string) => void;
   clearRecentSearches: () => void;
 }
 
@@ -54,11 +57,13 @@ export const usePreferencesStore = create<PreferencesState>()(
       downloadOnWifiOnly: true,
       pushEnabled: true,
       recentSearches: [],
+      showHomeFeed: true,
       setTheme: (theme) => set({ theme }),
       setAccentColor: (accentColor) => set({ accentColor }),
       setCardStyle: (cardStyle) => set({ cardStyle }),
       setLanguage: (language) => set({ language, useDeviceLanguage: false }),
       setUseDeviceLanguage: (useDeviceLanguage) => set({ useDeviceLanguage }),
+      setShowHomeFeed: (showHomeFeed) => set({ showHomeFeed }),
       setDataSaver: (dataSaver) => set((state) => ({
         dataSaver,
         autoplayMedia: dataSaver === "extreme" ? false : state.autoplayMedia,
@@ -87,6 +92,10 @@ export const usePreferencesStore = create<PreferencesState>()(
             ].slice(0, 12),
           };
         }),
+      removeRecentSearch: (query) =>
+        set((state) => ({
+          recentSearches: state.recentSearches.filter((item) => item !== query),
+        })),
       clearRecentSearches: () => set({ recentSearches: [] }),
     }),
     {
@@ -106,6 +115,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         downloadOnWifiOnly: state.downloadOnWifiOnly,
         pushEnabled: state.pushEnabled,
         recentSearches: state.recentSearches,
+        showHomeFeed: state.showHomeFeed,
       }),
     },
   ),

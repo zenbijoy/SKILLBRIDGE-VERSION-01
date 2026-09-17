@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +15,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Room, RoomMode } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
+import { useAppStore } from "@/state/useAppStore";
+import { nextGenAnimations, nextGenAnimationsV2 } from "@/assets/nextgen";
 import {
   Button,
   Card,
@@ -28,7 +32,6 @@ import {
   triggerHaptic,
 } from "@/components/ui";
 import { RoomCard } from "@/components/RoomCard";
-import { spotIllustrations } from "@/assets/illustrations";
 import { useI18n } from "@/i18n";
 import { radius, spacing, useTheme } from "@/theme";
 
@@ -54,6 +57,10 @@ export default function RoomsScreen() {
   const qc = useQueryClient();
 
   // Filter & Search state
+  const { mode: userRoleMode, setMode: setUserRoleMode } = useAppStore();
+  const [showTeachRequestModal, setShowTeachRequestModal] = useState(false);
+  const [requestTopicText, setRequestTopicText] = useState("");
+  const [requestDetailText, setRequestDetailText] = useState("");
   const [filter, setFilter] = useState<RoomFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
@@ -158,40 +165,45 @@ export default function RoomsScreen() {
 
   return (
     <Screen
+      header={
+        <AppHeader
+          title={t("rooms.title")}
+          searchPlaceholder={t("rooms.searchPlaceholder")}
+          actionIcon={showCreator ? "close" : "plus"}
+          actionLabel={showCreator ? t("rooms.closeCreator") : t("rooms.create")}
+          onAction={() => {
+            triggerHaptic();
+            setShowCreator((prev) => !prev);
+          }}
+        />
+      }
       onRefresh={async () => {
         await roomsQuery.refetch();
       }}
       refreshing={roomsQuery.isRefetching}
     >
-      {/* Universal Header */}
-      <AppHeader
-        title={t("rooms.title")}
-        searchPlaceholder="Search learning rooms & topics..."
-        actionIcon={showCreator ? "close" : "plus"}
-        actionLabel={showCreator ? "Close room creator" : "Create room"}
-        onAction={() => {
-          triggerHaptic();
-          setShowCreator((prev) => !prev);
-        }}
-      />
-
       {/* Hero Stats & Quick Action */}
       <View style={s.heroSection}>
+
         <View style={s.statsRow}>
           <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={s.statHeader}>
               <MaterialCommunityIcons name="door-open" size={18} color={colors.primary} />
               <Text style={[s.statValue, { color: colors.text }]}>{metrics.total}</Text>
             </View>
-            <Text style={[s.statLabel, { color: colors.muted }]}>Total Rooms</Text>
+            <Text style={[s.statLabel, { color: colors.muted }]}>{t("rooms.totalRooms")}</Text>
           </View>
 
           <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={s.statHeader}>
-              <View style={[s.pulseDot, { backgroundColor: colors.danger }]} />
+              <Image
+                source={nextGenAnimations.livePulse}
+                style={{ width: 14, height: 14 }}
+                resizeMode="contain"
+              />
               <Text style={[s.statValue, { color: colors.danger }]}>{metrics.live}</Text>
             </View>
-            <Text style={[s.statLabel, { color: colors.muted }]}>Live Now</Text>
+            <Text style={[s.statLabel, { color: colors.muted }]}>{t("rooms.liveNow")}</Text>
           </View>
 
           <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -199,7 +211,7 @@ export default function RoomsScreen() {
               <MaterialCommunityIcons name="video-outline" size={18} color={colors.info} />
               <Text style={[s.statValue, { color: colors.text }]}>{metrics.online}</Text>
             </View>
-            <Text style={[s.statLabel, { color: colors.muted }]}>Online</Text>
+            <Text style={[s.statLabel, { color: colors.muted }]}>{t("rooms.online")}</Text>
           </View>
 
           <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -207,35 +219,126 @@ export default function RoomsScreen() {
               <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={colors.accent} />
               <Text style={[s.statValue, { color: colors.text }]}>{metrics.campus}</Text>
             </View>
-            <Text style={[s.statLabel, { color: colors.muted }]}>Campus</Text>
+            <Text style={[s.statLabel, { color: colors.muted }]}>{t("rooms.campus")}</Text>
           </View>
         </View>
 
-        {/* Quick Launch CTA Banner */}
+        {/* Role Toggle: Learn vs Teach Mode */}
+        <View style={s.roleSwitcherContainer}>
+          <View style={[s.roleToggleWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("rooms.roleLearn", "Learn")}
+              onPress={() => {
+                if (userRoleMode !== "learn") {
+                  triggerHaptic();
+                  setUserRoleMode("learn");
+                }
+              }}
+              style={[
+                s.roleTab,
+                userRoleMode === "learn" && [s.activeRoleTab, { backgroundColor: colors.primary }],
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="school-outline"
+                size={16}
+                color={userRoleMode === "learn" ? "#FFFFFF" : colors.muted}
+              />
+              <Text
+                style={[
+                  s.roleTabText,
+                  { color: userRoleMode === "learn" ? "#FFFFFF" : colors.muted },
+                  userRoleMode === "learn" && s.activeRoleTabText,
+                ]}
+              >
+                {t("rooms.roleLearn", "Learn")}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("rooms.roleTeach", "Teach")}
+              onPress={() => {
+                if (userRoleMode !== "teach") {
+                  triggerHaptic();
+                  setUserRoleMode("teach");
+                }
+              }}
+              style={[
+                s.roleTab,
+                userRoleMode === "teach" && [s.activeRoleTab, { backgroundColor: colors.primary }],
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="human-male-board"
+                size={16}
+                color={userRoleMode === "teach" ? "#FFFFFF" : colors.muted}
+              />
+              <Text
+                style={[
+                  s.roleTabText,
+                  { color: userRoleMode === "teach" ? "#FFFFFF" : colors.muted },
+                  userRoleMode === "teach" && s.activeRoleTabText,
+                ]}
+              >
+                {t("rooms.roleTeach", "Teach")}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Dynamic Context Banner based on Learn / Teach role */}
         {!showCreator && (
-          <Pressable
-            onPress={() => {
-              triggerHaptic();
-              setShowCreator(true);
-            }}
-            style={({ pressed }) => [
-              s.launchBanner,
-              { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}40`, opacity: pressed ? 0.88 : 1 },
-            ]}
-          >
-            <Row style={{ alignItems: "center", gap: 12, flex: 1 }}>
-              <View style={[s.launchIconBox, { backgroundColor: colors.primary }]}>
-                <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.launchTitle, { color: colors.text }]}>Host a Study Session</Text>
-                <Text style={[s.launchSubtitle, { color: colors.muted }]}>
-                  Launch an online video room or campus study hall in seconds.
-                </Text>
-              </View>
-            </Row>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.primary} />
-          </Pressable>
+          userRoleMode === "learn" ? (
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                setShowTeachRequestModal(true);
+              }}
+              style={({ pressed }) => [
+                s.launchBanner,
+                { backgroundColor: `${colors.info}14`, borderColor: `${colors.info}40`, opacity: pressed ? 0.88 : 1 },
+              ]}
+            >
+              <Row style={{ alignItems: "center", gap: 12, flex: 1 }}>
+                <View style={[s.launchIconBox, { backgroundColor: colors.info }]}>
+                  <MaterialCommunityIcons name="comment-question-outline" size={24} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.launchTitle, { color: colors.text }]}>{t("rooms.requestTopicBtn", "Request Teaching")}</Text>
+                  <Text style={[s.launchSubtitle, { color: colors.muted }]}>
+                    {t("rooms.roleLearnBanner", "Need help with a topic? Request a peer to teach you!")}
+                  </Text>
+                </View>
+              </Row>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={colors.info} />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                setShowCreator(true);
+              }}
+              style={({ pressed }) => [
+                s.launchBanner,
+                { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}40`, opacity: pressed ? 0.88 : 1 },
+              ]}
+            >
+              <Row style={{ alignItems: "center", gap: 12, flex: 1 }}>
+                <View style={[s.launchIconBox, { backgroundColor: colors.primary }]}>
+                  <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.launchTitle, { color: colors.text }]}>{t("rooms.hostSessionTitle")}</Text>
+                  <Text style={[s.launchSubtitle, { color: colors.muted }]}>
+                    {t("rooms.roleTeachBanner", "Share your expertise & mentor your campus peers!")}
+                  </Text>
+                </View>
+              </Row>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={colors.primary} />
+            </Pressable>
+          )
         )}
       </View>
 
@@ -248,7 +351,7 @@ export default function RoomsScreen() {
                 <View style={[s.creatorIconBox, { backgroundColor: `${colors.primary}20` }]}>
                   <MaterialCommunityIcons name="laptop" size={20} color={colors.primary} />
                 </View>
-                <H2 style={{ fontSize: 18 }}>Launch a Learning Room</H2>
+                <H2 style={{ fontSize: 18 }}>{t("rooms.launchTitle")}</H2>
               </Row>
               <Pressable
                 onPress={() => {
@@ -263,14 +366,14 @@ export default function RoomsScreen() {
             </Row>
 
             <Muted style={{ fontSize: 13, marginTop: 2 }}>
-              Create a focused peer space. Others can join instantly for discussion and live study.
+              {t("rooms.launchSubtitle")}
             </Muted>
 
             {/* Title Field */}
             <View style={s.inputBlock}>
               <Field
-                label="Room Title *"
-                placeholder="e.g. Distributed Systems Working Group"
+                label={t("rooms.titleField")}
+                placeholder={t("rooms.titlePlaceholder")}
                 value={title}
                 onChangeText={setTitle}
                 maxLength={100}
@@ -281,8 +384,8 @@ export default function RoomsScreen() {
             {/* Topic Field & Suggestions */}
             <View style={s.inputBlock}>
               <Field
-                label="Subject or Topic *"
-                placeholder="e.g. Computer Science, Algorithms, Calculus"
+                label={t("rooms.topicField")}
+                placeholder={t("rooms.topicPlaceholder")}
                 value={topic}
                 onChangeText={setTopic}
                 maxLength={60}
@@ -291,7 +394,7 @@ export default function RoomsScreen() {
 
               {/* Quick Topic Chips */}
               <View style={s.topicSuggestions}>
-                <Text style={[s.sectionLabel, { color: colors.muted }]}>Quick Suggestions:</Text>
+                <Text style={[s.sectionLabel, { color: colors.muted }]}>{t("rooms.quickSuggestions")}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.suggestionScroll}>
                   {POPULAR_TOPICS.map((item) => (
                     <Pressable
@@ -325,8 +428,8 @@ export default function RoomsScreen() {
             {/* Description Field */}
             <View style={s.inputBlock}>
               <Field
-                label="Description (Optional)"
-                placeholder="What will members work on, discuss, or learn together?"
+                label={t("rooms.descField")}
+                placeholder={t("rooms.descPlaceholder")}
                 value={description}
                 onChangeText={setDescription}
                 multiline
@@ -337,7 +440,7 @@ export default function RoomsScreen() {
 
             {/* Delivery Mode Selection */}
             <View style={s.inputBlock}>
-              <Text style={[s.sectionLabel, { color: colors.text }]}>Format & Delivery Mode</Text>
+              <Text style={[s.sectionLabel, { color: colors.text }]}>{t("rooms.deliveryMode")}</Text>
               <Row style={{ gap: 8 }}>
                 {(["online", "offline", "hybrid"] as const).map((m) => (
                   <Pressable
@@ -365,7 +468,7 @@ export default function RoomsScreen() {
                         { color: mode === m ? colors.primary : colors.text, fontWeight: mode === m ? "800" : "600" },
                       ]}
                     >
-                      {m === "online" ? "Online LiveKit" : m === "offline" ? "On Campus" : "Hybrid"}
+                      {m === "online" ? t("rooms.modeOnline") : m === "offline" ? t("rooms.modeCampus") : t("rooms.modeHybrid")}
                     </Text>
                   </Pressable>
                 ))}
@@ -376,8 +479,8 @@ export default function RoomsScreen() {
             {(mode === "offline" || mode === "hybrid") && (
               <Animated.View entering={FadeInUp.duration(200)} style={s.inputBlock}>
                 <Field
-                  label="Campus Location *"
-                  placeholder="e.g. Science Library Room 304, Main Campus"
+                  label={t("rooms.campusLocation")}
+                  placeholder={t("rooms.campusLocationPlaceholder")}
                   value={campusLocation}
                   onChangeText={setCampusLocation}
                   leftIcon="map-marker-outline"
@@ -390,7 +493,7 @@ export default function RoomsScreen() {
             {/* Visibility & Capacity Rows */}
             <Row style={{ justifyContent: "space-between", gap: 12 }}>
               <View style={{ flex: 1, gap: 6 }}>
-                <Text style={[s.sectionLabel, { color: colors.text }]}>Access</Text>
+                <Text style={[s.sectionLabel, { color: colors.text }]}>{t("rooms.access")}</Text>
                 <Row style={{ gap: 6 }}>
                   {(["public", "private", "invite_only"] as const).map((item) => (
                     <Pill
@@ -408,7 +511,7 @@ export default function RoomsScreen() {
               </View>
 
               <View style={{ gap: 6 }}>
-                <Text style={[s.sectionLabel, { color: colors.text }]}>Seats</Text>
+                <Text style={[s.sectionLabel, { color: colors.text }]}>{t("rooms.seats")}</Text>
                 <Row style={{ gap: 6 }}>
                   {CAPACITIES.map((cap) => (
                     <Pill
@@ -429,7 +532,7 @@ export default function RoomsScreen() {
             {/* Modal Actions */}
             <View style={s.creatorActions}>
               <Button
-                title="Cancel"
+                title={t("common.cancel")}
                 variant="ghost"
                 onPress={() => {
                   triggerHaptic();
@@ -437,7 +540,7 @@ export default function RoomsScreen() {
                 }}
               />
               <Button
-                title={create.isPending ? "Creating Room…" : "Launch Room"}
+                title={create.isPending ? t("rooms.creatingRoom") : t("rooms.launchRoomBtn")}
                 disabled={!canSubmit}
                 loading={create.isPending}
                 icon="rocket-launch-outline"
@@ -451,7 +554,7 @@ export default function RoomsScreen() {
       {/* In-Page Real-time Search */}
       <View style={s.searchContainer}>
         <Field
-          placeholder="Search by title, topic, or location..."
+          placeholder={t("rooms.searchInPage")}
           value={searchQuery}
           onChangeText={setSearchQuery}
           leftIcon="magnify"
@@ -465,11 +568,11 @@ export default function RoomsScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtersScroll}>
           {(
             [
-              { key: "all", label: "All Rooms", icon: "view-grid-outline" },
-              { key: "live", label: "● Live Now", icon: "broadcast" },
-              { key: "online", label: "Online", icon: "video-outline" },
-              { key: "campus", label: "Campus Hub", icon: "map-marker-outline" },
-              { key: "scheduled", label: "Upcoming", icon: "calendar-clock" },
+              { key: "all", label: t("rooms.filterAll"), icon: "view-grid-outline" },
+              { key: "live", label: t("rooms.filterLive"), icon: "broadcast" },
+              { key: "online", label: t("rooms.filterOnline"), icon: "video-outline" },
+              { key: "campus", label: t("rooms.filterCampus"), icon: "map-marker-outline" },
+              { key: "scheduled", label: t("rooms.filterUpcoming"), icon: "calendar-clock" },
             ] as const
           ).map((item) => (
             <Pressable
@@ -526,7 +629,7 @@ export default function RoomsScreen() {
       {/* Error State */}
       {roomsQuery.isError ? (
         <ErrorState
-          title="Could not load learning rooms"
+          title={t("common.error")}
           detail={(roomsQuery.error as Error).message}
           onRetry={() => roomsQuery.refetch()}
         />
@@ -535,14 +638,14 @@ export default function RoomsScreen() {
       {/* Empty State */}
       {roomsQuery.isSuccess && filteredRooms.length === 0 ? (
         <Empty
-          illustration={spotIllustrations.createRoom}
-          title={searchQuery.trim() || filter !== "all" ? "No matching rooms" : t("rooms.empty")}
+          icon="google-classroom"
+          title={searchQuery.trim() || filter !== "all" ? t("rooms.noMatch") : t("rooms.empty")}
           detail={
             searchQuery.trim() || filter !== "all"
-              ? "Try adjusting your search query or switching filters."
+              ? t("rooms.noMatchDetail")
               : t("rooms.emptyDetail")
           }
-          actionTitle={searchQuery.trim() || filter !== "all" ? "Clear Filters" : t("rooms.create")}
+          actionTitle={searchQuery.trim() || filter !== "all" ? t("rooms.clearFilters") : t("rooms.create")}
           onAction={() => {
             if (searchQuery.trim() || filter !== "all" || selectedTopic) {
               setSearchQuery("");
@@ -563,11 +666,131 @@ export default function RoomsScreen() {
           </Animated.View>
         ))}
       </View>
+
+      {/* Peer Teaching Request Modal */}
+      <Modal
+        visible={showTeachRequestModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTeachRequestModal(false)}
+      >
+        <View style={s.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowTeachRequestModal(false)} />
+          <View style={[s.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <Row style={{ alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="school" size={22} color={colors.primary} />
+                <Text style={[s.modalTitle, { color: colors.text }]}>
+                  {t("rooms.requestTopicModalTitle", "Request Peer Teaching")}
+                </Text>
+              </Row>
+              <Pressable onPress={() => setShowTeachRequestModal(false)}>
+                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
+              </Pressable>
+            </Row>
+
+            <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 12 }}>
+              {t("rooms.roleLearnBanner")}
+            </Text>
+
+            <Field
+              label={t("rooms.topicField")}
+              placeholder={t("rooms.requestTopicPlaceholder")}
+              value={requestTopicText}
+              onChangeText={setRequestTopicText}
+            />
+
+            <Field
+              label="Additional Notes / Questions"
+              placeholder="e.g. Preparing for midterms, need guidance on question 4..."
+              value={requestDetailText}
+              onChangeText={setRequestDetailText}
+              multiline
+              numberOfLines={3}
+            />
+
+            <Row style={{ justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+              <Button
+                title={t("common.cancel")}
+                variant="ghost"
+                onPress={() => setShowTeachRequestModal(false)}
+              />
+              <Button
+                title={t("rooms.requestTopicBtn")}
+                variant="primary"
+                disabled={!requestTopicText.trim()}
+                onPress={() => {
+                  triggerHaptic();
+                  setShowTeachRequestModal(false);
+                  setRequestTopicText("");
+                  setRequestDetailText("");
+                  Alert.alert(
+                    t("rooms.requestSent", "Teaching Request Posted!"),
+                    t("rooms.requestSentDetail", "Peers in this room will be notified to guide you.")
+                  );
+                }}
+              />
+            </Row>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const s = StyleSheet.create({
+  roleSwitcherContainer: {
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  roleToggleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    padding: 3,
+  },
+  roleTab: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+  },
+  activeRoleTab: {
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+  },
+  roleTabText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  activeRoleTabText: {
+    fontWeight: "800",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
   heroSection: {
     gap: 12,
     marginVertical: 4,

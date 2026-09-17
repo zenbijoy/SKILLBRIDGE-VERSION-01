@@ -35,6 +35,12 @@ export type DomainEvent =
       hasAttachments: boolean;
     }
   | {
+      event: "room_post_created";
+      roomId: string;
+      postId: string;
+      postType: string;
+    }
+  | {
       event: "clash_detected";
       sourceClubId: string;
       conflictingClubId: string;

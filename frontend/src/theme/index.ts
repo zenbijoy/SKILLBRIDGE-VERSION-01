@@ -3,13 +3,17 @@ import { usePreferencesStore, type AccentColor, type CardStyle } from "@/state/u
 
 export type AppPalette = {
   bg: string;
+  background: string;
   surface: string;
   surface2: string;
+  surfaceMuted: string;
   surfaceElevated: string;
   border: string;
+  borderStrong: string;
   divider: string;
   primary: string;
   primary2: string;
+  primaryPressed: string;
   primarySoft: string;
   accent: string;
   success: string;
@@ -17,8 +21,11 @@ export type AppPalette = {
   danger: string;
   info: string;
   text: string;
+  textPrimary: string;
   textSecondary: string;
   muted: string;
+  textMuted: string;
+  textInverse: string;
   white: string;
   black: string;
   overlay: string;
@@ -60,13 +67,17 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
   if (isOled) {
     return {
       bg: "#000000",
+      background: "#000000",
       surface: "#09090B",
       surface2: "#121215",
+      surfaceMuted: "#121215",
       surfaceElevated: "#18181B",
       border: "#27272A",
+      borderStrong: "#3F3F46",
       divider: "#18181B",
       primary: accent.primary,
       primary2: accent.primary2,
+      primaryPressed: accent.primary2,
       primarySoft: accent.primarySoft,
       accent: accent.accent,
       success: "#22C55E",
@@ -74,8 +85,11 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
       danger: "#FF5D7A",
       info: "#38BDF8",
       text: "#FFFFFF",
+      textPrimary: "#FFFFFF",
       textSecondary: "#D4D4D8",
       muted: "#71717A",
+      textMuted: "#71717A",
+      textInverse: "#000000",
       white: "#FFFFFF",
       black: "#000000",
       overlay: "rgba(0, 0, 0, 0.85)",
@@ -86,13 +100,17 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
   if (isDark) {
     return {
       bg: "#07111F",
+      background: "#07111F",
       surface: "#0C192A",
       surface2: "#11243A",
+      surfaceMuted: "#11243A",
       surfaceElevated: "#102036",
       border: "#1D3550",
+      borderStrong: "#2A4B70",
       divider: "#152B45",
       primary: accent.primary,
       primary2: accent.primary2,
+      primaryPressed: accent.primary2,
       primarySoft: accent.primarySoft,
       accent: accent.accent,
       success: "#22C55E",
@@ -100,8 +118,11 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
       danger: "#FF5D7A",
       info: "#38BDF8",
       text: "#F5F8FF",
+      textPrimary: "#F5F8FF",
       textSecondary: "#D9E3F0",
       muted: "#91A4BD",
+      textMuted: "#91A4BD",
+      textInverse: "#07111F",
       white: "#FFFFFF",
       black: "#000000",
       overlay: "rgba(2, 8, 23, 0.68)",
@@ -111,13 +132,17 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
 
   return {
     bg: "#F7F9FC",
+    background: "#F7F9FC",
     surface: "#FFFFFF",
     surface2: "#F0F4FA",
+    surfaceMuted: "#F0F4FA",
     surfaceElevated: "#FFFFFF",
     border: "#E2E8F0",
+    borderStrong: "#CBD5E1",
     divider: "#EEF2F6",
     primary: accent.primary,
     primary2: accent.primary2,
+    primaryPressed: accent.primary2,
     primarySoft: accent.primarySoft,
     accent: accent.accent,
     success: "#12B76A",
@@ -125,8 +150,11 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
     danger: "#E5484D",
     info: "#0284C7",
     text: "#101828",
+    textPrimary: "#101828",
     textSecondary: "#344054",
     muted: "#667085",
+    textMuted: "#667085",
+    textInverse: "#FFFFFF",
     white: "#FFFFFF",
     black: "#000000",
     overlay: "rgba(15, 23, 42, 0.42)",

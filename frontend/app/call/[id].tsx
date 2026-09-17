@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { View, Text, StyleSheet, Image, Pressable } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -19,7 +19,14 @@ export default function CallScreen() {
     type?: "audio" | "video";
   }>();
 
-  const { activeCall, startCall, setCallStatus } = useCallStore();
+  const { activeCall, startCall, setCallStatus, setMinimized } = useCallStore();
+  const [controlsVisible, setControlsVisible] = useState(true);
+
+  // Un-minimize when entering CallScreen
+  useEffect(() => {
+    setMinimized(false);
+  }, [setMinimized]);
+
   const {
     localStream,
     remoteStream,
@@ -32,6 +39,27 @@ export default function CallScreen() {
     toggleSpeaker,
     toggleCameraFacing,
   } = useWebRTCCall(targetId);
+
+  // Auto-dismiss screen if call ended/failed/declined
+  useEffect(() => {
+    if (activeCall?.status === "ended" || activeCall?.status === "declined" || activeCall?.status === "failed") {
+      const timer = setTimeout(() => {
+        setMinimized(false);
+        router.back();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeCall?.status, router, setMinimized]);
+
+  // Auto-hide controls on video call
+  useEffect(() => {
+    if (activeCall?.status === "connected" && activeCall.type === "video") {
+      const timer = setTimeout(() => setControlsVisible(false), 4000);
+      return () => clearTimeout(timer);
+    } else {
+      setControlsVisible(true);
+    }
+  }, [activeCall?.status, activeCall?.type]);
 
   // 1. Initiate Outgoing Call if not already in store
   useEffect(() => {
@@ -86,8 +114,15 @@ export default function CallScreen() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const handleMinimize = () => {
+    triggerHaptic();
+    setMinimized(true);
+    router.back();
+  };
+
   const handleEndCall = () => {
     triggerHaptic();
+    setMinimized(false);
     endCall("hangup");
     router.back();
   };
@@ -96,7 +131,14 @@ export default function CallScreen() {
   const isVideo = activeCall?.type === "video";
 
   return (
-    <View style={styles.container}>
+    <Pressable
+      style={styles.container}
+      onPress={() => {
+        if (isConnected && isVideo) {
+          setControlsVisible((prev) => !prev);
+        }
+      }}
+    >
       {/* Remote Video Stream if available */}
       {isConnected && isVideo && remoteStream ? (
         <VideoView
@@ -107,19 +149,21 @@ export default function CallScreen() {
       ) : null}
 
       {/* Top Header Bar */}
-      <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backButton}>
-          <MaterialCommunityIcons name="chevron-down" size={32} color="#FFFFFF" />
-        </Pressable>
+      {controlsVisible && (
+        <View style={styles.topBar}>
+          <Pressable onPress={handleMinimize} hitSlop={12} style={styles.backButton}>
+            <MaterialCommunityIcons name="chevron-down" size={32} color="#FFFFFF" />
+          </Pressable>
 
-        <View style={styles.topBadges}>
-          <View style={styles.encryptionBadge}>
-            <MaterialCommunityIcons name="lock-outline" size={12} color="#A7F3D0" />
-            <Text style={styles.encryptionText}>End-to-End Encrypted</Text>
+          <View style={styles.topBadges}>
+            <View style={styles.encryptionBadge}>
+              <MaterialCommunityIcons name="shield-check-outline" size={12} color="#A7F3D0" />
+              <Text style={styles.encryptionText}>Secure Connection</Text>
+            </View>
+            {isConnected ? <ConnectionQuality metrics={activeCall?.metrics} /> : null}
           </View>
-          {isConnected ? <ConnectionQuality metrics={activeCall?.metrics} /> : null}
         </View>
-      </View>
+      )}
 
       {/* Main Profile Info (Centered when audio or connecting) */}
       {(!isConnected || !isVideo) && (
@@ -179,18 +223,20 @@ export default function CallScreen() {
       ) : null}
 
       {/* Call Controls Bar */}
-      <CallControls
-        isMuted={activeCall?.isMuted ?? false}
-        isVideoEnabled={activeCall?.isVideoEnabled ?? false}
-        isSpeakerOn={activeCall?.isSpeakerOn ?? false}
-        isFrontCamera={activeCall?.isFrontCamera ?? true}
-        onToggleMute={toggleMuteTrack}
-        onToggleVideo={toggleVideoTrack}
-        onToggleSpeaker={toggleSpeaker}
-        onToggleCameraFacing={toggleCameraFacing}
-        onEndCall={handleEndCall}
-      />
-    </View>
+      {controlsVisible && (
+        <CallControls
+          isMuted={activeCall?.isMuted ?? false}
+          isVideoEnabled={activeCall?.isVideoEnabled ?? false}
+          isSpeakerOn={activeCall?.isSpeakerOn ?? false}
+          isFrontCamera={activeCall?.isFrontCamera ?? true}
+          onToggleMute={toggleMuteTrack}
+          onToggleVideo={toggleVideoTrack}
+          onToggleSpeaker={toggleSpeaker}
+          onToggleCameraFacing={toggleCameraFacing}
+          onEndCall={handleEndCall}
+        />
+      )}
+    </Pressable>
   );
 }
 
