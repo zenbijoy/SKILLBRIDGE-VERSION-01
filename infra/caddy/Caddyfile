@@ -1,7 +1,40 @@
-api.example.com {
-  reverse_proxy api:4000
+# ─── API Backend ───────────────────────────────────────────────────────────────
+api.YOUR_DOMAIN.com {
+    # WebSocket passthrough for Socket.IO
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade    websocket
+    }
+    reverse_proxy @ws api:4000
+    reverse_proxy api:4000
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip
+
+    log {
+        output file /var/log/caddy/api.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
 }
 
-live.example.com {
-  reverse_proxy livekit:7880
+# ─── LiveKit WebRTC ────────────────────────────────────────────────────────────
+live.YOUR_DOMAIN.com {
+    reverse_proxy livekit:7880
+
+    log {
+        output file /var/log/caddy/livekit.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
 }
