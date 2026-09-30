@@ -1,15 +1,12 @@
 services:
 
-  # ── Backend API ──────────────────────────────────────────────────────────────
+  # ── SkillBridge Backend API ───────────────────────────────────────────────────
   api:
     build:
       context: ..
       dockerfile: Dockerfile
     env_file: ../backend/.env
     restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:
@@ -25,52 +22,12 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ── Redis ────────────────────────────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command:
-      - redis-server
-      - --appendonly yes
-      - --maxmemory 256mb
-      - --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "3"
-
-  # ── LiveKit ──────────────────────────────────────────────────────────────────
-  livekit:
-    image: livekit/livekit-server:latest
-    restart: unless-stopped
-    command: ["--config", "/etc/livekit.yaml"]
-    volumes:
-      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
-    ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "50000-50100:50000-50100/udp"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "3"
-
-  # ── Caddy (HTTPS reverse proxy) ──────────────────────────────────────────────
+  # ── Caddy (Auto HTTPS) ───────────────────────────────────────────────────────
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       - api
-      - livekit
     ports:
       - "80:80"
       - "443:443"
@@ -78,7 +35,6 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-      - caddy_logs:/var/log/caddy
     logging:
       driver: "json-file"
       options:
@@ -86,7 +42,5 @@ services:
         max-file: "3"
 
 volumes:
-  redis_data:
   caddy_data:
   caddy_config:
-  caddy_logs:
