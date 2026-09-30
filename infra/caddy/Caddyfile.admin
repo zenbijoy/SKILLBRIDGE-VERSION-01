@@ -1,0 +1,16 @@
+# SkillBridge Admin Panel — ruetskillbridgeadmin.duckdns.org
+ruetskillbridgeadmin.duckdns.org {
+
+    reverse_proxy admin:80
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip
+}
