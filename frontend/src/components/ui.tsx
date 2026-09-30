@@ -425,6 +425,7 @@ export function IconButton({
   onPress,
   label,
   badge,
+  active = false,
   accessibilityHint,
   testID,
 }: {
@@ -432,6 +433,7 @@ export function IconButton({
   onPress?: () => void;
   label: string;
   badge?: number;
+  active?: boolean;
   accessibilityHint?: string;
   testID?: string;
 }) {
@@ -449,11 +451,16 @@ export function IconButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={accessibilityHint}
+      accessibilityState={{ selected: active }}
       testID={testID}
       onPress={handlePress}
-      style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.72 : 1 }]}
+      style={({ pressed }) => [
+        styles.iconButton,
+        active && styles.iconButtonActive,
+        { opacity: pressed ? 0.72 : 1 },
+      ]}
     >
-      <MaterialCommunityIcons name={icon} size={23} color={colors.text} />
+      <MaterialCommunityIcons name={icon} size={23} color={active ? colors.white : colors.text} />
       {badge && badge > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{badge > 99 ? "99+" : badge}</Text></View> : null}
     </Pressable>
   );
@@ -867,6 +874,7 @@ const makeStyles = (colors: AppPalette, radius: typeof defaultRadius) =>
     inputInner: { flex: 1, minHeight: 50, paddingHorizontal: 14, paddingVertical: 10, color: colors.text, fontSize: 15, fontWeight: "500" },
     center: { flex: 1, minHeight: 300, alignItems: "center", justifyContent: "center", gap: 12 },
     iconButton: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+    iconButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
     badge: { position: "absolute", right: -4, top: -4, minWidth: 19, height: 19, paddingHorizontal: 4, borderRadius: 10, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.bg },
     badgeText: { color: colors.white, fontSize: 10, fontWeight: "900" },
   });

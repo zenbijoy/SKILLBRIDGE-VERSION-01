@@ -14,12 +14,14 @@ export function AppHeader({
   searchPlaceholder,
   actionIcon,
   actionLabel,
+  actionActive,
   onAction,
 }: {
   title?: string;
   searchPlaceholder?: string;
   actionIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
   actionLabel?: string;
+  actionActive?: boolean;
   onAction?: () => void;
 }) {
   const { colors } = useTheme();
@@ -31,15 +33,25 @@ export function AppHeader({
     refetchInterval: 60_000,
   });
   const unread = notifications.data?.notifications.filter((item) => !item.read_at).length ?? 0;
+  const hasTitle = Boolean(title);
+  const actionButton = actionIcon ? (
+    <IconButton
+      icon={actionIcon}
+      label={actionLabel ?? "Action"}
+      active={actionActive}
+      onPress={onAction}
+    />
+  ) : null;
 
   return (
     <View style={styles.wrap}>
-      {title || actionIcon ? (
+      {hasTitle ? (
         <View style={styles.titleRow}>
-          <Text style={[styles.brand, { color: colors.text }]}>{title ?? "SkillBridge"}</Text>
-          {actionIcon ? <IconButton icon={actionIcon} label={actionLabel ?? "Action"} onPress={onAction} /> : null}
+          <Text style={[styles.brand, { color: colors.text }]}>{title}</Text>
+          {actionButton}
         </View>
       ) : null}
+      {/* With no title the action folds into the search row, so no empty row is left behind */}
       <View style={styles.searchRow}>
         <Pressable
           accessibilityRole="button"
@@ -55,6 +67,7 @@ export function AppHeader({
             {searchPlaceholder ?? t("common.searchEverything")}
           </Text>
         </Pressable>
+        {hasTitle ? null : actionButton}
         <IconButton
           icon="bell-outline"
           label={t("notifications.title")}

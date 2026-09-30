@@ -435,7 +435,24 @@ export default function Inbox() {
       {/* Telegram-style Top Header */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
         <View style={styles.headerTop}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>{t("inbox.title")}</Text>
+          {/* Always visible Search Bar matching Picture 4 */}
+          <View
+            style={[styles.searchBox, { flex: 1, backgroundColor: colors.surface2, borderColor: colors.border }]}
+          >
+            <MaterialCommunityIcons name="magnify" size={19} color={colors.muted} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder={activeTab === "chats" ? t("inbox.searchChats") : t("inbox.searchCalls")}
+              placeholderTextColor={colors.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery ? (
+              <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
+                <MaterialCommunityIcons name="close-circle" size={16} color={colors.muted} />
+              </Pressable>
+            ) : null}
+          </View>
 
           {/* Right Action Icons */}
           <View style={styles.headerActions}>
@@ -472,23 +489,6 @@ export default function Inbox() {
               />
             </Pressable>
           </View>
-        </View>
-
-        {/* Always visible Search Bar matching Picture 4 */}
-        <View style={[styles.searchBox, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
-          <MaterialCommunityIcons name="magnify" size={19} color={colors.muted} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder={activeTab === "chats" ? t("inbox.searchChats") : t("inbox.searchCalls")}
-            placeholderTextColor={colors.muted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery ? (
-            <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
-              <MaterialCommunityIcons name="close-circle" size={16} color={colors.muted} />
-            </Pressable>
-          ) : null}
         </View>
 
         {/* Segmented Tab Switcher: Chats (Badge) | Calls */}
@@ -1076,12 +1076,7 @@ const styles = StyleSheet.create({
   headerTop: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: -0.5,
+    gap: 8,
   },
   headerActions: {
     flexDirection: "row",

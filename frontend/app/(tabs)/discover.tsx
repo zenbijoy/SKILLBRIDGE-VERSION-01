@@ -368,56 +368,18 @@ export default function DiscoverScreen() {
     <Screen
       header={
         <AppHeader
-          title={t("discover.title")}
-          actionIcon="magnify"
-          actionLabel={t("common.search")}
+          actionIcon="tune-variant"
+          actionLabel={t("discover.filters", "Filters")}
+          actionActive={showFilterModal || selectedFilter !== "all"}
           onAction={() => {
             triggerHaptic();
-            router.push("/search" as any);
+            setShowFilterModal((prev) => !prev);
           }}
         />
       }
       onRefresh={onRefresh}
       refreshing={isRefreshing}
     >
-      {/* Search Bar with Filter Button */}
-      <View style={s.searchBarContainer}>
-        <Pressable
-          onPress={() => {
-            triggerHaptic();
-            router.push("/search" as any);
-          }}
-          style={[s.searchInputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        >
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.muted} />
-          <Text style={[s.searchPlaceholderText, { color: colors.muted }]} numberOfLines={1}>
-            {t("common.searchEverything", "Search skills, people, rooms...")}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Filter options"
-          onPress={() => {
-            triggerHaptic();
-            setShowFilterModal((prev) => !prev);
-          }}
-          style={[
-            s.filterBtn,
-            {
-              backgroundColor: showFilterModal || selectedFilter !== "all" ? colors.primary : colors.surface,
-              borderColor: showFilterModal || selectedFilter !== "all" ? colors.primary : colors.border,
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="tune-variant"
-            size={19}
-            color={showFilterModal || selectedFilter !== "all" ? "#FFFFFF" : colors.text}
-          />
-        </Pressable>
-      </View>
-
       {/* Filter Options Row */}
       {showFilterModal && (
         <ScrollView
@@ -963,6 +925,7 @@ export default function DiscoverScreen() {
 
 const s = StyleSheet.create({
   categoryScroll: {
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 8,
     paddingVertical: 6,
     marginBottom: 8,
@@ -970,6 +933,7 @@ const s = StyleSheet.create({
   catTab: {
     flexDirection: "row",
     alignItems: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -985,6 +949,7 @@ const s = StyleSheet.create({
     padding: 12,
     borderRadius: radius.md,
     borderWidth: 1,
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 12,
   },
   avatar: {
@@ -1014,36 +979,9 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
-  searchBarContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  searchInputWrap: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    height: 42,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
-  searchPlaceholderText: {
-    fontSize: 13,
-    flex: 1,
-  },
-  filterBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
   filterChipsScroll: {
     flexDirection: "row",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 8,
     paddingVertical: 4,
     marginBottom: 8,
@@ -1078,6 +1016,7 @@ const s = StyleSheet.create({
   viewModeBtn: {
     flexDirection: "row",
     alignItems: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -1098,14 +1037,17 @@ const s = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 8,
   },
   exploreSection: {
     marginTop: 24,
     marginBottom: 20,
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 12,
   },
   exploreHeader: {
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 2,
   },
   exploreTitle: {
@@ -1118,12 +1060,14 @@ const s = StyleSheet.create({
   toolsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 10,
   },
   toolCard: {
     width: "48%",
     flexDirection: "row",
     alignItems: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 10,
     padding: 12,
     borderRadius: 16,
@@ -1148,4 +1092,5 @@ const s = StyleSheet.create({
   toolCardSub: {
     fontSize: 10,
   },
-});
+} as any);
+

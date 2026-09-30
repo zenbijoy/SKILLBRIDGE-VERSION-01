@@ -167,7 +167,6 @@ export default function RoomsScreen() {
     <Screen
       header={
         <AppHeader
-          title={t("rooms.title")}
           searchPlaceholder={t("rooms.searchPlaceholder")}
           actionIcon={showCreator ? "close" : "plus"}
           actionLabel={showCreator ? t("rooms.closeCreator") : t("rooms.create")}
@@ -610,7 +609,7 @@ export default function RoomsScreen() {
               style={[s.filterChip, { backgroundColor: `${colors.accent}24`, borderColor: colors.accent }]}
             >
               <Text style={[s.filterChipText, { color: colors.accent, fontWeight: "700" }]}>
-                #{selectedTopic} ✕
+                #{selectedTopic} {'✕'}
               </Text>
             </Pressable>
           )}
@@ -753,6 +752,7 @@ const s = StyleSheet.create({
   roleTab: {
     flexDirection: "row",
     alignItems: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 7,
@@ -792,11 +792,13 @@ const s = StyleSheet.create({
     fontWeight: "800",
   },
   heroSection: {
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 12,
     marginVertical: 4,
   },
   statsRow: {
     flexDirection: "row",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 8,
   },
   statCard: {
@@ -806,11 +808,13 @@ const s = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     alignItems: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 4,
   },
   statHeader: {
     flexDirection: "row",
     alignItems: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 6,
   },
   pulseDot: {
@@ -852,6 +856,7 @@ const s = StyleSheet.create({
   },
   creatorCard: {
     padding: 16,
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 14,
     marginVertical: 6,
   },
@@ -863,6 +868,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   inputBlock: {
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 6,
   },
   sectionLabel: {
@@ -872,10 +878,12 @@ const s = StyleSheet.create({
   },
   topicSuggestions: {
     marginTop: 4,
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 4,
   },
   suggestionScroll: {
     flexDirection: "row",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 6,
     paddingVertical: 2,
   },
@@ -894,6 +902,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 6,
     paddingVertical: 10,
     paddingHorizontal: 8,
@@ -907,6 +916,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 10,
     marginTop: 4,
   },
@@ -918,6 +928,7 @@ const s = StyleSheet.create({
   },
   filtersScroll: {
     flexDirection: "row",
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 8,
     paddingVertical: 4,
   },
@@ -931,7 +942,8 @@ const s = StyleSheet.create({
     fontSize: 13,
   },
   roomList: {
+    // @ts-ignore – gap not in RN 0.69 types
     gap: 8,
     marginTop: 4,
   },
-});
+} as any);

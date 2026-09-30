@@ -544,6 +544,11 @@ const en: Dictionary = {
   "tools.mediaIntegrationsSubtitle": "YouTube channel synchronization & R2 vault",
   "tools.settingsPrivacyTitle": "Settings & Privacy",
   "tools.settingsPrivacySubtitle": "Theme, language, notifications & account safety",
+  "tools.badgeNew": "New",
+  "tools.badgeSoon": "Coming soon",
+  "tools.categoriesLabel": "Tool categories",
+  "tools.a11yCategory": "Jump to category",
+  "tools.a11yTool": "Open tool",
 
   // Rooms screen additions
   "rooms.searchPlaceholder": "Search learning rooms & topics...",
@@ -665,6 +670,7 @@ const en: Dictionary = {
   "feed.feedHiddenNotice": "Campus & community social feed is currently hidden.",
   "discover.cardView": "Card View",
   "discover.listView": "List View",
+  "discover.filters": "Filters",
   "discover.filterAll": "All",
   "discover.filterLive": "Live Rooms",
   "discover.filterPeers": "Peers",
@@ -1266,6 +1272,11 @@ const bn: Dictionary = {
   "tools.mediaIntegrationsSubtitle": "ইউটিউব চ্যানেল সিঙ্ক ও আর২ ভল্ট",
   "tools.settingsPrivacyTitle": "সেটিংস ও প্রাইভেসি",
   "tools.settingsPrivacySubtitle": "থিম, ভাষা, নোটিফিকেশন ও নিরাপত্তা",
+  "tools.badgeNew": "নতুন",
+  "tools.badgeSoon": "শীঘ্রই আসছে",
+  "tools.categoriesLabel": "টুল ক্যাটাগরি",
+  "tools.a11yCategory": "ক্যাটাগরিতে যান",
+  "tools.a11yTool": "টুল খুলুন",
 
   // Rooms screen additions
   "rooms.searchPlaceholder": "লার্নিং রুম ও বিষয় খুঁজুন...",
@@ -1387,6 +1398,7 @@ const bn: Dictionary = {
   "feed.feedHiddenNotice": "ক্যাম্পাস ও কমিউনিটি পোস্ট ফিড বন্ধ রয়েছে।",
   "discover.cardView": "কার্ড ভিউ",
   "discover.listView": "লিস্ট ভিউ",
+  "discover.filters": "ফিল্টার",
   "discover.filterAll": "সবগুলো",
   "discover.filterLive": "লাইভ রুম",
   "discover.filterPeers": "সহপাঠী",
