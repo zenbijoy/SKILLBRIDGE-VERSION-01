@@ -1,5 +1,5 @@
-# ── SkillBridge API — HTTPS via Caddy (Let's Encrypt auto SSL) ─────────────────
-api.YOUR_DOMAIN.com {
+# SkillBridge API — ruetskillbridge.duckdns.org
+ruetskillbridge.duckdns.org {
 
     # WebSocket passthrough for Socket.IO realtime
     @ws {

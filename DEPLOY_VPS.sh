@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# SkillBridge — VPS Backend Deploy (Render alternative)
-# Usage: bash DEPLOY_VPS.sh
+# SkillBridge — VPS Backend Deploy
+# Domain: ruetskillbridge.duckdns.org
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -21,8 +21,9 @@ echo "[3/4] Restarting services..."
 docker compose -f "$INFRA_DIR/docker-compose.yml" up -d --remove-orphans
 
 echo "[4/4] Status check..."
-sleep 5
+sleep 8
 docker compose -f "$INFRA_DIR/docker-compose.yml" ps
 
 echo ""
-echo "✅ Done! API running at https://api.YOUR_DOMAIN.com"
+echo "✅ Done!"
+echo "   API: https://ruetskillbridge.duckdns.org/api/v1/health"
