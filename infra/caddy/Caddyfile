@@ -1,7 +1,6 @@
-# SkillBridge API — ruetskillbridge.duckdns.org
+# ── SkillBridge Backend API ────────────────────────────────────────────────────
 ruetskillbridge.duckdns.org {
 
-    # WebSocket passthrough for Socket.IO realtime
     @ws {
         header Connection *Upgrade*
         header Upgrade    websocket
@@ -9,7 +8,22 @@ ruetskillbridge.duckdns.org {
     reverse_proxy @ws api:4000
     reverse_proxy api:4000
 
-    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip
+}
+
+# ── SkillBridge Admin Panel ────────────────────────────────────────────────────
+ruetskillbridgeadmin.duckdns.org {
+
+    reverse_proxy admin:80
+
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options    "nosniff"

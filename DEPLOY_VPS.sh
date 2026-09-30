@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# SkillBridge — VPS Backend Deploy
-# Domain: ruetskillbridge.duckdns.org
+# SkillBridge — Single VPS Deploy (Backend + Admin)
+# VPS   : 118.179.110.183
+# API   : https://ruetskillbridge.duckdns.org
+# Admin : https://ruetskillbridgeadmin.duckdns.org
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 INFRA_DIR="$REPO_DIR/infra"
 
 echo "========================================"
-echo "  SkillBridge Backend Deploy"
+echo "  SkillBridge Full Deploy (API + Admin)"
 echo "  $(date)"
 echo "========================================"
 
 echo "[1/4] Pulling latest code..."
 git -C "$REPO_DIR" pull --ff-only origin main
 
-echo "[2/4] Building API image..."
-docker compose -f "$INFRA_DIR/docker-compose.yml" build --pull api
+echo "[2/4] Building images..."
+docker compose -f "$INFRA_DIR/docker-compose.yml" build --pull
 
 echo "[3/4] Restarting services..."
 docker compose -f "$INFRA_DIR/docker-compose.yml" up -d --remove-orphans
@@ -26,4 +28,5 @@ docker compose -f "$INFRA_DIR/docker-compose.yml" ps
 
 echo ""
 echo "✅ Done!"
-echo "   API: https://ruetskillbridge.duckdns.org/api/v1/health"
+echo "   API   : https://ruetskillbridge.duckdns.org/api/v1/health"
+echo "   Admin : https://ruetskillbridgeadmin.duckdns.org"
