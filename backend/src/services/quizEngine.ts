@@ -95,7 +95,7 @@ export interface QuestionResult {
 const SESSION_TTL_MS = 90 * 60 * 1000;
 const sessionStore = new Map<string, QuizSession>();
 
-setInterval(() => {
+const sessionCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [id, session] of sessionStore.entries()) {
     if (new Date(session.expires_at).getTime() < now) {
@@ -103,6 +103,10 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+
+if (sessionCleanupTimer && typeof sessionCleanupTimer.unref === "function") {
+  sessionCleanupTimer.unref();
+}
 
 // ────────────────────────────────────────────────────────────────
 // HMAC session signing

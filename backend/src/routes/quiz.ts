@@ -181,15 +181,71 @@ quiz.post(
   wrap(async (req, res) => {
     const body = z
       .object({
-        session_id: z.string().min(10),
+        session_id: z.string().min(10).optional(),
+        quizId: z.string().uuid().optional(),
         // answers: { questionId -> chosen option index (0-3) }
         answers: z.record(z.string(), z.number().int().min(0).max(3)),
         elapsed_seconds: z.number().int().min(0).optional(),
       })
+      .refine((d) => Boolean(d.session_id || d.quizId), {
+        message: "Either session_id or quizId must be provided",
+      })
       .parse(req.body);
 
+    // Support legacy database-backed quiz submissions
+    if (body.quizId && !body.session_id) {
+      const { data: questions } = await admin
+        .from("quiz_questions")
+        .select("id, correct_answer")
+        .eq("quiz_id", body.quizId);
+
+      const qList = (questions ?? []) as Array<{ id: string; correct_answer: number }>;
+      let correctCount = 0;
+      for (const q of qList) {
+        if (body.answers[q.id] === q.correct_answer) {
+          correctCount++;
+        }
+      }
+      const totalCount = qList.length || 1;
+      const score = Math.round((correctCount / totalCount) * 100);
+      const passed = score >= 80;
+
+      const { data: attempt } = await admin
+        .from("quiz_attempts")
+        .insert({
+          user_id: req.userId!,
+          quiz_id: body.quizId,
+          score,
+          passed,
+          correct_count: correctCount,
+          total_count: totalCount,
+        })
+        .select("id")
+        .single();
+
+      if (passed) {
+        await admin
+          .rpc("award_reputation_atomic", {
+            p_user_id: req.userId!,
+            p_event_type: "quiz_completed",
+            p_points: 15,
+            p_reference_type: "quiz_attempt",
+            p_reference_id: attempt?.id || body.quizId,
+          })
+          .then(() => null, () => null);
+      }
+
+      return res.json({
+        attempt_id: attempt?.id,
+        score,
+        passed,
+        correct_count: correctCount,
+        total_count: totalCount,
+      });
+    }
+
     // Retrieve and verify session
-    const session = getQuizSession(body.session_id, req.userId!);
+    const session = getQuizSession(body.session_id!, req.userId!);
     if (!session) {
       throw new AppError(
         "Quiz session expired or invalid. Please start a new quiz.",
@@ -201,7 +257,7 @@ quiz.post(
     if (body.elapsed_seconds !== undefined) {
       const overTime = body.elapsed_seconds > session.time_limit_seconds + 30; // 30s grace
       if (overTime) {
-        invalidateSession(body.session_id);
+        invalidateSession(body.session_id!);
         throw new AppError("Time limit exceeded.", { statusCode: 422, code: "VALIDATION_ERROR" });
       }
     }
@@ -210,7 +266,7 @@ quiz.post(
     const result = gradeSubmission(session, body.answers, 80);
 
     // Invalidate session immediately after grading
-    invalidateSession(body.session_id);
+    invalidateSession(body.session_id!);
 
     if (!result.integrity_ok) {
       throw new AppError("Session integrity check failed.", { statusCode: 422, code: "VALIDATION_ERROR" });
