@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,7 +16,6 @@ import {
   Empty,
   ErrorState,
   H1,
-  H2,
   Muted,
   Pill,
   Row,

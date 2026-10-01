@@ -43,7 +43,7 @@ export default function MyPostsScreen() {
   // Edit Post Modal State
   const [editingPost, setEditingPost] = useState<any | null>(null);
   const [editBody, setEditBody] = useState("");
-  const [editTitle, setEditTitle] = useState("");
+  const [, setEditTitle] = useState("");
 
   // Re-upload / Repost State
   const [repostingPost, setRepostingPost] = useState<any | null>(null);
