@@ -20,4 +20,10 @@ GoogleService-Info.plist
 .kilo/
 _*.txt
 _*.json
+*.diff
+*.patch
+.skillbridge-backup/
+.skillbridge-v2-backups/
+.skillbridge-v2-last-backup.json
+task.md
 
