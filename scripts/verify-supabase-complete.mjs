@@ -46,14 +46,14 @@ const TABLES = [
   "clubs",
   "club_members",
   "events",
-  "event_attendees",
+  "event_applications",
   "club_clash_negotiations",
   // Academic & Research
   "academic_profiles",
   "academic_routines",
   "routine_entries",
-  "calendar_events",
-  "research_papers",
+  "academic_calendar_events",
+  "saved_papers",
   "research_notes",
   "research_collections"
 ];

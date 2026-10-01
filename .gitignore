@@ -26,4 +26,5 @@ _*.json
 .skillbridge-v2-backups/
 .skillbridge-v2-last-backup.json
 task.md
+supabase/.temp/
 
