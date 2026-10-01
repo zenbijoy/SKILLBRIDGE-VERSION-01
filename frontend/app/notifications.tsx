@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 import { Button, Card, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { router } from "expo-router";
@@ -37,7 +38,21 @@ export default function Notifications() {
   const notifications = useQuery({
     queryKey: ["notifications"],
     queryFn: () => api<{ notifications: NotificationItem[] }>("/notifications"),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   });
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const handleNew = () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    };
+    socket.on("notification:new", handleNew);
+    return () => {
+      socket.off("notification:new", handleNew);
+    };
+  }, [qc]);
 
   const markRead = useMutation({
     mutationFn: (id: string) => api(`/notifications/${id}/read`, { method: "PATCH" }),
@@ -134,6 +149,12 @@ export default function Notifications() {
 
     const data = item.data || {};
 
+    // 0. Direct URL if available
+    if (typeof data.url === "string" && data.url.startsWith("/")) {
+      router.push(data.url as any);
+      return;
+    }
+
     // 1. Next-Gen Study Room & Q&A & Recordings Deep Link
     if (data.route === "room" || data.roomId) {
       const roomId = data.roomId;
@@ -166,8 +187,8 @@ export default function Notifications() {
       return;
     }
 
-    // 6. Schedule & Calendar
-    if (item.kind.includes("session") || item.kind.includes("event")) {
+    // 6. Schedule, Calendar & Peer Tutoring Bookings
+    if (data.bookingId || item.kind.includes("booking") || item.kind.includes("teaching") || item.kind.includes("session") || item.kind.includes("event")) {
       router.push("/schedule" as any);
       return;
     }

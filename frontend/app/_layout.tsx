@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { View, Text, StyleSheet, Pressable, Platform, LogBox } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { registerPush, useNotificationRouting } from "@/lib/notifications";
-import { connectSocket, disconnectSocket } from "@/lib/socket";
+import { connectSocket, disconnectSocket, getSocket } from "@/lib/socket";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { useTheme } from "@/theme";
 import { api } from "@/lib/api";
@@ -82,8 +82,33 @@ function Gate() {
     staleTime: 30_000,
   });
   const guidedTourEnabled = experienceQuery.data?.featureFlags.guided_tour === true;
+  const queryClient = useQueryClient();
 
   useNotificationRouting(router);
+
+  // Real-time synchronization of notifications and messages
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleNewNotification = () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    };
+
+    const handleNewChatMessage = () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["chat"] });
+    };
+
+    socket.on("notification:new", handleNewNotification);
+    socket.on("chat:message", handleNewChatMessage);
+
+    return () => {
+      socket.off("notification:new", handleNewNotification);
+      socket.off("chat:message", handleNewChatMessage);
+    };
+  }, [queryClient]);
 
   useEffect(() => {
     if (loading) return;
@@ -156,7 +181,7 @@ function Gate() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="search/index" options={{ headerShown: false }} />
-        <Stack.Screen name="notifications" options={{ title: "Notifications" }} />
+        <Stack.Screen name="notifications" options={{ headerShown: false }} />
         <Stack.Screen name="settings/index" options={{ headerShown: false }} />
         <Stack.Screen name="settings/profile" options={{ title: t("settings.profile") }} />
         <Stack.Screen name="settings/skills" options={{ title: t("settings.skills") }} />
@@ -169,6 +194,27 @@ function Gate() {
         <Stack.Screen name="settings/security" options={{ title: t("settings.securityTitle") }} />
         <Stack.Screen name="settings/about" options={{ title: t("settings.about") }} />
         <Stack.Screen name="dashboard/customize" options={{ headerShown: false }} />
+        <Stack.Screen name="feed" options={{ headerShown: false }} />
+        <Stack.Screen name="connections" options={{ headerShown: false }} />
+        <Stack.Screen name="schedule" options={{ headerShown: false }} />
+        <Stack.Screen name="calendar/index" options={{ headerShown: false }} />
+        <Stack.Screen name="clubs" options={{ headerShown: false }} />
+        <Stack.Screen name="quiz" options={{ headerShown: false }} />
+        <Stack.Screen name="events" options={{ headerShown: false }} />
+        <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+        <Stack.Screen name="saved/index" options={{ headerShown: false }} />
+        <Stack.Screen name="help/questions" options={{ headerShown: false }} />
+        <Stack.Screen name="help/questions/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="room/create" options={{ headerShown: false }} />
+        <Stack.Screen name="research" options={{ headerShown: false }} />
+        <Stack.Screen name="achievements/index" options={{ headerShown: false }} />
+        <Stack.Screen name="bookings/index" options={{ headerShown: false }} />
+        <Stack.Screen name="goals/index" options={{ headerShown: false }} />
+        <Stack.Screen name="planner/index" options={{ headerShown: false }} />
+        <Stack.Screen name="progress/index" options={{ headerShown: false }} />
+        <Stack.Screen name="challenges/index" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/integrations" options={{ headerShown: false }} />
+        <Stack.Screen name="admin" options={{ headerShown: false }} />
         <Stack.Screen name="room/[id]" options={{ title: "Learning room" }} />
         <Stack.Screen name="user/[id]" options={{ title: "Profile" }} />
         <Stack.Screen name="chat/[id]" options={{ title: "Conversation" }} />

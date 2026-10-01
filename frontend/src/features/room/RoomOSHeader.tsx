@@ -4,7 +4,8 @@ import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Room } from "@/types";
 import { Pill, Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { WEB_URL } from "@/lib/config";
+import { radius, useTheme } from "@/theme";
 
 type RoomOSHeaderProps = {
   room: Room;
@@ -36,10 +37,13 @@ export function RoomOSHeader({
   const handleShare = async () => {
     try {
       triggerHaptic();
-      await Share.share({
+      const link = `${WEB_URL}/room/${room.id}`;
+      const result = await Share.share({
         title: room.title,
-        message: `Join our academic study room "${room.title}" on SkillBridge: https://skillbridge.app/room/${room.id}`,
+        message: `Join our academic study room "${room.title}" on SkillBridge: ${link}`,
+        url: link,
       });
+      if (result.action === Share.dismissedAction) return;
     } catch (err) {
       console.warn("Could not share room", err);
     }
@@ -158,7 +162,8 @@ export function RoomOSHeader({
           <Row style={{ alignItems: "center", gap: 8, flex: 1 }}>
             <View style={[s.liveDot, { backgroundColor: colors.danger }]} />
             <Text style={[s.liveText, { color: colors.danger }]}>
-              Live Classroom Active · {liveParticipantsCount} in session
+              Live Classroom Active
+              {liveParticipantsCount > 0 ? ` · ${liveParticipantsCount} in session` : ""}
             </Text>
           </Row>
           <View style={[s.joinLivePill, { backgroundColor: colors.danger }]}>

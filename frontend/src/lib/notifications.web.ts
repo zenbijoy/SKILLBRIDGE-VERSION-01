@@ -106,9 +106,9 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
           {
             body: `${data.callerName} is calling you on SkillBridge`,
             tag: `call_${data.callId}`,
-            url: `/call/${data.callId}`,
+            url: `/call/${data.callId}?callId=${data.callId}`,
           },
-          () => router.push(`/call/${data.callId}` as any),
+          () => router.push(`/call/${data.callId}?callId=${data.callId}` as any),
         );
       }
     };
@@ -127,12 +127,37 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
       }
     };
 
+    const handleNewNotification = (data: { title?: string; body?: string; data?: any }) => {
+      if (document.hidden) {
+        const notifData = data.data || {};
+        const targetUrl = notifData.url || (
+          notifData.roomId ? `/room/${notifData.roomId}` :
+          notifData.clubId ? `/club/${notifData.clubId}` :
+          notifData.conversationId ? `/chat/${notifData.conversationId}` :
+          notifData.bookingId ? `/schedule` :
+          notifData.postId ? `/feed` :
+          "/notifications"
+        );
+        showWebNotification(
+          data.title || "SkillBridge Notification",
+          {
+            body: data.body || "You have a new notification",
+            tag: `notif_${Date.now()}`,
+            url: targetUrl,
+          },
+          () => router.push(targetUrl as any),
+        );
+      }
+    };
+
     socket.on("call:incoming", handleIncomingCall);
     socket.on("chat:message", handleNewMessage);
+    socket.on("notification:new", handleNewNotification);
 
     return () => {
       socket.off("call:incoming", handleIncomingCall);
       socket.off("chat:message", handleNewMessage);
+      socket.off("notification:new", handleNewNotification);
     };
   }, [router]);
 }

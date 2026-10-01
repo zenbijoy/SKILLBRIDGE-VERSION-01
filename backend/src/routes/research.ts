@@ -3,10 +3,22 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
-import { assertUuid } from "../lib/query-helpers.js";
 import { ensureResearchWorkspace } from "../services/spaceWorkspaceService.js";
+import {
+  searchPapers,
+  getPaper,
+  getPaperReferences,
+  getPaperCitations,
+  getAuthor,
+  getTrendingPapers,
+  formatAPA,
+  formatBibtex,
+  TRENDING_TOPICS,
+} from "../services/semanticScholar.js";
 
 export const research = Router();
+
+// ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const projectSchema = z.object({
   title: z.string().min(5).max(120),
@@ -19,6 +31,8 @@ const projectSchema = z.object({
   collaboration_requirements: z.string().max(1000).optional(),
   visibility: z.enum(["public", "private"]).default("public"),
 });
+
+// ─── EXISTING: Research Projects ─────────────────────────────────────────────
 
 research.get(
   "/stats",
@@ -106,7 +120,6 @@ research.get(
       .single();
     if (error) throw error;
     if (data.visibility === "private" && data.owner_id !== req.userId) {
-      // Check if user is an accepted member
       const { data: member } = await admin
         .from("research_members")
         .select("role")
@@ -119,7 +132,6 @@ research.get(
       }
     }
 
-    // Fetch members
     const { data: members } = await admin
       .from("research_members")
       .select("id, role, user:profiles(id, full_name, username, avatar_url)")
@@ -128,7 +140,6 @@ research.get(
     const isOwner = data.owner_id === req.userId;
     const isMember = isOwner || (members ?? []).some((m: any) => m.user?.id === req.userId);
 
-    // If owner or member, resolve or ensure workspace roomId
     let roomId = (data as any).room_id;
     if (!roomId && (isOwner || isMember)) {
       try {
@@ -136,7 +147,6 @@ research.get(
       } catch {}
     }
 
-    // Check my application status if not a member
     let myApplication = null;
     if (!isMember) {
       const { data: app } = await admin
@@ -184,7 +194,7 @@ research.post(
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
     const { message } = z.object({ message: z.string().max(1000).optional() }).parse(req.body);
-    
+
     const { data: project } = await admin
       .from("research_projects")
       .select("owner_id, visibility, looking_for_collaborators, status")
@@ -201,12 +211,12 @@ research.post(
       .insert({ project_id: id, requester_id: req.userId!, message })
       .select()
       .single();
-      
+
     if (error) {
       if (error.code === "23505") return res.status(400).json({ error: "Already requested" });
       throw error;
     }
-    
+
     await notifyUser(project.owner_id, "New Collaboration Request", "Someone requested to collaborate on your research project.", "research", { projectId: id });
     res.status(201).json(data);
   }),
@@ -219,9 +229,9 @@ research.get(
       .from("research_collaboration_requests")
       .select("*, project:research_projects(id, title, owner_id), requester:profiles(id, full_name, avatar_url, department, university)")
       .eq("project.owner_id", req.userId!);
-      
+
     if (error) throw error;
-    res.json({ requests: data ?? [] });
+    res.json({ data: data ?? [] });
   }),
 );
 
@@ -230,34 +240,32 @@ research.patch(
   wrap(async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
     const { status } = z.object({ status: z.enum(["accepted", "rejected", "cancelled"]) }).parse(req.body);
-    
+
     const { data: request } = await admin
       .from("research_collaboration_requests")
       .select("*, project:research_projects(owner_id)")
       .eq("id", id)
       .single();
-      
+
     if (!request) return res.status(404).json({ error: "Not found" });
-    
-    // Only project owner can accept/reject, requester can only cancel
+
     if (["accepted", "rejected"].includes(status)) {
       if ((request.project as any).owner_id !== req.userId) return res.status(403).json({ error: "Not authorized" });
     } else if (status === "cancelled") {
       if (request.requester_id !== req.userId) return res.status(403).json({ error: "Not authorized" });
     }
-    
+
     const { data, error } = await admin
       .from("research_collaboration_requests")
       .update({ status })
       .eq("id", id)
       .select()
       .single();
-      
+
     if (error) throw error;
-    
+
     let roomId: string | null = null;
     if (status === "accepted") {
-      // 1. Insert into research_members table
       await admin
         .from("research_members")
         .insert({
@@ -268,11 +276,9 @@ research.patch(
         .select()
         .maybeSingle();
 
-      // 2. Idempotently ensure private research workspace exists
       const ownerId = (request.project as any).owner_id;
       roomId = await ensureResearchWorkspace(request.project_id, ownerId);
 
-      // 3. Add accepted collaborator into room_members
       if (roomId) {
         await admin.from("room_members").upsert({
           room_id: roomId,
@@ -281,16 +287,14 @@ research.patch(
         } as any);
       }
 
-      // 4. Notify both parties
       await notifyUser(request.requester_id, "Collaboration Accepted 🎉", "Your collaboration request was accepted! You now have access to the Research Workspace.", "research", { projectId: request.project_id, roomId });
       await notifyUser(ownerId, "New Team Member 🔬", "A new collaborator has joined your research workspace.", "research", { projectId: request.project_id, roomId });
     }
-    
+
     res.json({ ...data, roomId });
   }),
 );
 
-// GET /api/v1/research/projects/:id/workspace - Retrieve or lazily provision workspace for members
 research.get(
   "/projects/:id/workspace",
   wrap(async (req, res) => {
@@ -303,7 +307,6 @@ research.get(
 
     if (!project) return res.status(404).json({ error: "Project not found" });
 
-    // Verify caller is owner or accepted collaborator
     const isOwner = project.owner_id === req.userId;
     const { data: member } = await admin
       .from("research_members")
@@ -321,7 +324,6 @@ research.get(
   }),
 );
 
-// POST /api/v1/research/projects/:id/workspace - Explicitly provision workspace
 research.post(
   "/projects/:id/workspace",
   wrap(async (req, res) => {
@@ -339,5 +341,416 @@ research.post(
 
     const roomId = await ensureResearchWorkspace(id, project.owner_id);
     res.status(201).json({ roomId });
+  }),
+);
+
+// ─── NEW: Academic Paper Search (Semantic Scholar Proxy) ──────────────────────
+
+research.get(
+  "/papers/search",
+  wrap(async (req, res) => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!q || q.length < 2) return res.status(400).json({ error: "Query too short" });
+
+    const offset = parseInt(String(req.query.offset ?? "0"), 10);
+    const limit = Math.min(parseInt(String(req.query.limit ?? "10"), 10), 25);
+    const field = typeof req.query.field === "string" ? req.query.field : undefined;
+    const year = typeof req.query.year === "string" ? req.query.year : undefined;
+    const openAccess = req.query.openAccess === "true";
+
+    const result = await searchPapers(q, { offset, limit, fieldsOfStudy: field, year, openAccess });
+    res.json(result);
+  }),
+);
+
+research.get(
+  "/papers/:paperId",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const paper = await getPaper(paperId);
+    res.json(paper);
+  }),
+);
+
+research.get(
+  "/papers/:paperId/references",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const offset = parseInt(String(req.query.offset ?? "0"), 10);
+    const result = await getPaperReferences(paperId, { offset, limit: 10 });
+    res.json(result);
+  }),
+);
+
+research.get(
+  "/papers/:paperId/citations",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const offset = parseInt(String(req.query.offset ?? "0"), 10);
+    const result = await getPaperCitations(paperId, { offset, limit: 10 });
+    res.json(result);
+  }),
+);
+
+research.get(
+  "/papers/:paperId/cite",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const format = req.query.format === "bibtex" ? "bibtex" : "apa";
+    const paper = await getPaper(paperId);
+    const citation = format === "bibtex" ? formatBibtex(paper) : formatAPA(paper);
+    res.json({ citation, format });
+  }),
+);
+
+// ─── NEW: Author Profiles ─────────────────────────────────────────────────────
+
+research.get(
+  "/authors/:authorId",
+  wrap(async (req, res) => {
+    const author = await getAuthor(String(req.params.authorId));
+    res.json(author);
+  }),
+);
+
+// ─── NEW: Trending Papers ─────────────────────────────────────────────────────
+
+research.get(
+  "/trending",
+  wrap(async (req, res) => {
+    const topic = typeof req.query.topic === "string" ? req.query.topic : undefined;
+    const results = await getTrendingPapers(topic);
+    res.json({ topics: results, allTopics: TRENDING_TOPICS });
+  }),
+);
+
+// ─── NEW: Saved Papers ────────────────────────────────────────────────────────
+
+research.get(
+  "/saved-papers",
+  wrap(async (req, res) => {
+    const { data, error } = await admin
+      .from("saved_papers")
+      .select("*")
+      .eq("user_id", req.userId!)
+      .order("saved_at", { ascending: false });
+    if (error) throw error;
+    res.json({ data: data ?? [] });
+  }),
+);
+
+research.post(
+  "/saved-papers",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        paper_id: z.string().min(1),
+        paper_data: z.object({}).passthrough(),
+      })
+      .parse(req.body);
+
+    const { data, error } = await admin
+      .from("saved_papers")
+      .upsert(
+        { user_id: req.userId!, paper_id: body.paper_id, paper_data: body.paper_data },
+        { onConflict: "user_id,paper_id" },
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  }),
+);
+
+research.delete(
+  "/saved-papers/:paperId",
+  wrap(async (req, res) => {
+    const { error } = await admin
+      .from("saved_papers")
+      .delete()
+      .eq("user_id", req.userId!)
+      .eq("paper_id", req.params.paperId);
+    if (error) throw error;
+    res.status(204).end();
+  }),
+);
+
+// ─── NEW: Collections ─────────────────────────────────────────────────────────
+
+research.get(
+  "/collections",
+  wrap(async (req, res) => {
+    const { data, error } = await admin
+      .from("research_collections")
+      .select("*, papers:collection_papers(count)")
+      .eq("user_id", req.userId!)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ data: data ?? [] });
+  }),
+);
+
+research.post(
+  "/collections",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        name: z.string().min(1).max(80),
+        description: z.string().max(300).optional(),
+      })
+      .parse(req.body);
+
+    const { data, error } = await admin
+      .from("research_collections")
+      .insert({ ...body, user_id: req.userId! })
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  }),
+);
+
+research.get(
+  "/collections/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data, error } = await admin
+      .from("research_collections")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Collection not found" });
+    res.json(data);
+  }),
+);
+
+research.patch(
+  "/collections/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        name: z.string().min(1).max(80).optional(),
+        description: z.string().max(300).optional(),
+      })
+      .parse(req.body);
+
+    const { data, error } = await admin
+      .from("research_collections")
+      .update(body)
+      .eq("id", id)
+      .eq("user_id", req.userId!)
+      .select()
+      .single();
+    if (error) throw error;
+    if (!data) return res.status(403).json({ error: "Not found" });
+    res.json(data);
+  }),
+);
+
+research.delete(
+  "/collections/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { error } = await admin
+      .from("research_collections")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", req.userId!);
+    if (error) throw error;
+    res.status(204).end();
+  }),
+);
+
+research.get(
+  "/collections/:id/papers",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    // Verify ownership
+    const { data: col } = await admin.from("research_collections").select("id").eq("id", id).eq("user_id", req.userId!).maybeSingle();
+    if (!col) return res.status(403).json({ error: "Not found" });
+
+    const { data, error } = await admin
+      .from("collection_papers")
+      .select("*")
+      .eq("collection_id", id)
+      .order("added_at", { ascending: false });
+    if (error) throw error;
+    res.json({ data: data ?? [] });
+  }),
+);
+
+research.post(
+  "/collections/:id/papers",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        paper_id: z.string().min(1),
+        paper_data: z.object({}).passthrough(),
+      })
+      .parse(req.body);
+
+    const { data: col } = await admin.from("research_collections").select("id").eq("id", id).eq("user_id", req.userId!).maybeSingle();
+    if (!col) return res.status(403).json({ error: "Not found" });
+
+    const { data, error } = await admin
+      .from("collection_papers")
+      .upsert(
+        { collection_id: id, paper_id: body.paper_id, paper_data: body.paper_data },
+        { onConflict: "collection_id,paper_id" },
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  }),
+);
+
+research.delete(
+  "/collections/:id/papers/:paperId",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: col } = await admin.from("research_collections").select("id").eq("id", id).eq("user_id", req.userId!).maybeSingle();
+    if (!col) return res.status(403).json({ error: "Not found" });
+
+    const { error } = await admin
+      .from("collection_papers")
+      .delete()
+      .eq("collection_id", id)
+      .eq("paper_id", req.params.paperId);
+    if (error) throw error;
+    res.status(204).end();
+  }),
+);
+
+// ─── NEW: Research Notes ──────────────────────────────────────────────────────
+
+research.get(
+  "/notes",
+  wrap(async (req, res) => {
+    const { data, error } = await admin
+      .from("research_notes")
+      .select("*")
+      .eq("user_id", req.userId!)
+      .order("updated_at", { ascending: false });
+    if (error) throw error;
+    res.json({ data: data ?? [] });
+  }),
+);
+
+research.post(
+  "/notes",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        title: z.string().max(200).optional().default(""),
+        body: z.string().max(50000).optional().default(""),
+        paper_id: z.string().optional(),
+        paper_title: z.string().max(300).optional(),
+        tags: z.array(z.string()).default([]),
+      })
+      .parse(req.body);
+
+    const { data, error } = await admin
+      .from("research_notes")
+      .insert({ ...body, user_id: req.userId! })
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  }),
+);
+
+research.get(
+  "/notes/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data, error } = await admin
+      .from("research_notes")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Note not found" });
+    res.json(data);
+  }),
+);
+
+research.patch(
+  "/notes/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        title: z.string().max(200).optional(),
+        body: z.string().max(50000).optional(),
+        tags: z.array(z.string()).optional(),
+      })
+      .parse(req.body);
+
+    const { data, error } = await admin
+      .from("research_notes")
+      .update({ ...body, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("user_id", req.userId!)
+      .select()
+      .single();
+    if (error) throw error;
+    if (!data) return res.status(403).json({ error: "Not found" });
+    res.json(data);
+  }),
+);
+
+research.delete(
+  "/notes/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { error } = await admin
+      .from("research_notes")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", req.userId!);
+    if (error) throw error;
+    res.status(204).end();
+  }),
+);
+
+// ─── NEW: Reading History ─────────────────────────────────────────────────────
+
+research.post(
+  "/reading-history",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        paper_id: z.string().min(1),
+        paper_title: z.string().max(400),
+        paper_year: z.number().optional(),
+        paper_authors: z.array(z.string()).default([]),
+      })
+      .parse(req.body);
+
+    await admin.from("paper_reading_history").upsert(
+      { user_id: req.userId!, paper_id: body.paper_id, paper_title: body.paper_title, paper_year: body.paper_year, paper_authors: body.paper_authors, read_at: new Date().toISOString() },
+      { onConflict: "user_id,paper_id" },
+    );
+    res.status(201).json({ ok: true });
+  }),
+);
+
+research.get(
+  "/reading-history",
+  wrap(async (req, res) => {
+    const { data, error } = await admin
+      .from("paper_reading_history")
+      .select("*")
+      .eq("user_id", req.userId!)
+      .order("read_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ data: data ?? [] });
   }),
 );

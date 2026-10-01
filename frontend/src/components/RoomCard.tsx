@@ -10,6 +10,8 @@ export function RoomCard({ room }: { room: Room }) {
   const { colors } = useTheme();
   const isLive = room.status === "live";
   const fillPercent = Math.min(100, Math.round((room.member_count / Math.max(1, room.capacity)) * 100));
+  const seatsLeft = Math.max(0, room.capacity - room.member_count);
+  const isFull = seatsLeft <= 0 && !isLive;
 
   const handlePress = () => {
     triggerHaptic();
@@ -88,10 +90,10 @@ export function RoomCard({ room }: { room: Room }) {
         </View>
 
         <View style={[s.meta, { borderTopColor: colors.divider, borderTopWidth: 1, paddingTop: 10 }]}>
-          <View style={s.metaItem}>
+          <View style={[s.metaItem, { flex: 1 }]}>
             <MaterialCommunityIcons name="account-group-outline" size={16} color={colors.primary} />
             <Text style={[s.metaText, { color: colors.textSecondary }]}>
-              {room.member_count}/{room.capacity} members
+              {seatsLeft > 0 ? `${seatsLeft} seats left` : "Room full"}
             </Text>
           </View>
 
@@ -106,9 +108,19 @@ export function RoomCard({ room }: { room: Room }) {
             </Text>
           </View>
 
-          <View style={[s.joinBtn, { backgroundColor: `${colors.primary}18` }]}>
-            <Text style={[s.joinBtnText, { color: colors.primary }]}>Enter</Text>
-            <MaterialCommunityIcons name="arrow-right" size={14} color={colors.primary} />
+          {/* Real status signal instead of a decorative "Enter" button */}
+          <View
+            style={[
+              s.joinBtn,
+              { backgroundColor: isFull ? `${colors.muted}18` : `${colors.primary}18` },
+            ]}
+          >
+            <Text style={[s.joinBtnText, { color: isFull ? colors.muted : colors.primary }]}>
+              {isLive ? "Join Live" : isFull ? "Full" : "Open"}
+            </Text>
+            {!isFull && !isLive && (
+              <MaterialCommunityIcons name="arrow-right" size={14} color={colors.primary} />
+            )}
           </View>
         </View>
       </Card>

@@ -13,11 +13,37 @@ export interface PresignedUploadTicket {
   mediaObjectId?: string;
 }
 
+export interface SignedDownloadOptions {
+  /**
+   * Skip the R2_PUBLIC_DOMAIN shortcut and always mint a short-lived SigV4 URL.
+   * Required for private objects (e.g. chat attachments): a raw public-domain
+   * URL only works when the bucket/custom domain is publicly readable, and
+   * would otherwise 403 while leaking object keys.
+   */
+  forceSigned?: boolean;
+}
+
 export interface StorageProvider {
   name: "supabase" | "r2";
   signedUpload(bucket: string, path: string): Promise<PresignedUploadTicket>;
-  createSignedDownloadUrl(bucket: string, path: string, expiresIn?: number): Promise<string>;
+  createSignedDownloadUrl(
+    bucket: string,
+    path: string,
+    expiresIn?: number,
+    opts?: SignedDownloadOptions,
+  ): Promise<string>;
   removeFiles(bucket: string, files: string[]): Promise<void>;
+  /**
+   * Direct server-side upload of an in-memory buffer. Required for R2 because
+   * base64 inline uploads cannot use a client-side presigned PUT.
+   */
+  uploadBuffer(
+    bucket: string,
+    path: string,
+    buffer: Buffer,
+    contentType: string,
+    cacheControl?: string,
+  ): Promise<void>;
 }
 
 // -----------------------------------------------------------------------------
@@ -28,8 +54,151 @@ function hmac(key: crypto.BinaryLike | crypto.KeyObject, data: string): Buffer {
   return crypto.createHmac("sha256", key).update(data, "utf8").digest();
 }
 
-function sha256(data: string): string {
-  return crypto.createHash("sha256").update(data, "utf8").digest("hex");
+function sha256(data: string | Buffer): string {
+  return crypto.createHash("sha256").update(data).digest("hex");
+}
+
+/**
+ * Build a SigV4-signed S3/R2 PUT request for a server-side buffer upload.
+ * Unlike the presigned (client-executed) PUT above, this signs the real payload
+ * hash and returns the exact headers the caller must send.
+ */
+function createR2SignedPutRequest(params: {
+  accountId: string;
+  bucket: string;
+  key: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  contentType: string;
+  payloadHash: string;
+  cacheControl?: string;
+}): { url: string; headers: Record<string, string> } {
+  const {
+    accountId,
+    bucket,
+    key,
+    accessKeyId,
+    secretAccessKey,
+    contentType,
+    payloadHash,
+    cacheControl = "public, max-age=31536000, immutable",
+  } = params;
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const datestamp = amzDate.slice(0, 8);
+  const region = "auto";
+  const service = "s3";
+  const host = `${bucket}.${accountId}.r2.cloudflarestorage.com`;
+  const canonicalUri = `/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const credentialScope = `${datestamp}/${region}/${service}/aws4_request`;
+
+  const headers: Record<string, string> = {
+    ...(cacheControl ? { "cache-control": cacheControl.trim() } : {}),
+    "content-type": contentType.trim(),
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate,
+  };
+
+  const signedHeaderMap: Record<string, string> = {
+    host,
+    ...headers,
+  };
+  const signedHeaderNames = Object.keys(signedHeaderMap).sort();
+  const canonicalHeaders = signedHeaderNames
+    .map((h) => `${h}:${signedHeaderMap[h]}\n`)
+    .join("");
+  const signedHeaders = signedHeaderNames.join(";");
+
+  const canonicalRequest = [
+    "PUT",
+    canonicalUri,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256(canonicalRequest),
+  ].join("\n");
+
+  const kDate = hmac(`AWS4${secretAccessKey}`, datestamp);
+  const kRegion = hmac(kDate, region);
+  const kService = hmac(kRegion, service);
+  const kSigning = hmac(kService, "aws4_request");
+  const signature = crypto.createHmac("sha256", kSigning).update(stringToSign, "utf8").digest("hex");
+
+  headers.Authorization =
+    `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return { url: `https://${host}${canonicalUri}`, headers };
+}
+
+/**
+ * Build a SigV4-signed S3/R2 DELETE request. R2 has no presigned-DELETE support,
+ * so deletes must be signed and issued server-side.
+ */
+function createR2SignedDeleteRequest(params: {
+  accountId: string;
+  bucket: string;
+  key: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}): { url: string; headers: Record<string, string> } {
+  const { accountId, bucket, key, accessKeyId, secretAccessKey } = params;
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const datestamp = amzDate.slice(0, 8);
+  const region = "auto";
+  const service = "s3";
+  const host = `${bucket}.${accountId}.r2.cloudflarestorage.com`;
+  const canonicalUri = `/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const credentialScope = `${datestamp}/${region}/${service}/aws4_request`;
+
+  // Empty-body payload hash, as required for a bodyless DELETE.
+  const payloadHash = sha256("");
+
+  const signedHeaderMap: Record<string, string> = {
+    host,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate,
+  };
+  const signedHeaderNames = Object.keys(signedHeaderMap).sort();
+  const canonicalHeaders = signedHeaderNames.map((h) => `${h}:${signedHeaderMap[h]}\n`).join("");
+  const signedHeaders = signedHeaderNames.join(";");
+
+  const canonicalRequest = ["DELETE", canonicalUri, "", canonicalHeaders, signedHeaders, payloadHash].join(
+    "\n",
+  );
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256(canonicalRequest),
+  ].join("\n");
+
+  const kDate = hmac(`AWS4${secretAccessKey}`, datestamp);
+  const kRegion = hmac(kDate, region);
+  const kService = hmac(kRegion, service);
+  const kSigning = hmac(kService, "aws4_request");
+  const signature = crypto.createHmac("sha256", kSigning).update(stringToSign, "utf8").digest("hex");
+
+  const headers: Record<string, string> = {
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate,
+    Authorization:
+      `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, ` +
+      `SignedHeaders=${signedHeaders}, Signature=${signature}`,
+  };
+
+  return { url: `https://${host}${canonicalUri}`, headers };
 }
 
 function createR2PresignedUrl(params: {
@@ -117,7 +286,7 @@ export class SupabaseStorageProvider implements StorageProvider {
     };
   }
 
-  async createSignedDownloadUrl(bucket: string, path: string, expiresIn = 3600): Promise<string> {
+  async createSignedDownloadUrl(bucket: string, path: string, expiresIn = 3600, _opts?: SignedDownloadOptions): Promise<string> {
     const { data, error } = await admin.storage.from(bucket).createSignedUrl(path, expiresIn);
     if (error) throw error;
     return data.signedUrl;
@@ -128,6 +297,19 @@ export class SupabaseStorageProvider implements StorageProvider {
     if (error) {
       logger.warn({ event: "storage_remove_files_failed", bucket, err: error.message }, "Failed removing files");
     }
+  }
+
+  async uploadBuffer(
+    bucket: string,
+    path: string,
+    buffer: Buffer,
+    contentType: string,
+    cacheControl = "31536000",
+  ): Promise<void> {
+    const { error } = await admin.storage
+      .from(bucket)
+      .upload(path, buffer, { contentType, upsert: true, cacheControl });
+    if (error) throw error;
   }
 }
 
@@ -176,7 +358,7 @@ export class CloudflareR2StorageProvider implements StorageProvider {
     };
   }
 
-  async createSignedDownloadUrl(bucket: string, path: string, expiresIn = 3600): Promise<string> {
+  async createSignedDownloadUrl(bucket: string, path: string, expiresIn = 3600, opts?: SignedDownloadOptions): Promise<string> {
     if (!this.isConfigured()) {
       logDomainEvent({
         event: "storage_fallback_used",
@@ -188,8 +370,10 @@ export class CloudflareR2StorageProvider implements StorageProvider {
       return new SupabaseStorageProvider().createSignedDownloadUrl(bucket, path, expiresIn);
     }
 
-    if (env.R2_PUBLIC_DOMAIN) {
-      return `${env.R2_PUBLIC_DOMAIN}/${path}`;
+    // `R2_PUBLIC_DOMAIN` produces an UNSIGNED URL. Only safe when the bucket is
+    // intentionally public; private objects must always get a signed URL.
+    if (env.R2_PUBLIC_DOMAIN && !opts?.forceSigned) {
+      return `${env.R2_PUBLIC_DOMAIN.replace(/\/$/, "")}/${path}`;
     }
 
     const targetBucket = env.R2_BUCKET_NAME || bucket;
@@ -208,7 +392,65 @@ export class CloudflareR2StorageProvider implements StorageProvider {
     if (!this.isConfigured()) {
       return new SupabaseStorageProvider().removeFiles(bucket, files);
     }
-    // R2 direct file removal can be extended via REST API if configured
+    if (!files.length) return;
+    const targetBucket = env.R2_BUCKET_NAME || bucket;
+
+    await Promise.all(
+      files.map(async (key) => {
+        if (key.includes("..") || key.startsWith("/")) {
+          throw new Error("Invalid storage path: directory traversal prohibited");
+        }
+        const { url, headers } = createR2SignedDeleteRequest({
+          accountId: env.R2_ACCOUNT_ID!,
+          bucket: targetBucket,
+          key,
+          accessKeyId: env.R2_ACCESS_KEY_ID!,
+          secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
+        });
+        const res = await fetch(url, { method: "DELETE", headers });
+        if (!res.ok && res.status !== 404) {
+          throw new Error(
+            `R2 delete failed (${res.status}) for ${key}: ${await res.text().catch(() => "")}`,
+          );
+        }
+      }),
+    );
+  }
+
+  async uploadBuffer(
+    bucket: string,
+    path: string,
+    buffer: Buffer,
+    contentType: string,
+    cacheControl = "public, max-age=31536000, immutable",
+  ): Promise<void> {
+    if (!this.isConfigured()) {
+      return new SupabaseStorageProvider().uploadBuffer(bucket, path, buffer, contentType, cacheControl);
+    }
+    if (path.includes("..") || path.startsWith("/")) {
+      throw new Error("Invalid storage path: directory traversal prohibited");
+    }
+    const targetBucket = env.R2_BUCKET_NAME || bucket;
+    const payloadHash = sha256(buffer);
+    const { url, headers } = createR2SignedPutRequest({
+      accountId: env.R2_ACCOUNT_ID!,
+      bucket: targetBucket,
+      key: path,
+      accessKeyId: env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
+      contentType,
+      payloadHash,
+      cacheControl,
+    });
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers,
+      body: new Uint8Array(buffer),
+    });
+    if (!response.ok) {
+      throw new Error(`R2 upload failed (${response.status}): ${await response.text().catch(() => "")}`);
+    }
   }
 }
 

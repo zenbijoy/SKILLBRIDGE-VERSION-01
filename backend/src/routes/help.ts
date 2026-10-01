@@ -4,6 +4,8 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { ensureCampusHelpWorkspace } from "../services/spaceWorkspaceService.js";
 import { logDomainEvent } from "../lib/domainLogger.js";
+import { NotificationService } from "../services/notificationService.js";
+import { logger } from "../lib/logger.js";
 
 export const help = Router();
 
@@ -201,5 +203,221 @@ help.post(
         urgency: body.urgency,
       },
     });
+  }),
+);
+
+// GET /api/v1/help/questions/:id - Get single question detail with thread
+help.get(
+  "/questions/:id",
+  wrap(async (req, res) => {
+    const { id } = req.params;
+
+    const { data: q, error } = await admin
+      .from("room_questions")
+      .select(`
+        id, room_id, title, body, is_resolved, upvotes_count, created_at, accepted_answer_id,
+        author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url, university, department),
+        room:rooms!room_questions_room_id_fkey(id, title, visibility),
+        answers:room_question_answers(
+          id, question_id, body, is_accepted, upvotes_count, created_at,
+          author:profiles!room_question_answers_author_id_fkey(id, full_name, username, avatar_url, university, department)
+        )
+      `)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!q) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    const answers = (q.answers ?? []).sort((a: any, b: any) => {
+      if (a.is_accepted && !b.is_accepted) return -1;
+      if (!a.is_accepted && b.is_accepted) return 1;
+      return (b.upvotes_count || 0) - (a.upvotes_count || 0);
+    });
+
+    const acceptedAnswer = answers.find((a: any) => a.is_accepted) || null;
+
+    res.json({
+      question: {
+        id: q.id,
+        roomId: q.room_id,
+        roomTitle: (q as any).room?.title ?? ((q as any).room?.[0]?.title) ?? "Study Space",
+        title: q.title,
+        body: q.body,
+        isResolved: q.is_resolved,
+        upvotesCount: q.upvotes_count ?? 0,
+        createdAt: q.created_at,
+        author: q.author,
+        answersCount: answers.length,
+        hasAcceptedAnswer: Boolean(acceptedAnswer),
+        acceptedAnswer,
+        answers,
+        subject: (q as any).subject || null,
+        topic: (q as any).topic || null,
+        urgency: (q as any).urgency || "normal",
+      },
+    });
+  }),
+);
+
+// POST /api/v1/help/questions/:id/answers - Post answer to question
+help.post(
+  "/questions/:id/answers",
+  wrap(async (req, res) => {
+    const id = String(req.params.id);
+    const body = z
+      .object({
+        body: z.string().min(2, "Answer must be at least 2 characters").max(4000),
+      })
+      .parse(req.body);
+
+    const { data: q, error: qErr } = await admin
+      .from("room_questions")
+      .select("id, room_id, author_id, title")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (qErr) throw qErr;
+    if (!q) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    // Auto-ensure user membership in question's room
+    await admin.from("room_members").upsert({
+      room_id: q.room_id,
+      user_id: req.userId!,
+      role: "member",
+    } as any);
+
+    const { data: answer, error } = await admin
+      .from("room_question_answers")
+      .insert({
+        question_id: id,
+        author_id: req.userId!,
+        body: body.body.trim(),
+      })
+      .select(`
+        id, question_id, body, is_accepted, upvotes_count, created_at,
+        author:profiles!room_question_answers_author_id_fkey(id, full_name, username, avatar_url, university, department)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    logDomainEvent({
+      event: "question_answered",
+      roomId: q.room_id,
+      questionId: id,
+      answerId: answer.id,
+    } as any);
+
+    if (q.author_id && q.author_id !== req.userId) {
+      const responderName = (answer as any).author?.full_name || (answer as any).author?.username || "A peer";
+      NotificationService.dispatch({
+        userId: q.author_id,
+        type: "QUESTION_ANSWERED",
+        title: "New Answer on Your Question",
+        body: `${responderName} replied to: "${q.title.slice(0, 50)}"`,
+        entityType: "question",
+        entityId: id,
+        data: { roomId: q.room_id, questionId: id, answerId: answer.id, route: "room" },
+      }).catch((err) => {
+        logger.warn({ err: (err as Error).message, questionId: id }, "Failed to dispatch question answered notification");
+      });
+    }
+
+    res.status(201).json({ answer });
+  }),
+);
+
+// POST /api/v1/help/questions/:id/upvote - Upvote a question
+help.post(
+  "/questions/:id/upvote",
+  wrap(async (req, res) => {
+    const { id } = req.params;
+
+    const { data: q, error: getErr } = await admin
+      .from("room_questions")
+      .select("id, upvotes_count")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (getErr) throw getErr;
+    if (!q) return res.status(404).json({ error: "Question not found" });
+
+    const newCount = (q.upvotes_count || 0) + 1;
+    const { error: updateErr } = await admin
+      .from("room_questions")
+      .update({ upvotes_count: newCount })
+      .eq("id", id);
+
+    if (updateErr) throw updateErr;
+
+    res.json({ upvotesCount: newCount });
+  }),
+);
+
+// PATCH /api/v1/help/questions/:id/answers/:answerId/accept - Accept answer as solution
+help.patch(
+  "/questions/:id/answers/:answerId/accept",
+  wrap(async (req, res) => {
+    const id = String(req.params.id);
+    const answerId = String(req.params.answerId);
+
+    const { data: q, error: qErr } = await admin
+      .from("room_questions")
+      .select("id, room_id, author_id, title, is_resolved")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (qErr) throw qErr;
+    if (!q) return res.status(404).json({ error: "Question not found" });
+
+    if (q.author_id !== req.userId) {
+      return res.status(403).json({ error: "Only the question author can accept an answer as the solution" });
+    }
+
+    // Reset previous accepted answers
+    await admin
+      .from("room_question_answers")
+      .update({ is_accepted: false })
+      .eq("question_id", id);
+
+    // Accept this answer
+    await admin
+      .from("room_question_answers")
+      .update({ is_accepted: true })
+      .eq("id", answerId);
+
+    // Mark question resolved
+    await admin
+      .from("room_questions")
+      .update({ is_resolved: true, accepted_answer_id: answerId })
+      .eq("id", id);
+
+    // Notify answer author if not self
+    const { data: acceptedAnswer } = await admin
+      .from("room_question_answers")
+      .select("author_id")
+      .eq("id", answerId)
+      .maybeSingle();
+
+    if (acceptedAnswer?.author_id && acceptedAnswer.author_id !== req.userId) {
+      NotificationService.dispatch({
+        userId: acceptedAnswer.author_id,
+        type: "ANSWER_ACCEPTED",
+        title: "Answer Accepted! 🌟",
+        body: `Your answer was accepted as the solution for: "${q.title?.slice(0, 50) || "a question"}"`,
+        entityType: "question",
+        entityId: id,
+        data: { roomId: q.room_id, questionId: id, answerId, route: "room" },
+      }).catch((err) => {
+        logger.warn({ err: (err as Error).message, questionId: id, answerId }, "Failed to dispatch answer accepted notification");
+      });
+    }
+
+    res.json({ success: true, acceptedAnswerId: answerId });
   }),
 );

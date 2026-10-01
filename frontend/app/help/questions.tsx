@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from "react";
 import {
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -13,8 +12,8 @@ import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
-import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Button, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import { AskHelpComposerModal } from "@/features/help/AskHelpComposerModal";
 
 type HelpQuestion = {
@@ -212,8 +211,8 @@ export default function HelpQuestionsScreen() {
             <Pressable
               onPress={() => {
                 triggerHaptic();
-                // Navigate into canonical room Q&A
-                router.push(`/room/${item.roomId}?tab=learn&qId=${item.id}` as any);
+                // Navigate into canonical question thread
+                router.push(`/help/questions/${item.id}` as any);
               }}
               style={({ pressed }) => [
                 s.questionCard,

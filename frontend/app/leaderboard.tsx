@@ -62,19 +62,19 @@ export default function Leaderboard() {
 
   return (
     <Screen>
-      <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
-        <H1>Campus Leaderboard 🏆</H1>
+      <Row style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <View>
+          <H1>Leaderboard 🏆</H1>
+          <Muted style={{ fontSize: 12 }}>Top students & tutors across campus</Muted>
+        </View>
         <Pressable
           onPress={() => setShowHowPointsWork(true)}
           style={[s.infoButton, { backgroundColor: colors.primary + "18" }]}
         >
           <MaterialCommunityIcons name="information-outline" size={16} color={colors.primary} />
-          <Text style={[s.infoButtonText, { color: colors.primary }]}>How points work</Text>
+          <Text style={[s.infoButtonText, { color: colors.primary }]}>Rules</Text>
         </Pressable>
       </Row>
-      <Muted>
-        Verified server-authoritative rankings calculated from peer tutoring, room participation, and research.
-      </Muted>
 
       {/* Time Window Tabs */}
       <View style={s.windowRow}>

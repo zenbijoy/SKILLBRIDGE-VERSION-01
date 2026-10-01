@@ -8,7 +8,7 @@ import { notifyUser } from "../services/push.js";
 import { env } from "../config/env.js";
 import { cacheGet, cacheSet, redis, cacheDelPattern } from "../lib/redis.js";
 import { NotificationService } from "../services/notificationService.js";
-import { qaQuestionLimiter, qaAnswerLimiter, recordingLimiter } from "../middleware/rateLimiters.js";
+import { qaQuestionLimiter, qaAnswerLimiter, recordingLimiter, reportLimiter } from "../middleware/rateLimiters.js";
 import { logDomainEvent } from "../lib/domainLogger.js";
 import {
   extractYouTubeVideoId,
@@ -52,19 +52,67 @@ rooms.get(
   wrap(async (req, res) => {
     const page = pageSchema.parse(req.query.page ?? 1);
     const limit = limitSchema.parse(req.query.limit ?? 20);
-    const cacheKey = `rooms:public:p${page}:l${limit}`;
 
-    const cached = await cacheGet<Record<string, unknown>>(cacheKey);
-    if (cached) return res.json(cached);
+    // "mine" returns rooms the caller has actually joined (any visibility).
+    // "topic" and "q" make list filtering server-side so pagination stays correct.
+    const mine = req.query.mine === "true";
+    const topic = typeof req.query.topic === "string" ? req.query.topic.trim() : "";
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+    // Only the public, shared feed is safe to cache across users.
+    const cacheKey = `rooms:public:p${page}:l${limit}:t${topic}:q${q}`;
+    if (!mine) {
+      const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+      if (cached) return res.json(cached);
+    }
 
     const from = (page - 1) * limit;
     const to = page * limit - 1;
 
-    const { data, count, error } = await admin
+    if (mine) {
+      const { data: memberships, error: memberErr } = await admin
+        .from("room_members")
+        .select("room_id")
+        .eq("user_id", req.userId!);
+      if (memberErr) throw memberErr;
+
+      const roomIds = (memberships ?? []).map((m) => m.room_id as string);
+      if (roomIds.length === 0) {
+        return res.json({ rooms: [], total: 0, page, limit });
+      }
+
+      const { data, count, error } = await admin
+        .from("rooms")
+        .select("*", { count: "exact" })
+        .in("id", roomIds)
+        .in("status", ["open", "scheduled", "live"])
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      if (error) throw error;
+      return res.json({ rooms: data ?? [], total: count ?? 0, page, limit });
+    }
+
+    let query = admin
       .from("rooms")
       .select("*", { count: "exact" })
       .in("status", ["open", "scheduled", "live"])
-      .eq("visibility", "public")
+      .eq("visibility", "public");
+
+    if (topic) {
+      query = query.ilike("topic", `%${topic}%`);
+    }
+    if (q) {
+      // Strip characters that would break out of the PostgREST `or=` filter grammar.
+      const safe = q.replace(/[,()%*\\]/g, " ").trim();
+      if (safe.length >= 2) {
+        query = query.or(
+          `title.ilike.%${safe}%,topic.ilike.%${safe}%,description.ilike.%${safe}%,campus_location.ilike.%${safe}%`,
+        );
+      }
+    }
+
+    const { data, count, error } = await query
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -232,6 +280,39 @@ rooms.get(
     if (room.visibility !== "public" && !membership)
       return res.status(403).json({ error: "Room is private" });
 
+    // Live session + real-time participant count for the room header strip.
+    const liveSession = (sessions ?? []).find((s: any) => s.status === "live") ?? null;
+    let liveParticipantCount = 0;
+    if (liveSession) {
+      const { count } = await admin
+        .from("livekit_attendance")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", liveSession.id)
+        .is("left_at", null);
+      liveParticipantCount = count ?? 0;
+    }
+
+    // True unread count for the room's main conversation, based on this user's
+    // last_read_at watermark (messages sent by the user never count as unread).
+    let unreadCount = 0;
+    if (room.conversation_id && membership) {
+      const { data: convMember } = await admin
+        .from("conversation_members")
+        .select("last_read_at")
+        .eq("conversation_id", room.conversation_id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      const since = convMember?.last_read_at ?? new Date(0).toISOString();
+      const { count } = await admin
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", room.conversation_id)
+        .neq("sender_id", req.userId!)
+        .gt("created_at", since);
+      unreadCount = count ?? 0;
+    }
+
     const normalizedMembers = (members ?? []).map((m: any) => {
       const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
       return {
@@ -252,6 +333,9 @@ rooms.get(
       teachingRequests: teach ?? [],
       sessions: sessions ?? [],
       resources: resources ?? [],
+      liveSession,
+      liveParticipantCount,
+      unreadCount,
     });
   }),
 );
@@ -1034,6 +1118,59 @@ rooms.delete(
 // ─────────────────────────────────────────────────────────────────────────────
 // ROOM OS CORE: POSTS, COMMENTS, REACTIONS, PERMISSIONS & MEMBER OPS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/v1/rooms/:id/presence - Lightweight live participant count (polling fallback)
+rooms.get(
+  "/:id/presence",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, visibility")
+      .eq("id", roomId)
+      .maybeSingle();
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    if (room.visibility !== "public") {
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+      if (!member) return res.status(403).json({ error: "Join the room to see live status" });
+    }
+
+    const { data: liveSession } = await admin
+      .from("sessions")
+      .select("id")
+      .eq("room_id", roomId)
+      .eq("status", "live")
+      .order("starts_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let liveParticipantCount = 0;
+    if (liveSession) {
+      const { count } = await admin
+        .from("livekit_attendance")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", liveSession.id)
+        .is("left_at", null);
+      liveParticipantCount = count ?? 0;
+    }
+
+    // 5s cache: frequent polling is expected, but the value only changes on
+    // LiveKit join/leave, which also pushes over the socket.
+    res.setHeader("Cache-Control", "private, max-age=5");
+    res.json({
+      sessionId: liveSession?.id ?? null,
+      liveParticipantCount,
+      isLive: Boolean(liveSession),
+    });
+  }),
+);
 
 // GET /api/v1/rooms/:id/permissions - Server-authoritative capabilities
 rooms.get(
@@ -2373,6 +2510,14 @@ rooms.patch(
     const roomId = z.string().uuid().parse(req.params.id);
     const body = z
       .object({
+        title: z.string().trim().min(3).max(120).optional(),
+        topic: z.string().trim().min(2).max(100).optional(),
+        description: z.string().max(1000).optional(),
+        visibility: z.enum(["public", "private", "invite_only"]).optional(),
+        mode: z.enum(["online", "offline", "hybrid"]).optional(),
+        capacity: z.number().int().min(2).max(env.MAX_ROOM_CAPACITY).optional(),
+        rules: z.string().max(1000).optional(),
+        campus_location: z.string().max(200).optional().nullable(),
         enabled_modules: z.array(z.string()).optional(),
         default_landing_tab: z.enum(["posts", "chat", "learn", "media"]).optional(),
         appearance: z.record(z.string(), z.any()).optional(),
@@ -2398,7 +2543,46 @@ rooms.patch(
       .single();
 
     if (error) throw error;
+    await invalidateRoomCache();
     res.json({ room: updated });
+  }),
+);
+
+// POST /api/v1/rooms/:id/report - Report this room to Trust & Safety
+rooms.post(
+  "/:id/report",
+  reportLimiter,
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        reason: z.enum(["spam", "harassment", "nudity", "violence", "misinformation", "other"]),
+        details: z.string().max(2000).optional(),
+      })
+      .parse(req.body);
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id")
+      .eq("id", roomId)
+      .maybeSingle();
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    const { data, error } = await admin
+      .from("reports")
+      .insert({
+        reporter_id: req.userId!,
+        target_type: "room",
+        target_id: roomId,
+        reason: body.reason,
+        details: body.details ?? null,
+        status: "open",
+      })
+      .select()
+      .single();
+    if (error) throw error;
+
+    res.status(201).json({ report: data });
   }),
 );
 

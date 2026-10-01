@@ -5,6 +5,7 @@ import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "@/lib/api";
+import { optimizeImageForUpload, OPTIMIZATION_PRESETS } from "@/lib/imageOptimizer";
 import type { Profile } from "@/types";
 import { Button, Card, ErrorState, Field, H1, H2, Muted, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { useTheme } from "@/theme";
@@ -75,20 +76,28 @@ export default function EditProfile() {
         base64: true,
       });
 
-      if (result.canceled || !result.assets[0]?.base64) return;
+      if (result.canceled || !result.assets[0]?.uri) return;
 
       triggerHaptic();
       setUploadingAvatar(true);
 
       const asset = result.assets[0];
-      const mimeType = asset.mimeType ?? "image/jpeg";
-      const contentType = mimeType === "image/png" ? "image/png" : mimeType === "image/webp" ? "image/webp" : "image/jpeg";
+      const optimized = await optimizeImageForUpload(
+        asset.uri,
+        OPTIMIZATION_PRESETS.AVATAR,
+        "avatar.jpg",
+      );
+
+      const payloadBase64 = optimized.base64 || asset.base64;
+      if (!payloadBase64) {
+        throw new Error("Could not process avatar image.");
+      }
 
       const res = await api<{ avatar_url: string; profile: Profile }>("/profiles/me/avatar", {
         method: "POST",
         body: JSON.stringify({
-          imageBase64: asset.base64,
-          contentType,
+          imageBase64: payloadBase64,
+          contentType: optimized.mimeType || "image/jpeg",
         }),
       });
 

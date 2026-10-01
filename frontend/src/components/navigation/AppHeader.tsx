@@ -29,8 +29,8 @@ export function AppHeader({
   const notifications = useQuery({
     queryKey: ["notifications"],
     queryFn: () => api<{ notifications: NotificationItem[] }>("/notifications"),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   });
   const unread = notifications.data?.notifications.filter((item) => !item.read_at).length ?? 0;
   const hasTitle = Boolean(title);

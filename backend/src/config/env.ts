@@ -91,6 +91,9 @@ const schema = z.object({
   R2_SECRET_ACCESS_KEY: optionalString,
   R2_BUCKET_NAME: optionalString,
   R2_PUBLIC_DOMAIN: optionalString,
+  // AI: Gemini (Quiz Engine + Research)
+  GEMINI_API_KEY: optionalString,
+  QUIZ_SESSION_SECRET: optionalString,
   // Phase 4: YouTube OAuth & Media Automation
   YOUTUBE_CLIENT_ID: optionalString,
   YOUTUBE_CLIENT_SECRET: optionalString,

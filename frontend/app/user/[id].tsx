@@ -30,7 +30,6 @@ import {
 } from "@/components/ui";
 import { radius, spacing, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
-import { initiateCallApi } from "@/features/calls/services/callApi";
 
 type UserProfileData = {
   profile: Profile & { role?: string };
@@ -109,41 +108,42 @@ export default function UserProfile() {
     if (!id) return;
     triggerHaptic();
     try {
-      const res = await api<{ conversation: { id: string } }>("/chat/conversations", {
+      const res = await api<any>("/chat/conversations", {
         method: "POST",
         body: JSON.stringify({ participantId: id }),
       });
-      if (res.conversation?.id) {
-        router.push(`/chat/${res.conversation.id}` as any);
+      const convId = res?.id || res?.conversation_id || res?.conversation?.id;
+      if (convId) {
+        router.push(`/chat/${convId}` as any);
+      } else {
+        Alert.alert("Chat", "Conversation started, check your messages inbox.");
       }
     } catch (e: any) {
       Alert.alert("Could not open chat", e.message || "Unable to start conversation.");
     }
   };
 
-  // Direct 1:1 Voice Calling
+  // Direct 1:1 Voice Calling — route by peer id; CallScreen owns POST /calls initiation (same as inbox/chat).
   const handleVoiceCall = async () => {
     if (!id) return;
     triggerHaptic();
     try {
-      const res = await initiateCallApi(id, "audio");
-      if (res.call?.id) {
-        router.push(`/call/${res.call.id}` as any);
-      }
+      const nameParam = encodeURIComponent(d?.profile?.full_name || d?.profile?.username || "SkillBridge Peer");
+      const avatarParam = encodeURIComponent(d?.profile?.avatar_url || "");
+      router.push(`/call/${id}?name=${nameParam}&avatar=${avatarParam}&type=audio` as any);
     } catch (e: any) {
       Alert.alert("Call Failed", e.message || "Could not initiate audio call.");
     }
   };
 
-  // Direct 1:1 Video Calling
+  // Direct 1:1 Video Calling — route by peer id; CallScreen owns POST /calls initiation.
   const handleVideoCall = async () => {
     if (!id) return;
     triggerHaptic();
     try {
-      const res = await initiateCallApi(id, "video");
-      if (res.call?.id) {
-        router.push(`/call/${res.call.id}` as any);
-      }
+      const nameParam = encodeURIComponent(d?.profile?.full_name || d?.profile?.username || "SkillBridge Peer");
+      const avatarParam = encodeURIComponent(d?.profile?.avatar_url || "");
+      router.push(`/call/${id}?name=${nameParam}&avatar=${avatarParam}&type=video` as any);
     } catch (e: any) {
       Alert.alert("Call Failed", e.message || "Could not initiate video call.");
     }

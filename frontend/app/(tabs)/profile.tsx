@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
   Image,
   Pressable,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -30,7 +29,7 @@ import {
   Skeleton,
   triggerHaptic,
 } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { fetchActivityTimeline, type ActivityEvent } from "@/features/growth/growthApi";
 import { nextGenAvatarFrames } from "@/assets/nextgen";

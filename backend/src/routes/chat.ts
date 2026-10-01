@@ -5,6 +5,13 @@ import { wrap } from "../middleware/error.js";
 import type { Server } from "socket.io";
 import { PushService } from "../services/PushService.js";
 import { isBlocked } from "../lib/query-helpers.js";
+import { env } from "../config/env.js";
+
+// Inline (base64) upload guards. The ticket flow allows up to 15MB, but a base64
+// body is ~33% larger in transit, so we cap the encoded string first and the
+// decoded bytes second (prevents unbounded memory allocation).
+const MAX_INLINE_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_INLINE_UPLOAD_BASE64 = Math.ceil((MAX_INLINE_UPLOAD_BYTES * 4) / 3) + 1024;
 
 export function chat(io: Server) {
   const r = Router();
@@ -585,41 +592,67 @@ export function chat(io: Server) {
       res.json(data);
     }),
   );
+  // Legacy inline upload (base64). Kept for backwards compatibility with older
+  // clients, but hardened: bounded size, explicit MIME allow-list, and stored in
+  // the private `attachments` bucket rather than the public `avatars` bucket.
   r.post(
     "/upload",
     wrap(async (req, res) => {
-      const { fileBase64, contentType = "image/jpeg", fileName = "attachment" } = z
+      const { fileBase64, contentType, fileName } = z
         .object({
-          fileBase64: z.string().min(10),
-          contentType: z.string().default("image/jpeg"),
-          fileName: z.string().optional().default("attachment"),
+          fileBase64: z.string().min(10).max(MAX_INLINE_UPLOAD_BASE64),
+          contentType: z
+            .string()
+            .regex(
+              /^(image\/(jpeg|png|webp|gif)|application\/pdf|text\/plain)$/i,
+              { message: "Unsupported file type" },
+            )
+            .default("image/jpeg"),
+          fileName: z.string().max(160).optional().default("attachment"),
         })
         .parse(req.body);
 
       const ext = contentType.includes("png")
         ? "png"
-        : contentType.includes("pdf")
-        ? "pdf"
         : contentType.includes("webp")
         ? "webp"
+        : contentType.includes("gif")
+        ? "gif"
+        : contentType.includes("pdf")
+        ? "pdf"
+        : contentType.includes("text/")
+        ? "txt"
         : "jpg";
+
       const sanitizedName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${req.userId}/${Date.now()}_${sanitizedName}.${ext}`;
+      const path = `${req.userId}/${Date.now()}_${crypto.randomUUID()}_${sanitizedName}.${ext}`;
+
+      // Decode only after the base64 length cap has been enforced, so an
+      // oversized payload can never be materialised in memory.
       const buffer = Buffer.from(fileBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+      if (buffer.byteLength > MAX_INLINE_UPLOAD_BYTES) {
+        return res
+          .status(413)
+          .json({ error: `File too large. Maximum is ${MAX_INLINE_UPLOAD_BYTES / (1024 * 1024)}MB.` });
+      }
 
-      const { error: uploadError } = await admin.storage
-        .from("avatars")
-        .upload(path, buffer, { contentType, upsert: true });
+      const { getStorageProvider } = await import("../services/storage.js");
+      const provider = getStorageProvider();
+      await provider.uploadBuffer("attachments", path, buffer, contentType);
 
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = admin.storage.from("avatars").getPublicUrl(path);
+      // Private bucket: hand back a time-limited signed read URL instead of a
+      // permanent public link (minted by R2 SigV4 or Supabase, provider-aware).
+      const url = await provider.createSignedDownloadUrl("attachments", path, 3600, {
+        forceSigned: true,
+      });
 
       res.json({
-        url: urlData.publicUrl,
+        url,
+        storagePath: path,
+        provider: provider.name,
         type: contentType.startsWith("image/") ? "image" : "file",
         name: fileName,
-        size: buffer.length,
+        size: buffer.byteLength,
       });
     }),
   );
@@ -639,6 +672,10 @@ export function chat(io: Server) {
               type: z.string(),
               name: z.string().optional(),
               size: z.number().optional(),
+              duration: z.number().optional(),
+              // Key inside the private `attachments` bucket. Kept so clients can
+              // mint a fresh signed read URL after the initial one expires.
+              storagePath: z.string().max(300).optional(),
             })
             .optional(),
         })
@@ -726,17 +763,45 @@ export function chat(io: Server) {
 
       if (conv) {
         const otherMembers = conv.conversation_members.filter((cm: any) => cm.user_id !== req.userId!);
+        
+        let senderName = "New Message";
+        try {
+          const { data: senderProfile } = await admin
+            .from("profiles")
+            .select("full_name")
+            .eq("id", req.userId!)
+            .maybeSingle();
+          if (senderProfile?.full_name) {
+            senderName = senderProfile.full_name;
+          }
+        } catch {
+          // Non-fatal
+        }
+
+        const previewText = body.length > 50 ? body.substring(0, 47) + "..." : (body || defaultBody);
+
         for (const member of otherMembers) {
+          // Emit user-scoped event so app outside this conversation updates badge/unread counts
+          io.to(`user:${member.user_id}`).emit("chat:message", {
+            conversationId: id,
+            message: data,
+            senderName,
+            preview: previewText,
+          });
+
           // Section 10 & 96: Muted chats suppress push notifications
           const isMuted = member.muted_until && new Date(member.muted_until) > new Date();
           if (isMuted) continue;
 
-          const sockets = await io.in(`user:${member.user_id}`).fetchSockets();
-          if (sockets.length === 0) {
+          // Check if member is actively connected inside this specific conversation
+          const convSockets = await io.in(`conversation:${id}`).fetchSockets();
+          const isViewingChat = convSockets.some((s) => s.data.userId === member.user_id);
+
+          if (!isViewingChat) {
             await PushService.sendNotification(member.user_id, {
-              title: "New Message",
-              body: body.length > 50 ? body.substring(0, 47) + "..." : (body || defaultBody),
-              data: { conversationId: id, messageId: data.id }
+              title: senderName,
+              body: previewText,
+              data: { conversationId: id, messageId: data.id, url: `/chat/${id}` },
             });
           }
         }
@@ -923,12 +988,28 @@ export function chat(io: Server) {
         return res.status(403).json({ error: "Not authorized to upload to this conversation" });
       }
 
-      const { signedUpload } = await import("../services/storage.js");
+      const { signedUpload, getStorageProvider } = await import("../services/storage.js");
       const safeFilename = b.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
       const storagePath = `${convId}/${req.userId!}/${crypto.randomUUID()}-${safeFilename}`;
       const ticket = await signedUpload("attachments", storagePath);
 
-      res.json({ bucket: "attachments", ...ticket, storagePath });
+      // The bucket is PRIVATE, so the client must never receive a raw object URL
+      // (R2's `publicUrl` is unsigned and would 403). Always mint a time-limited
+      // signed download URL from the active provider (R2 or Supabase).
+      const provider = getStorageProvider();
+      const previewUrl = await provider.createSignedDownloadUrl("attachments", storagePath, 3600, {
+        forceSigned: true,
+      });
+
+      res.json({
+        bucket: env.R2_BUCKET_NAME || "attachments",
+        ...ticket,
+        provider: provider.name,
+        storagePath,
+        // Presigned PUT must win for uploads; signedUrl is strictly for reading.
+        signedUrl: previewUrl,
+        publicUrl: previewUrl,
+      });
     })
   );
 
@@ -954,12 +1035,15 @@ export function chat(io: Server) {
         return res.status(403).json({ error: "Invalid attachment path for this conversation" });
       }
 
-      const { data, error } = await admin.storage
-        .from("attachments")
-        .createSignedUrl(storagePath, 3600);
+      // Must go through the storage provider: on R2 this mints a SigV4 signed
+      // GET URL, on Supabase a signed URL. Calling admin.storage directly here
+      // made every attachment refresh fail whenever R2 was the active provider.
+      const { getStorageProvider } = await import("../services/storage.js");
+      const url = await getStorageProvider().createSignedDownloadUrl("attachments", storagePath, 3600, {
+        forceSigned: true,
+      });
 
-      if (error) throw error;
-      res.json({ url: data.signedUrl });
+      res.json({ url });
     })
   );
 

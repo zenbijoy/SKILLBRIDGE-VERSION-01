@@ -72,7 +72,7 @@ export const IncomingCallModal: React.FC = () => {
         providerConfig: res.providerConfig,
       });
       setIncomingCall(null);
-      router.push(`/call/${call.callId}` as any);
+      router.push(`/call/${call.callId}?callId=${call.callId}` as any);
     } catch (err) {
       console.error("Failed to accept incoming call:", err);
       setIncomingCall(null);

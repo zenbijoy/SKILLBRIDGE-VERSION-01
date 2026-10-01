@@ -1,68 +1,50 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
-  Linking,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import Animated, {
-  FadeIn,
   FadeInDown,
-  FadeInUp,
   Layout,
-  useAnimatedStyle,
-  useSharedValue,
-  withSequence,
-  withSpring,
-  withTiming,
 } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { router } from "expo-router";
 import { api } from "@/lib/api";
 import type { Profile } from "@/types";
-import { Card, Empty, Pill, Row, Skeleton, triggerHaptic } from "@/components/ui";
+import {
+  Card,
+  Empty,
+  ErrorState,
+  Pill,
+  Row,
+  Skeleton,
+  triggerHaptic,
+} from "@/components/ui";
 import { radius, spacing, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { PostComposerModal } from "./PostComposerModal";
 import { InstagramProfileCard } from "@/components/InstagramProfileCard";
+import { UniversalShareSheet } from "@/components/UniversalShareSheet";
+import {
+  PostCard,
+  EditPostModal,
+  type SocialPost,
+  type ReactionType,
+} from "@/features/social";
 
-export type Post = {
-  id: string;
-  author_id: string;
-  author: Profile;
-  body: string;
-  is_anonymous: boolean;
-  anonymous_handle?: string;
-  media_urls: string[];
-  youtube?: {
-    videoId: string;
-    title: string;
-    thumbnailUrl: string;
-    durationSeconds?: number | null;
-  };
-  likes_count: number;
-  comments_count: number;
-  pinned: boolean;
-  my_reaction?: string | null;
-  created_at: string;
-};
-
-export type Comment = {
-  id: string;
-  post_id: string;
-  author: Profile;
-  body: string;
-  is_anonymous: boolean;
-  created_at: string;
-};
+export type { SocialPost as Post };
 
 type FeedTab = "for_you" | "campus" | "my_groups" | "questions";
 
@@ -93,14 +75,9 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
 
   const [activeTab, setActiveTab] = useState<FeedTab>("for_you");
   const [composerVisible, setComposerVisible] = useState(false);
-  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
-  const [commentText, setCommentText] = useState("");
+  const [sharingPost, setSharingPost] = useState<SocialPost | null>(null);
+  const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
   const [cursorVisible, setCursorVisible] = useState(true);
-  const suggestedPeersQuery = useQuery({
-    queryKey: ["recommendations", "people-feed"],
-    queryFn: () => api<{ people: Profile[] }>("/recommendations/people"),
-    staleTime: 60_000,
-  });
 
   // Blinking cursor interval
   useEffect(() => {
@@ -154,7 +131,6 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
         setTypedText(currentFullPrompt.slice(0, typedText.length + 1));
       }, 55);
     } else if (!isDeleting && typedText.length === currentFullPrompt.length) {
-      // Pause after completing prompt
       timer = setTimeout(() => {
         setIsDeleting(true);
       }, 2600);
@@ -170,12 +146,28 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
     return () => clearTimeout(timer);
   }, [typedText, isDeleting, promptIndex, typewriterPrompts]);
 
-  // 1. Fetch Campus Posts
-  const feedQuery = useQuery<{ posts: Post[]; next_cursor: string | null }>({
+  // 1. Fetch Campus Posts with cursor pagination
+  const feedQuery = useInfiniteQuery<{
+    posts: SocialPost[];
+    next_cursor: string | null;
+    has_more?: boolean;
+  }>({
     queryKey: ["campus-feed"],
-    queryFn: () => api("/feed"),
-    refetchInterval: 25_000,
+    queryFn: async ({ pageParam }) => {
+      const url = pageParam
+        ? `/feed?cursor=${encodeURIComponent(pageParam as string)}&limit=20`
+        : "/feed?limit=20";
+      return api<{ posts: SocialPost[]; next_cursor: string | null; has_more?: boolean }>(url);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage?.next_cursor ?? undefined,
+    refetchInterval: 30_000,
   });
+
+  const allPosts = useMemo(
+    () => feedQuery.data?.pages.flatMap((page) => page.posts || []) || [],
+    [feedQuery.data?.pages],
+  );
 
   // 2. Fetch Academic Questions (for Questions tab)
   const questionsQuery = useQuery<{ questions: QuestionItem[] }>({
@@ -184,43 +176,132 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
     enabled: activeTab === "questions",
   });
 
-  // Reactions mutation
+  // 3. Suggested Peers In-Feed
+  const suggestedPeersQuery = useQuery({
+    queryKey: ["recommendations", "people-feed"],
+    queryFn: () => api<{ people: Profile[] }>("/recommendations/people"),
+    staleTime: 60_000,
+  });
+
+  // 4. Reactions mutation with Optimistic Update
   const reactionMutation = useMutation({
-    mutationFn: ({ postId, type }: { postId: string; type: string }) =>
+    mutationFn: ({ postId, type }: { postId: string; type: ReactionType }) =>
       api(`/feed/${postId}/reactions`, {
         method: "POST",
         body: JSON.stringify({ reaction_type: type }),
       }),
-    onSuccess: () => {
+    onMutate: async ({ postId, type }) => {
+      triggerHaptic();
+      await qc.cancelQueries({ queryKey: ["campus-feed"] });
+      const previous = qc.getQueryData<
+        InfiniteData<{ posts: SocialPost[]; next_cursor: string | null; has_more?: boolean }>
+      >(["campus-feed"]);
+
+      if (previous) {
+        qc.setQueryData<
+          InfiniteData<{ posts: SocialPost[]; next_cursor: string | null; has_more?: boolean }>
+        >(["campus-feed"], {
+          ...previous,
+          pages: previous.pages.map((page) => ({
+            ...page,
+            posts: page.posts.map((p) => {
+              if (p.id !== postId) return p;
+              const wasSameReaction = p.my_reaction === type;
+              const deltaLikes = wasSameReaction ? -1 : p.my_reaction ? 0 : 1;
+              return {
+                ...p,
+                my_reaction: wasSameReaction ? null : type,
+                likes_count: Math.max(0, (p.likes_count || 0) + deltaLikes),
+              };
+            }),
+          })),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(["campus-feed"], context.previous);
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["campus-feed"] });
     },
   });
 
-  // Comments Query for expanded post
-  const commentsQuery = useQuery<{ comments: Comment[] }>({
-    queryKey: ["post-comments", expandedPostId],
-    queryFn: () => api(`/feed/${expandedPostId}/comments`),
-    enabled: Boolean(expandedPostId),
-  });
-
-  // Post Comment mutation
-  const addCommentMutation = useMutation({
-    mutationFn: ({ postId, body }: { postId: string; body: string }) =>
-      api(`/feed/${postId}/comments`, {
+  // 5. Poll vote mutation
+  const pollVoteMutation = useMutation({
+    mutationFn: ({ postId, optionId }: { postId: string; optionId: string }) =>
+      api(`/feed/${postId}/poll/vote`, {
         method: "POST",
-        body: JSON.stringify({ body, is_anonymous: false }),
+        body: JSON.stringify({ option_id: optionId }),
       }),
     onSuccess: () => {
       triggerHaptic();
-      setCommentText("");
       qc.invalidateQueries({ queryKey: ["campus-feed"] });
-      qc.invalidateQueries({ queryKey: ["post-comments", expandedPostId] });
+    },
+    onError: (err: Error) => Alert.alert("Voting Failed", err.message),
+  });
+
+  // 6. Save/Bookmark mutation
+  const toggleSaveMutation = useMutation({
+    mutationFn: (postId: string) =>
+      api(`/feed/${postId}/save`, { method: "POST" }),
+    onSuccess: () => {
+      triggerHaptic();
+      qc.invalidateQueries({ queryKey: ["campus-feed"] });
     },
   });
 
+  // 7. Delete post mutation
+  const deletePostMutation = useMutation({
+    mutationFn: (postId: string) =>
+      api(`/feed/${postId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      triggerHaptic();
+      qc.invalidateQueries({ queryKey: ["campus-feed"] });
+    },
+    onError: (err: Error) => Alert.alert("Delete Failed", err.message),
+  });
+
+  // 8. Edit post mutation
+  const editPostMutation = useMutation({
+    mutationFn: ({ postId, newBody }: { postId: string; newBody: string }) =>
+      api(`/feed/${postId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body: newBody }),
+      }),
+    onSuccess: () => {
+      triggerHaptic();
+      qc.invalidateQueries({ queryKey: ["campus-feed"] });
+    },
+    onError: (err: Error) => Alert.alert("Edit Failed", err.message),
+  });
+
+  // 9. Report post mutation
+  const reportPostMutation = useMutation({
+    mutationFn: ({ postId, reason }: { postId: string; reason: string }) =>
+      api(`/feed/${postId}/report`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => Alert.alert("Report Received", "Thank you. Our moderation team has been notified."),
+    onError: (err: Error) => Alert.alert("Report Failed", err.message),
+  });
+
+  const handleReport = (postId: string) => {
+    Alert.alert("Report Post", "Select reason for reporting this content:", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Spam / Promotion", onPress: () => reportPostMutation.mutate({ postId, reason: "Spam" }) },
+      { text: "Harassment / Hate", onPress: () => reportPostMutation.mutate({ postId, reason: "Harassment" }) },
+      { text: "Misleading Information", onPress: () => reportPostMutation.mutate({ postId, reason: "Misleading" }) },
+      { text: "Inappropriate Content", style: "destructive", onPress: () => reportPostMutation.mutate({ postId, reason: "Inappropriate" }) },
+    ]);
+  };
+
   // Multi-Factor Algorithmic Scoring Engine
   const rankedPosts = useMemo(() => {
-    const rawPosts = feedQuery.data?.posts || [];
+    const rawPosts = allPosts;
     const myUniversity = currentUser?.university?.toLowerCase().trim() || "";
     const myDept = currentUser?.department?.toLowerCase().trim() || "";
     const myBio = currentUser?.bio?.toLowerCase().trim() || "";
@@ -235,16 +316,17 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
           score += 30;
         }
 
-        // 2. Audience / Group Match (+40 for room/club, +25 for campus tag)
-        if (post.body.includes("[🚪 Room:") || post.body.includes("[🛡️ Club:")) {
+        // 2. Audience / Group Match (+35 for room/club, +25 for campus tag)
+        const bodyText = post.body || "";
+        if (bodyText.includes("[🚪 Room:") || bodyText.includes("[🛡️ Club:")) {
           score += 35;
         }
-        if (post.body.includes("[🏛️") || post.body.includes("[👥 Connections]")) {
+        if (bodyText.includes("[🏛️") || bodyText.includes("[👥 Connections]")) {
           score += 25;
         }
 
         // 3. Department & Academic Bio Affinity (+20)
-        const lowerBody = post.body.toLowerCase();
+        const lowerBody = bodyText.toLowerCase();
         if (myDept && lowerBody.includes(myDept)) score += 20;
         if (myBio && myBio.split(/\s+/).some((w) => w.length > 3 && lowerBody.includes(w))) score += 15;
 
@@ -269,38 +351,25 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
       })
       .map((item) => item.post)
       .filter((post) => {
+        const bodyText = post.body || "";
         if (activeTab === "campus") {
           return (
             (myUniversity && post.author?.university?.toLowerCase() === myUniversity) ||
-            post.body.includes("[🏛️")
+            bodyText.includes("[🏛️")
           );
         }
         if (activeTab === "my_groups") {
-          return post.body.includes("[🚪") || post.body.includes("[🛡️");
+          return bodyText.includes("[🚪") || bodyText.includes("[🛡️");
         }
         return true;
       });
-  }, [feedQuery.data?.posts, currentUser, activeTab]);
+  }, [allPosts, currentUser, activeTab]);
 
-  const handleShare = async (p: Post) => {
-    try {
-      await Share.share({
-        message: `${p.body.slice(0, 150)}...\n\nShared via SkillBridge`,
-      });
-    } catch {
-      // Ignored
-    }
-  };
-
-  const handleToggleReaction = (post: Post) => {
-    triggerHaptic();
-    const nextType = post.my_reaction === "like" ? "unlike" : "like";
-    reactionMutation.mutate({ postId: post.id, type: nextType });
-  };
+  const isAdmin = (currentUser?.roles || []).includes("admin") || (currentUser?.roles || []).includes("moderator");
 
   return (
     <View style={styles.feedWrapper}>
-      {/* 1. UNIQUE TYPEWRITER ANIMATED PROMPT BANNER */}
+      {/* 1. TYPEWRITER ANIMATED PROMPT BANNER */}
       <View
         style={[
           styles.promptBanner,
@@ -318,12 +387,10 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
           style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
         >
           <Row style={{ alignItems: "center", gap: 12 }}>
-            {/* Clean Prompt Icon */}
             <View style={[styles.promptIconCircle, { backgroundColor: colors.primarySoft }]}>
               <MaterialCommunityIcons name="feather" size={20} color={colors.primary} />
             </View>
 
-            {/* Dynamic Typewriter Prompt Text */}
             <View style={{ flex: 1 }}>
               <Row style={{ alignItems: "center", gap: 2 }}>
                 <Text style={[styles.typewriterText, { color: typedText ? colors.text : colors.muted }]}>
@@ -341,14 +408,12 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
               </Text>
             </View>
 
-            {/* Glowing Action Button */}
             <View style={[styles.promptActionBtn, { backgroundColor: colors.primarySoft }]}>
               <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
             </View>
           </Row>
         </Pressable>
 
-        {/* Subtle Divider */}
         <View style={[styles.promptDivider, { backgroundColor: colors.border }]} />
 
         {/* Quick Action Micro Chips */}
@@ -435,24 +500,27 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
         })}
       </View>
 
-      {/* 3. FEED POSTS LIST */}
-      {feedQuery.isLoading && activeTab !== "questions" ? (
-        <View style={{ gap: 12, marginTop: 8 }}>
-          <Skeleton height={140} radiusValue={radius.lg} />
-          <Skeleton height={140} radiusValue={radius.lg} />
-        </View>
-      ) : activeTab === "questions" ? (
+      {/* 3. FEED CONTENT / LOADER / ERROR STATES */}
+      {activeTab === "questions" ? (
         /* Academic Questions tab content */
         <View style={{ gap: 10, marginTop: 4 }}>
-          {questionsQuery.isLoading ? (
-            <Skeleton height={120} />
+          {questionsQuery.isError ? (
+            <ErrorState
+              detail={questionsQuery.error instanceof Error ? questionsQuery.error.message : "Failed to load questions"}
+              onRetry={() => questionsQuery.refetch()}
+            />
+          ) : questionsQuery.isLoading ? (
+            <View style={{ gap: 10 }}>
+              <Skeleton height={120} radiusValue={radius.lg} />
+              <Skeleton height={120} radiusValue={radius.lg} />
+            </View>
           ) : (questionsQuery.data?.questions || []).length === 0 ? (
             <Empty
               icon="help-circle-outline"
               title={t("feed.noPosts")}
               detail={t("feed.noPostsDetail")}
               actionTitle={t("feed.createPost")}
-              onAction={() => setComposerVisible(true)}
+              onAction={() => handleOpenPrompt({ initialTag: "#Question" })}
             />
           ) : (
             (questionsQuery.data?.questions || []).map((q) => (
@@ -488,261 +556,166 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
             ))
           )}
         </View>
+      ) : feedQuery.isError && allPosts.length === 0 ? (
+        <ErrorState
+          detail={feedQuery.error instanceof Error ? feedQuery.error.message : "Failed to load campus feed."}
+          onRetry={() => feedQuery.refetch()}
+        />
+      ) : feedQuery.isLoading && allPosts.length === 0 ? (
+        <View style={{ gap: 12, marginTop: 8 }}>
+          <Skeleton height={140} radiusValue={radius.lg} />
+          <Skeleton height={140} radiusValue={radius.lg} />
+          <Skeleton height={140} radiusValue={radius.lg} />
+        </View>
       ) : rankedPosts.length === 0 ? (
         <Empty
           icon="newspaper-variant-outline"
           title={t("feed.noPosts")}
           detail={t("feed.noPostsDetail")}
           actionTitle={t("feed.createPost")}
-          onAction={() => setComposerVisible(true)}
+          onAction={() => handleOpenPrompt()}
         />
       ) : (
-        rankedPosts.map((post, idx) => {
-          const isLiked = post.my_reaction === "like";
-          const isExpanded = expandedPostId === post.id;
-
-          return (
+        <View style={{ gap: 12 }}>
+          {rankedPosts.map((post, idx) => (
             <React.Fragment key={post.id}>
               <Animated.View
-                entering={FadeInDown.delay(Math.min(idx * 50, 300)).springify()}
-              layout={Layout.springify()}
-            >
-              <Card style={styles.postCard}>
-                {/* Author Info */}
-                <Row style={styles.postHeader}>
-                  <Pressable
-                    onPress={() => {
-                      if (!post.is_anonymous && post.author_id) {
-                        router.push(`/user/${post.author_id}` as any);
-                      }
-                    }}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}
+                entering={FadeInDown.delay(Math.min(idx * 40, 250)).springify()}
+                layout={Layout.springify()}
+              >
+                <PostCard
+                  post={post}
+                  currentUserId={currentUser?.id}
+                  isAdmin={isAdmin}
+                  onReact={(postId, type) => reactionMutation.mutate({ postId, type })}
+                  onVotePoll={async (postId, optionId) => {
+                    await pollVoteMutation.mutateAsync({ postId, optionId });
+                  }}
+                  onSave={(postId) => toggleSaveMutation.mutate(postId)}
+                  onShare={(p) => setSharingPost(p)}
+                  onDelete={(postId) => {
+                    Alert.alert(
+                      "Delete Post",
+                      "Are you sure you want to delete this post? This action cannot be undone.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Delete",
+                          style: "destructive",
+                          onPress: () => deletePostMutation.mutate(postId),
+                        },
+                      ],
+                    );
+                  }}
+                  onEdit={(p) => setEditingPost(p)}
+                  onReport={(postId) => handleReport(postId)}
+                  onHashtagPress={(tag) => {
+                    triggerHaptic();
+                    router.push(`/search?q=${encodeURIComponent(tag)}` as any);
+                  }}
+                  onMentionPress={(username) => {
+                    triggerHaptic();
+                    router.push(`/search?q=${encodeURIComponent(username)}` as any);
+                  }}
+                />
+              </Animated.View>
+
+              {/* Instagram-Style Suggested Peers Carousel (after 3rd post or every 20 posts) */}
+              {(idx === 2 || (idx > 0 && (idx + 1) % 20 === 0)) &&
+                (suggestedPeersQuery.data?.people?.length ?? 0) > 0 && (
+                  <View
+                    style={[
+                      styles.inFeedPeersSection,
+                      { backgroundColor: colors.surface, borderColor: colors.border },
+                    ]}
                   >
-                    <View style={[styles.postAvatar, { backgroundColor: colors.primarySoft }]}>
-                      {post.is_anonymous ? (
-                        <MaterialCommunityIcons name="incognito" size={20} color={colors.primary} />
-                      ) : (
-                        <Text style={{ color: colors.primary, fontWeight: "800", fontSize: 15 }}>
-                          {post.author?.full_name?.[0] || "U"}
+                    <Row style={styles.inFeedPeersHeader}>
+                      <Row style={{ alignItems: "center", gap: 6 }}>
+                        <MaterialCommunityIcons name="account-group" size={18} color={colors.primary} />
+                        <Text style={[styles.inFeedPeersTitle, { color: colors.text }]}>
+                          {t("feed.suggestedPeers", "People You May Know")}
                         </Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.authorName, { color: colors.text }]} numberOfLines={1}>
-                        {post.is_anonymous
-                          ? post.anonymous_handle || "Anonymous Peer"
-                          : post.author?.full_name || "SkillBridge Student"}
-                      </Text>
-                      <Text style={[styles.postMeta, { color: colors.muted }]} numberOfLines={1}>
-                        {post.author?.university || "Campus Community"} •{" "}
-                        {new Date(post.created_at).toLocaleDateString([], {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </Text>
-                    </View>
-                  </Pressable>
-                </Row>
-
-                {/* Post Body Content */}
-                <Text style={[styles.postBody, { color: colors.text }]}>{post.body}</Text>
-
-                {/* Attached Image Gallery */}
-                {post.media_urls && post.media_urls.length > 0 && (
-                  <View style={styles.mediaGallery}>
-                    {post.media_urls.map((url: string, i: number) => (
-                      <Pressable key={i} onPress={() => Linking.openURL(url)}>
-                        <Image source={{ uri: url }} style={styles.postImage} resizeMode="cover" />
+                      </Row>
+                      <Pressable
+                        onPress={() => {
+                          triggerHaptic();
+                          router.push("/(tabs)/discover" as any);
+                        }}
+                      >
+                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>
+                          {t("common.seeAll", "See all")} →
+                        </Text>
                       </Pressable>
-                    ))}
+                    </Row>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 4 }}
+                    >
+                      {suggestedPeersQuery.data!.people.map((peer) => (
+                        <InstagramProfileCard key={peer.id} profile={peer} />
+                      ))}
+                    </ScrollView>
                   </View>
                 )}
+            </React.Fragment>
+          ))}
 
-                {/* YouTube Video Embed Preview */}
-                {post.youtube && (
-                  <Pressable
-                    onPress={() => Linking.openURL(`https://youtube.com/watch?v=${post.youtube?.videoId}`)}
-                    style={[styles.youtubeCard, { backgroundColor: colors.surface2, borderColor: colors.border }]}
-                  >
-                    <Row style={{ alignItems: "center", gap: 10 }}>
-                      <Image source={{ uri: post.youtube.thumbnailUrl }} style={styles.ytThumb} />
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={[styles.ytTitle, { color: colors.text }]} numberOfLines={2}>
-                          {post.youtube.title}
-                        </Text>
-                        <Row style={{ alignItems: "center", gap: 4 }}>
-                          <MaterialCommunityIcons name="youtube" size={16} color="#EF4444" />
-                          <Text style={{ color: "#EF4444", fontSize: 11, fontWeight: "700" }}>Watch Video</Text>
-                        </Row>
-                      </View>
-                    </Row>
-                  </Pressable>
-                )}
-
-                {/* Post Footer Metrics & Actions */}
-                <View style={[styles.postFooter, { borderTopColor: colors.border }]}>
-                  {/* Like Button */}
-                  <Pressable
-                    onPress={() => handleToggleReaction(post)}
-                    style={styles.actionBtn}
-                    hitSlop={6}
-                  >
-                    <MaterialCommunityIcons
-                      name={isLiked ? "heart" : "heart-outline"}
-                      size={20}
-                      color={isLiked ? "#EF4444" : colors.muted}
-                    />
-                    <Text
-                      style={[
-                        styles.actionBtnText,
-                        { color: isLiked ? "#EF4444" : colors.muted, fontWeight: isLiked ? "700" : "500" },
-                      ]}
-                    >
-                      {post.likes_count || 0}
-                    </Text>
-                  </Pressable>
-
-                  {/* Comment Button */}
-                  <Pressable
-                    onPress={() => {
-                      triggerHaptic();
-                      setExpandedPostId(isExpanded ? null : post.id);
-                    }}
-                    style={styles.actionBtn}
-                    hitSlop={6}
-                  >
-                    <MaterialCommunityIcons
-                      name="comment-outline"
-                      size={18}
-                      color={isExpanded ? colors.primary : colors.muted}
-                    />
-                    <Text
-                      style={[
-                        styles.actionBtnText,
-                        { color: isExpanded ? colors.primary : colors.muted, fontWeight: isExpanded ? "700" : "500" },
-                      ]}
-                    >
-                      {post.comments_count || 0}
-                    </Text>
-                  </Pressable>
-
-                  {/* Share Button */}
-                  <Pressable onPress={() => handleShare(post)} style={styles.actionBtn} hitSlop={6}>
-                    <MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.muted} />
-                  </Pressable>
-                </View>
-
-                {/* Expanded Inline Comments Section */}
-                {isExpanded && (
-                  <Animated.View entering={FadeIn.duration(200)} style={styles.commentsWrap}>
-                    {commentsQuery.isLoading ? (
-                      <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 8 }} />
-                    ) : (
-                      commentsQuery.data?.comments?.map((c) => (
-                        <View key={c.id} style={[styles.commentBubble, { backgroundColor: colors.surface2 }]}>
-                          <Text style={[styles.commentAuthor, { color: colors.text }]}>
-                            {c.is_anonymous ? "Anonymous Peer" : c.author?.full_name || "Peer"}
-                          </Text>
-                          <Text style={[styles.commentBody, { color: colors.text }]}>{c.body}</Text>
-                        </View>
-                      ))
-                    )}
-
-                    {/* Inline Comment Input Box */}
-                    <Row style={{ gap: 8, marginTop: 8 }}>
-                      <TextInput
-                        style={[styles.commentInput, { color: colors.text, borderColor: colors.border }]}
-                        placeholder="Write a comment..."
-                        placeholderTextColor={colors.muted}
-                        value={commentText}
-                        onChangeText={setCommentText}
-                      />
-                      <Pressable
-                        disabled={!commentText.trim() || addCommentMutation.isPending}
-                        onPress={() =>
-                          addCommentMutation.mutate({ postId: post.id, body: commentText.trim() })
-                        }
-                        style={[
-                          styles.commentSendBtn,
-                          {
-                            backgroundColor: commentText.trim() ? colors.primary : colors.surface2,
-                            opacity: commentText.trim() ? 1 : 0.5,
-                          },
-                        ]}
-                      >
-                        <MaterialCommunityIcons
-                          name="send"
-                          size={16}
-                          color={commentText.trim() ? "#FFFFFF" : colors.muted}
-                        />
-                      </Pressable>
-                    </Row>
-                  </Animated.View>
-                )}
-              </Card>
-            </Animated.View>
-
-            {/* Instagram-Style Suggested Peers In-Feed Carousel (After 3rd post or every 20 posts) */}
-            {(idx === 2 || (idx > 0 && (idx + 1) % 20 === 0)) &&
-              (suggestedPeersQuery.data?.people?.length ?? 0) > 0 && (
-                <View
-                  style={[
-                    styles.inFeedPeersSection,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
-                  ]}
-                >
-                  <Row style={styles.inFeedPeersHeader}>
-                    <Row style={{ alignItems: "center", gap: 6 }}>
-                      <MaterialCommunityIcons name="account-group" size={18} color={colors.primary} />
-                      <Text style={[styles.inFeedPeersTitle, { color: colors.text }]}>
-                        {t("feed.suggestedPeers", "People You May Know")}
-                      </Text>
-                    </Row>
-                    <Pressable
-                      onPress={() => {
-                        triggerHaptic();
-                        router.push("/(tabs)/discover" as any);
-                      }}
-                    >
-                      <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>
-                        {t("common.seeAll", "See all")} →
-                      </Text>
-                    </Pressable>
-                  </Row>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 4 }}
-                  >
-                    {suggestedPeersQuery.data!.people.map((peer) => (
-                      <InstagramProfileCard key={peer.id} profile={peer} />
-                    ))}
-                  </ScrollView>
-                </View>
+          {/* Load More Button for Infinite Feed Pagination */}
+          {feedQuery.hasNextPage && (
+            <Pressable
+              disabled={feedQuery.isFetchingNextPage}
+              onPress={() => {
+                triggerHaptic();
+                feedQuery.fetchNextPage();
+              }}
+              style={({ pressed }) => [
+                styles.loadMoreBtn,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              {feedQuery.isFetchingNextPage ? (
+                <Row style={{ alignItems: "center", gap: 8 }}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.loadMoreText, { color: colors.muted }]}>
+                    {t("common.loading", "Loading older posts...")}
+                  </Text>
+                </Row>
+              ) : (
+                <Row style={{ alignItems: "center", gap: 6 }}>
+                  <MaterialCommunityIcons name="chevron-down" size={18} color={colors.primary} />
+                  <Text style={[styles.loadMoreText, { color: colors.primary }]}>
+                    {t("feed.loadMore", "Load Older Campus Posts")}
+                  </Text>
+                </Row>
               )}
-          </React.Fragment>
-        );
-        })
+            </Pressable>
+          )}
+        </View>
       )}
 
-      {/* 4. FLOATING ACTION BUTTON (+) (Only when standalone) */}
-      {!onOpenComposer ? (
-        <Pressable
-          onPress={() => {
-            triggerHaptic();
-            setComposerVisible(true);
-          }}
-          style={({ pressed }) => [
-            styles.floatingFab,
-            {
-              backgroundColor: colors.primary,
-              transform: [{ scale: pressed ? 0.92 : 1 }],
-            },
-          ]}
-        >
-          <MaterialCommunityIcons name="plus" size={28} color="#FFFFFF" />
-        </Pressable>
-      ) : null}
+      {/* 4. MODALS (Edit & Share) */}
+      <EditPostModal
+        visible={Boolean(editingPost)}
+        post={editingPost}
+        onClose={() => setEditingPost(null)}
+        onSave={async (postId, newBody) => {
+          await editPostMutation.mutateAsync({ postId, newBody });
+        }}
+      />
+
+      <UniversalShareSheet
+        visible={Boolean(sharingPost)}
+        sourceType="post"
+        sourceId={sharingPost?.id || ""}
+        sourceTitle={sharingPost?.body?.slice(0, 60) || "Campus Post"}
+        sourceVisibility={sharingPost?.visibility === "only_me" ? "private" : "public"}
+        onClose={() => setSharingPost(null)}
+      />
 
       {/* 5. POST COMPOSER MODAL (Only when standalone) */}
       {!onOpenComposer ? (
@@ -857,126 +830,30 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     gap: 10,
   },
-  postHeader: {
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  postAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  authorName: {
-    fontSize: 14,
+  questionTitle: {
+    fontSize: 15,
     fontWeight: "700",
-  },
-  postMeta: {
-    fontSize: 11,
-    marginTop: 1,
   },
   postBody: {
     fontSize: 14,
     lineHeight: 20,
-  },
-  questionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
   },
   answerBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 14,
   },
-  mediaGallery: {
-    borderRadius: radius.md,
-    overflow: "hidden",
-    marginTop: 4,
-  },
-  postImage: {
-    width: "100%",
-    height: 200,
-    borderRadius: radius.md,
-  },
-  youtubeCard: {
-    padding: 8,
-    borderRadius: radius.md,
+  loadMoreBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    marginTop: 4,
-  },
-  ytThumb: {
-    width: 72,
-    height: 48,
-    borderRadius: radius.sm,
-  },
-  ytTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  postFooter: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    marginTop: 4,
+    justifyContent: "center",
+    marginVertical: 8,
   },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  actionBtnText: {
+  loadMoreText: {
     fontSize: 13,
-  },
-  commentsWrap: {
-    gap: 6,
-    marginTop: 6,
-  },
-  commentBubble: {
-    padding: 8,
-    borderRadius: radius.md,
-    gap: 2,
-  },
-  commentAuthor: {
-    fontSize: 12,
     fontWeight: "700",
-  },
-  commentBody: {
-    fontSize: 13,
-  },
-  commentInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 13,
-  },
-  commentSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  floatingFab: {
-    position: "absolute",
-    bottom: 20,
-    right: 16,
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    zIndex: 99,
   },
 });

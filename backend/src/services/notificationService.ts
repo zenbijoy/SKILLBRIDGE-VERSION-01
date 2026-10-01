@@ -3,6 +3,7 @@ import { logger } from "../lib/logger.js";
 import { logDomainEvent } from "../lib/domainLogger.js";
 import { PushService } from "./PushService.js";
 import { isWithinQuietHours } from "./push.js";
+import { getSocketServer } from "../socket.js";
 
 export type NextGenNotificationType =
   | "ROOM_SESSION_STARTING"
@@ -24,7 +25,10 @@ export type NextGenNotificationType =
   | "POST_COMMENT"
   | "MENTION"
   | "ACHIEVEMENT_UNLOCKED"
-  | "SYSTEM_ANNOUNCEMENT";
+  | "SYSTEM_ANNOUNCEMENT"
+  | "BOOKING_REQUESTED"
+  | "BOOKING_CONFIRMED"
+  | "BOOKING_CANCELLED";
 
 export interface NotificationEvent {
   userId: string;
@@ -32,7 +36,7 @@ export interface NotificationEvent {
   title: string;
   body: string;
   priority?: "low" | "normal" | "high" | "urgent";
-  entityType?: "room" | "club" | "event" | "post" | "comment" | "recording" | "question" | "answer";
+  entityType?: "room" | "club" | "event" | "post" | "comment" | "recording" | "question" | "answer" | "booking";
   entityId?: string;
   data?: Record<string, string>;
   category?: "messages" | "connections" | "rooms" | "sessions" | "teaching" | "system";
@@ -59,22 +63,44 @@ const typeToCategory: Record<NextGenNotificationType, "messages" | "connections"
   MENTION: "messages",
   ACHIEVEMENT_UNLOCKED: "system",
   SYSTEM_ANNOUNCEMENT: "system",
+  BOOKING_REQUESTED: "teaching",
+  BOOKING_CONFIRMED: "sessions",
+  BOOKING_CANCELLED: "sessions",
 };
 
 export class NotificationService {
   /**
    * Dispatch a typed notification event:
    * 1. Persists to public.notifications in database
-   * 2. Evaluates user category preferences & quiet hours
-   * 3. Dispatches push notification via PushService if appropriate
+   * 2. Emits real-time notification:new to connected user sockets
+   * 3. Evaluates user category preferences & quiet hours
+   * 4. Dispatches push notification via PushService if appropriate
    */
   static async dispatch(event: NotificationEvent): Promise<{ id: string | null; pushed: boolean }> {
     try {
       const category = event.category || typeToCategory[event.type] || "system";
+
+      // Auto-compute deep link url if not provided
+      let computedUrl: string | undefined = event.data?.url;
+      if (!computedUrl) {
+        if (event.entityType === "room" || event.data?.roomId) {
+          computedUrl = `/room/${event.entityId || event.data?.roomId}`;
+        } else if (event.entityType === "club" || event.data?.clubId) {
+          computedUrl = `/club/${event.entityId || event.data?.clubId}`;
+        } else if (event.entityType === "post" || event.data?.postId) {
+          computedUrl = `/feed`;
+        } else if (event.data?.conversationId) {
+          computedUrl = `/chat/${event.data.conversationId}`;
+        } else if (event.entityType === "booking" || event.data?.bookingId) {
+          computedUrl = `/schedule`;
+        }
+      }
+
       const payloadData: Record<string, string> = {
         type: event.type,
         ...(event.entityType ? { entityType: event.entityType } : {}),
         ...(event.entityId ? { entityId: event.entityId } : {}),
+        ...(computedUrl ? { url: computedUrl } : {}),
         ...(event.data ?? {}),
       };
 
@@ -96,6 +122,24 @@ export class NotificationService {
 
       if (error) {
         logger.warn({ err: error.message, userId: event.userId, type: event.type }, "Failed writing notification record");
+      }
+
+      // 2. Real-time in-app socket push to all active sockets of this user
+      const io = getSocketServer();
+      if (io) {
+        io.to(`user:${event.userId}`).emit("notification:new", {
+          id: record?.id ?? null,
+          user_id: event.userId,
+          kind: category,
+          title: event.title,
+          body: event.body,
+          data: payloadData,
+          priority: event.priority || "normal",
+          read_at: null,
+          created_at: new Date().toISOString(),
+          entity_type: event.entityType || null,
+          entity_id: event.entityId || null,
+        });
       }
 
       // 2. Fetch preferences & quiet hours in parallel

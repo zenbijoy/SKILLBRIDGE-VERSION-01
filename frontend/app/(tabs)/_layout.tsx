@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Platform, BackHandler, ToastAndroid, StyleSheet, View } from "react-native";
+import { Platform, BackHandler, ToastAndroid, StyleSheet } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from "react-native-reanimated";
@@ -9,6 +9,8 @@ import { api } from "@/lib/api";
 import type { Conversation } from "@/types";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
+import { BottomTabBar, type BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
+import { useAutoHideNavigation } from "@/navigation/AutoHideNavigationContext";
 
 const Icon = ({ name, color, focused }: { name: keyof typeof MaterialCommunityIcons.glyphMap; color: any; focused: boolean }) => {
   const scale = useSharedValue(focused ? 1.15 : 1);
@@ -27,9 +29,6 @@ const Icon = ({ name, color, focused }: { name: keyof typeof MaterialCommunityIc
     </Animated.View>
   );
 };
-
-import { BottomTabBar, type BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
-import { useAutoHideNavigation } from "@/navigation/AutoHideNavigationContext";
 
 function AutoHideTabBar(props: BottomTabBarProps) {
   const { bottomNavAnimatedStyle, isNavVisible, setBottomNavHeight } = useAutoHideNavigation();

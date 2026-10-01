@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -11,16 +11,13 @@ import {
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { EventItem, Profile, Room } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import {
   Button,
-  Card,
   Empty,
-  ErrorState,
-  H2,
   Muted,
   Pill,
   Row,
@@ -29,9 +26,9 @@ import {
   Skeleton,
   triggerHaptic,
 } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
-import { nextGenAnimations, nextGenAnimationsV2 } from "@/assets/nextgen";
+import { nextGenAnimations } from "@/assets/nextgen";
 import { InstagramProfileCard } from "@/components/InstagramProfileCard";
 import { SuggestedRoomCard } from "@/components/SuggestedRoomCard";
 
@@ -115,13 +112,39 @@ export default function DiscoverScreen() {
     enabled: activeTab === "for_you" || activeTab === "events",
   });
 
+  const qc = useQueryClient();
+  const connectionsQuery = useQuery<{
+    connections: Profile[];
+    incoming: { id: string; requester: Profile; created_at?: string }[];
+  }>({
+    queryKey: ["connections"],
+    queryFn: () => api("/connections"),
+    staleTime: 15_000,
+  });
+
+  const respondMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "accepted" | "declined" }) =>
+      api(`/connections/requests/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => {
+      triggerHaptic("notificationSuccess");
+      qc.invalidateQueries({ queryKey: ["connections"] });
+    },
+    onError: (err: Error) => {
+      Alert.alert("Action Failed", err.message || "Could not process request.");
+    },
+  });
+
   const isRefreshing =
     aiMatches.isRefetching ||
     peopleQuery.isRefetching ||
     roomsQuery.isRefetching ||
     clubsQuery.isRefetching ||
     researchQuery.isRefetching ||
-    eventsQuery.isRefetching;
+    eventsQuery.isRefetching ||
+    connectionsQuery.isRefetching;
 
   const onRefresh = async () => {
     await Promise.all([
@@ -131,6 +154,7 @@ export default function DiscoverScreen() {
       clubsQuery.refetch(),
       researchQuery.refetch(),
       eventsQuery.refetch(),
+      connectionsQuery.refetch(),
     ]);
   };
 
@@ -428,6 +452,151 @@ export default function DiscoverScreen() {
             );
           })}
         </ScrollView>
+      )}
+
+      {/* Facebook-style Side-by-Side Network Hub Quick Actions */}
+      <View style={[s.networkHubCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <Row style={{ alignItems: "center", gap: 6 }}>
+            <MaterialCommunityIcons name="account-group-outline" size={18} color={colors.primary} />
+            <Text style={[s.networkHubTitle, { color: colors.text }]}>Network & Connections</Text>
+          </Row>
+          <Pressable onPress={() => { triggerHaptic(); router.push("/connections" as any); }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>Manage</Text>
+          </Pressable>
+        </Row>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              router.push("/connections?tab=requests" as any);
+            }}
+            style={[s.hubBtn, { backgroundColor: colors.primarySoft, borderColor: colors.primary }]}
+          >
+            <Row style={{ alignItems: "center", gap: 5 }}>
+              <MaterialCommunityIcons name="account-arrow-right-outline" size={16} color={colors.primary} />
+              <Text style={[s.hubBtnText, { color: colors.primary, fontWeight: "700" }]}>Requests</Text>
+              {(connectionsQuery.data?.incoming?.length ?? 0) > 0 && (
+                <View style={[s.hubBadge, { backgroundColor: colors.danger }]}>
+                  <Text style={s.hubBadgeText}>{connectionsQuery.data?.incoming.length}</Text>
+                </View>
+              )}
+            </Row>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              router.push("/connections?tab=explore" as any);
+            }}
+            style={[s.hubBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Row style={{ alignItems: "center", gap: 5 }}>
+              <MaterialCommunityIcons name="compass-outline" size={16} color={colors.accent} />
+              <Text style={[s.hubBtnText, { color: colors.text }]}>Explore Network</Text>
+            </Row>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              router.push("/connections?tab=network" as any);
+            }}
+            style={[s.hubBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Row style={{ alignItems: "center", gap: 5 }}>
+              <MaterialCommunityIcons name="account-multiple-outline" size={16} color={colors.success} />
+              <Text style={[s.hubBtnText, { color: colors.text }]}>My Network</Text>
+              {(connectionsQuery.data?.connections?.length ?? 0) > 0 && (
+                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.muted }}>
+                  ({connectionsQuery.data?.connections.length})
+                </Text>
+              )}
+            </Row>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              router.push("/connections?tab=history" as any);
+            }}
+            style={[s.hubBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Row style={{ alignItems: "center", gap: 5 }}>
+              <MaterialCommunityIcons name="door-open" size={16} color={colors.muted} />
+              <Text style={[s.hubBtnText, { color: colors.text }]}>Joined Rooms</Text>
+            </Row>
+          </Pressable>
+        </ScrollView>
+      </View>
+
+      {/* Incoming Connection Requests Carousel (if any pending) */}
+      {(connectionsQuery.data?.incoming?.length ?? 0) > 0 && (
+        <View style={[s.incomingRequestsContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <Row style={{ alignItems: "center", gap: 6 }}>
+              <View style={[s.pulseDot, { backgroundColor: colors.danger }]} />
+              <Text style={[s.incomingTitle, { color: colors.text }]}>
+                Connection Requests ({connectionsQuery.data?.incoming.length})
+              </Text>
+            </Row>
+            <Pressable onPress={() => { triggerHaptic(); router.push("/connections?tab=requests" as any); }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>See All</Text>
+            </Pressable>
+          </Row>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+            {connectionsQuery.data?.incoming.map((req) => (
+              <View
+                key={req.id}
+                style={[s.incomingRequestCard, { backgroundColor: colors.background, borderColor: colors.border }]}
+              >
+                <Pressable
+                  onPress={() => router.push(`/user/${req.requester.id}` as any)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}
+                >
+                  <View style={[s.incomingAvatar, { backgroundColor: colors.primarySoft }]}>
+                    {req.requester.avatar_url ? (
+                      <Image source={{ uri: req.requester.avatar_url }} style={s.incomingAvatarImg} />
+                    ) : (
+                      <Text style={{ fontSize: 14, fontWeight: "800", color: colors.primary }}>
+                        {req.requester.full_name?.[0] || "U"}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: colors.text }} numberOfLines={1}>
+                      {req.requester.full_name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>
+                      {req.requester.department || `@${req.requester.username}`}
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Row style={{ gap: 6 }}>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      title="Confirm"
+                      compact
+                      onPress={() => respondMutation.mutate({ id: req.id, status: "accepted" })}
+                      disabled={respondMutation.isPending}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      title="Delete"
+                      compact
+                      variant="ghost"
+                      onPress={() => respondMutation.mutate({ id: req.id, status: "declined" })}
+                      disabled={respondMutation.isPending}
+                    />
+                  </View>
+                </Row>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
       )}
 
       {/* Compact Horizontal Category Tabs */}
@@ -1091,6 +1260,70 @@ const s = StyleSheet.create({
   },
   toolCardSub: {
     fontSize: 10,
+  },
+  networkHubCard: {
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  networkHubTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  hubBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  hubBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  hubBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+    marginLeft: 2,
+  },
+  hubBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  incomingRequestsContainer: {
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  incomingTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  incomingRequestCard: {
+    width: 200,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  incomingAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  incomingAvatarImg: {
+    width: "100%",
+    height: "100%",
   },
 } as any);
 

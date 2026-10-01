@@ -5,7 +5,9 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,12 +17,15 @@ import {
 } from "react-native";
 import Animated, { FadeIn, FadeInUp, SlideInRight } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
+import * as WebBrowser from "expo-web-browser";
+import { Audio } from "expo-av";
 import "react-native-get-random-values";
 import { v4 as uuidv4 } from "uuid";
 import { api } from "@/lib/api";
+import { optimizeImageForUpload, OPTIMIZATION_PRESETS } from "@/lib/imageOptimizer";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/hooks/useSession";
 import { LocalDB } from "@/lib/database";
@@ -49,6 +54,8 @@ interface ChatMessage {
     name?: string;
     size?: number;
     duration?: number;
+    /** Storage key for private-bucket files; used to mint a fresh signed read URL. */
+    storagePath?: string;
   } | null;
   pending?: boolean;
   failed?: boolean;
@@ -76,6 +83,30 @@ const DRAFT_KEY = (id: string) => `@chat_draft_${id}`;
 
 const EMOJI_REACTIONS = ["👍", "❤️", "😂", "👏", "💡"];
 
+/**
+ * Mint a fresh signed read URL for a private attachment.
+ * Attachments live in a private bucket, so the URL captured at upload time
+ * expires (1h). Without this refresh, older photos/voice notes would render
+ * as broken images once the signature lapsed.
+ */
+async function resolveAttachmentUrl(
+  conversationId: string,
+  storagePath: string,
+  fallback: string,
+): Promise<string> {
+  try {
+    // Route path is /attachments/:attachmentId/download but the server reads the
+    // storage key from ?storagePath and ignores :attachmentId. Pass a constant
+    // segment so storage keys containing "/" never need to live in the path.
+    const res = await api<{ url: string }>(
+      `/chat/conversations/${conversationId}/attachments/file/download?storagePath=${encodeURIComponent(storagePath)}`,
+    );
+    return res.url || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -92,7 +123,11 @@ export default function ChatScreen() {
     name?: string;
     size?: number;
     duration?: number;
+    storagePath?: string;
   } | null>(null);
+  const voiceRecordingRef = useRef<Audio.Recording | null>(null);
+  const voiceSoundRef = useRef<Audio.Sound | null>(null);
+  const [, setIsVoicePlaying] = useState(false);
   const [typing, setTyping] = useState<Record<string, boolean>>({});
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
 
@@ -338,21 +373,66 @@ export default function ChatScreen() {
     typingTimeout.current = setTimeout(() => socket.emit("typing:stop", { conversationId: id }), 1600);
   }
 
-  // Voice Note Recorder Handler
-  const startVoiceRecording = () => {
+  // Voice Note Recorder Handler - real microphone capture via expo-av
+  const startVoiceRecording = async () => {
     triggerHaptic();
-    setIsRecordingVoice(true);
-    setVoiceSeconds(0);
-    voiceTimerRef.current = setInterval(() => {
-      setVoiceSeconds((sec) => sec + 1);
-    }, 1000);
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          "Permission required",
+          "Please allow microphone access to send voice notes.",
+        );
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync({
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      });
+      await recording.startAsync();
+      voiceRecordingRef.current = recording;
+
+      setIsRecordingVoice(true);
+      setVoiceSeconds(0);
+      voiceTimerRef.current = setInterval(() => {
+        setVoiceSeconds((sec) => {
+          // Stop automatically at 5 minutes to avoid unbounded recordings.
+          if (sec + 1 >= 300) void finishVoiceRecording();
+          return sec + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      Alert.alert(
+        "Could not start recording",
+        err?.message || "Microphone is unavailable right now.",
+      );
+      voiceRecordingRef.current = null;
+      setIsRecordingVoice(false);
+    }
   };
 
-  const cancelVoiceRecording = () => {
+  const cancelVoiceRecording = async () => {
     triggerHaptic();
     setIsRecordingVoice(false);
     if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
     setVoiceSeconds(0);
+
+    const recording = voiceRecordingRef.current;
+    voiceRecordingRef.current = null;
+    if (recording) {
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch {
+        // Recorder may already be stopped.
+      }
+    }
   };
 
   const finishVoiceRecording = async () => {
@@ -362,35 +442,73 @@ export default function ChatScreen() {
     const duration = Math.max(voiceSeconds, 1);
     setVoiceSeconds(0);
 
-    // Create voice ticket and send voice message
+    const recording = voiceRecordingRef.current;
+    voiceRecordingRef.current = null;
+
+    if (!recording) {
+      Alert.alert("Nothing recorded", "Please try recording your voice note again.");
+      return;
+    }
+
     try {
       setUploadingMedia(true);
+
+      // Stop the recorder and obtain the real captured file.
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      if (!uri) throw new Error("Recording file was not created.");
+
+      const status = await recording.getStatusAsync();
+      const measuredMs = "durationMillis" in status ? status.durationMillis : undefined;
+      const realDuration = measuredMs ? Math.max(1, Math.round(measuredMs / 1000)) : duration;
+
       const fileName = `voice_note_${Date.now()}.m4a`;
+
       const ticketRes = await api<{
         url?: string;
         uploadUrl?: string;
         publicUrl?: string;
+        signedUrl?: string;
         storagePath: string;
       }>(`/chat/conversations/${id}/attachment-ticket`, {
         method: "POST",
         body: JSON.stringify({
           filename: fileName,
           contentType: "audio/m4a",
-          sizeBytes: duration * 16000,
+          // Declared size must be >= 1; the server cap is 15MB.
+          sizeBytes: 1024,
         }),
       });
 
-      const finalUrl = ticketRes.publicUrl || ticketRes.uploadUrl?.split("?")[0] || "https://skillbridge.app/audio/sample.m4a";
-      await sendVoiceNote(finalUrl, duration);
-    } catch {
-      // Fallback
-      await sendVoiceNote("https://skillbridge.app/audio/sample.m4a", duration);
+      const uploadEndpoint = ticketRes.uploadUrl || ticketRes.url;
+      if (!uploadEndpoint) throw new Error("Upload ticket did not include an upload URL.");
+
+      const audioBlob = await (await fetch(uri)).blob();
+      const putRes = await fetch(uploadEndpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "audio/m4a" },
+        body: audioBlob,
+      });
+      if (!putRes.ok) {
+        throw new Error(`Voice upload failed (${putRes.status}).`);
+      }
+
+      const finalUrl = ticketRes.signedUrl || ticketRes.publicUrl;
+      if (!finalUrl) throw new Error("Could not resolve a readable link for the voice note.");
+
+      await sendVoiceNote(finalUrl, realDuration, ticketRes.storagePath);
+    } catch (err: any) {
+      // Never send a placeholder: a failed recording must surface, not lie.
+      Alert.alert(
+        "Voice note failed",
+        err?.message || "Could not upload your voice note. Please try again.",
+      );
     } finally {
       setUploadingMedia(false);
     }
   };
 
-  const sendVoiceNote = async (url: string, duration: number) => {
+  const sendVoiceNote = async (url: string, duration: number, storagePath?: string) => {
     const clientId = uuidv4();
     const temp: ChatMessage = {
       id: clientId,
@@ -406,6 +524,7 @@ export default function ChatScreen() {
         type: "voice",
         name: "Voice note",
         duration,
+        storagePath,
       },
     };
 
@@ -434,6 +553,73 @@ export default function ChatScreen() {
     }
   };
 
+  // Generic File Attachment Picker (PDF / text / zip — matches backend allow-list).
+  // Previously the composer only exposed a photo picker, so file sharing inside
+  // chat was effectively unavailable despite backend + media-browser support.
+  async function pickAndUploadFile() {
+    try {
+      let docPickerModule: any = null;
+      try {
+        docPickerModule = await import("expo-document-picker");
+      } catch {
+        docPickerModule = null;
+      }
+      if (!docPickerModule?.getDocumentAsync) {
+        Alert.alert(
+          "File picking unavailable",
+          "File picking is not supported in this client build. Please share a photo instead.",
+        );
+        return;
+      }
+      const result = await docPickerModule.getDocumentAsync({
+        type: ["application/pdf", "text/plain", "application/zip"],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      triggerHaptic();
+      setUploadingMedia(true);
+      const doc = result.assets[0];
+      const mimeType: string = doc.mimeType || "application/pdf";
+      const fileName: string = doc.name || `file_${Date.now()}.pdf`;
+      const ticketRes = await api<{
+        url?: string;
+        uploadUrl?: string;
+        publicUrl?: string;
+        signedUrl?: string;
+        storagePath: string;
+      }>(`/chat/conversations/${id}/attachment-ticket`, {
+        method: "POST",
+        body: JSON.stringify({
+          filename: fileName,
+          contentType: mimeType,
+          sizeBytes: doc.size ?? 1024 * 100,
+        }),
+      });
+      const uploadEndpoint = ticketRes.uploadUrl || ticketRes.url;
+      if (!uploadEndpoint) throw new Error("Upload ticket did not include an upload URL.");
+      const fileBlob = await (await fetch(doc.uri)).blob();
+      const putRes = await fetch(uploadEndpoint, {
+        method: "PUT",
+        headers: { "Content-Type": mimeType },
+        body: fileBlob,
+      });
+      if (!putRes.ok) throw new Error(`Upload failed (${putRes.status}). Please try again.`);
+      const finalUrl = ticketRes.signedUrl || ticketRes.publicUrl;
+      if (!finalUrl) throw new Error("Could not resolve a readable link for the uploaded file.");
+      setPendingAttachment({
+        url: finalUrl,
+        type: "file",
+        name: fileName,
+        size: doc.size,
+        storagePath: ticketRes.storagePath,
+      });
+    } catch (err: any) {
+      Alert.alert("Upload failed", err?.message || "Could not upload file.");
+    } finally {
+      setUploadingMedia(false);
+    }
+  }
+
   // Photo Attachment Picker
   async function pickAndUploadPhoto() {
     try {
@@ -454,39 +640,62 @@ export default function ChatScreen() {
       setUploadingMedia(true);
 
       const asset = result.assets[0];
-      const mimeType = asset.mimeType ?? "image/jpeg";
-      const fileName = asset.fileName ?? `photo_${Date.now()}.jpg`;
+      const rawFileName = asset.fileName ?? `photo_${Date.now()}.jpg`;
+      const optimized = await optimizeImageForUpload(
+        asset.uri,
+        OPTIMIZATION_PRESETS.CHAT_PHOTO,
+        rawFileName,
+      );
+
+      const mimeType = optimized.mimeType;
+      const fileName = optimized.fileName;
+      const uploadUri = optimized.uri || asset.uri;
 
       const ticketRes = await api<{
         url?: string;
         uploadUrl?: string;
         publicUrl?: string;
+        signedUrl?: string;
         storagePath: string;
       }>(`/chat/conversations/${id}/attachment-ticket`, {
         method: "POST",
         body: JSON.stringify({
           filename: fileName,
           contentType: mimeType,
-          sizeBytes: asset.fileSize ?? 1024 * 1024,
+          sizeBytes: optimized.fileSizeBytes || asset.fileSize || 180 * 1024,
         }),
       });
 
       const uploadEndpoint = ticketRes.uploadUrl || ticketRes.url;
-      if (uploadEndpoint) {
-        const fileBlob = await (await fetch(asset.uri)).blob();
-        await fetch(uploadEndpoint, {
-          method: "PUT",
-          headers: { "Content-Type": mimeType },
-          body: fileBlob,
-        });
+      if (!uploadEndpoint) {
+        throw new Error("Upload ticket did not include an upload URL.");
       }
 
-      const finalUrl = ticketRes.publicUrl || (uploadEndpoint ? uploadEndpoint.split("?")[0] : asset.uri);
+      const fileBlob = await (await fetch(uploadUri)).blob();
+      const putRes = await fetch(uploadEndpoint, {
+        method: "PUT",
+        headers: { "Content-Type": mimeType },
+        body: fileBlob,
+      });
+
+      // The old code ignored the PUT result, so failed uploads still produced a
+      // "sent" message pointing at an object that was never stored.
+      if (!putRes.ok) {
+        throw new Error(`Upload failed (${putRes.status}). Please try again.`);
+      }
+
+      // Always use a real read URL. Never fall back to the signed *upload* URL.
+      const finalUrl = ticketRes.signedUrl || ticketRes.publicUrl;
+      if (!finalUrl) {
+        throw new Error("Could not resolve a readable link for the uploaded image.");
+      }
+
       setPendingAttachment({
         url: finalUrl,
         type: "image",
         name: fileName,
         size: asset.fileSize,
+        storagePath: ticketRes.storagePath,
       });
     } catch (err: any) {
       Alert.alert("Upload failed", err?.message || "Could not upload image.");
@@ -614,6 +823,79 @@ export default function ChatScreen() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   }
 
+  // Real voice-note playback. Previously the play button only toggled an icon
+  // and animated bars — no audio was ever produced.
+  const toggleVoicePlayback = async (message: ChatMessage) => {
+    triggerHaptic();
+    const attachment = message.attachment;
+    if (!attachment?.url) return;
+
+    // Tapping the currently playing note pauses it.
+    if (playingVoiceId === message.id) {
+      const active = voiceSoundRef.current;
+      if (active) {
+        await active.pauseAsync().catch(() => {});
+        setIsVoicePlaying(false);
+      } else {
+        setPlayingVoiceId(null);
+      }
+      return;
+    }
+
+    // Stop any previous note.
+    const previous = voiceSoundRef.current;
+    if (previous) {
+      await previous.stopAsync().catch(() => {});
+      voiceSoundRef.current = null;
+    }
+
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
+      // Refresh the signed URL if the stored one has expired.
+      const source =
+        attachment.storagePath
+          ? await resolveAttachmentUrl(id, attachment.storagePath, attachment.url)
+          : attachment.url;
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: source },
+        { shouldPlay: true },
+        (status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            void sound.unloadAsync().catch(() => {});
+            voiceSoundRef.current = null;
+            setPlayingVoiceId(null);
+            setIsVoicePlaying(false);
+          }
+        },
+      );
+
+      voiceSoundRef.current = sound;
+      setPlayingVoiceId(message.id);
+      setIsVoicePlaying(true);
+    } catch (err: any) {
+      setPlayingVoiceId(null);
+      setIsVoicePlaying(false);
+      Alert.alert(
+        "Could not play voice note",
+        err?.message || "The audio could not be loaded.",
+      );
+    }
+  };
+
+  // Always release the active sound when leaving the conversation.
+  useEffect(() => {
+    return () => {
+      const sound = voiceSoundRef.current;
+      voiceSoundRef.current = null;
+      if (sound) void sound.unloadAsync().catch(() => {});
+    };
+  }, []);
+
   // Render a Single Chat Bubble
   const renderMessageBubble = ({ item, index }: { item: ChatMessage; index: number }) => {
     const mine = item.sender_id === session?.user.id || item.sender_id === "me";
@@ -697,9 +979,14 @@ export default function ChatScreen() {
             {/* Photo Attachment */}
             {hasImage && (
               <Pressable
-                onPress={() => {
+                onPress={async () => {
                   triggerHaptic();
-                  setPreviewImageUrl(item.attachment!.url);
+                  // Refresh the signed URL on open: the upload-time signature
+                  // expires after 1h, so older photos would otherwise be blank.
+                  const fresh = item.attachment?.storagePath
+                    ? await resolveAttachmentUrl(id, item.attachment.storagePath, item.attachment!.url)
+                    : item.attachment!.url;
+                  setPreviewImageUrl(fresh);
                 }}
               >
                 <Image source={{ uri: item.attachment!.url }} style={styles.bubbleImage} resizeMode="cover" />
@@ -710,10 +997,7 @@ export default function ChatScreen() {
             {isVoice && (
               <View style={styles.voiceNoteContainer}>
                 <Pressable
-                  onPress={() => {
-                    triggerHaptic();
-                    setPlayingVoiceId(playingVoiceId === item.id ? null : item.id);
-                  }}
+                  onPress={() => void toggleVoicePlayback(item)}
                   style={[styles.playBtn, { backgroundColor: mine ? "#FFFFFF" : colors.primary }]}
                 >
                   <MaterialCommunityIcons
@@ -754,17 +1038,32 @@ export default function ChatScreen() {
 
             {/* File Attachment */}
             {isFile && (
-              <View style={styles.fileContainer}>
+              <Pressable
+                onPress={async () => {
+                  triggerHaptic();
+                  const att = item.attachment!;
+                  const fresh = att.storagePath
+                    ? await resolveAttachmentUrl(id, att.storagePath, att.url)
+                    : att.url;
+                  try {
+                    await WebBrowser.openBrowserAsync(fresh);
+                  } catch {
+                    setPreviewImageUrl(null);
+                    Alert.alert("Could not open file", "The file link may have expired. Please try again.");
+                  }
+                }}
+                style={styles.fileContainer}
+              >
                 <MaterialCommunityIcons name="file-document-outline" size={24} color={mine ? "#FFFFFF" : colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fileName, { color: mine ? "#FFFFFF" : colors.text }]} numberOfLines={1}>
                     {item.attachment?.name || "Document.pdf"}
                   </Text>
                   <Text style={[styles.fileSize, { color: mine ? "#E5EDFF" : colors.muted }]}>
-                    {item.attachment?.size ? `${Math.round(item.attachment.size / 1024)} KB` : "Document"}
+                    {item.attachment?.size ? `${Math.round(item.attachment.size / 1024)} KB · Tap to open` : "Tap to open"}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             )}
 
             {/* Message Body */}
@@ -826,7 +1125,11 @@ export default function ChatScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       {/* Telegram/Messenger Compact Header */}
       <View style={[styles.chatHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         {/* Left: Back + Avatar */}
@@ -1000,7 +1303,13 @@ export default function ChatScreen() {
       {/* Pending Attachment Preview Bar */}
       {pendingAttachment && (
         <View style={[styles.attachmentPreview, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
-          <Image source={{ uri: pendingAttachment.url }} style={styles.previewThumb} />
+          {pendingAttachment.type === "image" ? (
+            <Image source={{ uri: pendingAttachment.url }} style={styles.previewThumb} />
+          ) : (
+            <View style={[styles.previewThumb, { alignItems: "center", justifyContent: "center", backgroundColor: colors.surface }]}>
+              <MaterialCommunityIcons name="file-document-outline" size={22} color={colors.primary} />
+            </View>
+          )}
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ color: colors.text, fontWeight: "700", fontSize: 13 }} numberOfLines={1}>
               {pendingAttachment.name || "Photo attachment"}
@@ -1031,17 +1340,28 @@ export default function ChatScreen() {
       ) : (
         /* Composer Input Bar matching Picture 3 */
         <View style={[styles.composer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-          {/* Document Attachment Icon - Picture 3 */}
+          {/* Photo Picker */}
           <Pressable
             onPress={pickAndUploadPhoto}
             disabled={uploadingMedia}
             style={styles.composerIconBtn}
+            accessibilityLabel="Share a photo"
           >
             {uploadingMedia ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <MaterialCommunityIcons name="file-document-outline" size={24} color={colors.muted} />
+              <MaterialCommunityIcons name="image-outline" size={24} color={colors.muted} />
             )}
+          </Pressable>
+
+          {/* Document Attachment Icon - Picture 3 */}
+          <Pressable
+            onPress={pickAndUploadFile}
+            disabled={uploadingMedia}
+            style={styles.composerIconBtn}
+            accessibilityLabel="Share a file"
+          >
+            <MaterialCommunityIcons name="file-document-outline" size={24} color={colors.muted} />
           </Pressable>
 
           {/* Voice Recorder Button */}
@@ -1230,7 +1550,7 @@ export default function ChatScreen() {
           )}
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

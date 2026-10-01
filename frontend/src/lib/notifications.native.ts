@@ -66,7 +66,26 @@ export async function unregisterPush(): Promise<void> {
 export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
   useEffect(() => {
-    const url = lastNotificationResponse?.notification?.request?.content?.data?.url;
-    if (typeof url === "string" && url.startsWith("/")) router.push(url as any);
+    const data = lastNotificationResponse?.notification?.request?.content?.data as Record<string, any> | undefined;
+    if (!data) return;
+
+    if (typeof data.url === "string" && data.url.startsWith("/")) {
+      router.push(data.url as any);
+      return;
+    }
+
+    if (data.roomId) {
+      router.push(`/room/${data.roomId}` as any);
+    } else if (data.clubId) {
+      router.push(`/club/${data.clubId}` as any);
+    } else if (data.conversationId) {
+      router.push(`/chat/${data.conversationId}` as any);
+    } else if (data.postId) {
+      router.push("/feed" as any);
+    } else if (data.bookingId) {
+      router.push("/schedule" as any);
+    } else if (data.callId) {
+      router.push(`/call/${data.callId}` as any);
+    }
   }, [lastNotificationResponse, router]);
 }

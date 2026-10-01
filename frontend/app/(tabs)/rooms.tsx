@@ -1,31 +1,27 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  Alert,
+  ActivityIndicator,
   Image,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import Animated, { FadeInUp, ZoomIn } from "react-native-reanimated";
+import Animated, { ZoomIn } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { api } from "@/lib/api";
-import type { Room, RoomMode } from "@/types";
+import { router } from "expo-router";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { api, qs } from "@/lib/api";
+import type { Room } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import { useAppStore } from "@/state/useAppStore";
-import { nextGenAnimations, nextGenAnimationsV2 } from "@/assets/nextgen";
+import { nextGenAnimations } from "@/assets/nextgen";
 import {
-  Button,
-  Card,
   Empty,
   ErrorState,
   Field,
-  H2,
   Muted,
-  Pill,
   Row,
   Screen,
   Skeleton,
@@ -33,10 +29,9 @@ import {
 } from "@/components/ui";
 import { RoomCard } from "@/components/RoomCard";
 import { useI18n } from "@/i18n";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 
-type RoomFilter = "all" | "live" | "online" | "campus" | "scheduled";
-type Visibility = Room["visibility"];
+type RoomFilter = "all" | "live" | "online" | "campus" | "scheduled" | "mine";
 
 const POPULAR_TOPICS = [
   "Algorithms",
@@ -49,130 +44,94 @@ const POPULAR_TOPICS = [
   "System Design",
 ];
 
-const CAPACITIES = [15, 30, 50, 100];
+const PAGE_SIZE = 20;
 
 export default function RoomsScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
-  const qc = useQueryClient();
 
   // Filter & Search state
   const { mode: userRoleMode, setMode: setUserRoleMode } = useAppStore();
-  const [showTeachRequestModal, setShowTeachRequestModal] = useState(false);
-  const [requestTopicText, setRequestTopicText] = useState("");
-  const [requestDetailText, setRequestDetailText] = useState("");
   const [filter, setFilter] = useState<RoomFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
 
-  // Room Creator Drawer state
-  const [showCreator, setShowCreator] = useState(false);
-  const [title, setTitle] = useState("");
-  const [topic, setTopic] = useState("");
-  const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<Visibility>("public");
-  const [mode, setMode] = useState<RoomMode>("online");
-  const [campusLocation, setCampusLocation] = useState("");
-  const [capacity, setCapacity] = useState(30);
+  // Debounce search so typing does not fire a request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedSearch(text), 350);
+  }, []);
 
-  const roomsQuery = useQuery({
-    queryKey: ["rooms"],
-    queryFn: () => api<{ rooms: Room[]; total: number }>("/rooms"),
+  const isMine = filter === "mine";
+
+  // Search + topic + "my rooms" scope are resolved server-side so that
+  // pagination and the result count stay correct.
+  const roomsQuery = useInfiniteQuery({
+    queryKey: ["rooms", isMine, selectedTopic, debouncedSearch.trim()],
+    queryFn: ({ pageParam }) =>
+      api<{ rooms: Room[]; total: number }>(
+        `/rooms?${qs({
+          page: pageParam as number,
+          limit: PAGE_SIZE,
+          mine: isMine ? "true" : undefined,
+          topic: selectedTopic ?? undefined,
+          q: debouncedSearch.trim() || undefined,
+        })}`,
+      ),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) =>
+      allPages.length * PAGE_SIZE < (lastPage.total ?? 0) ? allPages.length + 1 : undefined,
   });
 
-  const allRooms = roomsQuery.data?.rooms ?? [];
+  const allRooms = useMemo(
+    () => roomsQuery.data?.pages.flatMap((p) => p.rooms) ?? [],
+    [roomsQuery.data],
+  );
+  const serverTotal = roomsQuery.data?.pages[0]?.total ?? 0;
 
-  // Metrics summary
-  const metrics = useMemo(() => {
-    const total = allRooms.length;
-    const live = allRooms.filter((r) => r.status === "live").length;
-    const online = allRooms.filter((r) => r.mode === "online").length;
-    const campus = allRooms.filter((r) => r.mode === "offline" || r.mode === "hybrid").length;
-    return { total, live, online, campus };
-  }, [allRooms]);
-
-  // Create Room Mutation
-  const create = useMutation({
-    mutationFn: () =>
-      api<Room>("/rooms", {
-        method: "POST",
-        body: JSON.stringify({
-          title: title.trim(),
-          topic: topic.trim(),
-          description: description.trim() || `Peer learning room for ${topic.trim()}`,
-          visibility,
-          mode,
-          capacity,
-          campus_location: mode !== "online" ? campusLocation.trim() : null,
-          tags: topic.trim() ? [topic.trim().toLowerCase()] : [],
-        }),
-      }),
-    onSuccess: (newRoom) => {
-      triggerHaptic();
-      setTitle("");
-      setTopic("");
-      setDescription("");
-      setVisibility("public");
-      setMode("online");
-      setCampusLocation("");
-      setCapacity(30);
-      setShowCreator(false);
-      qc.invalidateQueries({ queryKey: ["rooms"] });
-      Alert.alert("🎉 Room Created!", `"${newRoom.title}" is live and ready for members.`);
-    },
-    onError: (error) => {
-      Alert.alert("Could not create room", error.message);
-    },
-  });
-
-  // Filter & Search computation
+  // Status / delivery-mode chips narrow the currently loaded page.
   const filteredRooms = useMemo(() => {
     return allRooms.filter((room) => {
-      // 1. Filter Chip
       if (filter === "live" && room.status !== "live") return false;
       if (filter === "scheduled" && room.status !== "scheduled") return false;
       if (filter === "online" && room.mode !== "online") return false;
       if (filter === "campus" && room.mode !== "offline" && room.mode !== "hybrid") return false;
-
-      // 2. Topic Filter
-      if (selectedTopic && !room.topic.toLowerCase().includes(selectedTopic.toLowerCase())) {
-        const matchesTag = room.tags?.some((t) => t.toLowerCase() === selectedTopic.toLowerCase());
-        if (!matchesTag) return false;
-      }
-
-      // 3. Search Query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesTitle = room.title.toLowerCase().includes(q);
-        const matchesTopic = room.topic.toLowerCase().includes(q);
-        const matchesDesc = room.description?.toLowerCase().includes(q);
-        const matchesLocation = room.campus_location?.toLowerCase().includes(q);
-        const matchesTag = room.tags?.some((t) => t.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesTopic && !matchesDesc && !matchesLocation && !matchesTag) {
-          return false;
-        }
-      }
-
       return true;
     });
-  }, [allRooms, filter, selectedTopic, searchQuery]);
+  }, [allRooms, filter]);
 
-  // Validation checks for button state
-  const isTitleValid = title.trim().length >= 3;
-  const isTopicValid = topic.trim().length >= 2;
-  const isLocationValid = mode === "online" || campusLocation.trim().length > 0;
-  const canSubmit = isTitleValid && isTopicValid && isLocationValid && !create.isPending;
+  // Metrics summary
+  const metrics = useMemo(() => {
+    const total = serverTotal;
+    const live = allRooms.filter((r) => r.status === "live").length;
+    const online = allRooms.filter((r) => r.mode === "online").length;
+    const campus = allRooms.filter((r) => r.mode === "offline" || r.mode === "hybrid").length;
+    return { total, live, online, campus };
+  }, [allRooms, serverTotal]);
+
+
+  const hasActiveFilters = Boolean(searchQuery.trim()) || filter !== "all" || Boolean(selectedTopic);
+
+  const clearAllFilters = () => {
+    setSearchQuery("");
+    setDebouncedSearch("");
+    setFilter("all");
+    setSelectedTopic(null);
+  };
 
   return (
     <Screen
       header={
         <AppHeader
           searchPlaceholder={t("rooms.searchPlaceholder")}
-          actionIcon={showCreator ? "close" : "plus"}
-          actionLabel={showCreator ? t("rooms.closeCreator") : t("rooms.create")}
+          actionIcon="plus"
+          actionLabel={t("rooms.create")}
           onAction={() => {
             triggerHaptic();
-            setShowCreator((prev) => !prev);
+            router.push("/room/create" as any);
           }}
         />
       }
@@ -288,12 +247,13 @@ export default function RoomsScreen() {
         </View>
 
         {/* Dynamic Context Banner based on Learn / Teach role */}
-        {!showCreator && (
-          userRoleMode === "learn" ? (
+        {userRoleMode === "learn" ? (
             <Pressable
               onPress={() => {
                 triggerHaptic();
-                setShowTeachRequestModal(true);
+                // Jump to the rooms this user has actually joined, where the real
+                // Q&A board (POST /rooms/:id/questions) lives.
+                setFilter("mine");
               }}
               style={({ pressed }) => [
                 s.launchBanner,
@@ -305,260 +265,53 @@ export default function RoomsScreen() {
                   <MaterialCommunityIcons name="comment-question-outline" size={24} color="#FFFFFF" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.launchTitle, { color: colors.text }]}>{t("rooms.requestTopicBtn", "Request Teaching")}</Text>
+                  <Text style={[s.launchTitle, { color: colors.text }]}>
+                    {t("rooms.myRoomsTitle", "My Rooms")}
+                  </Text>
                   <Text style={[s.launchSubtitle, { color: colors.muted }]}>
-                    {t("rooms.roleLearnBanner", "Need help with a topic? Request a peer to teach you!")}
+                    {t("rooms.roleLearnBanner", "Ask questions and get help inside the rooms you joined.")}
                   </Text>
                 </View>
               </Row>
               <MaterialCommunityIcons name="chevron-right" size={22} color={colors.info} />
             </Pressable>
           ) : (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                setShowCreator(true);
-              }}
-              style={({ pressed }) => [
-                s.launchBanner,
-                { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}40`, opacity: pressed ? 0.88 : 1 },
-              ]}
-            >
-              <Row style={{ alignItems: "center", gap: 12, flex: 1 }}>
-                <View style={[s.launchIconBox, { backgroundColor: colors.primary }]}>
-                  <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.launchTitle, { color: colors.text }]}>{t("rooms.hostSessionTitle")}</Text>
-                  <Text style={[s.launchSubtitle, { color: colors.muted }]}>
-                    {t("rooms.roleTeachBanner", "Share your expertise & mentor your campus peers!")}
-                  </Text>
-                </View>
-              </Row>
-              <MaterialCommunityIcons name="chevron-right" size={22} color={colors.primary} />
-            </Pressable>
-          )
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              router.push("/room/create" as any);
+            }}
+            style={({ pressed }) => [
+              s.launchBanner,
+              { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}40`, opacity: pressed ? 0.88 : 1 },
+            ]}
+          >
+            <Row style={{ alignItems: "center", gap: 12, flex: 1 }}>
+              <View style={[s.launchIconBox, { backgroundColor: colors.primary }]}>
+                <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.launchTitle, { color: colors.text }]}>{t("rooms.hostSessionTitle")}</Text>
+                <Text style={[s.launchSubtitle, { color: colors.muted }]}>
+                  {t("rooms.roleTeachBanner", "Share your expertise & mentor your campus peers!")}
+                </Text>
+              </View>
+            </Row>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.primary} />
+          </Pressable>
         )}
       </View>
 
-      {/* Room Creator Sheet / Card */}
-      {showCreator ? (
-        <Animated.View entering={FadeInUp.springify().damping(16)}>
-          <Card tone="glow" style={s.creatorCard}>
-            <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <Row style={{ alignItems: "center", gap: 8 }}>
-                <View style={[s.creatorIconBox, { backgroundColor: `${colors.primary}20` }]}>
-                  <MaterialCommunityIcons name="laptop" size={20} color={colors.primary} />
-                </View>
-                <H2 style={{ fontSize: 18 }}>{t("rooms.launchTitle")}</H2>
-              </Row>
-              <Pressable
-                onPress={() => {
-                  triggerHaptic();
-                  setShowCreator(false);
-                }}
-                hitSlop={12}
-                style={{ padding: 4 }}
-              >
-                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-              </Pressable>
-            </Row>
 
-            <Muted style={{ fontSize: 13, marginTop: 2 }}>
-              {t("rooms.launchSubtitle")}
-            </Muted>
-
-            {/* Title Field */}
-            <View style={s.inputBlock}>
-              <Field
-                label={t("rooms.titleField")}
-                placeholder={t("rooms.titlePlaceholder")}
-                value={title}
-                onChangeText={setTitle}
-                maxLength={100}
-                error={title.trim().length > 0 && title.trim().length < 3 ? "Title must have at least 3 characters" : undefined}
-              />
-            </View>
-
-            {/* Topic Field & Suggestions */}
-            <View style={s.inputBlock}>
-              <Field
-                label={t("rooms.topicField")}
-                placeholder={t("rooms.topicPlaceholder")}
-                value={topic}
-                onChangeText={setTopic}
-                maxLength={60}
-                error={topic.trim().length > 0 && topic.trim().length < 2 ? "Topic must have at least 2 characters" : undefined}
-              />
-
-              {/* Quick Topic Chips */}
-              <View style={s.topicSuggestions}>
-                <Text style={[s.sectionLabel, { color: colors.muted }]}>{t("rooms.quickSuggestions")}</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.suggestionScroll}>
-                  {POPULAR_TOPICS.map((item) => (
-                    <Pressable
-                      key={item}
-                      onPress={() => {
-                        triggerHaptic();
-                        setTopic(item);
-                      }}
-                      style={[
-                        s.suggestionChip,
-                        {
-                          backgroundColor: topic.toLowerCase() === item.toLowerCase() ? `${colors.primary}24` : colors.surface,
-                          borderColor: topic.toLowerCase() === item.toLowerCase() ? colors.primary : colors.border,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.suggestionChipText,
-                          { color: topic.toLowerCase() === item.toLowerCase() ? colors.primary : colors.text },
-                        ]}
-                      >
-                        #{item}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-
-            {/* Description Field */}
-            <View style={s.inputBlock}>
-              <Field
-                label={t("rooms.descField")}
-                placeholder={t("rooms.descPlaceholder")}
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={3}
-                maxLength={400}
-              />
-            </View>
-
-            {/* Delivery Mode Selection */}
-            <View style={s.inputBlock}>
-              <Text style={[s.sectionLabel, { color: colors.text }]}>{t("rooms.deliveryMode")}</Text>
-              <Row style={{ gap: 8 }}>
-                {(["online", "offline", "hybrid"] as const).map((m) => (
-                  <Pressable
-                    key={m}
-                    onPress={() => {
-                      triggerHaptic();
-                      setMode(m);
-                    }}
-                    style={[
-                      s.modeTile,
-                      {
-                        backgroundColor: mode === m ? `${colors.primary}16` : colors.surface,
-                        borderColor: mode === m ? colors.primary : colors.border,
-                      },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name={m === "online" ? "video" : m === "offline" ? "map-marker" : "transit-connection-variant"}
-                      size={18}
-                      color={mode === m ? colors.primary : colors.muted}
-                    />
-                    <Text
-                      style={[
-                        s.modeTileText,
-                        { color: mode === m ? colors.primary : colors.text, fontWeight: mode === m ? "800" : "600" },
-                      ]}
-                    >
-                      {m === "online" ? t("rooms.modeOnline") : m === "offline" ? t("rooms.modeCampus") : t("rooms.modeHybrid")}
-                    </Text>
-                  </Pressable>
-                ))}
-              </Row>
-            </View>
-
-            {/* Conditional Campus Location Field */}
-            {(mode === "offline" || mode === "hybrid") && (
-              <Animated.View entering={FadeInUp.duration(200)} style={s.inputBlock}>
-                <Field
-                  label={t("rooms.campusLocation")}
-                  placeholder={t("rooms.campusLocationPlaceholder")}
-                  value={campusLocation}
-                  onChangeText={setCampusLocation}
-                  leftIcon="map-marker-outline"
-                  maxLength={120}
-                  error={!campusLocation.trim() ? "Campus location is required for in-person rooms" : undefined}
-                />
-              </Animated.View>
-            )}
-
-            {/* Visibility & Capacity Rows */}
-            <Row style={{ justifyContent: "space-between", gap: 12 }}>
-              <View style={{ flex: 1, gap: 6 }}>
-                <Text style={[s.sectionLabel, { color: colors.text }]}>{t("rooms.access")}</Text>
-                <Row style={{ gap: 6 }}>
-                  {(["public", "private", "invite_only"] as const).map((item) => (
-                    <Pill
-                      key={item}
-                      tone={visibility === item ? "primary" : "default"}
-                      onPress={() => {
-                        triggerHaptic();
-                        setVisibility(item);
-                      }}
-                    >
-                      {item === "invite_only" ? "Invite" : item.charAt(0).toUpperCase() + item.slice(1)}
-                    </Pill>
-                  ))}
-                </Row>
-              </View>
-
-              <View style={{ gap: 6 }}>
-                <Text style={[s.sectionLabel, { color: colors.text }]}>{t("rooms.seats")}</Text>
-                <Row style={{ gap: 6 }}>
-                  {CAPACITIES.map((cap) => (
-                    <Pill
-                      key={cap}
-                      tone={capacity === cap ? "accent" : "default"}
-                      onPress={() => {
-                        triggerHaptic();
-                        setCapacity(cap);
-                      }}
-                    >
-                      {cap}
-                    </Pill>
-                  ))}
-                </Row>
-              </View>
-            </Row>
-
-            {/* Modal Actions */}
-            <View style={s.creatorActions}>
-              <Button
-                title={t("common.cancel")}
-                variant="ghost"
-                onPress={() => {
-                  triggerHaptic();
-                  setShowCreator(false);
-                }}
-              />
-              <Button
-                title={create.isPending ? t("rooms.creatingRoom") : t("rooms.launchRoomBtn")}
-                disabled={!canSubmit}
-                loading={create.isPending}
-                icon="rocket-launch-outline"
-                onPress={() => create.mutate()}
-              />
-            </View>
-          </Card>
-        </Animated.View>
-      ) : null}
-
-      {/* In-Page Real-time Search */}
+      {/* Server-backed Search (debounced) */}
       <View style={s.searchContainer}>
         <Field
           placeholder={t("rooms.searchInPage")}
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={handleSearchChange}
           leftIcon="magnify"
           clearable={true}
-          onClear={() => setSearchQuery("")}
+          onClear={() => handleSearchChange("")}
         />
       </View>
 
@@ -569,6 +322,7 @@ export default function RoomsScreen() {
             [
               { key: "all", label: t("rooms.filterAll"), icon: "view-grid-outline" },
               { key: "live", label: t("rooms.filterLive"), icon: "broadcast" },
+              { key: "mine", label: t("rooms.filterMine", "My Rooms"), icon: "account-group-outline" },
               { key: "online", label: t("rooms.filterOnline"), icon: "video-outline" },
               { key: "campus", label: t("rooms.filterCampus"), icon: "map-marker-outline" },
               { key: "scheduled", label: t("rooms.filterUpcoming"), icon: "calendar-clock" },
@@ -588,6 +342,12 @@ export default function RoomsScreen() {
                 },
               ]}
             >
+              <MaterialCommunityIcons
+                name={item.icon as any}
+                size={14}
+                color={filter === item.key ? "#FFFFFF" : colors.muted}
+                style={{ marginRight: 5 }}
+              />
               <Text
                 style={[
                   s.filterChipText,
@@ -598,23 +358,62 @@ export default function RoomsScreen() {
               </Text>
             </Pressable>
           ))}
+        </ScrollView>
+      </View>
 
-          {/* Topic filter pill reset if active */}
-          {selectedTopic && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                setSelectedTopic(null);
-              }}
-              style={[s.filterChip, { backgroundColor: `${colors.accent}24`, borderColor: colors.accent }]}
-            >
-              <Text style={[s.filterChipText, { color: colors.accent, fontWeight: "700" }]}>
-                #{selectedTopic} {'✕'}
+      {/* Topic Filter â€” real server-side topic query (no more dead state) */}
+      <View style={s.filtersContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtersScroll}>
+          {POPULAR_TOPICS.map((item) => {
+            const isActive = selectedTopic === item;
+            return (
+              <Pressable
+                key={item}
+                onPress={() => {
+                  triggerHaptic();
+                  setSelectedTopic(isActive ? null : item);
+                }}
+                style={[
+                  s.filterChip,
+                  {
+                    backgroundColor: isActive ? colors.accent : "transparent",
+                    borderColor: isActive ? colors.accent : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    s.filterChipText,
+                    { color: isActive ? "#FFFFFF" : colors.textSecondary, fontWeight: isActive ? "800" : "600" },
+                  ]}
+                >
+                  {item}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Active search / topic summary */}
+      {(searchQuery.trim() || selectedTopic) && (
+        <Row style={{ gap: 8, alignItems: "center", marginTop: 2, flexWrap: "wrap" }}>
+          {searchQuery.trim() && (
+            <Pressable onPress={() => handleSearchChange("")} style={[s.activeFilterChip, { borderColor: colors.primary }]}>
+              <Text style={[s.activeFilterChipText, { color: colors.primary }]}>
+                â€œ{searchQuery.trim()}â€  âœ•
               </Text>
             </Pressable>
           )}
-        </ScrollView>
-      </View>
+          {selectedTopic && (
+            <Pressable onPress={() => setSelectedTopic(null)} style={[s.activeFilterChip, { borderColor: colors.accent }]}>
+              <Text style={[s.activeFilterChipText, { color: colors.accent }]}>
+                #{selectedTopic}  âœ•
+              </Text>
+            </Pressable>
+          )}
+        </Row>
+      )}
 
       {/* Loading Skeletons */}
       {roomsQuery.isLoading ? (
@@ -637,21 +436,27 @@ export default function RoomsScreen() {
       {/* Empty State */}
       {roomsQuery.isSuccess && filteredRooms.length === 0 ? (
         <Empty
-          icon="google-classroom"
-          title={searchQuery.trim() || filter !== "all" ? t("rooms.noMatch") : t("rooms.empty")}
-          detail={
-            searchQuery.trim() || filter !== "all"
-              ? t("rooms.noMatchDetail")
-              : t("rooms.emptyDetail")
+          icon={filter === "mine" ? "account-group-outline" : "google-classroom"}
+          title={
+            filter === "mine" && !hasActiveFilters
+              ? t("rooms.myRoomsEmpty")
+              : hasActiveFilters
+                ? t("rooms.noMatch")
+                : t("rooms.empty")
           }
-          actionTitle={searchQuery.trim() || filter !== "all" ? t("rooms.clearFilters") : t("rooms.create")}
+          detail={
+            filter === "mine" && !hasActiveFilters
+              ? t("rooms.myRoomsEmptyDetail", "Join a room from the list to see it here and ask questions.")
+              : hasActiveFilters
+                ? t("rooms.noMatchDetail")
+                : t("rooms.emptyDetail")
+          }
+          actionTitle={hasActiveFilters ? t("rooms.clearFilters") : t("rooms.create")}
           onAction={() => {
-            if (searchQuery.trim() || filter !== "all" || selectedTopic) {
-              setSearchQuery("");
-              setFilter("all");
-              setSelectedTopic(null);
+            if (hasActiveFilters) {
+              clearAllFilters();
             } else {
-              setShowCreator(true);
+              router.push("/room/create" as any);
             }
           }}
         />
@@ -666,73 +471,48 @@ export default function RoomsScreen() {
         ))}
       </View>
 
-      {/* Peer Teaching Request Modal */}
-      <Modal
-        visible={showTeachRequestModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowTeachRequestModal(false)}
-      >
-        <View style={s.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowTeachRequestModal(false)} />
-          <View style={[s.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <Row style={{ alignItems: "center", gap: 8 }}>
-                <MaterialCommunityIcons name="school" size={22} color={colors.primary} />
-                <Text style={[s.modalTitle, { color: colors.text }]}>
-                  {t("rooms.requestTopicModalTitle", "Request Peer Teaching")}
-                </Text>
-              </Row>
-              <Pressable onPress={() => setShowTeachRequestModal(false)}>
-                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-              </Pressable>
-            </Row>
-
-            <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 12 }}>
-              {t("rooms.roleLearnBanner")}
+      {/* Pagination - load the rest of the real result set */}
+      {roomsQuery.hasNextPage ? (
+        <Pressable
+          onPress={() => roomsQuery.fetchNextPage()}
+          disabled={roomsQuery.isFetchingNextPage}
+          style={[s.loadMoreBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+        >
+          {roomsQuery.isFetchingNextPage ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Text style={[s.loadMoreText, { color: colors.primary }]}>
+              {t("rooms.loadMore", "Load more rooms")}
             </Text>
+          )}
+        </Pressable>
+      ) : null}
 
-            <Field
-              label={t("rooms.topicField")}
-              placeholder={t("rooms.requestTopicPlaceholder")}
-              value={requestTopicText}
-              onChangeText={setRequestTopicText}
-            />
+      {/* Result count */}
+      {!hasActiveFilters && allRooms.length > 0 && !roomsQuery.hasNextPage ? (
+        <Muted style={{ textAlign: "center", paddingVertical: 12 }}>
+          {t("rooms.resultCount", "Showing all {n} rooms").replace("{n}", String(serverTotal))}
+        </Muted>
+      ) : null}
 
-            <Field
-              label="Additional Notes / Questions"
-              placeholder="e.g. Preparing for midterms, need guidance on question 4..."
-              value={requestDetailText}
-              onChangeText={setRequestDetailText}
-              multiline
-              numberOfLines={3}
-            />
-
-            <Row style={{ justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-              <Button
-                title={t("common.cancel")}
-                variant="ghost"
-                onPress={() => setShowTeachRequestModal(false)}
-              />
-              <Button
-                title={t("rooms.requestTopicBtn")}
-                variant="primary"
-                disabled={!requestTopicText.trim()}
-                onPress={() => {
-                  triggerHaptic();
-                  setShowTeachRequestModal(false);
-                  setRequestTopicText("");
-                  setRequestDetailText("");
-                  Alert.alert(
-                    t("rooms.requestSent", "Teaching Request Posted!"),
-                    t("rooms.requestSentDetail", "Peers in this room will be notified to guide you.")
-                  );
-                }}
-              />
-            </Row>
-          </View>
-        </View>
-      </Modal>
+      {/* Single, unified room creation flow lives in /room/create.
+          The list screen only provides the entry point so there is exactly one
+          source of truth for creation logic. */}
+      <Pressable
+        onPress={() => {
+          triggerHaptic();
+          router.push("/room/create" as any);
+        }}
+        style={({ pressed }) => [
+          s.createFab,
+          { backgroundColor: colors.primary, opacity: pressed ? 0.9 : 1 },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={t("rooms.create", "Create room")}
+      >
+        <MaterialCommunityIcons name="plus" size={26} color="#FFFFFF" />
+        <Text style={s.createFabText}>{t("rooms.create", "Create room")}</Text>
+      </Pressable>
     </Screen>
   );
 }
@@ -752,7 +532,7 @@ const s = StyleSheet.create({
   roleTab: {
     flexDirection: "row",
     alignItems: "center",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 7,
@@ -792,13 +572,13 @@ const s = StyleSheet.create({
     fontWeight: "800",
   },
   heroSection: {
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 12,
     marginVertical: 4,
   },
   statsRow: {
     flexDirection: "row",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 8,
   },
   statCard: {
@@ -808,13 +588,13 @@ const s = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     alignItems: "center",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 4,
   },
   statHeader: {
     flexDirection: "row",
     alignItems: "center",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 6,
   },
   pulseDot: {
@@ -856,7 +636,7 @@ const s = StyleSheet.create({
   },
   creatorCard: {
     padding: 16,
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 14,
     marginVertical: 6,
   },
@@ -868,7 +648,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   inputBlock: {
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 6,
   },
   sectionLabel: {
@@ -878,12 +658,12 @@ const s = StyleSheet.create({
   },
   topicSuggestions: {
     marginTop: 4,
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 4,
   },
   suggestionScroll: {
     flexDirection: "row",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 6,
     paddingVertical: 2,
   },
@@ -902,7 +682,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 6,
     paddingVertical: 10,
     paddingHorizontal: 8,
@@ -916,7 +696,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 10,
     marginTop: 4,
   },
@@ -928,7 +708,7 @@ const s = StyleSheet.create({
   },
   filtersScroll: {
     flexDirection: "row",
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 8,
     paddingVertical: 4,
   },
@@ -941,8 +721,51 @@ const s = StyleSheet.create({
   filterChipText: {
     fontSize: 13,
   },
+  activeFilterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  activeFilterChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  loadMoreBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadMoreText: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  createFab: {
+    position: "absolute",
+    right: 16,
+    bottom: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 28,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  createFabText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
   roomList: {
-    // @ts-ignore – gap not in RN 0.69 types
+    // @ts-ignore â€“ gap not in RN 0.69 types
     gap: 8,
     marginTop: 4,
   },

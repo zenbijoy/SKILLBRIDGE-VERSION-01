@@ -16,6 +16,7 @@ type RoomOSTabsProps = {
 export function RoomOSTabs({ activeTab, onTabChange, chatUnreadCount }: RoomOSTabsProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
+  const unreadCount = Math.max(0, chatUnreadCount ?? 0);
 
   const tabs: { key: RoomOSTabKey; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
     { key: "posts", label: t("room.posts") || "Posts", icon: "newspaper-variant-outline" },
@@ -46,8 +47,10 @@ export function RoomOSTabs({ activeTab, onTabChange, chatUnreadCount }: RoomOSTa
                 size={20}
                 color={isActive ? colors.primary : colors.muted}
               />
-              {tab.key === "chat" && Boolean(chatUnreadCount && chatUnreadCount > 0) && (
-                <View style={[s.badge, { backgroundColor: colors.danger }]} />
+              {tab.key === "chat" && unreadCount > 0 && (
+                <View style={[s.badge, { backgroundColor: colors.danger }]}>
+                  <Text style={s.badgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text>
+                </View>
               )}
             </View>
             <Text
@@ -84,11 +87,19 @@ const s = StyleSheet.create({
   },
   badge: {
     position: "absolute",
-    top: -2,
-    right: -4,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    top: -6,
+    right: -12,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
   },
   tabLabel: {
     fontSize: 11,

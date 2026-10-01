@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -12,7 +13,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Animated, { FadeIn } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -106,6 +106,8 @@ export default function Inbox() {
   const [groupMode, setGroupMode] = useState(false);
   const [selectedPeers, setSelectedPeers] = useState<string[]>([]);
   const [groupTitle, setGroupTitle] = useState("");
+  const [composeSearch, setComposeSearch] = useState("");
+  const [composeMessage, setComposeMessage] = useState("");
 
   // 1. Conversations Query
   const conversationsQuery = useQuery({
@@ -127,6 +129,16 @@ export default function Inbox() {
     queryKey: ["connections-contacts"],
     queryFn: () => api<{ connections: ConnectionProfile[] }>("/connections"),
     enabled: composeModalVisible || newCallModalVisible,
+  });
+
+  // 4. Live User Search Query for messaging any friend or student
+  const searchUsersQuery = useQuery({
+    queryKey: ["compose-search-users", composeSearch.trim()],
+    queryFn: () =>
+      api<{ results: Array<{ id: string; title: string; subtitle?: string; imageUrl?: string }> }>(
+        `/search?q=${encodeURIComponent(composeSearch.trim())}&kind=person`
+      ),
+    enabled: composeModalVisible && composeSearch.trim().length > 0,
   });
 
   // Mutations
@@ -156,17 +168,35 @@ export default function Inbox() {
 
   const createConversationMutation = useMutation({
     mutationFn: (body: any) =>
-      api<{ conversation: { id: string } }>("/chat/conversations", {
+      api<any>("/chat/conversations", {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    onSuccess: (data) => {
+    onSuccess: async (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      const convId = data?.id || data?.conversation_id || data?.conversation?.id;
+      if (composeMessage.trim() && convId) {
+        try {
+          await api(`/chat/conversations/${convId}/messages`, {
+            method: "POST",
+            body: JSON.stringify({ body: composeMessage.trim() }),
+          });
+        } catch (e) {
+          console.warn("Could not dispatch initial message", e);
+        }
+      }
       setComposeModalVisible(false);
       setGroupMode(false);
       setSelectedPeers([]);
       setGroupTitle("");
-      router.push(`/chat/${data.conversation.id}` as any);
+      setComposeMessage("");
+      setComposeSearch("");
+      if (convId) {
+        router.push(`/chat/${convId}` as any);
+      }
+    },
+    onError: (err: any) => {
+      Alert.alert("Error starting chat", err.message || "Failed to create conversation");
     },
   });
 
@@ -894,21 +924,124 @@ export default function Inbox() {
                 />
               </View>
             )}
+
+            {/* Friend / Student Search Input */}
+            <View style={[styles.searchBox, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+              <MaterialCommunityIcons name="magnify" size={20} color={colors.muted} />
+              <TextInput
+                placeholder="Search friend by name or username..."
+                placeholderTextColor={colors.muted}
+                value={composeSearch}
+                onChangeText={setComposeSearch}
+                style={[styles.searchInput, { color: colors.text }]}
+              />
+              {composeSearch ? (
+                <Pressable onPress={() => setComposeSearch("")} hitSlop={8}>
+                  <MaterialCommunityIcons name="close-circle" size={16} color={colors.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {/* Optional Initial Message to Send */}
+            {!groupMode && (
+              <View style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <TextInput
+                  placeholder="Type a message to send directly (optional)..."
+                  placeholderTextColor={colors.muted}
+                  style={[styles.modalInput, { color: colors.text }]}
+                  value={composeMessage}
+                  onChangeText={setComposeMessage}
+                />
+              </View>
+            )}
           </View>
 
           {/* Peer List */}
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
             <Text style={[styles.sectionHeaderText, { color: colors.muted, marginBottom: 8 }]}>
-              {groupMode ? "SELECT PARTICIPANTS" : "SELECT PEER"}
+              {composeSearch.trim()
+                ? "SEARCH RESULTS"
+                : groupMode
+                ? "SELECT PARTICIPANTS"
+                : "MY CONNECTIONS / SELECT PEER"}
             </Text>
 
-            {connectionsQuery.isLoading ? (
+            {composeSearch.trim().length > 0 ? (
+              searchUsersQuery.isLoading ? (
+                <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+              ) : (searchUsersQuery.data?.results ?? []).length === 0 ? (
+                <Empty
+                  icon="account-search-outline"
+                  title="No users found"
+                  detail={`No students found matching "${composeSearch}".`}
+                />
+              ) : (
+                (searchUsersQuery.data?.results ?? []).map((u) => {
+                  const isSelected = selectedPeers.includes(u.id);
+                  return (
+                    <Pressable
+                      key={u.id}
+                      onPress={() => {
+                        triggerHaptic();
+                        if (groupMode) {
+                          setSelectedPeers((prev) =>
+                            isSelected ? prev.filter((id) => id !== u.id) : [...prev, u.id]
+                          );
+                        } else {
+                          createConversationMutation.mutate({
+                            kind: "dm",
+                            participantId: u.id,
+                          });
+                        }
+                      }}
+                      style={[styles.peerRow, { borderBottomColor: colors.border }]}
+                    >
+                      <View style={styles.avatarContainer}>
+                        {u.imageUrl ? (
+                          <Image source={{ uri: u.imageUrl }} style={styles.avatar} />
+                        ) : (
+                          <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: colors.primarySoft }]}>
+                            <Text style={{ color: colors.primary, fontWeight: "700" }}>
+                              {(u.title || "U").charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={[styles.peerName, { color: colors.text }]}>{u.title}</Text>
+                        {u.subtitle ? (
+                          <Text style={[styles.peerHeadline, { color: colors.muted }]} numberOfLines={1}>
+                            {u.subtitle}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {!groupMode && (
+                          <View style={{ backgroundColor: colors.primarySoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
+                              {composeMessage.trim() ? "Send Text" : "Chat"}
+                            </Text>
+                          </View>
+                        )}
+                        {groupMode && (
+                          <MaterialCommunityIcons
+                            name={isSelected ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
+                            size={22}
+                            color={isSelected ? colors.primary : colors.muted}
+                          />
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )
+            ) : connectionsQuery.isLoading ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
             ) : (connectionsQuery.data?.connections ?? []).length === 0 ? (
               <Empty
                 icon="account-multiple-outline"
                 title="No Connections Yet"
-                detail="Connect with classmates to start direct and group chats."
+                detail="Search for a classmate above or connect from Discover to message."
               />
             ) : (
               (connectionsQuery.data?.connections ?? []).map((peer) => {
@@ -954,13 +1087,22 @@ export default function Inbox() {
                       ) : null}
                     </View>
 
-                    {groupMode && (
-                      <MaterialCommunityIcons
-                        name={isSelected ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
-                        size={22}
-                        color={isSelected ? colors.primary : colors.muted}
-                      />
-                    )}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      {!groupMode && (
+                        <View style={{ backgroundColor: colors.primarySoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
+                            {composeMessage.trim() ? "Send Text" : "Chat"}
+                          </Text>
+                        </View>
+                      )}
+                      {groupMode && (
+                        <MaterialCommunityIcons
+                          name={isSelected ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
+                          size={22}
+                          color={isSelected ? colors.primary : colors.muted}
+                        />
+                      )}
+                    </View>
                   </Pressable>
                 );
               })

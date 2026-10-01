@@ -102,14 +102,15 @@ export function RoomSettingsModal({
     try {
       triggerHaptic();
       setSavingSettings(true);
-      const data = await api<Partial<Room>>(`/rooms/${room.id}/settings`, {
+      // Backend responds with { room: {...} }, not a bare room object.
+      const data = await api<{ room: Partial<Room> }>(`/rooms/${room.id}/settings`, {
         method: "PATCH",
         body: JSON.stringify({
           enabled_modules: enabledModules,
           default_landing_tab: defaultLandingTab,
         }),
       });
-      onRoomUpdated(data);
+      onRoomUpdated(data.room);
       Alert.alert("Success", "Room settings have been updated.");
       onClose();
     } catch (err: any) {

@@ -1,860 +1,1166 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import Animated, { FadeInUp, Layout } from "react-native-reanimated";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
-import { api } from "@/lib/api";
-import type { EventItem, Room, Session } from "@/types";
+import React, { useState, useMemo } from "react";
 import {
-  Button,
-  Card,
-  Empty,
-  Field,
-  H1,
-  Muted,
-  Pill,
-  Row,
-  Screen,
-  Skeleton,
-  triggerHaptic,
-} from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
-import { useI18n } from "@/i18n";
-import { SessionReplayModal } from "@/components/SessionReplayModal";
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { router } from "expo-router";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { api } from "@/lib/api";
+import { useTheme, radius } from "@/theme";
+import {
+  MonthView,
+  WeekView,
+  DayView,
+  AgendaView,
+  UpcomingWidget,
+  ImportRoutineModal,
+  RoutineVerificationModal,
+  ManualClassModal,
+  CreateTaskModal,
+  EventDetailsModal,
+  PublicRoutineDiscoveryModal,
+  AcademicProfileModal,
+  PreferencesModal,
+  formatDateIso,
+  parseIsoDate,
+  type CalendarEvent,
+  type CalendarEventType,
+  type AcademicProfile,
+  type AcademicRoutine,
+  type UpcomingSummary,
+  type RoutineEntry,
+  type AcademicNotificationPreferences,
+} from "@/features/calendar";
+import { triggerHaptic } from "@/components/ui";
 
-export type RoutineSlot = {
-  id: string;
-  courseName: string;
-  dayOfWeek: string;
-  timeSlot: string;
-  roomOrBuilding: string;
-};
+type CalendarViewMode = "month" | "week" | "day" | "agenda";
 
-const DAYS_OF_WEEK = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
+const FILTER_OPTIONS: { key: string; label: string; icon: string }[] = [
+  { key: "ALL", label: "All", icon: "view-grid-outline" },
+  { key: "CLASSES", label: "Classes & Labs", icon: "book-open-outline" },
+  { key: "ASSIGNMENT", label: "Assignments", icon: "clipboard-text-outline" },
+  { key: "QUIZ", label: "Quizzes", icon: "help-circle-outline" },
+  { key: "EXAM", label: "Exams", icon: "alert-decagram-outline" },
+  { key: "PERSONAL_TASK", label: "Tasks", icon: "checkbox-marked-circle-outline" },
 ];
 
-const ROUTINE_STORAGE_KEY = "@skillbridge_my_routine";
+export default function ScheduleScreen() {
+  const { colors, isDark } = useTheme();
+  const queryClient = useQueryClient();
 
-const DEFAULT_ROUTINE: RoutineSlot[] = [
-  {
-    id: "slot-1",
-    courseName: "CSE220: Data Structures & Algorithms",
-    dayOfWeek: "Sunday",
-    timeSlot: "10:00 AM - 11:30 AM",
-    roomOrBuilding: "Room 402, Academic Bldg 2",
-  },
-  {
-    id: "slot-2",
-    courseName: "MAT120: Integral Calculus & Differential Eq.",
-    dayOfWeek: "Tuesday",
-    timeSlot: "01:30 PM - 03:00 PM",
-    roomOrBuilding: "Science Complex, Hall B",
-  },
-  {
-    id: "slot-3",
-    courseName: "PHY102: Physics Lab & Mechanics",
-    dayOfWeek: "Thursday",
-    timeSlot: "11:30 AM - 01:00 PM",
-    roomOrBuilding: "Physics Lab 3",
-  },
-];
+  // Active view: Month | Week | Day | Agenda
+  const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
 
-type ScheduleItem = {
-  id: string;
-  kind: "session" | "room" | "event";
-  title: string;
-  subtitle?: string;
-  startsAt: string;
-  locationOrUrl?: string;
-  status: string;
-  mode?: string;
-  roomId?: string;
-  recordingUrl?: string | null;
-  recordingVideoId?: string | null;
-  recordingDuration?: number | null;
-};
+  // Current focal date
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [selectedDateIso, setSelectedDateIso] = useState<string>(
+    formatDateIso(new Date())
+  );
 
-const FILTERS = [
-  { key: "all", label: "🗓️ All Events" },
-  { key: "sessions", label: "👥 Peer Classes" },
-  { key: "rooms", label: "🏫 Study Rooms" },
-  { key: "events", label: "🎪 Club Seminars" },
-];
+  // Filter and search
+  const [selectedFilter, setSelectedFilter] = useState<string>("ALL");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
 
-export default function Schedule() {
-  const { colors } = useTheme();
-  const { t, language } = useI18n();
+  // Modals state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [verificationRoutine, setVerificationRoutine] =
+    useState<AcademicRoutine | null>(null);
+  const [isManualClassModalOpen, setIsManualClassModalOpen] = useState(false);
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+  const [createTaskDateIso, setCreateTaskDateIso] = useState<string | undefined>(
+    undefined
+  );
+  const [selectedEventDetails, setSelectedEventDetails] =
+    useState<CalendarEvent | null>(null);
+  const [editingTask, setEditingTask] = useState<CalendarEvent | null>(null);
+  const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isPreferencesModalOpen, setIsPreferencesModalOpen] = useState(false);
 
-  // Active view: My Class Routine vs Live Timeline
-  const [activeView, setActiveView] = useState<"routine" | "live">("routine");
+  // 1. Fetch Academic Profile
+  const profileQuery = useQuery({
+    queryKey: ["calendar-academic-profile"],
+    queryFn: () =>
+      api<{ profile: AcademicProfile }>("/calendar/academic-profile"),
+    staleTime: 60_000,
+  });
+  const profile = profileQuery.data?.profile ?? null;
 
-  // Selected Day Filter ("all" or one of DAYS_OF_WEEK)
-  const todayDayName = DAYS_OF_WEEK[new Date().getDay()];
-  const [selectedDay, setSelectedDay] = useState<string>("all");
+  // 2. Fetch Upcoming Summary for "What's Next?" widget
+  const upcomingQuery = useQuery({
+    queryKey: ["calendar-upcoming"],
+    queryFn: () => api<UpcomingSummary>("/calendar/upcoming"),
+    refetchInterval: 30_000,
+  });
+  const upcomingSummary = upcomingQuery.data ?? null;
 
-  // Personal Class Routine State
-  const [routineSlots, setRoutineSlots] = useState<RoutineSlot[]>(DEFAULT_ROUTINE);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  // 3. Compute date range for active view
+  const { startDateIso, endDateIso } = useMemo(() => {
+    const today = new Date(currentDate);
 
-  // Add routine slot form fields
-  const [newCourseName, setNewCourseName] = useState("");
-  const [newDay, setNewDay] = useState("Sunday");
-  const [newTimeSlot, setNewTimeSlot] = useState("");
-  const [newRoom, setNewRoom] = useState("");
-
-  // Live schedule filter
-  const [filter, setFilter] = useState("all");
-
-  // Load routine from storage
-  useEffect(() => {
-    AsyncStorage.getItem(ROUTINE_STORAGE_KEY)
-      .then((val) => {
-        if (val) {
-          try {
-            const parsed = JSON.parse(val);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setRoutineSlots(parsed);
-            }
-          } catch {
-            // Ignored
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const saveRoutineToStorage = async (slots: RoutineSlot[]) => {
-    try {
-      await AsyncStorage.setItem(ROUTINE_STORAGE_KEY, JSON.stringify(slots));
-    } catch {
-      // Ignored
+    if (viewMode === "month") {
+      // Month range with padding
+      const first = new Date(today.getFullYear(), today.getMonth(), 1);
+      first.setDate(first.getDate() - 7);
+      const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      last.setDate(last.getDate() + 7);
+      return {
+        startDateIso: formatDateIso(first),
+        endDateIso: formatDateIso(last),
+      };
+    } else if (viewMode === "week") {
+      const sun = new Date(today);
+      sun.setDate(today.getDate() - today.getDay());
+      const sat = new Date(sun);
+      sat.setDate(sun.getDate() + 6);
+      return {
+        startDateIso: formatDateIso(sun),
+        endDateIso: formatDateIso(sat),
+      };
+    } else if (viewMode === "day") {
+      return {
+        startDateIso: selectedDateIso,
+        endDateIso: selectedDateIso,
+      };
+    } else {
+      // Agenda: 30 days from today
+      const now = new Date();
+      const nextMonth = new Date(now);
+      nextMonth.setDate(now.getDate() + 35);
+      return {
+        startDateIso: formatDateIso(now),
+        endDateIso: formatDateIso(nextMonth),
+      };
     }
-  };
+  }, [currentDate, viewMode, selectedDateIso]);
 
-  const handleAddRoutineSlot = () => {
-    if (!newCourseName.trim()) return;
-    triggerHaptic();
-
-    const newSlot: RoutineSlot = {
-      id: `slot-${Date.now()}`,
-      courseName: newCourseName.trim(),
-      dayOfWeek: newDay,
-      timeSlot: newTimeSlot.trim() || "10:00 AM - 11:30 AM",
-      roomOrBuilding: newRoom.trim() || "Campus Lecture Hall",
-    };
-
-    const updated = [...routineSlots, newSlot];
-    setRoutineSlots(updated);
-    saveRoutineToStorage(updated);
-
-    setNewCourseName("");
-    setNewTimeSlot("");
-    setNewRoom("");
-    setIsAddModalOpen(false);
-  };
-
-  const handleDeleteSlot = (id: string) => {
-    triggerHaptic();
-    Alert.alert(
-      language === "bn" ? "ক্লাস মুছে ফেলতে চান?" : "Delete Class?",
-      language === "bn" ? "এই ক্লাসটি আপনার রুটিন থেকে সরানো হবে।" : "This class will be removed from your routine.",
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("schedule.deleteSlot", "Remove"),
-          style: "destructive",
-          onPress: () => {
-            const updated = routineSlots.filter((s) => s.id !== id);
-            setRoutineSlots(updated);
-            saveRoutineToStorage(updated);
-          },
-        },
-      ]
-    );
-  };
-
-  // Queries for real-time rooms & sessions
-  const sessionsQuery = useQuery({
-    queryKey: ["sessions-mine"],
-    queryFn: () => api<{ sessions: Session[] }>("/sessions/mine"),
-  });
-
-  const roomsQuery = useQuery({
-    queryKey: ["rooms-schedule"],
-    queryFn: () => api<{ rooms: Room[] }>("/rooms?limit=30"),
-  });
-
+  // 4. Fetch Calendar Events
   const eventsQuery = useQuery({
-    queryKey: ["events-schedule"],
-    queryFn: () => api<{ events: EventItem[] }>("/events"),
+    queryKey: [
+      "calendar-events",
+      startDateIso,
+      endDateIso,
+      selectedFilter,
+      searchQuery,
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.append("startDate", startDateIso);
+      params.append("endDate", endDateIso);
+      if (selectedFilter !== "ALL") {
+        params.append("type", selectedFilter);
+      }
+      if (searchQuery.trim()) {
+        params.append("search", searchQuery.trim());
+      }
+      return api<{ events: CalendarEvent[] }>(
+        `/calendar/events?${params.toString()}`
+      );
+    },
   });
+  const events = eventsQuery.data?.events ?? [];
 
-  const isLoading = sessionsQuery.isLoading || roomsQuery.isLoading || eventsQuery.isLoading;
+  // 5. Fetch Active Routines to check if user has any routine configured
+  const routinesQuery = useQuery({
+    queryKey: ["calendar-routines"],
+    queryFn: () => api<{ routines: AcademicRoutine[] }>("/calendar/routines"),
+  });
+  const hasActiveRoutine = (routinesQuery.data?.routines ?? []).some(
+    (r) => r.is_active
+  );
 
-  // Merge live items
-  const liveItems: ScheduleItem[] = [];
-
-  for (const s of sessionsQuery.data?.sessions ?? []) {
-    liveItems.push({
-      id: `session-${s.id}`,
-      kind: "session",
-      title: `Peer Session: ${s.mode.toUpperCase()}`,
-      subtitle: s.campus_location || s.meeting_url || "Online room",
-      startsAt: s.starts_at,
-      locationOrUrl: s.meeting_url || s.campus_location || undefined,
-      status: s.status,
-      mode: s.mode,
-      roomId: s.room_id,
-      recordingUrl: s.recording_url,
-      recordingVideoId: s.recording_video_id,
-      recordingDuration: s.recording_duration_seconds,
-    });
-  }
-
-  for (const r of roomsQuery.data?.rooms ?? []) {
-    if (r.scheduled_at) {
-      liveItems.push({
-        id: `room-${r.id}`,
-        kind: "room",
-        title: `Room: ${r.title}`,
-        subtitle: `Topic: ${r.topic} · ${r.member_count} members`,
-        startsAt: r.scheduled_at,
-        locationOrUrl: r.campus_location || "LiveKit Classroom",
-        status: r.status,
-        mode: r.mode,
-        roomId: r.id,
-      });
+  // Date Navigation Handlers
+  const handlePrevDate = () => {
+    triggerHaptic();
+    const next = new Date(currentDate);
+    if (viewMode === "month") {
+      next.setMonth(next.getMonth() - 1);
+    } else if (viewMode === "week") {
+      next.setDate(next.getDate() - 7);
+    } else {
+      next.setDate(next.getDate() - 1);
+      setSelectedDateIso(formatDateIso(next));
     }
-  }
+    setCurrentDate(next);
+  };
 
-  for (const e of eventsQuery.data?.events ?? []) {
-    liveItems.push({
-      id: `event-${e.id}`,
-      kind: "event",
-      title: `Seminar: ${e.title}`,
-      subtitle: e.description,
-      startsAt: e.starts_at,
-      locationOrUrl: e.location || "Campus Auditorium",
-      status: e.status,
-      mode: e.location ? "offline" : "online",
-    });
-  }
+  const handleNextDate = () => {
+    triggerHaptic();
+    const next = new Date(currentDate);
+    if (viewMode === "month") {
+      next.setMonth(next.getMonth() + 1);
+    } else if (viewMode === "week") {
+      next.setDate(next.getDate() + 7);
+    } else {
+      next.setDate(next.getDate() + 1);
+      setSelectedDateIso(formatDateIso(next));
+    }
+    setCurrentDate(next);
+  };
 
-  liveItems.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  const handleGoToday = () => {
+    triggerHaptic();
+    const now = new Date();
+    setCurrentDate(now);
+    setSelectedDateIso(formatDateIso(now));
+  };
 
-  const filteredLiveItems = liveItems.filter((item) => {
-    if (filter === "sessions") return item.kind === "session";
-    if (filter === "rooms") return item.kind === "room";
-    if (filter === "events") return item.kind === "event";
-    return true;
-  });
+  // Header Title text based on active view
+  const headerDateText = useMemo(() => {
+    if (viewMode === "month") {
+      return currentDate.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      });
+    } else if (viewMode === "week") {
+      const sun = new Date(currentDate);
+      sun.setDate(currentDate.getDate() - currentDate.getDay());
+      const sat = new Date(sun);
+      sat.setDate(sun.getDate() + 6);
+      return `${sun.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      })} - ${sat.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      })}`;
+    } else if (viewMode === "day") {
+      return parseIsoDate(selectedDateIso).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    } else {
+      return "Upcoming Agenda";
+    }
+  }, [currentDate, viewMode, selectedDateIso]);
 
-  const filteredRoutineSlots = useMemo(() => {
-    if (selectedDay === "all") return routineSlots;
-    return routineSlots.filter((slot) => slot.dayOfWeek === selectedDay);
-  }, [routineSlots, selectedDay]);
+  // Event Action Handlers
+  const handleToggleTaskComplete = async (event: CalendarEvent) => {
+    try {
+      await api(`/calendar/events/${event.id}/toggle`, { method: "PATCH" });
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to update task.");
+    }
+  };
 
-  const [activeReplay, setActiveReplay] = useState<{
-    visible: boolean;
-    title: string;
-    videoId?: string | null;
-    recordingUrl?: string | null;
-    durationSeconds?: number | null;
-  }>({ visible: false, title: "" });
+  const handleSaveTask = async (taskData: Partial<CalendarEvent>) => {
+    try {
+      if (taskData.id) {
+        await api(`/calendar/events/${taskData.id}`, {
+          method: "PUT",
+          body: JSON.stringify(taskData),
+        });
+      } else {
+        await api("/calendar/events", {
+          method: "POST",
+          body: JSON.stringify(taskData),
+        });
+      }
+      setIsCreateTaskModalOpen(false);
+      setEditingTask(null);
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not save task.");
+    }
+  };
+
+  const handleDeleteTask = async (eventId: string) => {
+    try {
+      await api(`/calendar/events/${eventId}`, { method: "DELETE" });
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not delete task.");
+    }
+  };
+
+  const handleClassException = async (
+    event: CalendarEvent,
+    exceptionType: "cancelled" | "rescheduled" | "makeup",
+    notes?: string
+  ) => {
+    if (!event.routine_entry_id) {
+      Alert.alert("Exception only applies to recurring routine classes.");
+      return;
+    }
+    try {
+      await api("/calendar/events/exception", {
+        method: "POST",
+        body: JSON.stringify({
+          routineEntryId: event.routine_entry_id,
+          date: event.date,
+          exceptionType,
+          notes,
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not apply exception.");
+    }
+  };
+
+  const handlePersonalOverride = async (
+    event: CalendarEvent,
+    customRoom?: string,
+    customNotes?: string
+  ) => {
+    if (!event.routine_entry_id) return;
+    try {
+      // Find routine ID from routinesQuery
+      const activeRt = (routinesQuery.data?.routines ?? []).find(
+        (r) => r.is_active
+      );
+      if (!activeRt) return;
+
+      await api(`/calendar/routines/${activeRt.id}/overrides`, {
+        method: "POST",
+        body: JSON.stringify({
+          routineEntryId: event.routine_entry_id,
+          customRoom: customRoom || null,
+          customNotes: customNotes || null,
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+      Alert.alert("Personal Override Saved", "Custom details applied.");
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not save override.");
+    }
+  };
+
+  const handleManualClassSave = async (classData: RoutineEntry) => {
+    try {
+      // Create or update manual routine
+      await api("/calendar/routines", {
+        method: "POST",
+        body: JSON.stringify({
+          title: `${profile?.academic_group ?? "My Class"} Routine`,
+          entries: [classData],
+          sourceType: "manual",
+        }),
+      });
+      setIsManualClassModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["calendar-routines"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+      Alert.alert("Class Added", "Your routine timetable has been updated.");
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not add class.");
+    }
+  };
 
   return (
-    <Screen>
-      <H1>{t("schedule.title", "Campus Calendar & Routine 📅")}</H1>
-      <Muted>
-        {t("schedule.subtitle", "Personal class routine & real-time study sessions")}
-      </Muted>
-
-      {/* Main View Segmented Toggle */}
-      <View style={[s.viewToggleContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            triggerHaptic();
-            setActiveView("routine");
-          }}
-          style={[
-            s.viewTab,
-            activeView === "routine" && [s.activeViewTab, { backgroundColor: colors.primary }],
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="calendar-account"
-            size={16}
-            color={activeView === "routine" ? "#FFFFFF" : colors.muted}
-          />
-          <Text
-            style={[
-              s.viewTabText,
-              { color: activeView === "routine" ? "#FFFFFF" : colors.muted },
-              activeView === "routine" && s.activeViewTabText,
-            ]}
-          >
-            {t("schedule.myRoutine", "My Class Timetable")}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            triggerHaptic();
-            setActiveView("live");
-          }}
-          style={[
-            s.viewTab,
-            activeView === "live" && [s.activeViewTab, { backgroundColor: colors.primary }],
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="broadcast"
-            size={16}
-            color={activeView === "live" ? "#FFFFFF" : colors.muted}
-          />
-          <Text
-            style={[
-              s.viewTabText,
-              { color: activeView === "live" ? "#FFFFFF" : colors.muted },
-              activeView === "live" && s.activeViewTabText,
-            ]}
-          >
-            {t("schedule.liveSchedule", "Live Rooms & Events")}
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Day of Week Calendar Strip */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={s.dayStripContainer}
+    <View
+      style={[
+        styles.screen,
+        { backgroundColor: isDark ? colors.bg : "#F8FAFC" },
+      ]}
+    >
+      {/* 1. Top Navigation Bar */}
+      <View
+        style={[
+          styles.topNavBar,
+          {
+            backgroundColor: isDark ? colors.surface : "#FFFFFF",
+            borderBottomColor: isDark ? colors.border : "#E2E8F0",
+          },
+        ]}
       >
-        <Pressable
-          onPress={() => {
-            triggerHaptic();
-            setSelectedDay("all");
-          }}
-          style={[
-            s.dayChip,
-            {
-              backgroundColor: selectedDay === "all" ? colors.primary : colors.surface,
-              borderColor: selectedDay === "all" ? colors.primary : colors.border,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              s.dayChipText,
-              { color: selectedDay === "all" ? "#FFFFFF" : colors.text, fontWeight: selectedDay === "all" ? "800" : "600" },
+        <View style={styles.navLeft}>
+          <Pressable
+            onPress={() => router.back()}
+            style={({ pressed }) => [
+              styles.navBackBtn,
+              { opacity: pressed ? 0.7 : 1 },
             ]}
           >
-            {language === "bn" ? "সকল দিন" : "All Days"}
-          </Text>
-        </Pressable>
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={22}
+              color={colors.text}
+            />
+          </Pressable>
 
-        {DAYS_OF_WEEK.map((day) => {
-          const isSelected = selectedDay === day;
-          const isToday = day === todayDayName;
-          const dayShort = language === "bn" ? day.slice(0, 3) : day.slice(0, 3);
-
-          return (
+          <View>
+            <Text style={[styles.screenTitle, { color: colors.text }]}>
+              Academic Calendar
+            </Text>
             <Pressable
-              key={day}
-              onPress={() => {
-                triggerHaptic();
-                setSelectedDay(day);
-              }}
-              style={[
-                s.dayChip,
-                {
-                  backgroundColor: isSelected ? colors.primary : colors.surface,
-                  borderColor: isSelected ? colors.primary : isToday ? colors.primary : colors.border,
-                  borderWidth: isToday ? 2 : 1,
-                },
-              ]}
+              onPress={() => setIsProfileModalOpen(true)}
+              style={styles.academicGroupChip}
             >
               <Text
                 style={[
-                  s.dayChipText,
-                  { color: isSelected ? "#FFFFFF" : isToday ? colors.primary : colors.text, fontWeight: isSelected || isToday ? "800" : "600" },
+                  styles.academicGroupChipText,
+                  { color: colors.primary },
                 ]}
               >
-                {dayShort}
-                {isToday && !isSelected ? " •" : ""}
+                {profile?.academic_group ?? "Configure Academic Group"}
               </Text>
+              <MaterialCommunityIcons
+                name="menu-down"
+                size={16}
+                color={colors.primary}
+              />
             </Pressable>
-          );
-        })}
-      </ScrollView>
+          </View>
+        </View>
 
-      {/* VIEW 1: MY CLASS ROUTINE TIMETABLE */}
-      {activeView === "routine" && (
-        <View style={{ gap: 12 }}>
-          {/* Header Row with Add Class Button */}
-          <Row style={s.sectionActionRow}>
-            <Row style={{ alignItems: "center", gap: 6 }}>
-              <MaterialCommunityIcons name="book-clock-outline" size={20} color={colors.primary} />
-              <Text style={[s.sectionHeading, { color: colors.text }]}>
-                {selectedDay === "all"
-                  ? t("schedule.myRoutine", "My Class Timetable")
-                  : `${selectedDay} Classes`}
+        {/* Top Action Icons */}
+        <View style={styles.navActionsRow}>
+          <Pressable
+            onPress={() => setIsSearchVisible(!isSearchVisible)}
+            style={styles.navActionIcon}
+          >
+            <MaterialCommunityIcons
+              name="magnify"
+              size={20}
+              color={colors.text}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setIsDiscoveryOpen(true)}
+            style={styles.navActionIcon}
+          >
+            <MaterialCommunityIcons
+              name="account-group-outline"
+              size={20}
+              color={colors.text}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setIsPreferencesModalOpen(true)}
+            style={styles.navActionIcon}
+          >
+            <MaterialCommunityIcons
+              name="bell-badge-outline"
+              size={20}
+              color={colors.text}
+            />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* 2. Optional Collapsible Search Bar */}
+      {isSearchVisible ? (
+        <View
+          style={[
+            styles.searchBarWrap,
+            {
+              backgroundColor: isDark ? colors.surface : "#FFFFFF",
+              borderBottomColor: isDark ? colors.border : "#E2E8F0",
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="magnify"
+            size={18}
+            color={colors.muted}
+          />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search classes, assignments, exams (e.g. CSE 2103)..."
+            placeholderTextColor={colors.muted}
+            style={[styles.searchInput, { color: colors.text }]}
+          />
+          {searchQuery ? (
+            <Pressable onPress={() => setSearchQuery("")}>
+              <MaterialCommunityIcons
+                name="close-circle"
+                size={16}
+                color={colors.muted}
+              />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      <ScrollView
+        style={styles.scrollBody}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 3. Reusable "What's Next?" / Upcoming Academic Widget */}
+        <UpcomingWidget
+          summary={upcomingSummary}
+          isLoading={upcomingQuery.isLoading}
+          onPress={() => setViewMode("agenda")}
+        />
+
+        {/* 4. Date Control & View Segmented Switcher */}
+        <View
+          style={[
+            styles.viewControlsCard,
+            {
+              backgroundColor: isDark ? colors.surface : "#FFFFFF",
+              borderColor: isDark ? colors.border : "#E2E8F0",
+            },
+          ]}
+        >
+          {/* Date Selector Row */}
+          <View style={styles.dateSelectorRow}>
+            <View style={styles.dateNavArrows}>
+              <Pressable onPress={handlePrevDate} style={styles.arrowBtn}>
+                <MaterialCommunityIcons
+                  name="chevron-left"
+                  size={24}
+                  color={colors.text}
+                />
+              </Pressable>
+              <Text style={[styles.headerDateLabel, { color: colors.text }]}>
+                {headerDateText}
               </Text>
-            </Row>
+              <Pressable onPress={handleNextDate} style={styles.arrowBtn}>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={24}
+                  color={colors.text}
+                />
+              </Pressable>
+            </View>
 
             <Pressable
-              onPress={() => {
-                triggerHaptic();
-                setIsAddModalOpen(true);
-              }}
-              style={[s.addClassBtn, { backgroundColor: colors.primary }]}
+              onPress={handleGoToday}
+              style={[
+                styles.todayBtn,
+                { backgroundColor: colors.primarySoft },
+              ]}
             >
-              <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
-              <Text style={s.addClassBtnText}>{t("schedule.addRoutine", "Add Class")}</Text>
+              <Text style={[styles.todayBtnText, { color: colors.primary }]}>
+                Today
+              </Text>
             </Pressable>
-          </Row>
-
-          {filteredRoutineSlots.map((slot, idx) => (
-            <Animated.View
-              key={slot.id}
-              entering={FadeInUp.delay(idx * 60).springify()}
-              layout={Layout.springify()}
-            >
-              <Card tone="soft" style={s.routineCard}>
-                <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <View style={{ flex: 1, gap: 4 }}>
-                    <Row style={{ alignItems: "center", gap: 6 }}>
-                      <Pill tone="primary">{slot.dayOfWeek}</Pill>
-                    </Row>
-                    <Text style={[s.courseTitle, { color: colors.text }]}>
-                      {slot.courseName}
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    onPress={() => handleDeleteSlot(slot.id)}
-                    hitSlop={8}
-                    style={s.deleteSlotBtn}
-                  >
-                    <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.muted} />
-                  </Pressable>
-                </Row>
-
-                <Row style={{ alignItems: "center", gap: 14, marginTop: 8 }}>
-                  <View style={s.timeRow}>
-                    <MaterialCommunityIcons name="clock-time-four-outline" size={15} color={colors.primary} />
-                    <Text style={[s.slotMetaText, { color: colors.text }]}>{slot.timeSlot}</Text>
-                  </View>
-
-                  <View style={s.timeRow}>
-                    <MaterialCommunityIcons name="map-marker-outline" size={15} color={colors.muted} />
-                    <Text style={[s.slotMetaText, { color: colors.muted }]}>{slot.roomOrBuilding}</Text>
-                  </View>
-                </Row>
-              </Card>
-            </Animated.View>
-          ))}
-
-          {filteredRoutineSlots.length === 0 && (
-            <Empty
-              icon="calendar-plus"
-              title={language === "bn" ? "কোনো ক্লাস নেই" : "No Classes Added"}
-              detail={t("schedule.noRoutineYet", "No classes added yet. Tap 'Add Class' to set up your routine!")}
-              actionTitle={t("schedule.addRoutine", "Add Class")}
-              onAction={() => setIsAddModalOpen(true)}
-            />
-          )}
-        </View>
-      )}
-
-      {/* VIEW 2: LIVE SCHEDULE (PEER CLASSES, ROOMS, EVENTS) */}
-      {activeView === "live" && (
-        <View style={{ gap: 12 }}>
-          {/* Filter Tabs */}
-          <View style={s.filterBar}>
-            {FILTERS.map((f) => {
-              const selected = filter === f.key;
-              return (
-                <Pressable
-                  key={f.key}
-                  onPress={() => {
-                    triggerHaptic();
-                    setFilter(f.key);
-                  }}
-                  style={[
-                    s.filterTab,
-                    {
-                      backgroundColor: selected ? colors.primary : colors.surface2,
-                      borderColor: selected ? colors.primary : colors.border,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: selected ? "#FFFFFF" : colors.text,
-                      fontWeight: "800",
-                      fontSize: 12,
-                    }}
-                  >
-                    {f.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
           </View>
 
-          {isLoading ? (
-            <>
-              <Skeleton height={110} />
-              <Skeleton height={110} />
-            </>
-          ) : null}
+          {/* Segmented Control: Month | Week | Day | Agenda */}
+          <View
+            style={[
+              styles.segmentedControl,
+              {
+                backgroundColor: isDark ? colors.surface2 : "#F1F5F9",
+              },
+            ]}
+          >
+            {(["agenda", "day", "week", "month"] as CalendarViewMode[]).map(
+              (m) => {
+                const isSelected = viewMode === m;
+                const label =
+                  m === "agenda"
+                    ? "Agenda"
+                    : m === "day"
+                    ? "Day"
+                    : m === "week"
+                    ? "Week"
+                    : "Month";
 
-          {filteredLiveItems.map((item, idx) => {
-            const isLive = item.status === "live";
-            const isCompleted = item.status === "completed";
-            const hasRecording = Boolean(item.recordingVideoId || item.recordingUrl);
-            const dateStr = new Date(item.startsAt).toLocaleDateString(undefined, {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            });
-            const timeStr = new Date(item.startsAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            });
-
-            return (
-              <Animated.View key={item.id} entering={FadeInUp.delay(idx * 60).springify()}>
-                <Card tone={isLive ? "glow" : "soft"}>
-                  <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
-                    <Row>
-                      <Pill tone={isLive ? "danger" : isCompleted ? "success" : item.kind === "event" ? "accent" : "primary"}>
-                        {isLive ? "● LIVE NOW" : item.status ? item.status.toUpperCase() : item.kind.toUpperCase()}
-                      </Pill>
-                      {item.mode ? <Pill>{item.mode}</Pill> : null}
-                    </Row>
-                    <Text style={[s.dateTag, { color: colors.primary }]}>{dateStr}</Text>
-                  </Row>
-
-                  <View style={{ gap: 4, marginTop: 4 }}>
-                    <Text style={[s.itemTitle, { color: colors.text }]}>{item.title}</Text>
-                    {item.subtitle ? <Muted numberOfLines={2}>{item.subtitle}</Muted> : null}
-                  </View>
-
-                  <Row style={{ alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                    <View style={s.timeRow}>
-                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.muted} />
-                      <Text style={[s.timeText, { color: colors.text }]}>{timeStr}</Text>
-                    </View>
-
-                    <Row style={{ gap: 8 }}>
-                      {hasRecording ? (
-                        <Button
-                          title="▶ Watch Recording"
-                          compact
-                          variant="primary"
-                          onPress={() => {
-                            triggerHaptic();
-                            setActiveReplay({
-                              visible: true,
-                              title: item.title,
-                              videoId: item.recordingVideoId,
-                              recordingUrl: item.recordingUrl,
-                              durationSeconds: item.recordingDuration,
-                            });
-                          }}
-                        />
-                      ) : null}
-
-                      {item.roomId && !isCompleted ? (
-                        <Button
-                          title={isLive ? "Join Live Class →" : "View Room →"}
-                          compact
-                          variant={isLive ? "primary" : "secondary"}
-                          onPress={() => {
-                            triggerHaptic();
-                            if (isLive) {
-                              router.push(`/live/${item.roomId}` as any);
-                            } else {
-                              router.push(`/room/${item.roomId}` as any);
-                            }
-                          }}
-                        />
-                      ) : item.locationOrUrl?.startsWith("http") ? (
-                        <Button
-                          title="Open Link ↗"
-                          compact
-                          variant="secondary"
-                          onPress={() => {
-                            Linking.openURL(item.locationOrUrl!).catch(() => undefined);
-                          }}
-                        />
-                      ) : null}
-                    </Row>
-                  </Row>
-                </Card>
-              </Animated.View>
-            );
-          })}
-
-          {filteredLiveItems.length === 0 && !isLoading ? (
-            <Empty
-              icon="calendar-clock"
-              title="No upcoming events"
-              detail="No scheduled classes, rooms, or seminars match this filter."
-            />
-          ) : null}
-        </View>
-      )}
-
-      {/* Add Class Routine Modal */}
-      <Modal
-        visible={isAddModalOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsAddModalOpen(false)}
-      >
-        <View style={s.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsAddModalOpen(false)} />
-          <View style={[s.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <Row style={{ alignItems: "center", gap: 8 }}>
-                <MaterialCommunityIcons name="calendar-plus" size={22} color={colors.primary} />
-                <Text style={[s.modalTitle, { color: colors.text }]}>
-                  {t("schedule.addRoutine", "Add Class Routine")}
-                </Text>
-              </Row>
-              <Pressable onPress={() => setIsAddModalOpen(false)} hitSlop={8}>
-                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-              </Pressable>
-            </Row>
-
-            <Field
-              label={t("schedule.courseName", "Course / Subject Name")}
-              placeholder={t("schedule.coursePlaceholder", "e.g. Data Structures & Algorithms")}
-              value={newCourseName}
-              onChangeText={setNewCourseName}
-            />
-
-            {/* Day Selector Chips */}
-            <View style={{ marginVertical: 6 }}>
-              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text, marginBottom: 6 }}>
-                {t("schedule.dayOfWeek", "Day of Week")}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                {DAYS_OF_WEEK.map((d) => {
-                  const isSel = newDay === d;
-                  return (
-                    <Pressable
-                      key={d}
-                      onPress={() => setNewDay(d)}
+                return (
+                  <Pressable
+                    key={m}
+                    onPress={() => {
+                      triggerHaptic();
+                      setViewMode(m);
+                    }}
+                    style={[
+                      styles.segmentBtn,
+                      isSelected && {
+                        backgroundColor: isDark ? colors.surface : "#FFFFFF",
+                        shadowColor: "#000",
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 2,
+                        elevation: 2,
+                      },
+                    ]}
+                  >
+                    <Text
                       style={[
-                        s.daySelectChip,
+                        styles.segmentBtnText,
                         {
-                          backgroundColor: isSel ? colors.primary : colors.surface2,
-                          borderColor: isSel ? colors.primary : colors.border,
+                          color: isSelected ? colors.primary : colors.muted,
+                          fontWeight: isSelected ? "800" : "600",
                         },
                       ]}
                     >
-                      <Text style={{ color: isSel ? "#FFFFFF" : colors.text, fontSize: 12, fontWeight: "700" }}>
-                        {d.slice(0, 3)}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-
-            <Field
-              label={t("schedule.timeSlot", "Time Slot")}
-              placeholder={t("schedule.timePlaceholder", "e.g. 10:00 AM - 11:30 AM")}
-              value={newTimeSlot}
-              onChangeText={setNewTimeSlot}
-            />
-
-            <Field
-              label={t("schedule.roomOrBuilding", "Classroom / Building")}
-              placeholder={t("schedule.roomPlaceholder", "e.g. Room 302, Science Complex")}
-              value={newRoom}
-              onChangeText={setNewRoom}
-            />
-
-            <Row style={{ justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-              <Button
-                title={t("common.cancel")}
-                variant="ghost"
-                onPress={() => setIsAddModalOpen(false)}
-              />
-              <Button
-                title={t("schedule.saveRoutine", "Save to Routine")}
-                variant="primary"
-                disabled={!newCourseName.trim()}
-                onPress={handleAddRoutineSlot}
-              />
-            </Row>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              }
+            )}
           </View>
         </View>
-      </Modal>
 
-      <SessionReplayModal
-        visible={activeReplay.visible}
-        title={activeReplay.title}
-        videoId={activeReplay.videoId}
-        recordingUrl={activeReplay.recordingUrl}
-        durationSeconds={activeReplay.durationSeconds}
-        onClose={() => setActiveReplay((prev) => ({ ...prev, visible: false }))}
-      />
-    </Screen>
+        {/* 5. Filter Strip (All, Classes, Assignments, Quizzes, Exams, Tasks) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterStrip}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
+        >
+          {FILTER_OPTIONS.map((f) => {
+            const isSelected = selectedFilter === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                onPress={() => {
+                  triggerHaptic();
+                  setSelectedFilter(f.key);
+                }}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: isSelected
+                      ? colors.primary
+                      : isDark
+                      ? colors.surface
+                      : "#FFFFFF",
+                    borderColor: isSelected
+                      ? colors.primary
+                      : isDark
+                      ? colors.border
+                      : "#E2E8F0",
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={f.icon as any}
+                  size={14}
+                  color={isSelected ? "#FFFFFF" : colors.muted}
+                />
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    {
+                      color: isSelected ? "#FFFFFF" : colors.text,
+                      fontWeight: isSelected ? "700" : "500",
+                    },
+                  ]}
+                >
+                  {f.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* 6. Empty Routine Callout if no active routine */}
+        {!hasActiveRoutine && (
+          <View
+            style={[
+              styles.noRoutineBanner,
+              {
+                backgroundColor: isDark ? colors.surface : "#FFFFFF",
+                borderColor: isDark ? colors.border : "#E2E8F0",
+              },
+            ]}
+          >
+            <View style={styles.noRoutineHeader}>
+              <View
+                style={[
+                  styles.noRoutineIcon,
+                  { backgroundColor: colors.primarySoft },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="calendar-clock"
+                  size={22}
+                  color={colors.primary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.noRoutineTitle, { color: colors.text }]}>
+                  Your Academic Schedule Starts Here
+                </Text>
+                <Text style={[styles.noRoutineSub, { color: colors.muted }]}>
+                  Upload your semester PDF routine or discover schedules shared
+                  by your classmates.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.noRoutineBtnRow}>
+              <Pressable
+                onPress={() => setIsImportModalOpen(true)}
+                style={[
+                  styles.importPdfBtn,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="file-pdf-box"
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.importPdfBtnText}>Import Routine PDF</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setIsDiscoveryOpen(true)}
+                style={[
+                  styles.browseClassBtn,
+                  { backgroundColor: colors.primarySoft },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account-group"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.browseClassBtnText,
+                    { color: colors.primary },
+                  ]}
+                >
+                  Browse Class
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* 7. Active Calendar View Rendering */}
+        {eventsQuery.isLoading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingBoxText, { color: colors.muted }]}>
+              Loading academic schedule...
+            </Text>
+          </View>
+        ) : viewMode === "month" ? (
+          <MonthView
+            currentDate={currentDate}
+            selectedDateIso={selectedDateIso}
+            onSelectDate={(iso) => setSelectedDateIso(iso)}
+            events={events}
+            onEventPress={(ev) => setSelectedEventDetails(ev)}
+            onAddEventForDate={(iso) => {
+              setCreateTaskDateIso(iso);
+              setIsCreateTaskModalOpen(true);
+            }}
+          />
+        ) : viewMode === "week" ? (
+          <WeekView
+            currentDate={currentDate}
+            events={events}
+            onEventPress={(ev) => setSelectedEventDetails(ev)}
+            onAddEventForDate={(iso) => {
+              setCreateTaskDateIso(iso);
+              setIsCreateTaskModalOpen(true);
+            }}
+          />
+        ) : viewMode === "day" ? (
+          <DayView
+            currentDate={parseIsoDate(selectedDateIso)}
+            events={events}
+            onEventPress={(ev) => setSelectedEventDetails(ev)}
+            onAddEventForDate={(iso) => {
+              setCreateTaskDateIso(iso);
+              setIsCreateTaskModalOpen(true);
+            }}
+          />
+        ) : (
+          <AgendaView
+            events={events}
+            onEventPress={(ev) => setSelectedEventDetails(ev)}
+            onToggleTaskComplete={handleToggleTaskComplete}
+            onAddEvent={() => setIsCreateTaskModalOpen(true)}
+          />
+        )}
+      </ScrollView>
+
+      {/* 8. Floating Action Cluster (Add Task, Add Class, Import) */}
+      <View style={styles.fabCluster}>
+        <Pressable
+          onPress={() => setIsImportModalOpen(true)}
+          style={[styles.miniFab, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
+          <MaterialCommunityIcons
+            name="file-upload-outline"
+            size={18}
+            color={colors.primary}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={() => setIsManualClassModalOpen(true)}
+          style={[styles.miniFab, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
+          <MaterialCommunityIcons
+            name="book-plus-outline"
+            size={18}
+            color={colors.primary}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            setCreateTaskDateIso(selectedDateIso);
+            setIsCreateTaskModalOpen(true);
+          }}
+          style={[styles.mainFab, { backgroundColor: colors.primary }]}
+        >
+          <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
+        </Pressable>
+      </View>
+
+      {/* 9. Interactive Modals */}
+
+      {/* Modal 1: PDF Routine Import */}
+      {isImportModalOpen ? (
+        <ImportRoutineModal
+          visible={isImportModalOpen}
+          profile={profile}
+          onClose={() => setIsImportModalOpen(false)}
+          onExtractionSuccess={(draft) => {
+            setIsImportModalOpen(false);
+            setVerificationRoutine(draft);
+          }}
+        />
+      ) : null}
+
+      {/* Modal 2: Routine Verification & Activation */}
+      {verificationRoutine ? (
+        <RoutineVerificationModal
+          visible={!!verificationRoutine}
+          routine={verificationRoutine}
+          onClose={() => setVerificationRoutine(null)}
+          onActivated={() => {
+            setVerificationRoutine(null);
+            queryClient.invalidateQueries({ queryKey: ["calendar-routines"] });
+            queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+            queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+          }}
+        />
+      ) : null}
+
+      {/* Modal 3: Manual Class Entry */}
+      {isManualClassModalOpen ? (
+        <ManualClassModal
+          visible={isManualClassModalOpen}
+          onClose={() => setIsManualClassModalOpen(false)}
+          onSave={handleManualClassSave}
+        />
+      ) : null}
+
+      {/* Modal 4: Create / Edit Academic Task */}
+      {isCreateTaskModalOpen ? (
+        <CreateTaskModal
+          visible={isCreateTaskModalOpen}
+          initialDateIso={createTaskDateIso}
+          initialData={editingTask}
+          onClose={() => {
+            setIsCreateTaskModalOpen(false);
+            setEditingTask(null);
+          }}
+          onSave={handleSaveTask}
+        />
+      ) : null}
+
+      {/* Modal 5: Event Details View */}
+      {selectedEventDetails ? (
+        <EventDetailsModal
+          visible={!!selectedEventDetails}
+          event={selectedEventDetails}
+          onClose={() => setSelectedEventDetails(null)}
+          onEditTask={(task) => {
+            setEditingTask(task);
+            setIsCreateTaskModalOpen(true);
+          }}
+          onDeleteTask={handleDeleteTask}
+          onToggleComplete={handleToggleTaskComplete}
+          onClassException={handleClassException}
+          onPersonalOverride={handlePersonalOverride}
+        />
+      ) : null}
+
+      {/* Modal 6: Class Routines Discovery */}
+      {isDiscoveryOpen ? (
+        <PublicRoutineDiscoveryModal
+          visible={isDiscoveryOpen}
+          profile={profile}
+          onClose={() => setIsDiscoveryOpen(false)}
+          onCopySuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ["calendar-routines"] });
+            queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+            queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });
+          }}
+        />
+      ) : null}
+
+      {/* Modal 7: Academic Profile Config */}
+      {isProfileModalOpen ? (
+        <AcademicProfileModal
+          visible={isProfileModalOpen}
+          profile={profile}
+          onClose={() => setIsProfileModalOpen(false)}
+          onUpdated={() => {
+            queryClient.invalidateQueries({
+              queryKey: ["calendar-academic-profile"],
+            });
+            queryClient.invalidateQueries({ queryKey: ["calendar-routines"] });
+          }}
+        />
+      ) : null}
+
+      {/* Modal 8: Notification Preferences */}
+      {isPreferencesModalOpen ? (
+        <PreferencesModal
+          visible={isPreferencesModalOpen}
+          onClose={() => setIsPreferencesModalOpen(false)}
+          onSaved={() => {
+            queryClient.invalidateQueries({
+              queryKey: ["calendar-preferences"],
+            });
+          }}
+        />
+      ) : null}
+    </View>
   );
 }
 
-const s = StyleSheet.create({
-  viewToggleContainer: {
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  topNavBar: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  navLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  navBackBtn: {
+    padding: 4,
+  },
+  screenTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  academicGroupChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    marginTop: 1,
+  },
+  academicGroupChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  navActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  navActionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchBarWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 4,
+  },
+  scrollBody: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  viewControlsCard: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: 12,
+    marginVertical: 8,
+    gap: 10,
+  },
+  dateSelectorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dateNavArrows: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  arrowBtn: {
+    padding: 2,
+  },
+  headerDateLabel: {
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  todayBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  todayBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  segmentedControl: {
+    flexDirection: "row",
+    padding: 3,
+    borderRadius: radius.sm,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentBtnText: {
+    fontSize: 12,
+  },
+  filterStrip: {
+    marginVertical: 6,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: radius.pill,
     borderWidth: 1,
-    padding: 3,
-    marginVertical: 8,
   },
-  viewTab: {
+  filterChipText: {
+    fontSize: 12,
+  },
+  noRoutineBanner: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: 14,
+    marginVertical: 8,
+    gap: 12,
+  },
+  noRoutineHeader: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  noRoutineIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noRoutineTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  noRoutineSub: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  noRoutineBtnRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  importPdfBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
   },
-  activeViewTab: {
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-  },
-  viewTabText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  activeViewTabText: {
-    fontWeight: "900",
-  },
-  dayStripContainer: {
-    gap: 6,
-    paddingVertical: 4,
-    marginBottom: 10,
-  },
-  dayChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
-  dayChipText: {
-    fontSize: 12,
-  },
-  sectionActionRow: {
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  sectionHeading: {
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  addClassBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-  },
-  addClassBtnText: {
+  importPdfBtnText: {
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "700",
   },
-  routineCard: {
-    padding: 12,
-    gap: 6,
-  },
-  courseTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  deleteSlotBtn: {
-    padding: 4,
-  },
-  slotMetaText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  filterBar: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 6,
-  },
-  filterTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
-  itemTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  dateTag: {
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  timeRow: {
+  browseClassBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
   },
-  timeText: {
-    fontSize: 13,
+  browseClassBtnText: {
+    fontSize: 12,
     fontWeight: "700",
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
+  loadingBox: {
     alignItems: "center",
-    padding: 20,
+    justifyContent: "center",
+    paddingVertical: 60,
+    gap: 10,
   },
-  modalCard: {
-    width: "100%",
-    maxWidth: 440,
+  loadingBoxText: {
+    fontSize: 13,
+  },
+  fabCluster: {
+    position: "absolute",
+    bottom: 24,
+    right: 20,
+    alignItems: "center",
+    gap: 10,
+  },
+  miniFab: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    padding: 18,
-    elevation: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  daySelectChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    borderWidth: 1,
+  mainFab: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 6,
   },
 });

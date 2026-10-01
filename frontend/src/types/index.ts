@@ -57,6 +57,7 @@ export interface Room {
   scheduled_at?: string | null;
   campus_location?: string | null;
   tags: string[];
+  rules?: string | null;
   status: "open" | "scheduled" | "live" | "completed" | "cancelled";
   conversation_id?: string | null;
   created_at?: string | null;

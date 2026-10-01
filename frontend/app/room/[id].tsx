@@ -16,6 +16,7 @@ import { RoomLearnView } from "@/features/room/learn/RoomLearnView";
 import { RoomMediaView } from "@/features/room/media/RoomMediaView";
 import { RoomMoreView } from "@/features/room/more/RoomMoreView";
 import { useRoomPermissions } from "@/features/room/useRoomPermissions";
+import { useRoomPresence } from "@/features/room/useRoomPresence";
 import { RoomSearchModal } from "@/features/room/search/RoomSearchModal";
 import { RoomPinnedHub } from "@/features/room/more/RoomPinnedHub";
 import { RoomModerationCenter } from "@/features/room/more/RoomModerationCenter";
@@ -31,7 +32,11 @@ type RoomDetailData = {
   teachingRequests: { id: string; volunteer: Profile; status: string }[];
   sessions: Session[];
   resources: { id: string; title: string; url: string }[];
-  myMembership?: { role: string; user_id: string } | null;
+  // Backend GET /rooms/:id returns `membership` (not `myMembership`).
+  membership?: { role: string; user_id: string } | null;
+  liveSession?: Session | null;
+  liveParticipantCount?: number;
+  unreadCount?: number;
 };
 
 export default function RoomDetailScreen() {
@@ -68,6 +73,13 @@ export default function RoomDetailScreen() {
   // 2. Fetch Server-Authoritative Capabilities
   const permissions = useRoomPermissions(id);
 
+  // Live presence: seeded from the room payload, then kept fresh via socket
+  // events (LiveKit join/leave) with a 15s polling fallback.
+  const presence = useRoomPresence(id, {
+    liveSessionId: roomQuery.data?.liveSession?.id ?? null,
+    liveParticipantCount: roomQuery.data?.liveParticipantCount ?? 0,
+  });
+
   // 3. Join / Leave Mutations
   const joinMutation = useMutation({
     mutationFn: () => api<{ joined: boolean; role: string }>(`/rooms/${id}/join`, { method: "POST" }),
@@ -93,21 +105,34 @@ export default function RoomDetailScreen() {
   });
 
   // 4. Teaching Volunteer Operations
+  // NOTE: backend exposes PATCH /rooms/:id/teach/:requestId with { status: "accepted" | "rejected" }.
+  // The previous /volunteer/:vId/accept endpoints never existed and always 404'd.
   const acceptVolunteer = useMutation({
-    mutationFn: (vId: string) => api(`/rooms/${id}/volunteer/${vId}/accept`, { method: "POST" }),
+    mutationFn: (requestId: string) =>
+      api(`/rooms/${id}/teach/${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "accepted" }),
+      }),
     onSuccess: () => {
       triggerHaptic();
       qc.invalidateQueries({ queryKey: ["room", id] });
       Alert.alert("Approved", "Teaching volunteer approved.");
     },
+    onError: (err: Error) => Alert.alert("Approval failed", err.message),
   });
 
   const rejectVolunteer = useMutation({
-    mutationFn: (vId: string) => api(`/rooms/${id}/volunteer/${vId}/reject`, { method: "POST" }),
+    mutationFn: (requestId: string) =>
+      api(`/rooms/${id}/teach/${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "rejected" }),
+      }),
     onSuccess: () => {
       triggerHaptic();
       qc.invalidateQueries({ queryKey: ["room", id] });
+      Alert.alert("Declined", "Teaching request declined.");
     },
+    onError: (err: Error) => Alert.alert("Could not decline request", err.message),
   });
 
   const volunteerToTeach = useMutation({
@@ -172,8 +197,13 @@ export default function RoomDetailScreen() {
 
   const data = roomQuery.data;
   const room = data.room;
-  const isMember = Boolean(data.myMembership || permissions.role);
-  const activeLiveSession = data.sessions?.find((s) => s.status === "live");
+  // Single source of truth for membership: server-authoritative permissions,
+  // falling back to the membership row returned with the room payload.
+  const isMember = permissions.isMember || Boolean(data.membership);
+  const liveParticipantCount = presence.liveParticipantCount;
+  const hasLiveSession = presence.isLive;
+  const liveSessionId = presence.sessionId;
+  const unreadCount = data.unreadCount ?? 0;
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]} edges={["top", "left", "right"]}>
@@ -182,11 +212,19 @@ export default function RoomDetailScreen() {
         room={room}
         isMember={isMember}
         memberRole={permissions.role}
-        hasActiveLiveSession={Boolean(activeLiveSession)}
+        hasActiveLiveSession={hasLiveSession}
+        liveParticipantsCount={liveParticipantCount}
         onJoin={() => joinMutation.mutate()}
         onLeave={() => leaveMutation.mutate()}
         onOpenMore={() => setActiveTab("more")}
-        onJoinLiveSession={() => router.push(`/live/${room.id}` as any)}
+        onJoinLiveSession={() => {
+          // Pass the concrete session id so the live screen joins the right room.
+          router.push(
+            liveSessionId
+              ? ({ pathname: "/live/[roomId]", params: { roomId: room.id, sessionId: liveSessionId } } as any)
+              : (`/live/${room.id}` as any),
+          );
+        }}
         onSearch={() => setSearchModalVisible(true)}
       />
 
@@ -204,6 +242,7 @@ export default function RoomDetailScreen() {
       <RoomOSTabs
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        chatUnreadCount={unreadCount}
       />
 
       {/* 3. ACTIVE DESTINATION VIEW (With state preservation) */}
@@ -225,7 +264,7 @@ export default function RoomDetailScreen() {
             conversationId={room.conversation_id}
             roomTitle={room.title}
             memberCount={room.member_count}
-            isMember={permissions.isMember}
+            isMember={isMember}
             canManageChannels={permissions.canManageChannels}
             onOpenSearch={() => setSearchModalVisible(true)}
             onJoinVoice={() => setVoiceSheetVisible(true)}
@@ -238,7 +277,7 @@ export default function RoomDetailScreen() {
             sessions={data.sessions ?? []}
             teachingRequests={data.teachingRequests}
             isOwner={permissions.isOwner}
-            isMember={permissions.isMember}
+            isMember={isMember}
             canStartLive={permissions.canStartLive}
             onAcceptVolunteer={(vId) => acceptVolunteer.mutate(vId)}
             onRejectVolunteer={(vId) => rejectVolunteer.mutate(vId)}
@@ -250,7 +289,7 @@ export default function RoomDetailScreen() {
           <RoomMediaView
             roomId={room.id}
             isHostOrMod={permissions.isOwner || permissions.canModerate}
-            isMember={permissions.isMember}
+            isMember={isMember}
           />
         )}
 

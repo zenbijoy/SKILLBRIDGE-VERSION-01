@@ -24,6 +24,7 @@ const saveItemSchema = z.object({
     "session",
     "goal",
     "profile",
+    "post",
   ]),
   entity_id: z.string().uuid(),
   collection_id: z.string().uuid().optional().nullable(),
@@ -71,6 +72,39 @@ saved.get(
       unorganized_count: unorganizedCount,
       total_count: (items || []).length,
     });
+  }),
+);
+
+// GET /api/v1/saved/liked-posts - List posts user has reacted to / liked
+saved.get(
+  "/liked-posts",
+  wrap(async (req, res) => {
+    const userId = req.userId!;
+
+    const { data: reactions, error } = await admin
+      .from("campus_post_reactions")
+      .select(`
+        created_at,
+        reaction_type,
+        post:campus_posts(
+          id, body, post_type, media_urls, media_type, created_at, likes_count, comments_count,
+          author:profiles!campus_posts_author_id_fkey(id, full_name, username, avatar_url, university)
+        )
+      `)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const likedPosts = (reactions ?? [])
+      .filter((r: any) => Boolean(r.post))
+      .map((r: any) => ({
+        ...r.post,
+        reacted_at: r.created_at,
+        my_reaction: r.reaction_type,
+      }));
+
+    res.json({ posts: likedPosts });
   }),
 );
 
@@ -287,6 +321,20 @@ saved.get(
             } else {
               isTombstone = true;
               title = "Archived Goal";
+            }
+          } else if (x.entity_type === "post") {
+            const { data: p } = await admin
+              .from("campus_posts")
+              .select("id, body, post_type, created_at, likes_count, comments_count, author:profiles!campus_posts_author_id_fkey(id, full_name, username, avatar_url)")
+              .eq("id", x.entity_id)
+              .maybeSingle();
+            if (p) {
+              title = p.body.slice(0, 60);
+              subtitle = `Post · ${new Date(p.created_at).toLocaleDateString()}`;
+              details = p;
+            } else {
+              isTombstone = true;
+              title = "Archived Post";
             }
           }
         } catch {
