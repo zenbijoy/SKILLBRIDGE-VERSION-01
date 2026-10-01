@@ -4,6 +4,7 @@
 # Repository: https://github.com/zenbijoy/SKILLBRIDGE-VERSION-01.git
 # Domains   : ruetskillbridge.duckdns.org (API)
 #             ruetskillbridgeadmin.duckdns.org (Admin)
+#             ruetskillbridgeweb.duckdns.org (Web App)
 # ==============================================================================
 set -euo pipefail
 
@@ -163,7 +164,7 @@ SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5cXNveGt3bXVsaHBjb3Nsbm9qIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjI4MDEzNSwiZXhwIjoyMTAxODU2MTM1fQ.KfIgPUQU3p-NxpG_9Me4B9gT9WZcXdBj3ohQQYV_5oc
 
 # ── CORS Origins ──────────────────────────────────────────────────────────────
-WEB_ORIGINS=http://localhost:8081,http://127.0.0.1:8081,http://localhost:5173,http://127.0.0.1:5173,https://skillbridge-frontend.vercel.app,https://skillbridge-admin.vercel.app,https://ruetskillbridge.duckdns.org,https://ruetskillbridgeadmin.duckdns.org
+WEB_ORIGINS=http://localhost:8081,http://127.0.0.1:8081,http://localhost:5173,http://127.0.0.1:5173,https://skillbridge-frontend.vercel.app,https://skillbridge-admin.vercel.app,https://ruetskillbridge.duckdns.org,https://ruetskillbridgeadmin.duckdns.org,https://ruetskillbridgeweb.duckdns.org
 
 # ── Redis (Upstash Cloud) ─────────────────────────────────────────────────────
 REDIS_URL=rediss://default:gQAAAAAAAS19AAIgcDE5NmY5NzVmZTc1MTY0OGY1OWQxNGI5MDFiNjAxZWU5ZQ@above-sparrow-77181.upstash.io:6379
@@ -265,6 +266,21 @@ ruetskillbridgeadmin.duckdns.org {
 
     encode gzip zstd
 }
+
+# ── SkillBridge Student Web App ────────────────────────────────────────────────
+ruetskillbridgeweb.duckdns.org {
+    reverse_proxy web:80
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "SAMEORIGIN"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip zstd
+}
 EOF
 
 # Ensure docker-compose.yml uses correct context
@@ -315,13 +331,38 @@ services:
         max-size: "5m"
         max-file: "3"
 
-  # ── Caddy (Auto HTTPS for both domains) ──────────────────────────────────────
+  # ── SkillBridge Student Web App ──────────────────────────────────────────────
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        EXPO_PUBLIC_SUPABASE_URL: https://wyqsoxkwmulhpcoslnoj.supabase.co
+        EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5cXNveGt3bXVsaHBjb3Nsbm9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyODAxMzUsImV4cCI6MjEwMTg1NjEzNX0.KFiTn-UCZoL_TWHMjOTums4Fs_DoMK_iGF3v-mdv6_o
+        EXPO_PUBLIC_API_URL: https://ruetskillbridge.duckdns.org/api/v1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ── Caddy (Auto HTTPS for all 3 domains) ──────────────────────────────────────
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       - api
       - admin
+      - web
     ports:
       - "80:80"
       - "443:443"
@@ -378,6 +419,7 @@ echo -e "${GREEN}      SkillBridge VPS Setup & Deployment Complete!             
 echo -e "${GREEN}==================================================================${NC}"
 echo -e "  API Endpoint   : ${CYAN}https://ruetskillbridge.duckdns.org/api/v1/health${NC}"
 echo -e "  Admin Panel    : ${CYAN}https://ruetskillbridgeadmin.duckdns.org${NC}"
+echo -e "  Web App        : ${CYAN}https://ruetskillbridgeweb.duckdns.org${NC}"
 echo -e "  System Service : ${CYAN}systemctl status skillbridge.service${NC}"
 echo -e "  Live Logs      : ${CYAN}cd /opt/skillbridge/infra && docker compose logs -f${NC}"
 echo -e "${GREEN}==================================================================${NC}\n"
