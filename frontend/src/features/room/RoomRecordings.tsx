@@ -122,7 +122,7 @@ export function RoomRecordings({ roomId, isModerator }: { roomId: string; isMode
     );
   };
 
-  const allRecordings = data?.recordings ?? [];
+  const allRecordings = useMemo(() => data?.recordings ?? [], [data]);
   const filteredRecordings = useMemo(() => {
     if (!searchQuery.trim()) return allRecordings;
     const q = searchQuery.toLowerCase().trim();

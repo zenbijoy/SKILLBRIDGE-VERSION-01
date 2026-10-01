@@ -12,7 +12,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import type { RoomPinnedItem } from "@/types";
 
 type RoomPinnedHubProps = {

@@ -50,6 +50,7 @@ export default function NoteEditorScreen() {
       setBody(noteQuery.data.body ?? "");
       setTags(noteQuery.data.tags ?? []);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-seed only when the note identity changes to avoid clobbering in-progress edits
   }, [noteQuery.data?.id]);
 
   const saveMutation = useMutation({

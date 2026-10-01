@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Modal,
   Pressable,
@@ -60,7 +59,7 @@ export default function MyPostsScreen() {
     enabled: Boolean(user?.id),
   });
 
-  const posts: any[] = myPostsQuery.data ?? [];
+  const posts = useMemo<any[]>(() => myPostsQuery.data ?? [], [myPostsQuery.data]);
 
   // Filter posts
   const filteredPosts = useMemo(() => {

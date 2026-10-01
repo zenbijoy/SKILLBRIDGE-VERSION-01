@@ -12,8 +12,8 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Button, Card, Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Button, Row, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import type { RoomModerationLog, RoomModerationReport } from "@/types";
 
 type RoomModerationCenterProps = {

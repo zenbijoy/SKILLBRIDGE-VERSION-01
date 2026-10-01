@@ -808,7 +808,7 @@ export default function ChatScreen() {
   };
 
   // Filtered Messages by In-Chat Search
-  const allMessages = messagesQuery.data?.messages ?? [];
+  const allMessages = useMemo(() => messagesQuery.data?.messages ?? [], [messagesQuery.data]);
   const displayMessages = useMemo(() => {
     if (!searchQuery.trim()) return allMessages;
     const q = searchQuery.toLowerCase();

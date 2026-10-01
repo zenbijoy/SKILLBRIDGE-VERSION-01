@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
 import { Row, triggerHaptic } from "@/components/ui";
-import { REACTIONS, ReactionConfig } from "../../constants";
+import { REACTIONS } from "../../constants";
 import type { ReactionType, SocialPost } from "../../types";
 import { ReactionPicker } from "./ReactionPicker";
 

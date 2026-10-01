@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
-import { Row, triggerHaptic } from "@/components/ui";
+import { triggerHaptic } from "@/components/ui";
 
 interface FormattingToolbarProps {
   onInsertMarkdown: (prefix: string, suffix?: string, defaultText?: string) => void;

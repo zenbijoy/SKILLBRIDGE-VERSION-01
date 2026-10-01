@@ -72,7 +72,7 @@ export default function ConnectionsScreen() {
   });
 
   const incoming = data?.incoming ?? [];
-  const connections = data?.connections ?? [];
+  const connections = useMemo(() => data?.connections ?? [], [data]);
   const suggested = data?.suggested ?? [];
   const joinedRooms = roomsQuery.data?.rooms ?? [];
 

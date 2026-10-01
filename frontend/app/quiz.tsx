@@ -176,6 +176,7 @@ export default function QuizScreen() {
     if (!session) return;
     if (!autoSubmit) triggerHaptic();
     submitMutation.mutate({ session_id: session.session_id, answers, elapsed: elapsedSeconds });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- submitMutation is declared below and is a stable mutation handle
   }, [session, answers, elapsedSeconds]);
 
   const startTimer = useCallback((limitSeconds: number) => {
@@ -219,6 +220,7 @@ export default function QuizScreen() {
       appStateRef.current = nextState;
     });
     return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- resetToMenu is declared below; listener is keyed on session/violation state
   }, [mode, session, violationCount, stopTimer]);
 
   const startMutation = useMutation({

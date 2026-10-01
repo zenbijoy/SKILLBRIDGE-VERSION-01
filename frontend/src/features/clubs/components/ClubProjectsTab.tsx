@@ -53,7 +53,7 @@ export const ClubProjectsTab: React.FC<ClubProjectsTabProps> = ({
   const [projectTasks, setProjectTasks] = useState<ClubProjectTask[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskPriority, setNewTaskPriority] = useState<"low" | "medium" | "high">("medium");
+  const [newTaskPriority] = useState<"low" | "medium" | "high">("medium");
   const [addingTask, setAddingTask] = useState(false);
 
   // Create Project Modal
@@ -99,7 +99,7 @@ export const ClubProjectsTab: React.FC<ClubProjectsTabProps> = ({
       setProjectTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: updated } : t))
       );
-    } catch (err: any) {
+    } catch {
       Alert.alert("Error", "Could not update task status.");
     }
   };

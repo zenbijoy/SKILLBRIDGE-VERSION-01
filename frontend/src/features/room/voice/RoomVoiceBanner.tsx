@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import { useActiveRoomSession } from "./useActiveRoomSession";
 
 type RoomVoiceBannerProps = {

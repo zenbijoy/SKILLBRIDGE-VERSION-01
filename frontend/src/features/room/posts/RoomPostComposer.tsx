@@ -13,7 +13,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { RoomPostType } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 
 type RoomPostComposerProps = {
   roomId: string;

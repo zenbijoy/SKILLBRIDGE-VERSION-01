@@ -58,6 +58,7 @@ export function useRoomPresence(
         isLive: Boolean(initial.liveSessionId),
       };
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-seeds only when the live session/count primitives change
   }, [initial?.liveSessionId, initial?.liveParticipantCount]);
 
   // Fallback polling.

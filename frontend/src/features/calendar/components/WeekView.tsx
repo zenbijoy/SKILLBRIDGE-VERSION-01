@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   Pressable,
 } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { CalendarEvent } from "../types";
 import { useTheme, radius } from "@/theme";
 import {

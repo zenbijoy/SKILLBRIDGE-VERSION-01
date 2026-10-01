@@ -12,8 +12,8 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Button, Card, Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Button, Row, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import type { ChannelType, RoomChannel } from "@/types";
 
 type RoomChannelSwitcherProps = {
@@ -42,7 +42,7 @@ export function RoomChannelSwitcher({
   const [channelType, setChannelType] = useState<ChannelType>("text");
   const [channelDescription, setChannelDescription] = useState("");
 
-  const { data, isLoading } = useQuery<{ channels: RoomChannel[] }>({
+  const { data } = useQuery<{ channels: RoomChannel[] }>({
     queryKey: ["room-channels", roomId],
     queryFn: () => api<{ channels: RoomChannel[] }>(`/rooms/${roomId}/channels`),
     enabled: visible,

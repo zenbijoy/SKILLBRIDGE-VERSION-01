@@ -41,7 +41,7 @@ export const ClubMembersTab: React.FC<ClubMembersTabProps> = ({
     ["owner", "admin", "president", "vice_president"].includes(myRole);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedRole, setSelectedRole] = useState<ClubRole | "all">("all");
+  const [selectedRole] = useState<ClubRole | "all">("all");
 
   // Manage Role Modal
   const [editingMember, setEditingMember] = useState<ClubMember | null>(null);
@@ -62,7 +62,6 @@ export const ClubMembersTab: React.FC<ClubMembersTabProps> = ({
   ];
 
   const leaders = members.filter((m) => leadershipRoles.includes(m.role));
-  const generalMembers = members.filter((m) => !leadershipRoles.includes(m.role));
 
   const filteredMembers = members.filter((m) => {
     const nameMatch =
@@ -109,7 +108,7 @@ export const ClubMembersTab: React.FC<ClubMembersTabProps> = ({
               await api.delete(`/clubs/${clubId}/members/${member.user_id}`);
               Alert.alert("Removed", "Member removed from the club.");
               onRefresh();
-            } catch (err: any) {
+            } catch {
               Alert.alert("Error", "Could not remove member.");
             }
           },

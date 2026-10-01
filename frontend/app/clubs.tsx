@@ -86,10 +86,10 @@ export default function ClubsScreen() {
     },
   });
 
-  const allClubs = clubsQuery.data ?? [];
-  const myJoinedClubs = myClubsQuery.data?.joined ?? [];
-  const myFollowedClubs = myClubsQuery.data?.followed ?? [];
-  const recommendedClubs = recommendedQuery.data ?? [];
+  const allClubs = useMemo(() => clubsQuery.data ?? [], [clubsQuery.data]);
+  const myJoinedClubs = useMemo(() => myClubsQuery.data?.joined ?? [], [myClubsQuery.data]);
+  const myFollowedClubs = useMemo(() => myClubsQuery.data?.followed ?? [], [myClubsQuery.data]);
+  const recommendedClubs = useMemo(() => recommendedQuery.data ?? [], [recommendedQuery.data]);
 
   const handleRefresh = async () => {
     triggerHaptic();

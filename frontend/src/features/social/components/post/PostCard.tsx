@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, Alert } from "react-native";
+import { StyleSheet, Alert } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTheme, radius } from "@/theme";
 import { Card } from "@/components/ui";

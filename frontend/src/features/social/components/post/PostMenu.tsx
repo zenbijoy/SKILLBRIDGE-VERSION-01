@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React from "react";
 import { View, Text, StyleSheet, Modal, Pressable, Alert } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
-import { Row, triggerHaptic } from "@/components/ui";
+import { triggerHaptic } from "@/components/ui";
 import { copyToClipboard } from "@/utils/safeClipboard";
 import type { SocialPost } from "../../types";
 

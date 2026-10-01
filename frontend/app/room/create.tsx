@@ -14,8 +14,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Profile, Room } from "@/types";
-import { Button, Card, H1, H2, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Button, Card, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import MapPicker from "@/components/MapPicker";
 
 // Mirrors backend env MAX_ROOM_CAPACITY (default 250) so validation never mismatches.
@@ -87,7 +87,7 @@ const ROOM_ICONS = [
 ];
 
 export default function CreateRoomScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const qc = useQueryClient();
 
   const [selectedPreset, setSelectedPreset] = useState<string>("voice_lounge");
@@ -95,7 +95,7 @@ export default function CreateRoomScreen() {
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("Open Audio Discussion & Study");
   const [description, setDescription] = useState("");
-  const [rules, setRules] = useState("");
+  const [rules] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(["voice", "study"]);
   const [visibility, setVisibility] = useState<"public" | "private" | "invite_only">("public");

@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useTheme, radius } from "@/theme";
+import { radius } from "@/theme";
 import { Row, triggerHaptic } from "@/components/ui";
 import { CODE_LANGUAGES } from "../../constants";
 import type { PostCodeMetadata } from "../../types";
@@ -13,8 +13,6 @@ interface CodeEditorProps {
 }
 
 export function CodeEditor({ data, onChange, onRemove }: CodeEditorProps) {
-  const { colors } = useTheme();
-
   return (
     <View style={styles.container}>
       {/* Header */}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View, Text, StyleSheet, Modal, Pressable, ActivityIndicator, Alert, TextInput } from "react-native";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Card, Pill, Row } from "@/components/ui";
@@ -42,7 +42,6 @@ export function ClashDetectorModal({
   onProceedAnyway?: () => void;
 }) {
   const { colors } = useTheme();
-  const qc = useQueryClient();
   const [selectedClash, setSelectedClash] = useState<ClashItem | null>(null);
   const [proposedTime, setProposedTime] = useState("");
   const [negotiationNote, setNegotiationNote] = useState("");

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import type { Profile, Room, Session } from "@/types";
 import { ErrorState, Screen, Skeleton, triggerHaptic } from "@/components/ui";
@@ -24,7 +24,6 @@ import { RoomAnalyticsView } from "@/features/room/more/RoomAnalyticsView";
 import { RoomSettingsModal } from "@/features/room/more/RoomSettingsModal";
 import { RoomVoiceSheet } from "@/features/room/voice/RoomVoiceSheet";
 import { RoomVoiceBanner } from "@/features/room/voice/RoomVoiceBanner";
-import { useActiveRoomSession } from "@/features/room/voice/useActiveRoomSession";
 
 type RoomDetailData = {
   room: Room;
@@ -42,7 +41,6 @@ type RoomDetailData = {
 export default function RoomDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const { session } = useSession();
 

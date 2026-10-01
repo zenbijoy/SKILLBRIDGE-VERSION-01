@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { RoomPost } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 
 type RoomPostCardProps = {
   post: RoomPost;

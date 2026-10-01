@@ -6,7 +6,6 @@ import {
   Image,
   Pressable,
   Share,
-  Linking,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";

@@ -4,7 +4,6 @@ import {
   Alert,
   Image,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,8 +19,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { optimizeImageForUpload, OPTIMIZATION_PRESETS } from "@/lib/imageOptimizer";
 import type { Profile, Room } from "@/types";
-import { Button, Card, Pill, Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Button, Card, Row, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { PostContent } from "@/features/social/components/post/PostContent";
 import { GalleryCard } from "@/features/social/components/post/GalleryCard";
@@ -113,6 +112,7 @@ export function PostComposerModal({
         handlePickGalleryPhotos();
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on visibility; re-running on every keystroke would re-fire media picker
   }, [visible, initialAudience, initialTag, openMediaImmediately]);
 
   // Fetch user rooms & clubs for target audience selection

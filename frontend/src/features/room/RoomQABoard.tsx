@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable, TextInput, Alert, ActivityIndicator,
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
-import { Card, Pill, Row, ErrorState, Button } from "@/components/ui";
+import { Card, Pill, Row, ErrorState } from "@/components/ui";
 import { useTheme, radius } from "@/theme";
 import { nextGenAnimationsV2 } from "@/assets/nextgen";
 import type { Profile } from "@/types";

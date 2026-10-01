@@ -31,12 +31,10 @@ import {
   formatDateIso,
   parseIsoDate,
   type CalendarEvent,
-  type CalendarEventType,
   type AcademicProfile,
   type AcademicRoutine,
   type UpcomingSummary,
   type RoutineEntry,
-  type AcademicNotificationPreferences,
 } from "@/features/calendar";
 import { triggerHaptic } from "@/components/ui";
 

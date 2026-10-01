@@ -17,6 +17,7 @@ import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal
 import { ActiveCallBanner } from "@/features/calls/components/ActiveCallBanner";
 import { useI18n } from "@/i18n";
 import { SkillBridgeLoader } from "@/components/ui";
+import { AutoHideNavigationProvider } from "@/navigation/AutoHideNavigationContext";
 
 // Prevent native splash screen from hiding prematurely until session initialization completes
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -246,8 +247,6 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
     </View>
   );
 }
-
-import { AutoHideNavigationProvider } from "@/navigation/AutoHideNavigationContext";
 
 export default function Layout() {
   return (

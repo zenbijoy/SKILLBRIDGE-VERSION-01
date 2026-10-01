@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
@@ -68,7 +68,7 @@ export default function Notifications() {
     },
   });
 
-  const allList = notifications.data?.notifications ?? [];
+  const allList = useMemo(() => notifications.data?.notifications ?? [], [notifications.data]);
   const unreadCount = allList.filter((n) => !n.read_at).length;
 
   const filteredList = useMemo(() => {

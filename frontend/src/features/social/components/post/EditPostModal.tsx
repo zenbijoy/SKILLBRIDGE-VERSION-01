@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Modal, TextInput, Pressable, ActivityIndicator, Alert } from "react-native";
+import { Text, StyleSheet, Modal, TextInput, Pressable, ActivityIndicator, Alert } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
 import { Row, triggerHaptic } from "@/components/ui";

@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   RefreshControl,

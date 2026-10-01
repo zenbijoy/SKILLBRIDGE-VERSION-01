@@ -57,7 +57,7 @@ export default function HelpQuestionsScreen() {
       ),
   });
 
-  const questions = data?.questions ?? [];
+  const questions = useMemo(() => data?.questions ?? [], [data]);
 
   const filteredQuestions = useMemo(() => {
     if (!search.trim()) return questions;

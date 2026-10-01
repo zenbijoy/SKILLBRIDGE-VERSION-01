@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Alert,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -10,8 +9,8 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Button, Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Row, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import { useActiveRoomSession, type VoiceParticipant } from "./useActiveRoomSession";
 
 type RoomVoiceSheetProps = {

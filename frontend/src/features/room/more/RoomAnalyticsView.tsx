@@ -12,7 +12,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { RoomAnalytics } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 
 type RoomAnalyticsViewProps = {
   visible: boolean;
@@ -49,6 +49,7 @@ export function RoomAnalyticsView({
     if (visible) {
       fetchAnalytics();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAnalytics reads roomId; re-running on function identity is unnecessary
   }, [visible, roomId]);
 
   return (

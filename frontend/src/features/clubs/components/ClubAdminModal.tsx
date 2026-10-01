@@ -80,6 +80,7 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
       setContactPhone(club.contact_phone || "");
       setMembershipType(club.membership_type || "open");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- init/sync effect keyed on club id; deps fields would reset user edits
   }, [visible, club.id]);
 
   const fetchAnalytics = async () => {

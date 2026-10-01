@@ -12,8 +12,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
-import { Button, Card, H2, Muted, Pill, Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Button, H2, Muted, Row, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import type { Room } from "@/types";
 
 type AskHelpComposerModalProps = {

@@ -106,7 +106,7 @@ export function ImportRoutineModal({
           base64,
         });
       }
-    } catch (err) {
+    } catch {
       Alert.alert("Picker Error", "Could not select the routine file.");
     }
   };

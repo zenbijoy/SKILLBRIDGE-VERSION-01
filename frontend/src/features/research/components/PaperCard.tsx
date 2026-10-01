@@ -6,7 +6,7 @@ import { router } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { radius, useTheme } from "@/theme";
-import { Pill, triggerHaptic } from "@/components/ui";
+import { triggerHaptic } from "@/components/ui";
 import type { SSPaper } from "../types";
 
 interface PaperCardProps {

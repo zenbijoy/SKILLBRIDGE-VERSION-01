@@ -8,7 +8,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleProp,
   StyleSheet,
   Switch,

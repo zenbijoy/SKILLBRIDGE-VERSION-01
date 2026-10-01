@@ -47,14 +47,14 @@ export function PreferencesModal({
   const [notifyExams, setNotifyExams] = useState(
     preferences?.notify_exams ?? true
   );
-  const [examLeadHours, setExamLeadHours] = useState(
+  const [examLeadHours] = useState(
     preferences?.exam_lead_hours ?? 24
   );
 
   const [notifyTasks, setNotifyTasks] = useState(
     preferences?.notify_tasks ?? true
   );
-  const [taskLeadMinutes, setTaskLeadMinutes] = useState(
+  const [taskLeadMinutes] = useState(
     preferences?.task_lead_minutes ?? 30
   );
 

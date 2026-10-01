@@ -1,11 +1,10 @@
 import React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { IconButton, triggerHaptic } from "@/components/ui";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useAppStore } from "@/state/useAppStore";
 
@@ -13,7 +12,7 @@ type NotificationItem = { id: string; read_at?: string | null };
 
 export function HomeNavbar() {
   const { colors } = useTheme();
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const { cachedProfile } = useAppStore();
 
   const notifications = useQuery({

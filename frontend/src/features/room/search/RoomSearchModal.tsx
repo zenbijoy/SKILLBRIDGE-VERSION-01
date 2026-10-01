@@ -14,7 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import type { RoomOSTabKey } from "../RoomOSTabs";
 
 type SearchCategory = "all" | "posts" | "messages" | "questions" | "files" | "videos" | "members" | "announcements";

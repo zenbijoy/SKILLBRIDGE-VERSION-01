@@ -57,7 +57,7 @@ export function CreateTaskModal({
   const [startTime, setStartTime] = useState(
     initialData?.start_time ?? "10:00"
   );
-  const [endTime, setEndTime] = useState(initialData?.end_time ?? "");
+  const [endTime] = useState(initialData?.end_time ?? "");
   const [location, setLocation] = useState(initialData?.location ?? "");
   const [description, setDescription] = useState(
     initialData?.description ?? ""

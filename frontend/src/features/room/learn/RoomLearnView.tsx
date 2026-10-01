@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,8 +9,8 @@ import {
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Profile, Room, Session } from "@/types";
-import { Button, Card, H2, Muted, Row, SectionHeader, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { Row, SectionHeader, triggerHaptic } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
 import { RoomQABoard } from "../RoomQABoard";
 
 type RoomLearnViewProps = {

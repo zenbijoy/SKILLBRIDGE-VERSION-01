@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, Pressable, Image, Modal } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
-import { Row, Pill } from "@/components/ui";
+import { Row } from "@/components/ui";
 import { nextGenBadges } from "@/assets/nextgen";
 import type { PostVisibility } from "../../types";
 import { VISIBILITY_OPTIONS } from "../../constants";

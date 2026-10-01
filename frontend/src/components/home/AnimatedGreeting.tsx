@@ -106,6 +106,7 @@ export function AnimatedGreeting({ name, mode, onDismiss }: AnimatedGreetingProp
     }, 10_000);
 
     return () => clearTimeout(vanishTimer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDismiss is declared below and only touches stable setters
   }, [isTypingDone]);
 
   const handleDismiss = () => {

@@ -5,7 +5,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { VideoPlaylist, VideoProgress } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import { RoomMaterialsHub } from "../RoomMaterialsHub";
 import { RoomRecordings } from "../RoomRecordings";
 

@@ -9,14 +9,13 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Room, RoomInvite } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 
 type RoomSettingsModalProps = {
   visible: boolean;
@@ -81,6 +80,7 @@ export function RoomSettingsModal({
       setDefaultLandingTab(room.default_landing_tab || "posts");
       fetchInvites();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- init effect keyed on room id; dep fields would reset pending edits
   }, [visible, room.id]);
 
   const toggleModule = (moduleKey: string) => {
@@ -144,7 +144,7 @@ export function RoomSettingsModal({
       await Share.share({
         message: `Join our academic study room "${room.title}" on SkillBridge with code: ${invite.code}`,
       });
-    } catch (err) {
+    } catch {
       // Ignored
     }
   };

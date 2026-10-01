@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useLocalSearchParams, router } from "expo-router";
+import { decodeLivePacket, encodeLivePacket } from "./liveDataPacket";
 import {
   Alert,
   StyleSheet,
@@ -122,8 +123,6 @@ function ParticipantTile({
     </View>
   );
 }
-
-import { decodeLivePacket, encodeLivePacket } from "./liveDataPacket";
 
 function Stage({ lowDataMode }: { lowDataMode: boolean }) {
   const room = useRoomContext();

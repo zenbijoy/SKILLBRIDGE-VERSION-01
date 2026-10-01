@@ -80,12 +80,12 @@ export default function EventsScreen() {
   const [optLocationType, setOptLocationType] = useState<"indoor" | "outdoor">("indoor");
 
   // Query Events
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["events"],
     queryFn: () => api<{ events: EventItem[] }>("/events"),
   });
 
-  const events = data?.events ?? [];
+  const events = useMemo(() => data?.events ?? [], [data]);
 
   const filteredEvents = useMemo(() => {
     if (activeTab === "all") return events;

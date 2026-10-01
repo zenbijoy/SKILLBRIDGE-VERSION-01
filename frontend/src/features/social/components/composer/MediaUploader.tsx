@@ -1,5 +1,5 @@
-import React, { useState, useRef } from "react";
-import { View, Text, StyleSheet, Pressable, Image, Alert, ActivityIndicator, Platform } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, Pressable, Image, Alert, ActivityIndicator } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useTheme, radius } from "@/theme";
@@ -25,7 +25,6 @@ export function MediaUploader({ attachedMedia, onChange, onUploadingChange }: Me
   const { colors } = useTheme();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgressText, setUploadProgressText] = useState("");
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const setUploadingState = (val: boolean, text = "") => {
     setIsUploading(val);
@@ -69,7 +68,7 @@ export function MediaUploader({ attachedMedia, onChange, onUploadingChange }: Me
         onChange([...attachedMedia, newItem]);
         triggerHaptic("notificationSuccess");
         return;
-      } catch (err: any) {
+      } catch {
         // Fall back to signed upload ticket if direct upload failed
       }
     }

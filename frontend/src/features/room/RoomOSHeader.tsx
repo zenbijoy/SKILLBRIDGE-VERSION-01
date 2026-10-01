@@ -3,7 +3,7 @@ import { Alert, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Room } from "@/types";
-import { Pill, Row, triggerHaptic } from "@/components/ui";
+import { Row, triggerHaptic } from "@/components/ui";
 import { WEB_URL } from "@/lib/config";
 import { radius, useTheme } from "@/theme";
 
