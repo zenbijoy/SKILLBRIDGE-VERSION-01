@@ -55,12 +55,18 @@ rooms.get(
 
     // "mine" returns rooms the caller has actually joined (any visibility).
     // "topic" and "q" make list filtering server-side so pagination stays correct.
+    // "status" (live/scheduled/open) + "mode" (online/offline/hybrid) are also
+    // server-side now — client-side filtering loses rooms on other pages.
     const mine = req.query.mine === "true";
     const topic = typeof req.query.topic === "string" ? req.query.topic.trim() : "";
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const statusParam = typeof req.query.status === "string" ? req.query.status.trim() : "";
+    const modeParam = typeof req.query.mode === "string" ? req.query.mode.trim() : "";
+    const statusFilter = ["live", "scheduled", "open"].includes(statusParam) ? statusParam : "";
+    const modeFilter = ["online", "offline", "hybrid"].includes(modeParam) ? modeParam : "";
 
     // Only the public, shared feed is safe to cache across users.
-    const cacheKey = `rooms:public:p${page}:l${limit}:t${topic}:q${q}`;
+    const cacheKey = `rooms:public:p${page}:l${limit}:t${topic}:q${q}:s${statusFilter}:m${modeFilter}`;
     if (!mine) {
       const cached = await cacheGet<Record<string, unknown>>(cacheKey);
       if (cached) return res.json(cached);
@@ -81,23 +87,48 @@ rooms.get(
         return res.json({ rooms: [], total: 0, page, limit });
       }
 
-      const { data, count, error } = await admin
+      let mineQuery = admin
         .from("rooms")
         .select("*", { count: "exact" })
         .in("id", roomIds)
-        .in("status", ["open", "scheduled", "live"])
-        .order("created_at", { ascending: false })
-        .range(from, to);
+        .order("created_at", { ascending: false });
+
+      if (statusFilter) {
+        mineQuery = mineQuery.eq("status", statusFilter);
+      } else {
+        mineQuery = mineQuery.in("status", ["open", "scheduled", "live"]);
+      }
+      if (modeFilter) {
+        mineQuery = mineQuery.eq("mode", modeFilter);
+      }
+      if (topic) {
+        mineQuery = mineQuery.ilike("topic", `%${topic}%`);
+      }
+      if (q) {
+        const safe = q.replace(/[,()%*\\]/g, " ").trim();
+        if (safe.length >= 2) {
+          mineQuery = mineQuery.or(
+            `title.ilike.%${safe}%,topic.ilike.%${safe}%,description.ilike.%${safe}%,campus_location.ilike.%${safe}%`,
+          );
+        }
+      }
+
+      const { data, count, error } = await mineQuery.range(from, to);
 
       if (error) throw error;
       return res.json({ rooms: data ?? [], total: count ?? 0, page, limit });
     }
 
-    let query = admin
-      .from("rooms")
-      .select("*", { count: "exact" })
-      .in("status", ["open", "scheduled", "live"])
-      .eq("visibility", "public");
+    let query = admin.from("rooms").select("*", { count: "exact" }).eq("visibility", "public");
+
+    if (statusFilter) {
+      query = query.eq("status", statusFilter);
+    } else {
+      query = query.in("status", ["open", "scheduled", "live"]);
+    }
+    if (modeFilter) {
+      query = query.eq("mode", modeFilter);
+    }
 
     if (topic) {
       query = query.ilike("topic", `%${topic}%`);
@@ -277,8 +308,44 @@ rooms.get(
       admin.from("sessions").select("*").eq("room_id", id).order("starts_at"),
       admin.from("resources").select("id,title,url,kind,created_at").eq("room_id", id),
     ]);
-    if (room.visibility !== "public" && !membership)
-      return res.status(403).json({ error: "Room is private" });
+    // ── Preview mode: private/invite rooms show limited teaser without 403 ──
+    // New users can see title, topic, 3 top posts + next session before joining.
+    if (room.visibility !== "public" && !membership) {
+      const [previewPostsRes, previewQuestionsRes] = await Promise.all([
+        admin
+          .from("room_posts")
+          .select(
+            "id, type, title, body, likes_count, comments_count, created_at, author:profiles!room_posts_author_id_fkey(id, full_name, username, avatar_url)",
+          )
+          .eq("room_id", id)
+          .neq("status", "deleted")
+          .order("likes_count", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(3),
+        admin.from("room_questions").select("id", { count: "exact", head: true }).eq("room_id", id),
+      ]);
+      const nextSession =
+        (sessions ?? []).find(
+          (s: any) => s.status === "scheduled" || s.status === "live" || s.status === "draft",
+        ) ?? null;
+      return res.json({
+        room,
+        membership: null,
+        members: [],
+        teachingRequests: [],
+        sessions: nextSession ? [nextSession] : [],
+        resources: [],
+        liveSession: (sessions ?? []).find((s: any) => s.status === "live") ?? null,
+        liveParticipantCount: 0,
+        unreadCount: 0,
+        preview: {
+          isPreview: true,
+          topPosts: previewPostsRes.data ?? [],
+          questionsCount: previewQuestionsRes.count ?? 0,
+          nextSession,
+        },
+      });
+    }
 
     // Live session + real-time participant count for the room header strip.
     const liveSession = (sessions ?? []).find((s: any) => s.status === "live") ?? null;
@@ -1614,10 +1681,39 @@ rooms.delete(
   }),
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PROMPT 5: ADVANCED ROOM COLLABORATION ENDPOINTS
-// Channels, Pinned Hub, Video Playlists & Progress, Moderation & Analytics
-// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/rooms/:id/members — roster for voice lounge (members only)
+rooms.get(
+  "/:id/members",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: me } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+    if (!me) return res.status(403).json({ error: "Join room to see members" });
+    const { data, error } = await admin
+      .from("room_members")
+      .select("role, user_id, profiles!inner(id, full_name, username, avatar_url)")
+      .eq("room_id", roomId)
+      .limit(100);
+    if (error) throw error;
+    const members = (data ?? []).map((m: any) => {
+      const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
+      return {
+        id: p?.id ?? m.user_id,
+        full_name: p?.full_name ?? "Member",
+        username: p?.username ?? "user",
+        avatar_url: p?.avatar_url ?? null,
+        role: m.role,
+      };
+    });
+    res.json({ members });
+  }),
+);
+
+// ── PROMPT 5: ADVANCED ROOM COLLABORATION ──
 
 // GET /api/v1/rooms/:id/channels - List room channels (auto-seeds #general if empty)
 rooms.get(

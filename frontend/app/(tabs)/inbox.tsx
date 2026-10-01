@@ -331,6 +331,11 @@ export default function Inbox() {
             >
               {item.title || (item.kind === "dm" ? "Direct Message" : "Study Group")}
             </Text>
+            {item.kind === "group" && (
+              <View style={{ backgroundColor: colors.primarySoft, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, marginLeft: 4 }}>
+                <Text style={{ color: colors.primary, fontSize: 9, fontWeight: "800" }}>GROUP</Text>
+              </View>
+            )}
             {item.is_pinned && (
               <MaterialCommunityIcons name="pin" size={14} color={colors.primary} style={{ marginLeft: 4 }} />
             )}
@@ -884,44 +889,168 @@ export default function Inbox() {
         <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
-              {groupMode ? "New Group DM" : "New Conversation"}
+              {groupMode ? "New Group Chat" : "New Conversation"}
             </Text>
             <Pressable onPress={() => setComposeModalVisible(false)} hitSlop={12}>
               <MaterialCommunityIcons name="close" size={24} color={colors.text} />
             </Pressable>
           </View>
 
-          {/* Group Toggle & Group Name */}
-          <View style={{ padding: 16, gap: 12 }}>
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                setGroupMode((prev) => !prev);
-              }}
-              style={[
-                styles.groupToggleBtn,
-                { backgroundColor: groupMode ? colors.primarySoft : colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={groupMode ? "account-group" : "account-group-outline"}
-                size={22}
-                color={colors.primary}
-              />
-              <Text style={[styles.groupToggleText, { color: colors.text }]}>
-                {groupMode ? "Creating Group Conversation" : "Create a Group DM"}
-              </Text>
-            </Pressable>
+          {/* Messenger-Style Mode Switcher */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
+            <View style={[styles.segmentedTrack, { backgroundColor: colors.surface2 }]}>
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setGroupMode(false);
+                }}
+                style={[
+                  styles.segmentItem,
+                  !groupMode && [styles.segmentActive, { backgroundColor: colors.surface }],
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="chat-outline"
+                  size={16}
+                  color={!groupMode ? colors.primary : colors.muted}
+                />
+                <Text
+                  style={[
+                    styles.segmentText,
+                    !groupMode && styles.segmentTextBold,
+                    { color: !groupMode ? colors.text : colors.muted },
+                  ]}
+                >
+                  Direct Message
+                </Text>
+              </Pressable>
 
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setGroupMode(true);
+                }}
+                style={[
+                  styles.segmentItem,
+                  groupMode && [styles.segmentActive, { backgroundColor: colors.surface }],
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account-group-outline"
+                  size={18}
+                  color={groupMode ? colors.primary : colors.muted}
+                />
+                <Text
+                  style={[
+                    styles.segmentText,
+                    groupMode && styles.segmentTextBold,
+                    { color: groupMode ? colors.text : colors.muted },
+                  ]}
+                >
+                  New Group
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Group Inputs: Title & Selected Member Chips */}
+          <View style={{ paddingHorizontal: 16, gap: 10, paddingBottom: 10 }}>
             {groupMode && (
-              <View style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: colors.surface,
+                  borderRadius: radius.md,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  paddingHorizontal: 12,
+                  height: 48,
+                  gap: 10,
+                }}
+              >
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: colors.primarySoft,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <MaterialCommunityIcons name="account-group" size={18} color={colors.primary} />
+                </View>
                 <TextInput
-                  placeholder="Group Name (e.g. AI Thesis Study)"
+                  placeholder="Group Name (e.g. CSE Study Circle)..."
                   placeholderTextColor={colors.muted}
-                  style={[styles.modalInput, { color: colors.text }]}
+                  style={[styles.modalInput, { color: colors.text, flex: 1, fontSize: 15, fontWeight: "600" }]}
                   value={groupTitle}
                   onChangeText={setGroupTitle}
                 />
+              </View>
+            )}
+
+            {/* Selected Member Chips (Messenger / Telegram horizontal scroll) */}
+            {groupMode && selectedPeers.length > 0 && (
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.muted, marginBottom: 6 }}>
+                  SELECTED MEMBERS ({selectedPeers.length})
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {selectedPeers.map((peerId) => {
+                    const peerObj =
+                      (connectionsQuery.data?.connections ?? []).find((c) => c.id === peerId) ||
+                      (searchUsersQuery.data?.results ?? []).find((u) => u.id === peerId);
+                    const name = (peerObj as any)?.full_name || (peerObj as any)?.title || "Member";
+                    const avatar = (peerObj as any)?.avatar_url || (peerObj as any)?.imageUrl;
+                    return (
+                      <View
+                        key={peerId}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          backgroundColor: colors.surface2,
+                          borderRadius: 20,
+                          paddingLeft: 4,
+                          paddingRight: 8,
+                          paddingVertical: 4,
+                          gap: 6,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                        }}
+                      >
+                        {avatar ? (
+                          <Image source={{ uri: avatar }} style={{ width: 22, height: 22, borderRadius: 11 }} />
+                        ) : (
+                          <View
+                            style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: 11,
+                              backgroundColor: colors.primarySoft,
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary }}>
+                              {name.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                        <Text style={{ fontSize: 12, fontWeight: "600", color: colors.text }} numberOfLines={1}>
+                          {name.split(" ")[0]}
+                        </Text>
+                        <Pressable
+                          onPress={() => setSelectedPeers((prev) => prev.filter((id) => id !== peerId))}
+                          hitSlop={6}
+                        >
+                          <MaterialCommunityIcons name="close-circle" size={16} color={colors.muted} />
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
               </View>
             )}
 
@@ -929,7 +1058,7 @@ export default function Inbox() {
             <View style={[styles.searchBox, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
               <MaterialCommunityIcons name="magnify" size={20} color={colors.muted} />
               <TextInput
-                placeholder="Search friend by name or username..."
+                placeholder={groupMode ? "Search students to add to group..." : "Search friend by name or username..."}
                 placeholderTextColor={colors.muted}
                 value={composeSearch}
                 onChangeText={setComposeSearch}

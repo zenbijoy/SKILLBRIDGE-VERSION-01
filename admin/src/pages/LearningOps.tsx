@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Radio, Calendar, Activity, ShieldAlert } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
@@ -21,14 +21,14 @@ export default function LearningOps() {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const loadRealtime = async () => {
+  const loadRealtime = useCallback(async () => {
     try {
       const res = await api.get('/admin/learning-ops/realtime');
       setRealtime(res.data);
     } catch {}
-  };
+  }, []);
 
-  const loadTab = async () => {
+  const loadTab = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -44,12 +44,12 @@ export default function LearningOps() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tab]);
 
   useEffect(() => {
     void loadRealtime();
     void loadTab();
-  }, [tab]);
+  }, [loadRealtime, loadTab]);
 
   const handleActionConfirm = async (e: React.FormEvent) => {
     e.preventDefault();

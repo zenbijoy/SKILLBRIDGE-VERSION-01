@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Users2, Calendar, FileText, Award, Search, Check, EyeOff } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
@@ -11,7 +11,7 @@ export default function CommunityOps() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -24,11 +24,11 @@ export default function CommunityOps() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tab, search]);
 
   useEffect(() => {
     void loadData();
-  }, [tab]);
+  }, [loadData]);
 
   const handleAction = async (entityId: string, action: string) => {
     const reason = window.prompt(`Reason for ${action}:`);

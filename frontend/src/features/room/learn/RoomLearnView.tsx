@@ -12,6 +12,8 @@ import type { Profile, Room, Session } from "@/types";
 import { Row, SectionHeader, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { RoomQABoard } from "../RoomQABoard";
+import { RoomPollCard } from "../polls/RoomPollCard";
+import { RoomAttendanceCard } from "../attendance/RoomAttendanceCard";
 
 type RoomLearnViewProps = {
   room: Room;
@@ -99,6 +101,8 @@ export function RoomLearnView({
 
       {activeSubTab === "sessions" ? (
         <View style={{ gap: 12 }}>
+          <RoomAttendanceCard roomId={room.id} />
+          <RoomPollCard roomId={room.id} isLeader={Boolean(isOwner || canStartLive)} />
           {/* Live Session Active Banner */}
           {activeLiveSession ? (
             <View style={[s.liveCard, { backgroundColor: `${colors.danger}12`, borderColor: colors.danger }]}>

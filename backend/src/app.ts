@@ -14,6 +14,8 @@ import { dashboard } from "./routes/dashboard.js";
 import { profiles } from "./routes/profiles.js";
 import { connections } from "./routes/connections.js";
 import { rooms } from "./routes/rooms.js";
+import { roomPolls } from "./routes/room-polls.js";
+import { roomAttendance } from "./routes/room-attendance.js";
 import { sessions } from "./routes/sessions.js";
 import { search } from "./routes/search.js";
 import { recommendations } from "./routes/recommendations.js";
@@ -162,6 +164,8 @@ export function createApp(io?: SocketServer) {
   api.use("/profiles", profiles);
   api.use("/connections", connections);
   api.use("/rooms", rooms);
+  api.use("/rooms/:id/polls", roomPolls);
+  api.use("/rooms/:id/attendance", roomAttendance);
   api.use("/sessions", sessions);
   api.use("/search", search);
   api.use("/recommendations", recommendations);

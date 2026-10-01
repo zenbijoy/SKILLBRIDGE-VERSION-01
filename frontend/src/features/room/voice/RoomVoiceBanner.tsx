@@ -8,10 +8,11 @@ import { useActiveRoomSession } from "./useActiveRoomSession";
 type RoomVoiceBannerProps = {
   roomId: string;
   roomTitle: string;
+  memberCount?: number;
   onPress: () => void;
 };
 
-export function RoomVoiceBanner({ roomId, roomTitle, onPress }: RoomVoiceBannerProps) {
+export function RoomVoiceBanner({ roomId, roomTitle, memberCount = 0, onPress }: RoomVoiceBannerProps) {
   const { colors } = useTheme();
   const session = useActiveRoomSession();
 
@@ -43,7 +44,7 @@ export function RoomVoiceBanner({ roomId, roomTitle, onPress }: RoomVoiceBannerP
             {isActiveHere ? "Voice Connected" : "Study Voice Room"}
           </Text>
           <Text style={[s.participantsText, { color: colors.muted }]}>
-            · {session.participants.length > 0 ? session.participants.length : 4} people
+            · {session.participants.length > 0 ? session.participants.length : Math.max(memberCount, 0)} people
           </Text>
         </Row>
 

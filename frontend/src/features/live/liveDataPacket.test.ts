@@ -69,4 +69,40 @@ describe("LiveKit Realtime Data Packet Protocol (v1)", () => {
     const unknownType = new TextEncoder().encode(JSON.stringify({ version: 1, type: "unknown" }));
     expect(decodeLivePacket(unknownType)).toBeNull();
   });
+
+  it("encodes and decodes live poll packets accurately", () => {
+    const pollPacket: LiveDataPacket = {
+      version: 1,
+      type: "poll",
+      pollId: "poll-1",
+      question: "Formula bujhso?",
+      options: [
+        { id: "opt_0", text: "Ha" },
+        { id: "opt_1", text: "Na" },
+      ],
+      action: "start",
+      counts: { opt_0: 3, opt_1: 1 },
+      totalVotes: 4,
+      timestamp: 1726200020000,
+    };
+
+    const decoded = decodeLivePacket(encodeLivePacket(pollPacket));
+    expect(decoded).toEqual(pollPacket);
+  });
+
+  it("encodes and decodes QA queue packets accurately", () => {
+    const qaPacket: LiveDataPacket = {
+      version: 1,
+      type: "qa_queue",
+      questionId: "q-9",
+      title: "Derivative kivabe kore?",
+      senderId: "user-321",
+      senderName: "Rima",
+      action: "ask",
+      timestamp: 1726200030000,
+    };
+
+    const decoded = decodeLivePacket(encodeLivePacket(qaPacket));
+    expect(decoded).toEqual(qaPacket);
+  });
 });

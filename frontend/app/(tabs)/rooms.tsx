@@ -70,7 +70,7 @@ export default function RoomsScreen() {
   // Search + topic + "my rooms" scope are resolved server-side so that
   // pagination and the result count stay correct.
   const roomsQuery = useInfiniteQuery({
-    queryKey: ["rooms", isMine, selectedTopic, debouncedSearch.trim()],
+    queryKey: ["rooms", filter, isMine, selectedTopic, debouncedSearch.trim()],
     queryFn: ({ pageParam }) =>
       api<{ rooms: Room[]; total: number }>(
         `/rooms?${qs({
@@ -79,6 +79,8 @@ export default function RoomsScreen() {
           mine: isMine ? "true" : undefined,
           topic: selectedTopic ?? undefined,
           q: debouncedSearch.trim() || undefined,
+          status: filter === "live" ? "live" : filter === "scheduled" ? "scheduled" : undefined,
+          mode: filter === "online" ? "online" : filter === "campus" ? "offline" : undefined,
         })}`,
       ),
     initialPageParam: 1,
@@ -92,15 +94,12 @@ export default function RoomsScreen() {
   );
   const serverTotal = roomsQuery.data?.pages[0]?.total ?? 0;
 
-  // Status / delivery-mode chips narrow the currently loaded page.
+  // live/online/campus/scheduled now filtered server-side (correct pagination).
   const filteredRooms = useMemo(() => {
-    return allRooms.filter((room) => {
-      if (filter === "live" && room.status !== "live") return false;
-      if (filter === "scheduled" && room.status !== "scheduled") return false;
-      if (filter === "online" && room.mode !== "online") return false;
-      if (filter === "campus" && room.mode !== "offline" && room.mode !== "hybrid") return false;
-      return true;
-    });
+    if (filter === "campus") {
+      return allRooms.filter((room) => room.mode === "offline" || room.mode === "hybrid");
+    }
+    return allRooms;
   }, [allRooms, filter]);
 
   // Metrics summary

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { logger } from "../lib/logger.js";
 import { env } from "../config/env.js";
+import { geminiKeyManager } from "./geminiKeyManager.js";
 
 export const DAYS_OF_WEEK = [
   "Sunday",
@@ -209,12 +210,9 @@ export async function extractRoutine(params: {
 }): Promise<ExtractionResult> {
   const { fileBase64, fileMimeType, rawText, context } = params;
 
-  const geminiKey = process.env.GEMINI_API_KEY || env.AI_PROVIDER_API_KEY;
-
-  if (geminiKey && (fileBase64 || rawText)) {
+  if (fileBase64 || rawText) {
     try {
       return await callGeminiExtractor({
-        apiKey: geminiKey,
         fileBase64,
         fileMimeType: fileMimeType || "application/pdf",
         rawText,
@@ -236,13 +234,12 @@ export async function extractRoutine(params: {
  * Call Gemini Flash REST API with structured response
  */
 async function callGeminiExtractor(options: {
-  apiKey: string;
   fileBase64?: string;
   fileMimeType: string;
   rawText?: string;
   context: ExtractionContext;
 }): Promise<ExtractionResult> {
-  const { apiKey, fileBase64, fileMimeType, rawText, context } = options;
+  const { fileBase64, fileMimeType, rawText, context } = options;
 
   const systemInstruction = `You are an expert academic routine and timetable parser for universities.
 Your goal is to extract weekly class schedules with high accuracy and safety.
@@ -288,74 +285,58 @@ RULES:
     text: "Extract all weekly timetable classes from this document according to the user's academic context.",
   });
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-  const requestBody = {
-    contents: [{ parts }],
-    systemInstruction: {
-      parts: [{ text: systemInstruction }],
-    },
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: "OBJECT",
-        properties: {
-          classes: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                courseCode: { type: "STRING" },
-                courseTitle: { type: "STRING" },
-                day: {
-                  type: "STRING",
-                  enum: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-                },
-                startTime: { type: "STRING", description: "HH:MM 24h format" },
-                endTime: { type: "STRING", description: "HH:MM 24h format" },
-                room: { type: "STRING" },
-                instructor: { type: "STRING" },
-                type: { type: "STRING", enum: ["CLASS", "LAB", "OTHER"] },
-                groupName: { type: "STRING" },
-                confidence: { type: "STRING", enum: ["high", "medium", "low", "ambiguous"] },
-                warnings: { type: "ARRAY", items: { type: "STRING" } },
-              },
-              required: ["courseCode", "courseTitle", "day", "startTime", "endTime"],
-            },
-          },
-          detectedMetadata: {
+  const generationConfig = {
+    temperature: 0.1,
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: "OBJECT",
+      properties: {
+        classes: {
+          type: "ARRAY",
+          items: {
             type: "OBJECT",
             properties: {
-              university: { type: "STRING" },
-              department: { type: "STRING" },
-              semester: { type: "STRING" },
-              section: { type: "STRING" },
+              courseCode: { type: "STRING" },
+              courseTitle: { type: "STRING" },
+              day: {
+                type: "STRING",
+                enum: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+              },
+              startTime: { type: "STRING", description: "HH:MM 24h format" },
+              endTime: { type: "STRING", description: "HH:MM 24h format" },
+              room: { type: "STRING" },
+              instructor: { type: "STRING" },
+              type: { type: "STRING", enum: ["CLASS", "LAB", "OTHER"] },
+              groupName: { type: "STRING" },
+              confidence: { type: "STRING", enum: ["high", "medium", "low", "ambiguous"] },
+              warnings: { type: "ARRAY", items: { type: "STRING" } },
             },
+            required: ["courseCode", "courseTitle", "day", "startTime", "endTime"],
           },
         },
-        required: ["classes"],
+        detectedMetadata: {
+          type: "OBJECT",
+          properties: {
+            university: { type: "STRING" },
+            department: { type: "STRING" },
+            semester: { type: "STRING" },
+            section: { type: "STRING" },
+          },
+        },
       },
+      required: ["classes"],
     },
   };
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody),
+  const geminiRes = await geminiKeyManager.generateContent({
+    contents: [{ parts }],
+    systemInstruction,
+    generationConfig,
+    preferredModel: "gemini-flash-latest",
+    timeoutMs: 35_000,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error ${response.status}: ${errorText}`);
-  }
-
-  const result = await response.json();
-  const rawJsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!rawJsonText) {
-    throw new Error("No structured text response from Gemini API");
-  }
+  const rawJsonText = geminiRes.text;
 
   let parsed: any;
   try {

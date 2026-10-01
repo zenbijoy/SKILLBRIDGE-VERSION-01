@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Users, UserCheck, Calendar, Radio, Share2, TrendingUp, CheckCircle2 } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
@@ -50,7 +50,7 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -61,11 +61,11 @@ export default function Analytics() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [timeframe]);
 
   useEffect(() => {
     void loadData();
-  }, [timeframe]);
+  }, [loadData]);
 
   return (
     <div>

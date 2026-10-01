@@ -63,19 +63,28 @@ interface ChatMessage {
   reactions?: MessageReaction[];
 }
 
+interface ConversationMember {
+  userId: string;
+  role: "admin" | "member" | string;
+  is_admin?: boolean;
+  is_creator?: boolean;
+  profile?: { id: string; full_name?: string; username?: string; avatar_url?: string; headline?: string };
+  is_online?: boolean;
+  created_at?: string;
+}
+
 interface ConversationDetails {
   id: string;
   title?: string | null;
   kind: "dm" | "group" | "room";
   avatar_url?: string | null;
+  description?: string | null;
+  created_by?: string | null;
   peer_id?: string | null;
   is_online?: boolean;
-  members?: Array<{
-    userId: string;
-    role: string;
-    profile?: { id: string; full_name?: string; username?: string; avatar_url?: string };
-    is_online?: boolean;
-  }>;
+  is_admin?: boolean;
+  my_role?: "admin" | "member" | string;
+  members?: ConversationMember[];
 }
 
 const OUTBOX_KEY = (id: string) => `@chat_outbox_${id}`;
@@ -159,12 +168,32 @@ export default function ChatScreen() {
   const [newMessagesWhileScrolled, setNewMessagesWhileScrolled] = useState(0);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Group Chat Management States
+  const [groupInfoModalVisible, setGroupInfoModalVisible] = useState(false);
+  const [addMembersModalVisible, setAddMembersModalVisible] = useState(false);
+  const [memberActionMember, setMemberActionMember] = useState<ConversationMember | null>(null);
+  const [editTitleModalVisible, setEditTitleModalVisible] = useState(false);
+  const [newGroupTitle, setNewGroupTitle] = useState("");
+  const [selectedNewMembers, setSelectedNewMembers] = useState<string[]>([]);
+  const [addMemberSearch, setAddMemberSearch] = useState("");
+  const [groupActionLoading, setGroupActionLoading] = useState(false);
+
   // 1. Fetch Conversation Info
   const conversationQuery = useQuery({
     queryKey: ["conversation-details", id],
     queryFn: () => api<{ conversation: ConversationDetails }>(`/chat/conversations/${id}`),
     enabled: Boolean(id),
     staleTime: 30_000,
+  });
+
+  // 1b. Fetch Connections for Adding Members
+  const connectionsQuery = useQuery({
+    queryKey: ["connections-contacts"],
+    queryFn: () =>
+      api<{ connections: Array<{ id: string; full_name?: string; username?: string; avatar_url?: string; headline?: string }> }>(
+        "/connections"
+      ),
+    enabled: addMembersModalVisible,
   });
 
   // 2. Fetch Messages
@@ -337,6 +366,33 @@ export default function ChatScreen() {
       });
     };
 
+    const onMembersUpdated = (data: { conversationId: string }) => {
+      if (data.conversationId === id) {
+        qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+        qc.invalidateQueries({ queryKey: ["messages", id] });
+      }
+    };
+
+    const onRoleUpdated = (data: { conversationId: string }) => {
+      if (data.conversationId === id) {
+        qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+      }
+    };
+
+    const onConversationUpdated = (data: { conversationId: string }) => {
+      if (data.conversationId === id) {
+        qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+      }
+    };
+
+    const onRemovedFromGroup = (data: { conversationId: string; userId: string }) => {
+      if (data.conversationId === id && data.userId === session?.user.id) {
+        Alert.alert("Removed from Group", "You have been removed from this group.", [
+          { text: "OK", onPress: () => router.replace("/(tabs)/inbox") },
+        ]);
+      }
+    };
+
     const onReconnect = () => void retryOutbox();
 
     void supabase.auth.getSession().then(({ data }) => {
@@ -348,6 +404,10 @@ export default function ChatScreen() {
       socket.on("typing:start", onTypingStart);
       socket.on("typing:stop", onTypingStop);
       socket.on("message:reaction:add", onReactionAdd);
+      socket.on("conversation:members_updated", onMembersUpdated);
+      socket.on("conversation:role_updated", onRoleUpdated);
+      socket.on("conversation:updated", onConversationUpdated);
+      socket.on("chat:removed_from_group", onRemovedFromGroup);
       socket.io.on("reconnect", onReconnect);
       reconnectBound = true;
     });
@@ -358,6 +418,10 @@ export default function ChatScreen() {
       socket.off("typing:start", onTypingStart);
       socket.off("typing:stop", onTypingStop);
       socket.off("message:reaction:add", onReactionAdd);
+      socket.off("conversation:members_updated", onMembersUpdated);
+      socket.off("conversation:role_updated", onRoleUpdated);
+      socket.off("conversation:updated", onConversationUpdated);
+      socket.off("chat:removed_from_group", onRemovedFromGroup);
       if (reconnectBound) socket.io.off("reconnect", onReconnect);
       socket.emit("conversation:leave", { conversationId: id });
       if (typingTimeout.current) clearTimeout(typingTimeout.current);
@@ -807,6 +871,201 @@ export default function ChatScreen() {
     router.push(`/call/${conversation.peer_id}?name=${peerName}&avatar=${peerAvatar}&type=${type}` as any);
   };
 
+  // Sync group title to state
+  useEffect(() => {
+    if (conversation?.title) {
+      setNewGroupTitle(conversation.title);
+    }
+  }, [conversation?.title]);
+
+  // Lookup map for group members (for avatars, names, roles)
+  const memberMap = useMemo(() => {
+    const map: Record<string, { name: string; avatarUrl?: string; role?: string; is_admin?: boolean }> = {};
+    if (conversation?.members) {
+      for (const m of conversation.members) {
+        map[m.userId] = {
+          name: m.profile?.full_name || m.profile?.username || "Member",
+          avatarUrl: m.profile?.avatar_url,
+          role: m.role,
+          is_admin: m.is_admin || m.role === "admin",
+        };
+      }
+    }
+    return map;
+  }, [conversation?.members]);
+
+  const existingMemberIds = useMemo(() => {
+    return new Set((conversation?.members || []).map((m) => m.userId));
+  }, [conversation?.members]);
+
+  const availableConnections = useMemo(() => {
+    const all = connectionsQuery.data?.connections || [];
+    const notMembers = all.filter((c) => !existingMemberIds.has(c.id));
+    if (!addMemberSearch.trim()) return notMembers;
+    const q = addMemberSearch.toLowerCase();
+    return notMembers.filter(
+      (c) =>
+        c.full_name?.toLowerCase().includes(q) ||
+        c.username?.toLowerCase().includes(q) ||
+        c.headline?.toLowerCase().includes(q)
+    );
+  }, [connectionsQuery.data?.connections, existingMemberIds, addMemberSearch]);
+
+  // Add Members Mutation
+  const handleAddMembers = async () => {
+    if (selectedNewMembers.length === 0) return;
+    setGroupActionLoading(true);
+    try {
+      await api(`/chat/conversations/${id}/members`, {
+        method: "POST",
+        body: JSON.stringify({ memberIds: selectedNewMembers }),
+      });
+      triggerHaptic();
+      setSelectedNewMembers([]);
+      setAddMembersModalVisible(false);
+      qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+      qc.invalidateQueries({ queryKey: ["messages", id] });
+      Alert.alert("Success", "New members added to group!");
+    } catch (err: any) {
+      Alert.alert("Could not add members", err?.message || "Failed to add members");
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  // Change Role (Make Admin or Demote)
+  const handleChangeRole = async (target: ConversationMember, newRole: "admin" | "member") => {
+    setGroupActionLoading(true);
+    try {
+      await api(`/chat/conversations/${id}/members/${target.userId}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: newRole }),
+      });
+      triggerHaptic();
+      setMemberActionMember(null);
+      qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+      qc.invalidateQueries({ queryKey: ["messages", id] });
+      Alert.alert("Role Updated", `${target.profile?.full_name || "Member"} is now a ${newRole}.`);
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to update member role");
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  // Transfer Ownership
+  const handleTransferOwnership = (target: ConversationMember) => {
+    const name = target.profile?.full_name || target.profile?.username || "this member";
+    Alert.alert(
+      "Transfer Group Ownership",
+      `Are you sure you want to make ${name} the primary group admin? You will remain in the group as a regular member.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Transfer",
+          style: "destructive",
+          onPress: async () => {
+            setGroupActionLoading(true);
+            try {
+              await api(`/chat/conversations/${id}/members/${target.userId}/role`, {
+                method: "PATCH",
+                body: JSON.stringify({ role: "admin", isTransfer: true }),
+              });
+              triggerHaptic();
+              setMemberActionMember(null);
+              qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+              qc.invalidateQueries({ queryKey: ["messages", id] });
+              Alert.alert("Ownership Transferred", `${name} is now the primary admin.`);
+            } catch (err: any) {
+              Alert.alert("Error", err?.message || "Failed to transfer ownership");
+            } finally {
+              setGroupActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Remove Member
+  const handleRemoveMember = (target: ConversationMember) => {
+    const name = target.profile?.full_name || target.profile?.username || "this member";
+    Alert.alert(
+      "Remove Member",
+      `Are you sure you want to remove ${name} from this group?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            setGroupActionLoading(true);
+            try {
+              await api(`/chat/conversations/${id}/members/${target.userId}`, {
+                method: "DELETE",
+              });
+              triggerHaptic();
+              setMemberActionMember(null);
+              qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+              qc.invalidateQueries({ queryKey: ["messages", id] });
+            } catch (err: any) {
+              Alert.alert("Error", err?.message || "Failed to remove member");
+            } finally {
+              setGroupActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Leave Group
+  const handleLeaveGroup = () => {
+    Alert.alert(
+      "Leave Group",
+      "Are you sure you want to leave this group chat?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await api(`/chat/conversations/${id}/leave`, { method: "POST" });
+              triggerHaptic();
+              setGroupInfoModalVisible(false);
+              qc.invalidateQueries({ queryKey: ["conversations"] });
+              router.replace("/(tabs)/inbox");
+            } catch (err: any) {
+              Alert.alert("Error", err?.message || "Failed to leave group");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Update Group Title
+  const handleSaveTitle = async () => {
+    if (!newGroupTitle.trim()) return;
+    setGroupActionLoading(true);
+    try {
+      await api(`/chat/conversations/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: newGroupTitle.trim() }),
+      });
+      triggerHaptic();
+      setEditTitleModalVisible(false);
+      qc.invalidateQueries({ queryKey: ["conversation-details", id] });
+      qc.invalidateQueries({ queryKey: ["messages", id] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to update title");
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
   // Filtered Messages by In-Chat Search
   const allMessages = useMemo(() => messagesQuery.data?.messages ?? [], [messagesQuery.data]);
   const displayMessages = useMemo(() => {
@@ -920,6 +1179,22 @@ export default function ChatScreen() {
           day: "numeric",
         });
 
+    // Render system status message (e.g. John added Sarah, or Alex is admin)
+    if (item.attachment?.type === "system") {
+      return (
+        <View key={item.client_message_id || item.id} style={styles.systemMsgContainer}>
+          <View style={[styles.systemMsgPill, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+            <MaterialCommunityIcons name="information-outline" size={13} color={colors.muted} style={{ marginRight: 5 }} />
+            <Text style={[styles.systemMsgText, { color: colors.muted }]}>
+              {item.body}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    const senderInfo = memberMap[item.sender_id];
+
     return (
       <View key={item.client_message_id || item.id}>
         {/* Date Separator matching Picture 3 */}
@@ -941,6 +1216,25 @@ export default function ChatScreen() {
             },
           ]}
         >
+          {/* In group chats, display sender avatar on the left for other members */}
+          {!mine && conversation?.kind === "group" && (
+            <View style={styles.groupAvatarCol}>
+              {!isSameSender ? (
+                senderInfo?.avatarUrl ? (
+                  <Image source={{ uri: senderInfo.avatarUrl }} style={styles.groupSenderAvatar} />
+                ) : (
+                  <View style={[styles.groupSenderAvatar, styles.placeholderGroupAvatar, { backgroundColor: colors.primarySoft }]}>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary }}>
+                      {(senderInfo?.name || "M").charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )
+              ) : (
+                <View style={{ width: 28 }} />
+              )}
+            </View>
+          )}
+
           <Pressable
             onLongPress={() => {
               triggerHaptic();
@@ -964,11 +1258,25 @@ export default function ChatScreen() {
               item.failed && { borderColor: "#EF4444" },
             ]}
           >
+            {/* Sender name above group message */}
+            {!mine && conversation?.kind === "group" && !isSameSender && (
+              <View style={styles.senderHeaderRow}>
+                <Text style={[styles.senderNameText, { color: colors.primary }]} numberOfLines={1}>
+                  {senderInfo?.name || "Member"}
+                </Text>
+                {senderInfo?.is_admin && (
+                  <View style={styles.adminMiniBadge}>
+                    <Text style={styles.adminMiniBadgeText}>ADMIN</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             {/* Reply Preview Quote Header */}
             {replyTarget && (
               <View style={[styles.replyQuote, { borderLeftColor: mine ? "#FFFFFF" : colors.primary }]}>
                 <Text style={[styles.replyQuoteName, { color: mine ? "#FFFFFF" : colors.primary }]}>
-                  {replyTarget.sender_id === session?.user.id ? "You" : "Peer"}
+                  {replyTarget.sender_id === session?.user.id ? "You" : (memberMap[replyTarget.sender_id]?.name || "Peer")}
                 </Text>
                 <Text style={[styles.replyQuoteText, { color: mine ? "#E5EDFF" : colors.muted }]} numberOfLines={1}>
                   {replyTarget.body || (replyTarget.attachment?.type === "image" ? "Photo" : "Voice note")}
@@ -1138,7 +1446,13 @@ export default function ChatScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => setMediaModalVisible(true)}
+          onPress={() => {
+            if (conversation?.kind === "group") {
+              setGroupInfoModalVisible(true);
+            } else {
+              setMediaModalVisible(true);
+            }
+          }}
           style={styles.headerPeerInfo}
         >
           <View style={styles.avatarWrapper}>
@@ -1146,24 +1460,35 @@ export default function ChatScreen() {
               <Image source={{ uri: conversation.avatar_url }} style={styles.headerAvatar} />
             ) : (
               <View style={[styles.headerAvatar, styles.placeholderAvatar, { backgroundColor: colors.primarySoft }]}>
-                <Text style={{ color: colors.primary, fontWeight: "800", fontSize: 15 }}>
-                  {(conversation?.title || "U").charAt(0).toUpperCase()}
-                </Text>
+                {conversation?.kind === "group" ? (
+                  <MaterialCommunityIcons name="account-group" size={20} color={colors.primary} />
+                ) : (
+                  <Text style={{ color: colors.primary, fontWeight: "800", fontSize: 15 }}>
+                    {(conversation?.title || "U").charAt(0).toUpperCase()}
+                  </Text>
+                )}
               </View>
             )}
-            {conversation?.is_online && <View style={styles.onlineDot} />}
+            {conversation?.kind !== "group" && conversation?.is_online && <View style={styles.onlineDot} />}
           </View>
 
           <View style={{ flex: 1, gap: 1 }}>
-            <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-              {conversation?.title || "Conversation"}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+                {conversation?.title || (conversation?.kind === "group" ? "Group Chat" : "Conversation")}
+              </Text>
+              {conversation?.kind === "group" && (
+                <View style={[styles.groupBadgeHeader, { backgroundColor: colors.primarySoft }]}>
+                  <Text style={[styles.groupBadgeHeaderText, { color: colors.primary }]}>GROUP</Text>
+                </View>
+              )}
+            </View>
             <Text
               style={[
                 styles.headerSubtitleText,
                 {
-                  color: conversation?.is_online !== false ? "#10B981" : colors.muted,
-                  fontWeight: "600",
+                  color: conversation?.kind === "group" ? colors.muted : (conversation?.is_online !== false ? "#10B981" : colors.muted),
+                  fontWeight: "500",
                 },
               ]}
             >
@@ -1171,19 +1496,47 @@ export default function ChatScreen() {
                 ? conversation?.is_online !== false
                   ? "Online"
                   : "Offline"
-                : `${conversation?.members?.length || 2} members`}
+                : `${conversation?.members?.length || 0} members · Tap for info`}
             </Text>
           </View>
         </Pressable>
 
         {/* Right Header Actions */}
         <View style={styles.headerActions}>
-          <Pressable onPress={() => startDirectCall("audio")} hitSlop={8} style={styles.headerIconBtn}>
-            <MaterialCommunityIcons name="phone-outline" size={20} color={colors.text} />
-          </Pressable>
-          <Pressable onPress={() => startDirectCall("video")} hitSlop={8} style={styles.headerIconBtn}>
-            <MaterialCommunityIcons name="video-outline" size={22} color={colors.text} />
-          </Pressable>
+          {conversation?.kind === "group" ? (
+            <>
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setSelectedNewMembers([]);
+                  setAddMembersModalVisible(true);
+                }}
+                hitSlop={8}
+                style={styles.headerIconBtn}
+              >
+                <MaterialCommunityIcons name="account-plus-outline" size={22} color={colors.text} />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setGroupInfoModalVisible(true);
+                }}
+                hitSlop={8}
+                style={styles.headerIconBtn}
+              >
+                <MaterialCommunityIcons name="information-outline" size={22} color={colors.text} />
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Pressable onPress={() => startDirectCall("audio")} hitSlop={8} style={styles.headerIconBtn}>
+                <MaterialCommunityIcons name="phone-outline" size={20} color={colors.text} />
+              </Pressable>
+              <Pressable onPress={() => startDirectCall("video")} hitSlop={8} style={styles.headerIconBtn}>
+                <MaterialCommunityIcons name="video-outline" size={22} color={colors.text} />
+              </Pressable>
+            </>
+          )}
           <Pressable
             onPress={() => {
               triggerHaptic();
@@ -1549,6 +1902,486 @@ export default function ChatScreen() {
             <Image source={{ uri: previewImageUrl }} style={styles.fullscreenImage} resizeMode="contain" />
           )}
         </View>
+      </Modal>
+
+      {/* Group Info & Member Management Modal */}
+      <Modal
+        visible={groupInfoModalVisible}
+        animationType="slide"
+        onRequestClose={() => setGroupInfoModalVisible(false)}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Group Info</Text>
+            <Pressable onPress={() => setGroupInfoModalVisible(false)} hitSlop={12}>
+              <MaterialCommunityIcons name="close" size={24} color={colors.text} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+            {/* Group Hero Card */}
+            <View style={[styles.groupHeroCard, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+              <View style={styles.groupHeroAvatarWrapper}>
+                {conversation?.avatar_url ? (
+                  <Image source={{ uri: conversation.avatar_url }} style={styles.groupHeroAvatar} />
+                ) : (
+                  <View style={[styles.groupHeroAvatar, styles.placeholderGroupHero, { backgroundColor: colors.primarySoft }]}>
+                    <MaterialCommunityIcons name="account-group" size={40} color={colors.primary} />
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.groupHeroTitleRow}>
+                <Text style={[styles.groupHeroTitle, { color: colors.text }]} numberOfLines={2}>
+                  {conversation?.title || "Group Chat"}
+                </Text>
+                {conversation?.is_admin && (
+                  <Pressable
+                    onPress={() => {
+                      triggerHaptic();
+                      setNewGroupTitle(conversation?.title || "");
+                      setEditTitleModalVisible(true);
+                    }}
+                    hitSlop={8}
+                    style={styles.editTitleBtn}
+                  >
+                    <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
+                  </Pressable>
+                )}
+              </View>
+
+              <Text style={[styles.groupHeroSub, { color: colors.muted }]}>
+                {conversation?.members?.length || 0} members · {conversation?.is_admin ? "You are an Admin 👑" : "Member"}
+              </Text>
+              {conversation?.description ? (
+                <Text style={[styles.groupDescText, { color: colors.muted }]}>
+                  {conversation.description}
+                </Text>
+              ) : null}
+
+              {/* Quick Actions Row */}
+              <View style={styles.groupActionRow}>
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setSelectedNewMembers([]);
+                    setAddMembersModalVisible(true);
+                  }}
+                  style={[styles.groupActionBtn, { backgroundColor: colors.surface2 }]}
+                >
+                  <MaterialCommunityIcons name="account-plus" size={20} color={colors.primary} />
+                  <Text style={[styles.groupActionBtnText, { color: colors.text }]}>Add Member</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setGroupInfoModalVisible(false);
+                    setMediaModalVisible(true);
+                  }}
+                  style={[styles.groupActionBtn, { backgroundColor: colors.surface2 }]}
+                >
+                  <MaterialCommunityIcons name="folder-image" size={20} color={colors.primary} />
+                  <Text style={[styles.groupActionBtnText, { color: colors.text }]}>Shared Media</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setGroupInfoModalVisible(false);
+                    setSearchOpen(true);
+                  }}
+                  style={[styles.groupActionBtn, { backgroundColor: colors.surface2 }]}
+                >
+                  <MaterialCommunityIcons name="magnify" size={20} color={colors.primary} />
+                  <Text style={[styles.groupActionBtnText, { color: colors.text }]}>Search</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Member List Header */}
+            <View style={styles.groupSectionHeader}>
+              <Text style={[styles.groupSectionHeaderText, { color: colors.muted }]}>
+                MEMBERS ({conversation?.members?.length || 0})
+              </Text>
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setSelectedNewMembers([]);
+                  setAddMembersModalVisible(true);
+                }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+              >
+                <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "700" }}>Add</Text>
+              </Pressable>
+            </View>
+
+            {/* Members Rows */}
+            <View style={{ backgroundColor: colors.surface }}>
+              {(conversation?.members || []).map((m) => {
+                const isMe = m.userId === session?.user.id;
+                const isAdmin = m.role === "admin" || m.is_admin;
+                const isCreator = m.is_creator || m.userId === conversation?.created_by;
+                const p = m.profile;
+                const name = p?.full_name || p?.username || "SkillBridge Member";
+
+                return (
+                  <View
+                    key={m.userId}
+                    style={[styles.memberListItem, { borderBottomColor: colors.border }]}
+                  >
+                    <View style={styles.memberAvatarWrapper}>
+                      {p?.avatar_url ? (
+                        <Image source={{ uri: p.avatar_url }} style={styles.memberAvatar} />
+                      ) : (
+                        <View style={[styles.memberAvatar, styles.placeholderMemberAvatar, { backgroundColor: colors.primarySoft }]}>
+                          <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14 }}>
+                            {name.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      {m.is_online && <View style={styles.memberOnlineDot} />}
+                    </View>
+
+                    <View style={styles.memberInfoCol}>
+                      <View style={styles.memberNameRow}>
+                        <Text style={[styles.memberNameText, { color: colors.text }]} numberOfLines={1}>
+                          {name} {isMe ? "(You)" : ""}
+                        </Text>
+                        {isAdmin && (
+                          <View style={[styles.adminBadgePill, { backgroundColor: "#FEF3C7" }]}>
+                            <MaterialCommunityIcons name="crown" size={12} color="#D97706" style={{ marginRight: 2 }} />
+                            <Text style={styles.adminBadgeText}>
+                              {isCreator ? "Creator · Admin" : "Admin"}
+                            </Text>
+                          </View>
+                        )}
+                        {!isAdmin && (
+                          <View style={[styles.memberBadgePill, { backgroundColor: colors.surface2 }]}>
+                            <Text style={[styles.memberBadgeText, { color: colors.muted }]}>Member</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.memberHandleText, { color: colors.muted }]} numberOfLines={1}>
+                        {p?.headline || (p?.username ? `@${p.username}` : "SkillBridge Student")}
+                      </Text>
+                    </View>
+
+                    {/* Admin Action Menu Trigger for other members */}
+                    {conversation?.is_admin && !isMe && (
+                      <Pressable
+                        onPress={() => {
+                          triggerHaptic();
+                          setMemberActionMember(m);
+                        }}
+                        hitSlop={12}
+                        style={styles.memberActionTrigger}
+                      >
+                        <MaterialCommunityIcons name="dots-horizontal" size={22} color={colors.text} />
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Leave Group Button */}
+            <View style={styles.leaveGroupContainer}>
+              <Pressable
+                onPress={handleLeaveGroup}
+                style={[styles.leaveGroupBtn, { borderColor: "#EF4444", backgroundColor: "#FEF2F2" }]}
+              >
+                <MaterialCommunityIcons name="logout" size={18} color="#EF4444" style={{ marginRight: 6 }} />
+                <Text style={styles.leaveGroupBtnText}>Leave Group Chat</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Member Action Sheet Modal (Admins Managing Members) */}
+      <Modal
+        visible={Boolean(memberActionMember)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMemberActionMember(null)}
+      >
+        <Pressable
+          style={styles.actionSheetOverlay}
+          onPress={() => setMemberActionMember(null)}
+        >
+          <View style={[styles.actionSheetContent, { backgroundColor: colors.surface }]}>
+            <View style={styles.actionSheetHeader}>
+              <Text style={[styles.actionSheetTitle, { color: colors.text }]}>
+                Manage {memberActionMember?.profile?.full_name || memberActionMember?.profile?.username || "Member"}
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>
+                Current Role: {memberActionMember?.role === "admin" || memberActionMember?.is_admin ? "👑 Admin" : "Member"}
+              </Text>
+            </View>
+
+            {/* Option 1: Make Admin or Demote */}
+            {memberActionMember?.role !== "admin" && !memberActionMember?.is_admin ? (
+              <Pressable
+                onPress={() => memberActionMember && handleChangeRole(memberActionMember, "admin")}
+                style={[styles.actionSheetRow, { borderBottomColor: colors.border }]}
+              >
+                <View style={[styles.actionSheetIconWrapper, { backgroundColor: "#FEF3C7" }]}>
+                  <MaterialCommunityIcons name="crown-outline" size={20} color="#D97706" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionSheetOptionTitle, { color: colors.text }]}>Make Group Admin</Text>
+                  <Text style={[styles.actionSheetOptionSub, { color: colors.muted }]}>
+                    Can add or remove members and update settings
+                  </Text>
+                </View>
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() => memberActionMember && handleChangeRole(memberActionMember, "member")}
+                style={[styles.actionSheetRow, { borderBottomColor: colors.border }]}
+              >
+                <View style={[styles.actionSheetIconWrapper, { backgroundColor: colors.surface2 }]}>
+                  <MaterialCommunityIcons name="account-arrow-down" size={20} color={colors.text} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionSheetOptionTitle, { color: colors.text }]}>Dismiss as Admin</Text>
+                  <Text style={[styles.actionSheetOptionSub, { color: colors.muted }]}>
+                    Revert this person to a standard member
+                  </Text>
+                </View>
+              </Pressable>
+            )}
+
+            {/* Option 2: Transfer Ownership */}
+            <Pressable
+              onPress={() => memberActionMember && handleTransferOwnership(memberActionMember)}
+              style={[styles.actionSheetRow, { borderBottomColor: colors.border }]}
+            >
+              <View style={[styles.actionSheetIconWrapper, { backgroundColor: "#E0E7FF" }]}>
+                <MaterialCommunityIcons name="swap-horizontal" size={20} color="#4338CA" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.actionSheetOptionTitle, { color: colors.text }]}>Transfer Ownership</Text>
+                <Text style={[styles.actionSheetOptionSub, { color: colors.muted }]}>
+                  Make this user the primary creator & admin
+                </Text>
+              </View>
+            </Pressable>
+
+            {/* Option 3: Remove from Group */}
+            <Pressable
+              onPress={() => memberActionMember && handleRemoveMember(memberActionMember)}
+              style={styles.actionSheetRow}
+            >
+              <View style={[styles.actionSheetIconWrapper, { backgroundColor: "#FEE2E2" }]}>
+                <MaterialCommunityIcons name="account-remove-outline" size={20} color="#DC2626" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.actionSheetOptionTitle, { color: "#DC2626" }]}>Remove from Group</Text>
+                <Text style={[styles.actionSheetOptionSub, { color: colors.muted }]}>
+                  Member will no longer be able to read or send messages
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setMemberActionMember(null)}
+              style={[styles.actionSheetCancelBtn, { backgroundColor: colors.surface2 }]}
+            >
+              <Text style={[styles.actionSheetCancelText, { color: colors.text }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Add Members to Existing Group Modal */}
+      <Modal
+        visible={addMembersModalVisible}
+        animationType="slide"
+        onRequestClose={() => setAddMembersModalVisible(false)}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Add Members</Text>
+            <Pressable onPress={() => setAddMembersModalVisible(false)} hitSlop={12}>
+              <MaterialCommunityIcons name="close" size={24} color={colors.text} />
+            </Pressable>
+          </View>
+
+          {/* Search Contacts Bar */}
+          <View style={[styles.inChatSearch, { backgroundColor: colors.surface2, borderBottomColor: colors.border }]}>
+            <MaterialCommunityIcons name="magnify" size={18} color={colors.muted} />
+            <TextInput
+              placeholder="Search contacts..."
+              placeholderTextColor={colors.muted}
+              value={addMemberSearch}
+              onChangeText={setAddMemberSearch}
+              style={[styles.inChatSearchInput, { color: colors.text }]}
+            />
+            {addMemberSearch ? (
+              <Pressable onPress={() => setAddMemberSearch("")}>
+                <MaterialCommunityIcons name="close-circle" size={16} color={colors.muted} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* Selected Member Chips */}
+          {selectedNewMembers.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={[styles.selectedChipsBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
+              contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}
+            >
+              {selectedNewMembers.map((uid) => {
+                const conn = (connectionsQuery.data?.connections || []).find((c) => c.id === uid);
+                return (
+                  <View key={uid} style={[styles.selectedChip, { backgroundColor: colors.primarySoft }]}>
+                    <Text style={[styles.selectedChipText, { color: colors.primary }]}>
+                      {conn?.full_name || conn?.username || "Contact"}
+                    </Text>
+                    <Pressable
+                      onPress={() => setSelectedNewMembers((prev) => prev.filter((uid2) => uid2 !== uid))}
+                      hitSlop={6}
+                    >
+                      <MaterialCommunityIcons name="close-circle" size={16} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* Contacts List */}
+          <ScrollView style={{ flex: 1 }}>
+            {connectionsQuery.isLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+            ) : availableConnections.length === 0 ? (
+              <View style={styles.emptyMedia}>
+                <MaterialCommunityIcons name="account-search-outline" size={48} color={colors.muted} />
+                <Text style={[styles.emptyMediaText, { color: colors.muted }]}>
+                  {addMemberSearch ? "No matching contacts found" : "All your contacts are already in this group"}
+                </Text>
+              </View>
+            ) : (
+              availableConnections.map((c) => {
+                const isSelected = selectedNewMembers.includes(c.id);
+                return (
+                  <Pressable
+                    key={c.id}
+                    onPress={() => {
+                      triggerHaptic();
+                      setSelectedNewMembers((prev) =>
+                        isSelected ? prev.filter((uid) => uid !== c.id) : [...prev, c.id]
+                      );
+                    }}
+                    style={[
+                      styles.addMemberRow,
+                      { borderBottomColor: colors.border },
+                      isSelected && { backgroundColor: colors.primarySoft + "22" },
+                    ]}
+                  >
+                    <View style={styles.memberAvatarWrapper}>
+                      {c.avatar_url ? (
+                        <Image source={{ uri: c.avatar_url }} style={styles.memberAvatar} />
+                      ) : (
+                        <View style={[styles.memberAvatar, styles.placeholderMemberAvatar, { backgroundColor: colors.primarySoft }]}>
+                          <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14 }}>
+                            {(c.full_name || c.username || "U").charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.memberNameText, { color: colors.text }]} numberOfLines={1}>
+                        {c.full_name || c.username || "SkillBridge Student"}
+                      </Text>
+                      <Text style={[styles.memberHandleText, { color: colors.muted }]} numberOfLines={1}>
+                        {c.headline || `@${c.username || "user"}`}
+                      </Text>
+                    </View>
+
+                    <MaterialCommunityIcons
+                      name={isSelected ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
+                      size={24}
+                      color={isSelected ? colors.primary : colors.muted}
+                    />
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+
+          {/* Submit Button */}
+          <View style={[styles.modalFooter, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+            <Pressable
+              onPress={handleAddMembers}
+              disabled={selectedNewMembers.length === 0 || groupActionLoading}
+              style={[
+                styles.addMembersSubmitBtn,
+                {
+                  backgroundColor:
+                    selectedNewMembers.length === 0 || groupActionLoading ? colors.border : colors.primary,
+                },
+              ]}
+            >
+              {groupActionLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.addMembersSubmitBtnText}>
+                  Add {selectedNewMembers.length > 0 ? `(${selectedNewMembers.length})` : ""} to Group
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Group Name Modal */}
+      <Modal
+        visible={editTitleModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditTitleModalVisible(false)}
+      >
+        <Pressable
+          style={styles.actionSheetOverlay}
+          onPress={() => setEditTitleModalVisible(false)}
+        >
+          <View style={[styles.editTitleModalBox, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.editTitleModalTitle, { color: colors.text }]}>Change Group Name</Text>
+            <TextInput
+              value={newGroupTitle}
+              onChangeText={setNewGroupTitle}
+              placeholder="Enter group name..."
+              placeholderTextColor={colors.muted}
+              style={[styles.editTitleInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface2 }]}
+              autoFocus
+            />
+            <View style={styles.editTitleModalBtns}>
+              <Pressable
+                onPress={() => setEditTitleModalVisible(false)}
+                style={[styles.editTitleBtnAction, { backgroundColor: colors.surface2 }]}
+              >
+                <Text style={{ color: colors.text, fontWeight: "600" }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSaveTitle}
+                disabled={!newGroupTitle.trim() || groupActionLoading}
+                style={[styles.editTitleBtnAction, { backgroundColor: colors.primary }]}
+              >
+                {groupActionLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Save</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -2009,5 +2842,361 @@ const styles = StyleSheet.create({
   fullscreenImage: {
     width: "100%",
     height: "80%",
+  },
+  // Group Chat Elements & Badges
+  systemMsgContainer: {
+    alignItems: "center",
+    marginVertical: 10,
+    paddingHorizontal: 20,
+  },
+  systemMsgPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  systemMsgText: {
+    fontSize: 12,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  groupAvatarCol: {
+    width: 28,
+    marginRight: 6,
+    alignSelf: "flex-end",
+    marginBottom: 2,
+  },
+  groupSenderAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  placeholderGroupAvatar: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  senderHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 2,
+  },
+  senderNameText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  adminMiniBadge: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  adminMiniBadgeText: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: "#D97706",
+  },
+  groupBadgeHeader: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  groupBadgeHeaderText: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  // Group Info Modal
+  groupHeroCard: {
+    alignItems: "center",
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  groupHeroAvatarWrapper: {
+    position: "relative",
+    marginBottom: 12,
+  },
+  groupHeroAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  placeholderGroupHero: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupHeroTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 4,
+  },
+  groupHeroTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  editTitleBtn: {
+    padding: 4,
+  },
+  groupHeroSub: {
+    fontSize: 13,
+    fontWeight: "500",
+    marginBottom: 6,
+  },
+  groupDescText: {
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 4,
+    paddingHorizontal: 20,
+  },
+  groupActionRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 14,
+    marginTop: 18,
+    width: "100%",
+  },
+  groupActionBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    minWidth: 90,
+    gap: 4,
+  },
+  groupActionBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  groupSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 8,
+  },
+  groupSectionHeaderText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  memberListItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  memberAvatarWrapper: {
+    position: "relative",
+  },
+  memberAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  placeholderMemberAvatar: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  memberOnlineDot: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: "#10B981",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  memberInfoCol: {
+    flex: 1,
+    gap: 2,
+  },
+  memberNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  memberNameText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  adminBadgePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  adminBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#D97706",
+  },
+  memberBadgePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  memberBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  memberHandleText: {
+    fontSize: 12,
+  },
+  memberActionTrigger: {
+    padding: 6,
+  },
+  leaveGroupContainer: {
+    padding: 24,
+    alignItems: "center",
+  },
+  leaveGroupBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    width: "100%",
+  },
+  leaveGroupBtnText: {
+    color: "#EF4444",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  // Member Action Sheet
+  actionSheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  actionSheetContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 34,
+  },
+  actionSheetHeader: {
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E2E8F0",
+  },
+  actionSheetTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  actionSheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    gap: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  actionSheetIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionSheetOptionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  actionSheetOptionSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  actionSheetCancelBtn: {
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  actionSheetCancelText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  // Add Members & Edit Title Modals
+  selectedChipsBar: {
+    borderBottomWidth: 1,
+  },
+  selectedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  selectedChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  addMemberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  modalFooter: {
+    padding: 16,
+    borderTopWidth: 1,
+  },
+  addMembersSubmitBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addMembersSubmitBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  editTitleModalBox: {
+    marginHorizontal: 24,
+    marginBottom: "auto",
+    marginTop: "auto",
+    borderRadius: 16,
+    padding: 20,
+    gap: 16,
+  },
+  editTitleModalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  editTitleInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  editTitleModalBtns: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  editTitleBtnAction: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
 });

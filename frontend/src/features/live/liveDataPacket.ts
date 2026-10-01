@@ -23,6 +23,29 @@ export type LiveChatPacket = {
   timestamp: number;
 };
 
+export type LivePollPacket = {
+  version: 1;
+  type: "poll";
+  pollId: string;
+  question: string;
+  options: { id: string; text: string }[];
+  action: "start" | "vote_update" | "close";
+  counts?: Record<string, number>;
+  totalVotes?: number;
+  timestamp: number;
+};
+
+export type LiveQAQueuePacket = {
+  version: 1;
+  type: "qa_queue";
+  questionId: string;
+  title: string;
+  senderId: string;
+  senderName: string;
+  action: "ask" | "answered";
+  timestamp: number;
+};
+
 export type LiveReactionPacket = {
   version: 1;
   type: "reaction";
@@ -32,7 +55,12 @@ export type LiveReactionPacket = {
   timestamp: number;
 };
 
-export type LiveDataPacket = LiveHandRaisePacket | LiveChatPacket | LiveReactionPacket;
+export type LiveDataPacket =
+  | LiveHandRaisePacket
+  | LiveChatPacket
+  | LiveReactionPacket
+  | LivePollPacket
+  | LiveQAQueuePacket;
 
 export function encodeLivePacket(packet: LiveDataPacket): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(packet));
@@ -56,7 +84,11 @@ export function decodeLivePacket(payload: Uint8Array): LiveDataPacket | null {
 
     if (
       parsed?.version === 1 &&
-      (parsed?.type === "chat" || parsed?.type === "reaction" || parsed?.type === "hand_raise")
+      (parsed?.type === "chat" ||
+        parsed?.type === "reaction" ||
+        parsed?.type === "hand_raise" ||
+        parsed?.type === "poll" ||
+        parsed?.type === "qa_queue")
     ) {
       return parsed as LiveDataPacket;
     }

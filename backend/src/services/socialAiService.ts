@@ -10,6 +10,7 @@
 
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
+import { geminiKeyManager } from "./geminiKeyManager.js";
 
 export type SocialAiAction =
   | "improve"
@@ -31,43 +32,20 @@ export async function processSocialAiAssist(
   text: string,
   context?: string,
 ): Promise<SocialAiResponse> {
-  const apiKey = env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    // Graceful offline heuristic fallback
-    return getHeuristicFallback(action, text);
-  }
-
   const prompt = buildPrompt(action, text, context);
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.4,
-          maxOutputTokens: 600,
-        },
-      }),
+    const response = await geminiKeyManager.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 600,
+      },
+      preferredModel: "gemini-flash-latest",
+      timeoutMs: 8000,
     });
 
-    clearTimeout(timer);
-
-    if (!response.ok) {
-      logger.warn({ status: response.status }, "Gemini API returned error for social AI assist");
-      return getHeuristicFallback(action, text);
-    }
-
-    const data = (await response.json()) as any;
-    const rawResult: string =
-      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    const rawResult: string = response.text.trim();
 
     if (!rawResult) {
       return getHeuristicFallback(action, text);

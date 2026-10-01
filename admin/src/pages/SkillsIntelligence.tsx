@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Search, AlertTriangle, Filter, ArrowUpDown } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
@@ -36,7 +36,7 @@ export default function SkillsIntelligence() {
   const [sort, setSort] = useState('ratio_desc');
   const [page, setPage] = useState(1);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -55,11 +55,11 @@ export default function SkillsIntelligence() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, search, category, sort]);
 
   useEffect(() => {
     void loadData();
-  }, [page, category, sort]);
+  }, [loadData]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

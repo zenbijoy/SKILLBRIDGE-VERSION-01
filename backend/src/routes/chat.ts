@@ -51,14 +51,14 @@ export function chat(io: Server) {
       let filteredMembers: any[] = [];
       const resPrimary: any = await (admin
         .from("conversation_members")
-        .select("conversation_id,last_read_at,last_read_message_id,is_pinned,is_archived,muted_until,conversations(id,title,kind,updated_at)")
+        .select("conversation_id,last_read_at,last_read_message_id,is_pinned,is_archived,muted_until,role,conversations(id,title,kind,avatar_url,updated_at)")
         .eq("user_id", req.userId!)
         .order("created_at", { ascending: false }) as any);
 
       if (resPrimary.error && (resPrimary.error.message?.includes("is_pinned") || resPrimary.error.message?.includes("column"))) {
         const fallback: any = await (admin
           .from("conversation_members")
-          .select("conversation_id,last_read_at,last_read_message_id,conversations(id,title,kind,updated_at)")
+          .select("conversation_id,last_read_at,last_read_message_id,role,conversations(id,title,kind,avatar_url,updated_at)")
           .eq("user_id", req.userId!)
           .order("created_at", { ascending: false }) as any);
         if (fallback.error) throw fallback.error;
@@ -164,8 +164,8 @@ export function chat(io: Server) {
         return {
           id: c.id,
           kind: c.kind || "dm",
-          title: isDm ? (peer?.name || "Direct Message") : (c.title || "Conversation"),
-          avatar_url: isDm ? (peer?.avatar_url || null) : null,
+          title: isDm ? (peer?.name || "Direct Message") : (c.title || "Group Chat"),
+          avatar_url: isDm ? (peer?.avatar_url || null) : (c.avatar_url || null),
           peer_id: isDm ? (peer?.id || null) : null,
           is_online: isDm ? Boolean(peer?.is_online) : false,
           unread_count: unreadMap.get(cm.conversation_id) ?? 0,
@@ -173,6 +173,8 @@ export function chat(io: Server) {
           is_archived: Boolean(cm.is_archived),
           is_muted: isMuted,
           muted_until: mutedUntil,
+          my_role: cm.role || "member",
+          is_admin: cm.role === "admin",
           updated_at: c.updated_at,
           last_message: lastMsg ? {
             id: lastMsg.id,
@@ -243,7 +245,7 @@ export function chat(io: Server) {
 
       const { data: conv, error } = await admin
         .from("conversations")
-        .select("id, title, kind, updated_at, created_at, created_by")
+        .select("id, title, kind, avatar_url, description, updated_at, created_at, created_by")
         .eq("id", id)
         .single();
 
@@ -253,13 +255,13 @@ export function chat(io: Server) {
 
       const { data: allMembers } = await admin
         .from("conversation_members")
-        .select("user_id, role, profiles(id, full_name, username, avatar_url, headline)")
+        .select("user_id, role, created_at, profiles(id, full_name, username, avatar_url, headline)")
         .eq("conversation_id", id);
 
       const { userConnections } = await import("../socket.js");
 
       let resolvedTitle = conv.title;
-      let resolvedAvatarUrl: string | null = null;
+      let resolvedAvatarUrl: string | null = conv.avatar_url || null;
       let resolvedPeerId: string | null = null;
       let isOnline = false;
 
@@ -284,9 +286,13 @@ export function chat(io: Server) {
           is_pinned: Boolean((member as any).is_pinned),
           is_archived: Boolean((member as any).is_archived),
           muted_until: (member as any).muted_until,
+          my_role: (member as any).role || "member",
+          is_admin: (member as any).role === "admin" || conv.created_by === userId,
           members: (allMembers || []).map((m: any) => ({
             userId: m.user_id,
-            role: m.role,
+            role: m.role || "member",
+            is_admin: m.role === "admin" || conv.created_by === m.user_id,
+            is_creator: conv.created_by === m.user_id,
             profile: m.profiles,
             is_online: userConnections.has(m.user_id),
           })),
@@ -302,17 +308,26 @@ export function chat(io: Server) {
         .object({
           kind: z.enum(["dm", "group"]).default("dm"),
           participantId: z.string().uuid().optional(),
-          participantIds: z.array(z.string().uuid()).min(1).max(25).optional(),
+          participantIds: z.array(z.string().uuid()).min(1).max(50).optional(),
           title: z.string().trim().max(100).optional(),
+          avatar_url: z.string().url().nullable().optional(),
+          description: z.string().max(500).optional(),
         })
         .parse(req.body);
 
-      // 1. Group DM Creation
+      // 1. Group Chat Creation
       if (parsed.kind === "group" || (parsed.participantIds && parsed.participantIds.length > 1)) {
         const memberIds = Array.from(new Set([...(parsed.participantIds || []), req.userId!]));
+        const groupTitle = parsed.title || "Group Chat";
         const { data: c, error } = await admin
           .from("conversations")
-          .insert({ kind: "group", title: parsed.title || "Group Chat", created_by: req.userId! })
+          .insert({
+            kind: "group",
+            title: groupTitle,
+            avatar_url: parsed.avatar_url || null,
+            description: parsed.description || null,
+            created_by: req.userId!,
+          })
           .select()
           .single();
         if (error) throw error;
@@ -324,6 +339,42 @@ export function chat(io: Server) {
             role: uid === req.userId! ? "admin" : "member",
           }))
         );
+
+        // Fetch creator profile for system message & notifications
+        let creatorName = "Admin";
+        try {
+          const { data: creatorProf } = await admin
+            .from("profiles")
+            .select("full_name, username")
+            .eq("id", req.userId!)
+            .maybeSingle();
+          if (creatorProf) {
+            creatorName = creatorProf.full_name || creatorProf.username || creatorName;
+          }
+        } catch {
+          // ignore
+        }
+
+        // Insert initial system message
+        const sysMsg = `${creatorName} created the group "${groupTitle}"`;
+        await admin.from("messages").insert({
+          conversation_id: c.id,
+          sender_id: req.userId!,
+          body: sysMsg,
+          attachment: { type: "system" },
+        });
+
+        // Notify other members via socket & push notification
+        const otherMemberIds = memberIds.filter((uid) => uid !== req.userId!);
+        for (const uid of otherMemberIds) {
+          io.to(`user:${uid}`).emit("chat:conversation_created", { conversationId: c.id, conversation: c });
+          PushService.sendNotification(uid, {
+            title: groupTitle,
+            body: `${creatorName} added you to the group`,
+            data: { conversationId: c.id, type: "chat" },
+          }).catch(() => {});
+        }
+
         return res.status(201).json(c);
       }
 
@@ -376,6 +427,516 @@ export function chat(io: Server) {
       ]);
       res.status(201).json(c);
     }),
+  );
+
+  // ── GROUP CHAT MANAGEMENT ENDPOINTS ───────────────────────────────────────
+
+  // Add members to an existing group (Admin only)
+  r.post(
+    "/conversations/:id/members",
+    wrap(async (req, res) => {
+      const id = z.string().uuid().parse(req.params.id);
+      const { memberIds } = z.object({
+        memberIds: z.array(z.string().uuid()).min(1).max(50),
+      }).parse(req.body);
+
+      const { data: conv, error: convErr } = await admin
+        .from("conversations")
+        .select("id, title, kind, created_by")
+        .eq("id", id)
+        .single();
+      if (convErr || !conv) return res.status(404).json({ error: "Conversation not found" });
+      if (conv.kind === "dm") return res.status(400).json({ error: "Cannot add members to a direct message" });
+
+      const { data: myMembership } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      const isAdmin = myMembership?.role === "admin" || conv.created_by === req.userId!;
+      if (!isAdmin) {
+        return res.status(403).json({ error: "Only group admins can add new members" });
+      }
+
+      // Check already present members
+      const { data: existingMembers } = await admin
+        .from("conversation_members")
+        .select("user_id")
+        .eq("conversation_id", id);
+      const existingSet = new Set((existingMembers || []).map((m: any) => m.user_id));
+      const newMemberIds = memberIds.filter((uid) => !existingSet.has(uid));
+
+      if (newMemberIds.length === 0) {
+        return res.json({ message: "Selected users are already members of this group", addedCount: 0 });
+      }
+
+      await admin.from("conversation_members").insert(
+        newMemberIds.map((uid) => ({
+          conversation_id: id,
+          user_id: uid,
+          role: "member",
+        }))
+      );
+
+      await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", id);
+
+      // System message & notifications
+      let adminName = "Admin";
+      try {
+        const { data: adminProf } = await admin
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", req.userId!)
+          .maybeSingle();
+        if (adminProf) adminName = adminProf.full_name || adminProf.username || adminName;
+      } catch {
+        // ignore
+      }
+
+      const { data: newProfs } = await admin
+        .from("profiles")
+        .select("id, full_name, username")
+        .in("id", newMemberIds);
+
+      const addedNames = (newProfs || []).map((p: any) => p.full_name || p.username).filter(Boolean);
+      const namesStr = addedNames.length > 0 ? addedNames.join(", ") : `${newMemberIds.length} new member(s)`;
+      const sysMsg = `${adminName} added ${namesStr} to the group`;
+
+      const { data: insertedMsg } = await admin
+        .from("messages")
+        .insert({
+          conversation_id: id,
+          sender_id: req.userId!,
+          body: sysMsg,
+          attachment: { type: "system" },
+        })
+        .select()
+        .single();
+
+      if (insertedMsg) {
+        io.to(`conversation:${id}`).emit("message:new", insertedMsg);
+      }
+      io.to(`conversation:${id}`).emit("conversation:members_updated", { conversationId: id });
+
+      for (const uid of newMemberIds) {
+        io.to(`user:${uid}`).emit("chat:conversation_created", { conversationId: id, conversation: conv });
+        PushService.sendNotification(uid, {
+          title: conv.title || "Group Chat",
+          body: `${adminName} added you to the group`,
+          data: { conversationId: id, type: "chat" },
+        }).catch(() => {});
+      }
+
+      res.status(201).json({ success: true, addedCount: newMemberIds.length });
+    })
+  );
+
+  // Remove member from group or leave group
+  r.delete(
+    "/conversations/:id/members/:userId",
+    wrap(async (req, res) => {
+      const id = z.string().uuid().parse(req.params.id);
+      const targetUserId = z.string().uuid().parse(req.params.userId);
+
+      const { data: conv } = await admin
+        .from("conversations")
+        .select("id, title, kind, created_by")
+        .eq("id", id)
+        .single();
+      if (!conv) return res.status(404).json({ error: "Conversation not found" });
+
+      const isLeavingSelf = req.userId === targetUserId;
+
+      const { data: myMembership } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      const isAdmin = myMembership?.role === "admin" || conv.created_by === req.userId!;
+
+      if (!isLeavingSelf && !isAdmin) {
+        return res.status(403).json({ error: "Only admins can remove members from the group" });
+      }
+
+      if (!isLeavingSelf && conv.created_by === targetUserId) {
+        return res.status(403).json({ error: "Cannot remove the group creator" });
+      }
+
+      const { error: delErr } = await admin
+        .from("conversation_members")
+        .delete()
+        .eq("conversation_id", id)
+        .eq("user_id", targetUserId);
+      if (delErr) throw delErr;
+
+      let actorName = "A member";
+      try {
+        const { data: actorProf } = await admin
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", req.userId!)
+          .maybeSingle();
+        if (actorProf) actorName = actorProf.full_name || actorProf.username || actorName;
+      } catch {
+        // ignore
+      }
+
+      let targetName = "A member";
+      try {
+        const { data: targetProf } = await admin
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", targetUserId)
+          .maybeSingle();
+        if (targetProf) targetName = targetProf.full_name || targetProf.username || targetName;
+      } catch {
+        // ignore
+      }
+
+      const sysMsg = isLeavingSelf
+        ? `${actorName} left the group`
+        : `${actorName} removed ${targetName} from the group`;
+
+      // Auto-promote next admin if sole admin left
+      if (isLeavingSelf && (myMembership?.role === "admin" || conv.created_by === req.userId)) {
+        const { data: remainingMembers } = await admin
+          .from("conversation_members")
+          .select("user_id, role, created_at")
+          .eq("conversation_id", id)
+          .order("created_at", { ascending: true });
+
+        const hasOtherAdmin = (remainingMembers || []).some((m: any) => m.role === "admin");
+        if (!hasOtherAdmin && remainingMembers && remainingMembers.length > 0 && remainingMembers[0]) {
+          const nextAdmin = remainingMembers[0];
+          await admin
+            .from("conversation_members")
+            .update({ role: "admin" })
+            .eq("conversation_id", id)
+            .eq("user_id", nextAdmin.user_id);
+
+          await admin.from("conversations").update({ created_by: nextAdmin.user_id }).eq("id", id);
+
+          const { data: nextAdminProf } = await admin
+            .from("profiles")
+            .select("full_name, username")
+            .eq("id", nextAdmin.user_id)
+            .maybeSingle();
+          const nextName = nextAdminProf?.full_name || nextAdminProf?.username || "A member";
+
+          await admin.from("messages").insert({
+            conversation_id: id,
+            sender_id: nextAdmin.user_id,
+            body: `${nextName} is now the group admin`,
+            attachment: { type: "system" },
+          });
+        }
+      }
+
+      const { data: insertedMsg } = await admin
+        .from("messages")
+        .insert({
+          conversation_id: id,
+          sender_id: req.userId!,
+          body: sysMsg,
+          attachment: { type: "system" },
+        })
+        .select()
+        .single();
+
+      if (insertedMsg) {
+        io.to(`conversation:${id}`).emit("message:new", insertedMsg);
+      }
+
+      io.to(`conversation:${id}`).emit("conversation:members_updated", { conversationId: id });
+      io.to(`user:${targetUserId}`).emit("chat:removed_from_group", { conversationId: id });
+
+      res.json({ success: true });
+    })
+  );
+
+  // Leave group shortcut
+  r.post(
+    "/conversations/:id/leave",
+    wrap(async (req, res) => {
+      const id = z.string().uuid().parse(req.params.id);
+      const targetUserId = req.userId!;
+
+      const { data: conv } = await admin
+        .from("conversations")
+        .select("id, title, kind, created_by")
+        .eq("id", id)
+        .single();
+      if (!conv) return res.status(404).json({ error: "Conversation not found" });
+
+      const { data: myMembership } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", id)
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+      if (!myMembership) return res.status(400).json({ error: "Not a member of this conversation" });
+
+      await admin.from("conversation_members").delete().eq("conversation_id", id).eq("user_id", targetUserId);
+
+      let actorName = "A member";
+      try {
+        const { data: actorProf } = await admin
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", targetUserId)
+          .maybeSingle();
+        if (actorProf) actorName = actorProf.full_name || actorProf.username || actorName;
+      } catch {
+        // ignore
+      }
+
+      const sysMsg = `${actorName} left the group`;
+
+      // Auto-promote next admin if sole admin left
+      if (myMembership.role === "admin" || conv.created_by === targetUserId) {
+        const { data: remainingMembers } = await admin
+          .from("conversation_members")
+          .select("user_id, role, created_at")
+          .eq("conversation_id", id)
+          .order("created_at", { ascending: true });
+
+        const hasOtherAdmin = (remainingMembers || []).some((m: any) => m.role === "admin");
+        if (!hasOtherAdmin && remainingMembers && remainingMembers.length > 0 && remainingMembers[0]) {
+          const nextAdmin = remainingMembers[0];
+          await admin
+            .from("conversation_members")
+            .update({ role: "admin" })
+            .eq("conversation_id", id)
+            .eq("user_id", nextAdmin.user_id);
+
+          await admin.from("conversations").update({ created_by: nextAdmin.user_id }).eq("id", id);
+        }
+      }
+
+      const { data: insertedMsg } = await admin
+        .from("messages")
+        .insert({
+          conversation_id: id,
+          sender_id: targetUserId,
+          body: sysMsg,
+          attachment: { type: "system" },
+        })
+        .select()
+        .single();
+
+      if (insertedMsg) {
+        io.to(`conversation:${id}`).emit("message:new", insertedMsg);
+      }
+
+      io.to(`conversation:${id}`).emit("conversation:members_updated", { conversationId: id });
+      res.json({ success: true });
+    })
+  );
+
+  // Manage member role (Make Admin / Demote / Transfer Ownership)
+  r.patch(
+    "/conversations/:id/members/:userId/role",
+    wrap(async (req, res) => {
+      const id = z.string().uuid().parse(req.params.id);
+      const targetUserId = z.string().uuid().parse(req.params.userId);
+      const { role, isTransfer } = z.object({
+        role: z.enum(["admin", "member"]),
+        isTransfer: z.boolean().optional(),
+      }).parse(req.body);
+
+      const { data: conv } = await admin
+        .from("conversations")
+        .select("id, title, kind, created_by")
+        .eq("id", id)
+        .single();
+      if (!conv) return res.status(404).json({ error: "Conversation not found" });
+      if (conv.kind === "dm") return res.status(400).json({ error: "Cannot set role in a direct message" });
+
+      const { data: myMembership } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      const isAdmin = myMembership?.role === "admin" || conv.created_by === req.userId!;
+      if (!isAdmin) {
+        return res.status(403).json({ error: "Only group admins can manage member roles" });
+      }
+
+      const { data: targetMembership } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", id)
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+
+      if (!targetMembership) {
+        return res.status(404).json({ error: "Target user is not a member of this group" });
+      }
+
+      let actorName = "Admin";
+      try {
+        const { data: actorProf } = await admin
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", req.userId!)
+          .maybeSingle();
+        if (actorProf) actorName = actorProf.full_name || actorProf.username || actorName;
+      } catch {
+        // ignore
+      }
+
+      let targetName = "Member";
+      try {
+        const { data: targetProf } = await admin
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", targetUserId)
+          .maybeSingle();
+        if (targetProf) targetName = targetProf.full_name || targetProf.username || targetName;
+      } catch {
+        // ignore
+      }
+
+      let sysMsg = "";
+
+      if (isTransfer) {
+        await admin.from("conversations").update({ created_by: targetUserId }).eq("id", id);
+        await admin.from("conversation_members").update({ role: "admin" }).eq("conversation_id", id).eq("user_id", targetUserId);
+        sysMsg = `${actorName} transferred group ownership to ${targetName}`;
+      } else if (role === "admin") {
+        await admin.from("conversation_members").update({ role: "admin" }).eq("conversation_id", id).eq("user_id", targetUserId);
+        sysMsg = `${actorName} promoted ${targetName} to Group Admin`;
+
+        PushService.sendNotification(targetUserId, {
+          title: conv.title || "Group Chat",
+          body: `You are now an Admin of ${conv.title || "the group"}`,
+          data: { conversationId: id, type: "chat" },
+        }).catch(() => {});
+      } else {
+        const { data: allAdmins } = await admin
+          .from("conversation_members")
+          .select("user_id")
+          .eq("conversation_id", id)
+          .eq("role", "admin");
+
+        if ((allAdmins || []).length <= 1 && (allAdmins || [])[0]?.user_id === targetUserId) {
+          return res.status(400).json({ error: "Cannot demote the only remaining admin" });
+        }
+
+        await admin.from("conversation_members").update({ role: "member" }).eq("conversation_id", id).eq("user_id", targetUserId);
+        sysMsg = `${actorName} removed Admin privileges from ${targetName}`;
+      }
+
+      const { data: insertedMsg } = await admin
+        .from("messages")
+        .insert({
+          conversation_id: id,
+          sender_id: req.userId!,
+          body: sysMsg,
+          attachment: { type: "system" },
+        })
+        .select()
+        .single();
+
+      if (insertedMsg) {
+        io.to(`conversation:${id}`).emit("message:new", insertedMsg);
+      }
+
+      io.to(`conversation:${id}`).emit("conversation:role_updated", {
+        conversationId: id,
+        userId: targetUserId,
+        role,
+        isTransfer: Boolean(isTransfer),
+      });
+      io.to(`conversation:${id}`).emit("conversation:members_updated", { conversationId: id });
+
+      res.json({ success: true, role });
+    })
+  );
+
+  // Update Group Details (Title, Avatar, Description)
+  r.patch(
+    "/conversations/:id",
+    wrap(async (req, res) => {
+      const id = z.string().uuid().parse(req.params.id);
+      const parsed = z.object({
+        title: z.string().trim().min(1).max(100).optional(),
+        avatar_url: z.string().url().nullable().optional(),
+        description: z.string().max(500).optional(),
+      }).parse(req.body);
+
+      const { data: conv } = await admin
+        .from("conversations")
+        .select("id, title, kind, created_by")
+        .eq("id", id)
+        .single();
+      if (!conv) return res.status(404).json({ error: "Conversation not found" });
+      if (conv.kind === "dm") return res.status(400).json({ error: "Cannot update title of a direct message" });
+
+      const { data: myMembership } = await admin
+        .from("conversation_members")
+        .select("role")
+        .eq("conversation_id", id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      const isAdmin = myMembership?.role === "admin" || conv.created_by === req.userId!;
+      if (!isAdmin) {
+        return res.status(403).json({ error: "Only group admins can update group info" });
+      }
+
+      const updates: any = { updated_at: new Date().toISOString() };
+      if (parsed.title) updates.title = parsed.title;
+      if (parsed.avatar_url !== undefined) updates.avatar_url = parsed.avatar_url;
+      if (parsed.description !== undefined) updates.description = parsed.description;
+
+      const { data: updatedConv, error } = await admin
+        .from("conversations")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      if (parsed.title && parsed.title !== conv.title) {
+        let actorName = "Admin";
+        try {
+          const { data: actorProf } = await admin
+            .from("profiles")
+            .select("full_name, username")
+            .eq("id", req.userId!)
+            .maybeSingle();
+          if (actorProf) actorName = actorProf.full_name || actorProf.username || actorName;
+        } catch {
+          // ignore
+        }
+
+        const sysMsg = `${actorName} renamed the group to "${parsed.title}"`;
+        const { data: insertedMsg } = await admin
+          .from("messages")
+          .insert({
+            conversation_id: id,
+            sender_id: req.userId!,
+            body: sysMsg,
+            attachment: { type: "system" },
+          })
+          .select()
+          .single();
+
+        if (insertedMsg) {
+          io.to(`conversation:${id}`).emit("message:new", insertedMsg);
+        }
+      }
+
+      io.to(`conversation:${id}`).emit("conversation:updated", updatedConv);
+      res.json(updatedConv);
+    })
   );
 
   r.patch(
@@ -706,7 +1267,7 @@ export function chat(io: Server) {
 
       const { data: conv } = await admin
         .from("conversations")
-        .select("kind, conversation_members(user_id, muted_until)")
+        .select("kind, title, conversation_members(user_id, muted_until)")
         .eq("id", id)
         .single();
 
@@ -797,9 +1358,13 @@ export function chat(io: Server) {
           const convSockets = await io.in(`conversation:${id}`).fetchSockets();
           const isViewingChat = convSockets.some((s) => s.data.userId === member.user_id);
 
+          const pushTitle = conv.kind === "group"
+            ? `${conv.title || "Group Chat"} • ${senderName}`
+            : senderName;
+
           if (!isViewingChat) {
             await PushService.sendNotification(member.user_id, {
-              title: senderName,
+              title: pushTitle,
               body: previewText,
               data: { conversationId: id, messageId: data.id, url: `/chat/${id}` },
             });

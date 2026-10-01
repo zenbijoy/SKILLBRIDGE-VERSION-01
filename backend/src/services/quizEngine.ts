@@ -13,6 +13,7 @@
 import { createHmac, randomBytes } from "crypto";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
+import { geminiKeyManager } from "./geminiKeyManager.js";
 
 // ────────────────────────────────────────────────────────────────
 // Types
@@ -121,40 +122,24 @@ function verifySession(session: QuizSession): boolean {
 }
 
 // ────────────────────────────────────────────────────────────────
-// Gemini API call
+// Gemini API call (with multi-key failover pool)
 // ────────────────────────────────────────────────────────────────
 
 async function callGemini(prompt: string): Promise<string> {
-  const apiKey = (env as any).GEMINI_API_KEY as string | undefined;
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+  const result = await geminiKeyManager.generateContent({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.9,
+      maxOutputTokens: 8192,
+      responseMimeType: "application/json",
+    },
+    preferredModel: "gemini-flash-latest",
+  });
 
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.9,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-        },
-      }),
-    }
-  );
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`Gemini API error ${resp.status}: ${body}`);
-  }
-
-  const data = (await resp.json()) as any;
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini returned empty response");
-  return text;
+  if (!result.text) throw new Error("Gemini returned empty response");
+  return result.text;
 }
 
 // ────────────────────────────────────────────────────────────────

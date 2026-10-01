@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Alert, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -36,6 +36,12 @@ type RoomDetailData = {
   liveSession?: Session | null;
   liveParticipantCount?: number;
   unreadCount?: number;
+  preview?: {
+    isPreview: boolean;
+    topPosts: { id: string; title?: string | null; body: string; type: string; likes_count: number; comments_count: number }[];
+    questionsCount: number;
+    nextSession: Session | null;
+  };
 };
 
 export default function RoomDetailScreen() {
@@ -198,10 +204,54 @@ export default function RoomDetailScreen() {
   // Single source of truth for membership: server-authoritative permissions,
   // falling back to the membership row returned with the room payload.
   const isMember = permissions.isMember || Boolean(data.membership);
+  const isPreview = Boolean(data.preview?.isPreview) && !isMember;
+
   const liveParticipantCount = presence.liveParticipantCount;
   const hasLiveSession = presence.isLive;
   const liveSessionId = presence.sessionId;
   const unreadCount = data.unreadCount ?? 0;
+
+  if (isPreview) {
+    return (
+      <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]} edges={["top", "left", "right"]}>
+        <RoomOSHeader
+          room={room}
+          isMember={false}
+          memberRole={null}
+          hasActiveLiveSession={hasLiveSession}
+          liveParticipantsCount={liveParticipantCount}
+          onJoin={() => joinMutation.mutate()}
+          onLeave={() => leaveMutation.mutate()}
+          onOpenMore={() => setActiveTab("more")}
+          onJoinLiveSession={() => router.push(`/live/${room.id}` as any)}
+          onSearch={undefined}
+        />
+        <View style={[s.previewCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[s.previewTitle, { color: colors.text }]}>Vit relevant preview</Text>
+          <Text style={[s.previewSub, { color: colors.muted }]}>
+            Join korle full posts, chat, live class pabe. Ekhon top {data.preview?.topPosts?.length ?? 0} ta
+            popular post + {data.preview?.questionsCount ?? 0} ta Q&A dekhte parcho.
+          </Text>
+          {(data.preview?.topPosts ?? []).map((p) => (
+            <View key={p.id} style={[s.previewPost, { backgroundColor: colors.surface2 }]}>
+              <Text style={[s.previewPostTitle, { color: colors.text }]} numberOfLines={1}>
+                {p.title || p.body}
+              </Text>
+              <Text style={[s.previewPostSub, { color: colors.muted }]}>
+                ♥ {p.likes_count} · 💬 {p.comments_count}
+              </Text>
+            </View>
+          ))}
+          <Pressable
+            onPress={() => joinMutation.mutate()}
+            style={[s.previewJoin, { backgroundColor: colors.primary }]}
+          >
+            <Text style={s.previewJoinTxt}>Join Room — full access pao</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]} edges={["top", "left", "right"]}>
@@ -230,6 +280,7 @@ export default function RoomDetailScreen() {
       <RoomVoiceBanner
         roomId={room.id}
         roomTitle={room.title}
+        memberCount={room.member_count}
         onPress={() => {
           triggerHaptic();
           setVoiceSheetVisible(true);
@@ -383,4 +434,12 @@ const s = StyleSheet.create({
   contentArea: {
     flex: 1,
   },
+  previewCard: { margin: 16, padding: 16, borderRadius: 14, borderWidth: 1, gap: 10 },
+  previewTitle: { fontSize: 16, fontWeight: "800" },
+  previewSub: { fontSize: 13, lineHeight: 19 },
+  previewPost: { padding: 10, borderRadius: 10 },
+  previewPostTitle: { fontSize: 13, fontWeight: "700" },
+  previewPostSub: { fontSize: 11, marginTop: 2 },
+  previewJoin: { padding: 12, borderRadius: 10, alignItems: "center", marginTop: 4 },
+  previewJoinTxt: { color: "#fff", fontWeight: "800", fontSize: 14 },
 });

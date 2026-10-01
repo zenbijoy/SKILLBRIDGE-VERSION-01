@@ -10,6 +10,8 @@ import {
   ScrollView,
   TextInput,
 } from "react-native";
+import { LivePollOverlay } from "./LivePollOverlay";
+import { LiveQAOverlay } from "./LiveQAOverlay";
 import {
   AudioSession,
   LiveKitRoom,
@@ -470,6 +472,35 @@ function Controls({
   );
 }
 
+/**
+ * Poll + Q&A panels that sit under the video stage. They live inside the
+ * LiveKit room so they can publish instant DataChannel nudges, while all real
+ * state is fetched from the room API (survives reconnects).
+ */
+function LiveClassroomPanels({ roomId, canPublish }: { roomId: string; canPublish: boolean }) {
+  const room = useRoomContext();
+
+  const publish = useCallback(
+    async (packet: unknown) => {
+      try {
+        await room.localParticipant.publishData(encodeLivePacket(packet as any) as any, {
+          reliable: false,
+        });
+      } catch {
+        // Best-effort nudge only — the API is the source of truth.
+      }
+    },
+    [room],
+  );
+
+  return (
+    <>
+      <LiveQAOverlay roomId={roomId} publish={publish} />
+      <LivePollOverlay roomId={roomId} isHost={canPublish} publish={publish} />
+    </>
+  );
+}
+
 export default function LiveRoomScreen() {
   // `sessionId` is optional: when supplied (from the room header presence strip)
   // we join that exact session instead of letting the server guess by room.
@@ -561,6 +592,7 @@ export default function LiveRoomScreen() {
         options={{ adaptiveStream: true, dynacast: true }}
       >
         <Stage lowDataMode={lowDataMode} />
+        <LiveClassroomPanels roomId={roomId!} canPublish={creds.canPublish} />
         <Controls
           canPublish={creds.canPublish}
           lowDataMode={lowDataMode}

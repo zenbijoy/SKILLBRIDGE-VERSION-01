@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -9,9 +8,12 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { Profile } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
-import { useActiveRoomSession, type VoiceParticipant } from "./useActiveRoomSession";
+import { useActiveRoomSession } from "./useActiveRoomSession";
 
 type RoomVoiceSheetProps = {
   visible: boolean;
@@ -31,13 +33,20 @@ export function RoomVoiceSheet({
   const { colors } = useTheme();
   const session = useActiveRoomSession();
 
-  // Mock initial participant roster if session participants empty
-  const participants: VoiceParticipant[] = session.participants.length > 0 ? session.participants : [
-    { id: "1", name: "Rahim", isSpeaking: true, isMuted: false, role: "teacher" },
-    { id: "2", name: "Nadia", isSpeaking: false, isMuted: false, role: "moderator" },
-    { id: "3", name: "Tanvir", isSpeaking: false, isMuted: true, role: "member" },
-    { id: "me", name: "You", isSpeaking: false, isMuted: session.isMuted, role: "member" },
-  ];
+  // Real participant roster: room members are the voice lounge roster.
+  // (LiveKit audio-track presence lands here once voice joins LiveKit too —
+  // until then members list is the source of truth, no more mock names.)
+  const membersQuery = useQuery({
+    queryKey: ["room-voice-members", roomId],
+    queryFn: () =>
+      api<{ members: (Profile & { role?: string })[] }>(`/rooms/${roomId}/members`),
+    enabled: visible && Boolean(roomId),
+    staleTime: 15_000,
+    retry: false,
+  });
+  const roster = (membersQuery.data?.members ?? []).slice(0, 24);
+  const hasRealRoster = roster.length > 0;
+  const displayCount = hasRealRoster ? roster.length : session.participants.length;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -64,56 +73,87 @@ export function RoomVoiceSheet({
             </Pressable>
           </Row>
 
-          {/* Participant Avatars Grid */}
+          {/* Participant Avatars Grid — real roster, no mocks */}
+          <Text style={[s.countText, { color: colors.muted }]}>
+            {displayCount} {displayCount === 1 ? "person" : "people"} in voice
+          </Text>
           <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
-            {participants.map((p) => {
-              return (
-                <View key={p.id} style={s.participantItem}>
-                  <View
-                    style={[
-                      s.avatarRing,
-                      {
-                        borderColor: p.isSpeaking ? colors.success : "transparent",
-                        backgroundColor: p.isSpeaking ? colors.success + "18" : "transparent",
-                      },
-                    ]}
-                  >
-                    <View style={[s.avatar, { backgroundColor: colors.primary + "20" }]}>
-                      <Text style={[s.avatarText, { color: colors.primary }]}>{p.name[0]}</Text>
-                    </View>
-
-                    {p.isMuted && (
-                      <View style={[s.mutedBadge, { backgroundColor: colors.danger }]}>
-                        <MaterialCommunityIcons name="microphone-off" size={10} color="#FFFFFF" />
-                      </View>
-                    )}
-                  </View>
-
-                  <Text style={[s.pName, { color: colors.text }]} numberOfLines={1}>
-                    {p.name}
-                  </Text>
-                  <Text style={[s.pRole, { color: colors.muted }]}>
-                    {p.isSpeaking ? "Speaking" : p.isMuted ? "Muted" : p.role || "Member"}
-                  </Text>
-
-                  {isHostOrMod && p.id !== "me" && (
-                    <Pressable
-                      onPress={() => {
-                        triggerHaptic();
-                        Alert.alert("Host Action", `Moderate ${p.name}`, [
-                          { text: "Mute", onPress: () => {} },
-                          { text: "Remove", style: "destructive", onPress: () => {} },
-                          { text: "Cancel", style: "cancel" },
-                        ]);
-                      }}
-                      style={s.modDots}
+            {hasRealRoster ? (
+              roster.map((m) => {
+                const live = session.participants.find((sp) => sp.id === m.id);
+                const speaking = live?.isSpeaking ?? false;
+                const muted = live?.isMuted ?? false;
+                return (
+                  <View key={m.id} style={s.participantItem}>
+                    <View
+                      style={[
+                        s.avatarRing,
+                        {
+                          borderColor: speaking ? colors.success : "transparent",
+                          backgroundColor: speaking ? colors.success + "18" : "transparent",
+                        },
+                      ]}
                     >
-                      <MaterialCommunityIcons name="dots-horizontal" size={14} color={colors.muted} />
-                    </Pressable>
-                  )}
-                </View>
-              );
-            })}
+                      <View style={[s.avatar, { backgroundColor: colors.primary + "20" }]}>
+                        <Text style={[s.avatarText, { color: colors.primary }]}>
+                          {(m.full_name?.[0] ?? m.username?.[0] ?? "?").toUpperCase()}
+                        </Text>
+                      </View>
+                      {muted && (
+                        <View style={[s.mutedBadge, { backgroundColor: colors.danger }]}>
+                          <MaterialCommunityIcons name="microphone-off" size={10} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[s.pName, { color: colors.text }]} numberOfLines={1}>
+                      {m.full_name || `@${m.username}`}
+                    </Text>
+                    <Text style={[s.pRole, { color: colors.muted }]}>
+                      {speaking ? "Speaking" : muted ? "Muted" : (m as any).role || "Member"}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : session.participants.length > 0 ? (
+              session.participants.map((p) => {
+                return (
+                  <View key={p.id} style={s.participantItem}>
+                    <View
+                      style={[
+                        s.avatarRing,
+                        {
+                          borderColor: p.isSpeaking ? colors.success : "transparent",
+                          backgroundColor: p.isSpeaking ? colors.success + "18" : "transparent",
+                        },
+                      ]}
+                    >
+                      <View style={[s.avatar, { backgroundColor: colors.primary + "20" }]}>
+                        <Text style={[s.avatarText, { color: colors.primary }]}>{p.name[0]}</Text>
+                      </View>
+                      {p.isMuted && (
+                        <View style={[s.mutedBadge, { backgroundColor: colors.danger }]}>
+                          <MaterialCommunityIcons name="microphone-off" size={10} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[s.pName, { color: colors.text }]} numberOfLines={1}>
+                      {p.name}
+                    </Text>
+                    <Text style={[s.pRole, { color: colors.muted }]}>
+                      {p.isSpeaking ? "Speaking" : p.isMuted ? "Muted" : p.role || "Member"}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <View style={s.emptyVoice}>
+                <MaterialCommunityIcons name="account-voice" size={36} color={colors.muted} />
+                <Text style={[s.emptyTitle, { color: colors.text }]}>Voice lounge khali</Text>
+                <Text style={[s.emptySub, { color: colors.muted }]}>
+                  Prothom join koro — member-ra ekhane porashona niye kotha bolbe.
+                </Text>
+              </View>
+            )}
           </ScrollView>
 
           {/* Audio Action Controls */}
@@ -280,6 +320,20 @@ const s = StyleSheet.create({
     marginTop: 1,
     textAlign: "center",
   },
+  countText: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  emptyVoice: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 28,
+    gap: 6,
+    width: "100%",
+  },
+  emptyTitle: { fontSize: 14, fontWeight: "800" },
+  emptySub: { fontSize: 12, textAlign: "center", lineHeight: 17 },
   modDots: {
     marginTop: 2,
     padding: 2,

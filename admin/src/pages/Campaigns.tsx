@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Megaphone, Send, Users, Plus, X } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
@@ -37,7 +37,7 @@ export default function Campaigns() {
     void loadCampaigns();
   }, []);
 
-  const handleEstimate = async () => {
+  const handleEstimate = useCallback(async () => {
     setEstimating(true);
     try {
       const res = await api.post('/admin/campaigns/estimate', {
@@ -50,13 +50,13 @@ export default function Campaigns() {
     } finally {
       setEstimating(false);
     }
-  };
+  }, [targetRole, targetCampus]);
 
   useEffect(() => {
     if (modalOpen) {
       void handleEstimate();
     }
-  }, [targetRole, targetCampus, modalOpen]);
+  }, [modalOpen, handleEstimate]);
 
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();

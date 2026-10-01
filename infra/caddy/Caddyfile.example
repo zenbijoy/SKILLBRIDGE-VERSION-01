@@ -1,0 +1,42 @@
+# SkillBridge Caddy Reverse Proxy Configuration
+# Caddy automatically provisions & renews SSL certificates (Let's Encrypt / ZeroSSL)
+#
+# Replace the domain names below with your real domains or DuckDNS subdomains.
+
+# ── Backend API & WebSocket Gateway ───────────────────────────────────────────
+api.yourdomain.com {
+    # WebSocket support for LiveKit signaling & Socket.IO
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade    websocket
+    }
+    reverse_proxy @ws api:4000
+    reverse_proxy api:4000
+
+    # Production Security Headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip zstd
+}
+
+# ── Admin Web Console ─────────────────────────────────────────────────────────
+admin.yourdomain.com {
+    reverse_proxy admin:80
+
+    # Production Security Headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip zstd
+}
