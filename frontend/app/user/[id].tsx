@@ -28,7 +28,7 @@ import {
   Skeleton,
   triggerHaptic,
 } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
 
 type UserProfileData = {

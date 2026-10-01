@@ -16,7 +16,7 @@ import {
 import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { api, qs } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/features/auth/AuthProvider";
 import type { Room, RoomInvite, RoomMode } from "@/types";
 import {
@@ -45,7 +45,7 @@ const AVAILABLE_MODULES = [
 ];
 
 export default function RoomManageScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { user } = useAuth();
   const qc = useQueryClient();
 
