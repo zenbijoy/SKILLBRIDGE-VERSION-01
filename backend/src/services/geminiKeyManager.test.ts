@@ -12,9 +12,10 @@ test("GeminiKeyManager - multi-account pool initialization", async (t) => {
     const status = geminiKeyManager.getKeyPoolStatus();
     for (const item of status) {
       assert.ok(item.masked.includes("..."), "Key should be masked with ellipsis");
-      assert.ok(item.masked.length < item.key.length, "Full key should not be exposed");
+      assert.ok(item.masked.length <= 20, "Full key should not be exposed");
       assert.strictEqual(item.isAvailable, true, "Key should be available initially");
     }
+
 
   });
 
