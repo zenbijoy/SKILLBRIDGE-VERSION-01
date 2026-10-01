@@ -35,7 +35,7 @@ export const ActiveCallBanner: React.FC = () => {
   const handleReturn = () => {
     triggerHaptic();
     setMinimized(false);
-    router.push(`/call/${activeCall.callId}` as any);
+    router.push(`/call/${activeCall.callId}?callId=${activeCall.callId}` as any);
   };
 
   const handleEnd = async () => {

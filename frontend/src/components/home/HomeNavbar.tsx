@@ -19,10 +19,19 @@ export function HomeNavbar() {
   const notifications = useQuery({
     queryKey: ["notifications"],
     queryFn: () => api<{ notifications: NotificationItem[] }>("/notifications"),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+  const unread = notifications.data?.notifications.filter((item) => !item.read_at).length ?? 0;
+
+  const connectionsQuery = useQuery({
+    queryKey: ["connections"],
+    queryFn: () =>
+      api<{ connections: any[]; incoming: any[]; suggested: any[] }>("/connections"),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
-  const unread = notifications.data?.notifications.filter((item) => !item.read_at).length ?? 0;
+  const pendingRequestsCount = connectionsQuery.data?.incoming?.length ?? 0;
 
   const initial = (cachedProfile?.full_name?.trim()?.[0] ?? "U").toUpperCase();
   const avatarUrl = cachedProfile?.avatar_url;
@@ -59,39 +68,31 @@ export function HomeNavbar() {
         )}
       </Pressable>
 
-      {/* Center: Calendar & Routine Hub Button */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t("feed.routineCalendar", "Routine & Calendar")}
-        onPress={() => {
-          triggerHaptic();
-          router.push("/schedule" as any);
-        }}
-        style={({ pressed }) => [
-          s.calendarButton,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            opacity: pressed ? 0.8 : 1,
-          },
-        ]}
-      >
-        <MaterialCommunityIcons name="calendar-clock-outline" size={17} color={colors.primary} />
-        <Text style={[s.calendarButtonText, { color: colors.text }]} numberOfLines={1}>
-          {t("feed.routineCalendar", "Routine & Calendar")}
-        </Text>
-      </Pressable>
-
-      {/* Right: Actions Cluster (Customize Feed, Search, Notifications) */}
-      <View style={s.actionsRow}>
+      {/* Center Left: Calendar Hub Icon Button */}
+      <View style={s.leftActionsRow}>
         <IconButton
-          icon="tune-variant"
-          label="Customize feed"
+          icon="calendar-month-outline"
+          label={t("feed.routineCalendar", "Academic Calendar")}
           onPress={() => {
             triggerHaptic();
-            router.push("/dashboard/customize" as any);
+            router.push("/schedule" as any);
           }}
         />
+
+        {/* Network & Connection Requests Icon Button with real-time pending badge */}
+        <IconButton
+          icon="account-multiple-outline"
+          label="Network & Connection Requests"
+          badge={pendingRequestsCount}
+          onPress={() => {
+            triggerHaptic();
+            router.push("/connections" as any);
+          }}
+        />
+      </View>
+
+      {/* Right: Actions Cluster (Search, Notifications) */}
+      <View style={s.actionsRow}>
         <IconButton
           icon="magnify"
           label={t("search.title")}
@@ -147,18 +148,12 @@ const s = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
   },
-  calendarButton: {
+  leftActionsRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-  },
-  calendarButtonText: {
-    fontSize: 12,
-    fontWeight: "700",
+    flex: 1,
+    marginLeft: 4,
   },
   actionsRow: {
     flexDirection: "row",

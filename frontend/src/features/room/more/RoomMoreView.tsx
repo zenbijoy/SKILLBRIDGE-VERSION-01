@@ -1,18 +1,23 @@
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { api } from "@/lib/api";
+import { useI18n } from "@/i18n";
 import type { Profile, Room } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
+import { radius, useTheme } from "@/theme";
 
 type RoomMoreViewProps = {
   room: Room;
@@ -46,8 +51,86 @@ export function RoomMoreView({
   onOpenSettings,
 }: RoomMoreViewProps) {
   const { colors } = useTheme();
+  const { t } = useI18n();
+  const qc = useQueryClient();
   const [searchMember, setSearchMember] = useState("");
-  const [notificationPref, setNotificationPref] = useState<"all" | "announcements" | "mentions" | "mute">("all");
+
+  // Real mute state, read from the server (conversation_members.muted_until).
+  const conversationId = room.conversation_id ?? null;
+  const muteQuery = useQuery({
+    queryKey: ["room-mute", conversationId],
+    queryFn: () =>
+      api<{ conversation: { muted_until: string | null } }>(`/chat/conversations/${conversationId}`),
+    enabled: Boolean(conversationId),
+    retry: false,
+  });
+  const mutedUntil = muteQuery.data?.conversation?.muted_until ?? null;
+  const isMuted = Boolean(mutedUntil && new Date(mutedUntil).getTime() > Date.now());
+
+  const toggleMute = useMutation({
+    mutationFn: (mute: boolean) =>
+      api<{ conversation_id: string; muted_until: string | null; is_muted: boolean }>(
+        `/chat/conversations/${conversationId}/mute`,
+        {
+          method: "PATCH",
+          // 0 hours unmutes; 8760h (1y) mutes until the user turns it back off.
+          body: JSON.stringify(mute ? { durationHours: 8760 } : { durationHours: 0 }),
+        },
+      ),
+    onSuccess: (data) => {
+      triggerHaptic();
+      qc.setQueryData(["room-mute", conversationId], {
+        conversation: { muted_until: data.muted_until },
+      });
+    },
+    onError: (err: Error) => {
+      Alert.alert("Could not update notifications", err.message);
+    },
+  });
+
+  // Real, persisted room report -> POST /rooms/:id/report
+  const reportMutation = useMutation({
+    mutationFn: (payload: { reason: string; details?: string }) =>
+      api(`/rooms/${room.id}/report`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      triggerHaptic();
+      Alert.alert(
+        t("rooms.reportSent", "Report submitted"),
+        t(
+          "rooms.reportSentDetail",
+          "Thanks for helping keep SkillBridge safe. Our Trust & Safety team will review this room.",
+        ),
+      );
+    },
+    onError: (err: Error) => {
+      Alert.alert(t("rooms.reportFailed", "Could not submit report"), err.message);
+    },
+  });
+
+  const handleReport = () => {
+    const reasons: { label: string; value: string }[] = [
+      { label: "Spam or scam", value: "spam" },
+      { label: "Harassment or hate", value: "harassment" },
+      { label: "Explicit content", value: "nudity" },
+      { label: "Violence or threats", value: "violence" },
+      { label: "Misinformation", value: "misinformation" },
+      { label: "Other", value: "other" },
+    ];
+    Alert.alert(
+      t("rooms.reportRoom", "Report Room"),
+      t("rooms.reportReason", "What is wrong with this room?"),
+      [
+        ...reasons.map((r) => ({
+          text: r.label,
+          onPress: () => reportMutation.mutate({ reason: r.value }),
+        })),
+        { text: t("common.cancel"), style: "cancel" as const },
+      ],
+    );
+  };
 
   const filteredMembers = members.filter((m) =>
     searchMember.trim()
@@ -148,41 +231,45 @@ export function RoomMoreView({
         </View>
       </View>
 
-      {/* 2. NOTIFICATION SETTINGS */}
+      {/* 2. NOTIFICATION SETTINGS — real, persisted mute via conversation_members.muted_until */}
       <View style={s.sectionBlock}>
         <Text style={[s.sectionTitle, { color: colors.muted }]}>ROOM NOTIFICATIONS</Text>
         <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border, padding: 6 }]}>
-          {[
-            { key: "all", label: "All Activity", sub: "Posts, announcements & classroom sessions" },
-            { key: "announcements", label: "Announcements Only", sub: "High-priority teacher alerts only" },
-            { key: "mentions", label: "Direct Mentions", sub: "Only when someone mentions you" },
-            { key: "mute", label: "Mute Room", sub: "Silence all notifications from this room" },
-          ].map((item, idx) => {
-            const isSelected = notificationPref === item.key;
-            return (
-              <Pressable
-                key={item.key}
-                onPress={() => {
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              toggleMute.mutate(!isMuted);
+            }}
+            style={[s.prefRow, { backgroundColor: isMuted ? colors.primarySoft : "transparent" }]}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[s.prefLabel, { color: isMuted ? colors.primary : colors.text }]}>
+                {isMuted ? "Room Muted" : "All Activity"}
+              </Text>
+              <Text style={[s.prefSub, { color: colors.muted }]}>
+                {isMuted
+                  ? "Notifications from this room are silenced"
+                  : "Posts, announcements & classroom sessions"}
+              </Text>
+            </View>
+            {toggleMute.isPending ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Switch
+                value={isMuted}
+                onValueChange={(next) => {
                   triggerHaptic();
-                  setNotificationPref(item.key as any);
+                  toggleMute.mutate(next);
                 }}
-                style={[
-                  s.prefRow,
-                  { backgroundColor: isSelected ? colors.primarySoft : "transparent" },
-                  idx > 0 && { borderTopWidth: 1, borderTopColor: colors.divider },
-                ]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.prefLabel, { color: isSelected ? colors.primary : colors.text }]}>
-                    {item.label}
-                  </Text>
-                  <Text style={[s.prefSub, { color: colors.muted }]}>{item.sub}</Text>
-                </View>
-                {isSelected && <MaterialCommunityIcons name="check" size={18} color={colors.primary} />}
-              </Pressable>
-            );
-          })}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
+            )}
+          </Pressable>
         </View>
+        <Text style={[s.prefSub, { color: colors.muted, marginTop: 6, paddingHorizontal: 2 }]}>
+          {t("rooms.muteScopeNote", "Muting is applied to this room's chat and is saved to your account.")}
+        </Text>
       </View>
 
       {/* 3. MEMBERS DIRECTORY */}
@@ -345,14 +432,19 @@ export function RoomMoreView({
           <Pressable
             onPress={() => {
               triggerHaptic();
-              Alert.alert("Report Room", "Thank you for helping keep SkillBridge safe. Our moderation team will review this room.", [
-                { text: "OK" },
-              ]);
+              handleReport();
             }}
+            disabled={reportMutation.isPending}
             style={[s.actionRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
           >
-            <MaterialCommunityIcons name="flag-outline" size={20} color={colors.muted} />
-            <Text style={[s.actionRowText, { color: colors.text }]}>Report Room to Campus Trust & Safety</Text>
+            {reportMutation.isPending ? (
+              <ActivityIndicator size="small" color={colors.muted} />
+            ) : (
+              <MaterialCommunityIcons name="flag-outline" size={20} color={colors.muted} />
+            )}
+            <Text style={[s.actionRowText, { color: colors.text }]}>
+              {t("rooms.reportCta", "Report Room to Campus Trust & Safety")}
+            </Text>
           </Pressable>
 
           {onLeaveRoom && (

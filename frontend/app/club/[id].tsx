@@ -1,675 +1,810 @@
 import React, { useState } from "react";
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
   View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
   Share,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { api } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
+import { Screen, triggerHaptic } from "@/components/ui";
+import { useTheme } from "@/theme";
+import api from "@/services/api";
 import {
-  Button,
-  Card,
-  Empty,
-  ErrorState,
-  H1,
-  H2,
-  Muted,
-  Pill,
-  Row,
-  Screen,
-  Skeleton,
-  triggerHaptic,
-} from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
-import { ClashDetectorModal } from "@/features/clubs/ClashDetectorModal";
-import { RoomPostsView } from "@/features/room/posts/RoomPostsView";
+  ClubDetail,
+  ClubHero,
+  ClubFeedTab,
+  ClubEventsTab,
+  ClubProjectsTab,
+  ClubMembersTab,
+  ClubRecruitmentTab,
+  ClubResourcesTab,
+  ClubAchievementsTab,
+  ClubAboutTab,
+  ClubAdminModal,
+} from "@/features/clubs";
 import { RoomChatTab } from "@/features/room/RoomChatTab";
-import { RoomMaterialsHub } from "@/features/room/RoomMaterialsHub";
-import { RoomRecordings } from "@/features/room/RoomRecordings";
-import { useSession } from "@/hooks/useSession";
 import type { Room } from "@/types";
 
-type ClubDetail = {
-  id: string;
-  name: string;
-  description: string;
-  university?: string;
-  verified?: boolean;
-  logo_url?: string;
-  category?: string;
-  member_count?: number;
-  room_id?: string;
-  my_role?: string | null;
-  is_member?: boolean;
-  my_membership?: { role: string; user_id: string } | null;
-  events?: {
-    id: string;
-    title: string;
-    description?: string;
-    starts_at: string;
-    location?: string;
-  }[];
-  members?: {
-    id?: string;
-    user_id?: string;
-    role: string;
-    profiles?: {
-      id: string;
-      username: string;
-      full_name: string;
-      avatar_url?: string;
-    };
-  }[];
-};
+type ProfileTab =
+  | "home"
+  | "feed"
+  | "events"
+  | "projects"
+  | "members"
+  | "recruitment"
+  | "resources"
+  | "achievements"
+  | "about"
+  | "chat";
 
-type ClubTab = "posts" | "chat" | "events" | "media" | "more";
-
-export default function ClubDetailScreen() {
+export default function ClubProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { session } = useSession();
-  const qc = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<ClubTab>("posts");
+  const [activeTab, setActiveTab] = useState<ProfileTab>("home");
+  const [showAdminModal, setShowAdminModal] = useState(false);
 
-  // Clash-aware event creation state
-  const [showCreateEvent, setShowCreateEvent] = useState(false);
-  const [eventTitle, setEventTitle] = useState("");
-  const [eventDesc, setEventDesc] = useState("");
-  const [eventLocation, setEventLocation] = useState("");
-  const [eventStartsAt, setEventStartsAt] = useState(() => {
-    const d = new Date(Date.now() + 86400000);
-    d.setHours(14, 0, 0, 0);
-    return d.toISOString();
-  });
-  const [eventEndsAt, setEventEndsAt] = useState(() => {
-    const d = new Date(Date.now() + 86400000);
-    d.setHours(16, 0, 0, 0);
-    return d.toISOString();
-  });
-  const [showClashModal, setShowClashModal] = useState(false);
-
+  // Fetch full club details
   const clubQuery = useQuery({
     queryKey: ["club", id],
     queryFn: async () => {
-      const res = await api<{ club: ClubDetail; events: any[] }>(`/clubs/${id}`);
+      const res = await api.get<{
+        club: ClubDetail;
+        events?: any[];
+        members?: any[];
+        projects?: any[];
+        recruitments?: any[];
+        resources?: any[];
+        achievements?: any[];
+      }>(`/clubs/${id}`);
+
+      const c = res.data?.club;
       return {
-        ...res.club,
-        events: res.events ?? res.club.events ?? [],
+        ...c,
+        events: res.data?.events ?? c?.events ?? [],
+        members: res.data?.members ?? c?.members ?? [],
+        projects: res.data?.projects ?? c?.projects ?? [],
+        recruitments: res.data?.recruitments ?? [],
+        resources: res.data?.resources ?? [],
+        achievements: res.data?.achievements ?? [],
+      } as ClubDetail & {
+        recruitments?: any[];
+        resources?: any[];
+        achievements?: any[];
       };
     },
     enabled: Boolean(id),
   });
 
-  const d = clubQuery.data;
-  const roomId = d?.room_id;
+  // Fetch club posts for feed tab
+  const postsQuery = useQuery({
+    queryKey: ["club-posts", id],
+    queryFn: async () => {
+      const res = await api.get<{ posts: any[] }>(`/clubs/${id}/posts`);
+      return res.data?.posts ?? [];
+    },
+    enabled: Boolean(id),
+  });
 
-  // Linked Room OS Query
+  const club = clubQuery.data;
+  const roomId = club?.room_id;
+
+  // Linked Room OS Query for Chat
   const roomQuery = useQuery({
     queryKey: ["room", roomId],
-    queryFn: () => api<Room>(`/rooms/${roomId}`),
+    queryFn: async () => {
+      const res = await api.get<{ room: Room }>(`/rooms/${roomId}`);
+      return res.data?.room;
+    },
     enabled: Boolean(roomId),
   });
 
   const room = roomQuery.data;
-  const isMember = Boolean(d?.is_member || d?.my_role || d?.my_membership);
-  const isLeader = d?.my_role === "owner" || d?.my_role === "admin" || d?.my_membership?.role === "owner" || d?.my_membership?.role === "admin";
-
-  const joinMutation = useMutation({
-    mutationFn: () =>
-      api<{ joined: boolean }>(`/clubs/${id}/join`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      triggerHaptic();
-      qc.invalidateQueries({ queryKey: ["club", id] });
-      qc.invalidateQueries({ queryKey: ["clubs"] });
-      Alert.alert("Welcome to the Club! 🎉", "You now have access to club posts, channels, and event registrations.");
-    },
-    onError: (err: any) => {
-      Alert.alert("Join Failed", err.message || "Could not join club.");
-    },
-  });
-
-  const leaveMutation = useMutation({
-    mutationFn: () =>
-      api<{ left: boolean }>(`/clubs/${id}/leave`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      triggerHaptic();
-      qc.invalidateQueries({ queryKey: ["club", id] });
-      qc.invalidateQueries({ queryKey: ["clubs"] });
-      Alert.alert("Left Club", "You have left the club.");
-    },
-    onError: (err: any) => {
-      Alert.alert("Leave Failed", err.message || "Could not leave club.");
-    },
-  });
-
-  const createEventMutation = useMutation({
-    mutationFn: (payload: {
-      club_id: string;
-      title: string;
-      description: string;
-      starts_at: string;
-      ends_at?: string;
-      location?: string;
-    }) =>
-      api("/events", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setShowClashModal(false);
-      setShowCreateEvent(false);
-      setEventTitle("");
-      setEventDesc("");
-      setEventLocation("");
-      qc.invalidateQueries({ queryKey: ["club", id] });
-      Alert.alert("Event Scheduled! 🎉", "Your event has been published to the club calendar.");
-    },
-    onError: (err: any) => {
-      Alert.alert("Scheduling Failed", err.message || "Failed to create event.");
-    },
-  });
-
-  const setEventPreset = (daysAhead: number, startHour: number, durationHours: number) => {
-    triggerHaptic();
-    const s = new Date(Date.now() + daysAhead * 86400000);
-    s.setHours(startHour, 0, 0, 0);
-    const e = new Date(s.getTime() + durationHours * 3600000);
-    setEventStartsAt(s.toISOString());
-    setEventEndsAt(e.toISOString());
-  };
-
-  const handleOpenClashReview = () => {
-    if (eventTitle.trim().length < 4) {
-      Alert.alert("Validation", "Event title must be at least 4 characters long.");
-      return;
-    }
-    setShowClashModal(true);
-  };
+  const isMember = Boolean(club?.is_member || club?.my_role);
+  const isLeader =
+    club?.my_role &&
+    [
+      "owner",
+      "admin",
+      "president",
+      "vice_president",
+      "secretary",
+      "executive",
+    ].includes(club.my_role);
 
   const handleShare = () => {
-    if (!d) return;
+    if (!club) return;
     void Share.share({
-      message: `Join ${d.name} on SkillBridge: https://skillbridge.app/club/${d.id}`,
+      message: `Join ${club.name} on SkillBridge: https://skillbridge.app/club/${club.id}`,
     });
   };
+
+  const handleOpenWorkspace = () => {
+    if (club?.room_id) {
+      router.push(`/room/${club.room_id}` as any);
+    }
+  };
+
+  const tabs: Array<{ id: ProfileTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+    { id: "home", label: "Home", icon: "home-outline" },
+    { id: "feed", label: "Feed", icon: "chatbubble-ellipses-outline" },
+    { id: "events", label: "Events", icon: "calendar-outline" },
+    { id: "projects", label: "Projects", icon: "rocket-outline" },
+    { id: "members", label: "Members", icon: "people-outline" },
+    { id: "recruitment", label: "Recruit", icon: "briefcase-outline" },
+    { id: "resources", label: "Library", icon: "folder-outline" },
+    { id: "achievements", label: "Awards", icon: "trophy-outline" },
+    { id: "about", label: "About", icon: "information-circle-outline" },
+    ...(roomId ? [{ id: "chat" as ProfileTab, label: "Live Chat", icon: "chatbubbles-outline" as keyof typeof Ionicons.glyphMap }] : []),
+  ];
 
   if (clubQuery.isLoading) {
     return (
       <Screen>
-        <Skeleton height={140} />
-        <Skeleton height={50} />
-        <Skeleton height={120} />
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading club platform...
+          </Text>
+        </View>
       </Screen>
     );
   }
 
-  if (clubQuery.isError) {
+  if (clubQuery.isError || !club) {
     return (
       <Screen>
-        <ErrorState
-          detail={(clubQuery.error as Error).message}
-          onRetry={() => clubQuery.refetch()}
-        />
-      </Screen>
-    );
-  }
-
-  if (!d) {
-    return (
-      <Screen>
-        <Empty title="Club Not Found" detail="This club may have been disbanded or removed." />
+        <View style={styles.centerBox}>
+          <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+          <Text style={[styles.errorTitle, { color: colors.text }]}>
+            Club Not Found
+          </Text>
+          <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
+            This club may have been disbanded, renamed, or is currently undergoing
+            maintenance.
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => clubQuery.refetch()}
+          >
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       </Screen>
     );
   }
 
   return (
     <Screen>
-      <View style={s.container}>
-        {/* Club Header */}
-        <Row style={s.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={12} style={s.backButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
-          </Pressable>
-          <View style={s.headerInfo}>
-            <Row style={{ alignItems: "center", gap: 6 }}>
-              <H1 style={s.title}>{d.name}</H1>
-              {d.verified && (
-                <MaterialCommunityIcons name="check-decagram" size={20} color={colors.primary} />
-              )}
-            </Row>
-            <Muted>{d.university || "Campus Wide"} · {d.category || "Student Club"}</Muted>
-          </View>
-          <Pressable onPress={handleShare} hitSlop={12} style={s.iconActionBtn}>
-            <MaterialCommunityIcons name="share-variant-outline" size={20} color={colors.text} />
-          </Pressable>
-        </Row>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {/* Profile Hero Header */}
+        <ClubHero
+          club={club}
+          onJoinToggle={async () => {
+            try {
+              if (club.is_member) {
+                await api.post(`/clubs/${club.id}/leave`);
+              } else {
+                await api.post(`/clubs/${club.id}/join`);
+              }
+              clubQuery.refetch();
+            } catch {}
+          }}
+          onFollowToggle={async () => {
+            try {
+              await api.post(`/clubs/${club.id}/follow`);
+              clubQuery.refetch();
+            } catch {}
+          }}
+          onOpenAdminModal={() => setShowAdminModal(true)}
+        />
 
-        {/* Badges & Membership Action Bar */}
-        <Row style={s.badgeRow}>
-          <Row style={{ gap: 6, alignItems: "center" }}>
-            <Pill tone="primary">{d.member_count ?? d.members?.length ?? 1} members</Pill>
-            {isLeader && <Pill tone="accent">{d.my_role ? d.my_role.toUpperCase() : "LEADER"}</Pill>}
-          </Row>
-          <View>
-            {!isMember ? (
-              <Button
-                title={joinMutation.isPending ? "Joining..." : "Join Club"}
-                onPress={() => joinMutation.mutate()}
-                disabled={joinMutation.isPending}
-              />
-            ) : (
-              <Button
-                title="Joined ✓"
-                variant="secondary"
-                onPress={() => {
-                  Alert.alert(
-                    "Club Membership",
-                    "You are currently a member of this club.",
-                    [
-                      { text: "Stay" },
-                      { text: "Leave Club", style: "destructive", onPress: () => leaveMutation.mutate() },
-                    ]
-                  );
-                }}
-              />
-            )}
-          </View>
-        </Row>
-
-        {/* 5-Tab Bar Reusing Room OS Primitives */}
-        <View style={[s.tabBar, { borderBottomColor: colors.border }]}>
-          {(["posts", "chat", "events", "media", "more"] as ClubTab[]).map((tab) => {
-            const isActive = activeTab === tab;
-            const labels: Record<ClubTab, { label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = {
-              posts: { label: "Posts", icon: "newspaper-variant-outline" },
-              chat: { label: "Chat", icon: "chat-outline" },
-              events: { label: "Events", icon: "calendar-star" },
-              media: { label: "Media", icon: "folder-multiple-outline" },
-              more: { label: "Team", icon: "account-group-outline" },
-            };
-            const meta = labels[tab];
-            return (
-              <Pressable
-                key={tab}
-                onPress={() => {
-                  triggerHaptic();
-                  setActiveTab(tab);
-                }}
-                style={[s.tabItem, isActive && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
-              >
-                <MaterialCommunityIcons
-                  name={meta.icon}
-                  size={18}
-                  color={isActive ? colors.primary : colors.muted}
-                />
-                <Text
+        {/* Horizontal Segmented Tab Bar */}
+        <View style={[styles.tabBarWrap, { borderBottomColor: colors.border }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabScroll}
+          >
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
                   style={[
-                    s.tabLabel,
-                    { color: isActive ? colors.primary : colors.muted, fontWeight: isActive ? "700" : "500" },
+                    styles.tabItem,
+                    isActive && {
+                      borderBottomColor: colors.primary,
+                      borderBottomWidth: 2,
+                    },
                   ]}
+                  onPress={() => {
+                    triggerHaptic();
+                    setActiveTab(tab.id);
+                  }}
                 >
-                  {meta.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  <Ionicons
+                    name={tab.icon}
+                    size={16}
+                    color={isActive ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.tabLabel,
+                      {
+                        color: isActive ? colors.primary : colors.textSecondary,
+                        fontWeight: isActive ? "700" : "500",
+                      },
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
-        {/* TAB 1: POSTS */}
-        {activeTab === "posts" && (
-          <View style={{ flex: 1 }}>
-            {room ? (
-              <RoomPostsView
-                room={room}
-                currentUserId={session?.user?.id}
-                canPost={isMember}
-                canAnnounce={isLeader}
-                canPin={isLeader}
-                canModerate={isLeader}
-              />
-            ) : (
-              <Card style={{ padding: 20, alignItems: "center", gap: 10 }}>
-                <MaterialCommunityIcons name="newspaper-variant-outline" size={36} color={colors.primary} />
-                <H2 style={{ textAlign: "center" }}>Club Discussions & Posts</H2>
-                <Muted style={{ textAlign: "center" }}>
-                  Official announcements, recruitment updates, and discussions will appear here.
-                </Muted>
-              </Card>
-            )}
-          </View>
-        )}
-
-        {/* TAB 2: CHAT */}
-        {activeTab === "chat" && (
-          <View style={{ flex: 1, minHeight: 400 }}>
-            {room ? (
-              <RoomChatTab
-                conversationId={room.conversation_id}
-                isMember={isMember}
-              />
-            ) : (
-              <Empty
-                title="Club Chat"
-                detail="Join this club to access general discussion and committee channels."
-              />
-            )}
-          </View>
-        )}
-
-        {/* TAB 3: EVENTS */}
-        {activeTab === "events" && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 12, paddingBottom: 30 }}>
-            <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <H2 style={s.sectionTitle}>Club Events ({d.events?.length ?? 0})</H2>
-              {isLeader && !showCreateEvent && (
-                <Button
-                  title="+ Schedule Event"
-                  variant="secondary"
-                  onPress={() => setShowCreateEvent(true)}
-                />
-              )}
-            </Row>
-
-            {/* Schedule Event Form with Clash Detection */}
-            {isLeader && showCreateEvent && (
-              <Card tone="glow" style={{ padding: 14 }}>
-                <H2 style={{ fontSize: 16, fontWeight: "700", marginBottom: 4 }}>Schedule Club Event</H2>
-                <Muted style={{ marginBottom: 10 }}>
-                  Includes 4-signal automatic cross-club clash detection before publishing.
-                </Muted>
-
-                <Text style={[s.label, { color: colors.text }]}>Event Title</Text>
-                <TextInput
-                  style={[s.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                  placeholder="e.g., Annual Tech Hackathon Kickoff"
-                  placeholderTextColor={colors.muted}
-                  value={eventTitle}
-                  onChangeText={setEventTitle}
-                />
-
-                <Text style={[s.label, { color: colors.text, marginTop: 8 }]}>Description</Text>
-                <TextInput
-                  style={[s.input, { height: 60, color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                  placeholder="Event agenda, keynote speaker details..."
-                  placeholderTextColor={colors.muted}
-                  value={eventDesc}
-                  onChangeText={setEventDesc}
-                  multiline
-                />
-
-                <Text style={[s.label, { color: colors.text, marginTop: 8 }]}>Location</Text>
-                <TextInput
-                  style={[s.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                  placeholder="Auditorium 2 or Online"
-                  placeholderTextColor={colors.muted}
-                  value={eventLocation}
-                  onChangeText={setEventLocation}
-                />
-
-                {/* Quick Presets */}
-                <Text style={[s.label, { color: colors.muted, marginTop: 10, fontSize: 11 }]}>PRESET TIME SLOTS</Text>
-                <Row style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-                  <Pressable onPress={() => setEventPreset(1, 14, 2)} style={[s.presetBtn, { borderColor: colors.border }]}>
-                    <Text style={{ fontSize: 11, color: colors.text }}>Tomorrow 2:00 PM</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setEventPreset(2, 10, 3)} style={[s.presetBtn, { borderColor: colors.border }]}>
-                    <Text style={{ fontSize: 11, color: colors.text }}>In 2 Days 10:00 AM</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setEventPreset(7, 15, 2)} style={[s.presetBtn, { borderColor: colors.border }]}>
-                    <Text style={{ fontSize: 11, color: colors.text }}>Next Week 3:00 PM</Text>
-                  </Pressable>
-                </Row>
-
-                <Row style={{ gap: 10, marginTop: 14 }}>
-                  <View style={{ flex: 1 }}>
-                    <Button title="Cancel" variant="ghost" onPress={() => setShowCreateEvent(false)} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Button
-                      title="Check Clash & Publish"
-                      onPress={handleOpenClashReview}
-                    />
-                  </View>
-                </Row>
-              </Card>
-            )}
-
-            {/* Events Listing */}
-            {(d.events?.length ?? 0) === 0 ? (
-              <Empty
-                title="No Upcoming Events"
-                detail="There are no scheduled workshops or seminars at the moment."
-              />
-            ) : (
-              (d.events ?? []).map((e) => (
-                <Pressable
-                  key={e.id}
-                  onPress={() => router.push(`/event/${e.id}` as any)}
+        {/* Tab Content Display */}
+        <View style={{ flex: 1 }}>
+          {/* TAB 1: HOME / OVERVIEW */}
+          {activeTab === "home" && (
+            <ScrollView
+              contentContainerStyle={styles.homeOverviewContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Latest Announcement Card */}
+              {club.latest_announcement ? (
+                <View
+                  style={[
+                    styles.announcementCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
                 >
-                  <Card style={s.eventCard}>
-                    <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.eventTitle, { color: colors.text }]}>{e.title}</Text>
-                        {e.description ? (
-                          <Muted numberOfLines={2} style={{ marginTop: 2 }}>{e.description}</Muted>
-                        ) : null}
-                        <Row style={{ gap: 12, marginTop: 8, alignItems: "center" }}>
-                          <Row style={{ gap: 4, alignItems: "center" }}>
-                            <MaterialCommunityIcons name="calendar" size={14} color={colors.primary} />
-                            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "600" }}>
-                              {new Date(e.starts_at).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                            </Text>
-                          </Row>
-                          <Row style={{ gap: 4, alignItems: "center" }}>
-                            <MaterialCommunityIcons name="map-marker-outline" size={14} color={colors.muted} />
-                            <Text style={{ fontSize: 12, color: colors.muted }}>{e.location || "Online"}</Text>
-                          </Row>
-                        </Row>
-                      </View>
-                      <MaterialCommunityIcons name="chevron-right" size={20} color={colors.muted} />
-                    </Row>
-                  </Card>
-                </Pressable>
-              ))
-            )}
-          </ScrollView>
-        )}
-
-        {/* TAB 4: MEDIA */}
-        {activeTab === "media" && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 14, paddingBottom: 30 }}>
-            {roomId ? (
-              <>
-                <RoomMaterialsHub roomId={roomId} isMember={isMember} />
-                <RoomRecordings roomId={roomId} isModerator={isLeader} />
-              </>
-            ) : (
-              <Empty title="Media Hub" detail="Join this club to access slides, handouts, and meeting recordings." />
-            )}
-          </ScrollView>
-        )}
-
-        {/* TAB 5: TEAM / MORE */}
-        {activeTab === "more" && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 14, paddingBottom: 30 }}>
-            {/* About */}
-            <Card style={s.card}>
-              <H2 style={s.sectionTitle}>About Society</H2>
-              <Text style={[s.descText, { color: colors.text }]}>
-                {d.description || "No description provided."}
-              </Text>
-            </Card>
-
-            {/* Leadership Committee */}
-            <Card style={s.card}>
-              <H2 style={s.sectionTitle}>Executive Committee & Leadership</H2>
-              {(d.members ?? []).length === 0 ? (
-                <Muted>Leadership roster not yet published.</Muted>
-              ) : (
-                (d.members ?? []).map((m, idx) => {
-                  const p = m.profiles;
-                  return (
-                    <Pressable
-                      key={m.user_id || m.id || idx}
-                      onPress={() => {
-                        if (p?.id) router.push(`/user/${p.id}` as any);
-                      }}
-                      style={[s.memberRow, { borderBottomColor: colors.border }]}
+                  <View style={styles.announcementHeader}>
+                    <View style={styles.announcementBadge}>
+                      <Ionicons name="megaphone" size={14} color="#f59e0b" />
+                      <Text style={styles.announcementBadgeText}>
+                        PINNED ANNOUNCEMENT
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.announcementDate,
+                        { color: colors.textSecondary },
+                      ]}
                     >
-                      <View style={[s.memberAvatar, { backgroundColor: colors.primarySoft }]}>
-                        <MaterialCommunityIcons name="account" size={18} color={colors.primary} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.memberName, { color: colors.text }]}>{p?.full_name || "Club Leader"}</Text>
-                        <Muted style={{ fontSize: 12 }}>@{p?.username || "leader"}</Muted>
-                      </View>
-                      <Pill tone={m.role === "owner" ? "accent" : "primary"}>
-                        {m.role === "owner" ? "President" : m.role === "admin" ? "Secretary" : "Member"}
-                      </Pill>
-                    </Pressable>
-                  );
-                })
+                      {new Date(
+                        club.latest_announcement.created_at
+                      ).toLocaleDateString()}
+                    </Text>
+                  </View>
+
+                  {club.latest_announcement.title && (
+                    <Text
+                      style={[styles.announcementTitle, { color: colors.text }]}
+                    >
+                      {club.latest_announcement.title}
+                    </Text>
+                  )}
+
+                  <Text
+                    style={[
+                      styles.announcementBody,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {club.latest_announcement.content}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Next Event Spotlight */}
+              {club.next_event ? (
+                <View
+                  style={[
+                    styles.spotlightCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.spotlightHeader}>
+                    <Ionicons name="calendar" size={18} color="#3b82f6" />
+                    <Text style={[styles.spotlightTitle, { color: colors.text }]}>
+                      Next Upcoming Event
+                    </Text>
+                  </View>
+                  <Text style={[styles.eventSpotTitle, { color: colors.text }]}>
+                    {club.next_event.title}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.eventSpotDate,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Starts: {new Date(club.next_event.starts_at).toLocaleString()}
+                  </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.eventSpotBtn,
+                      { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() => setActiveTab("events")}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color="#fff" />
+                    <Text style={styles.eventSpotBtnText}>
+                      View Event & Register
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {/* About Summary Snippet */}
+              <View
+                style={[
+                  styles.aboutSnippetCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                  About the Community
+                </Text>
+                <Text
+                  style={[styles.aboutText, { color: colors.textSecondary }]}
+                  numberOfLines={4}
+                >
+                  {club.description ||
+                    "This university student club brings together students to collaborate, build projects, and compete."}
+                </Text>
+                <TouchableOpacity
+                  style={styles.readMoreBtn}
+                  onPress={() => setActiveTab("about")}
+                >
+                  <Text style={[styles.readMoreText, { color: colors.primary }]}>
+                    Read Mission, Vision & Contacts →
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Quick Navigation Cards */}
+              <View style={styles.quickNavRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.quickNavCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  onPress={() => setActiveTab("feed")}
+                >
+                  <Ionicons
+                    name="chatbubbles"
+                    size={24}
+                    color={colors.primary}
+                  />
+                  <Text
+                    style={[styles.quickNavTitle, { color: colors.text }]}
+                  >
+                    Community Feed
+                  </Text>
+                  <Text
+                    style={[
+                      styles.quickNavSub,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Join discussions & Q&As
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.quickNavCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  onPress={() => setActiveTab("recruitment")}
+                >
+                  <Ionicons
+                    name="briefcase"
+                    size={24}
+                    color="#10b981"
+                  />
+                  <Text
+                    style={[styles.quickNavTitle, { color: colors.text }]}
+                  >
+                    Recruitment
+                  </Text>
+                  <Text
+                    style={[
+                      styles.quickNavSub,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Apply for open roles
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Room OS Workspace Banner */}
+              {club.room_id && (
+                <TouchableOpacity
+                  style={[
+                    styles.roomOsBanner,
+                    {
+                      backgroundColor: "rgba(59, 130, 246, 0.12)",
+                      borderColor: "rgba(59, 130, 246, 0.3)",
+                    },
+                  ]}
+                  onPress={handleOpenWorkspace}
+                >
+                  <View style={styles.roomOsLeft}>
+                    <Ionicons
+                      name="cube-outline"
+                      size={28}
+                      color={colors.primary}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.roomOsTitle, { color: colors.text }]}
+                      >
+                        Room OS Collaborative Workspace
+                      </Text>
+                      <Text
+                        style={[
+                          styles.roomOsSub,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        Whiteboards, live meetings, tasks, and file repository
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={20}
+                    color={colors.primary}
+                  />
+                </TouchableOpacity>
               )}
-            </Card>
-          </ScrollView>
+            </ScrollView>
+          )}
+
+          {/* TAB 2: COMMUNITY FEED */}
+          {activeTab === "feed" && (
+            <ClubFeedTab
+              clubId={club.id}
+              isMember={isMember}
+              isLeader={!!isLeader}
+              posts={postsQuery.data ?? []}
+              onRefresh={() => postsQuery.refetch()}
+            />
+          )}
+
+          {/* TAB 3: EVENTS */}
+          {activeTab === "events" && (
+            <ClubEventsTab
+              clubId={club.id}
+              myRole={club.my_role}
+              events={club.events || []}
+              isLoading={clubQuery.isRefetching}
+              onRefresh={() => clubQuery.refetch()}
+            />
+          )}
+
+          {/* TAB 4: PROJECTS */}
+          {activeTab === "projects" && (
+            <ClubProjectsTab
+              clubId={club.id}
+              myRole={club.my_role}
+              projects={club.projects || []}
+              isLoading={clubQuery.isRefetching}
+              onRefresh={() => clubQuery.refetch()}
+            />
+          )}
+
+          {/* TAB 5: MEMBERS */}
+          {activeTab === "members" && (
+            <ClubMembersTab
+              clubId={club.id}
+              myRole={club.my_role}
+              members={club.members || []}
+              isLoading={clubQuery.isRefetching}
+              onRefresh={() => clubQuery.refetch()}
+            />
+          )}
+
+          {/* TAB 6: RECRUITMENT */}
+          {activeTab === "recruitment" && (
+            <ClubRecruitmentTab
+              clubId={club.id}
+              myRole={club.my_role}
+              recruitments={club.recruitments || []}
+              isLoading={clubQuery.isRefetching}
+              onRefresh={() => clubQuery.refetch()}
+              onOpenAdminKanban={
+                isLeader ? () => setShowAdminModal(true) : undefined
+              }
+            />
+          )}
+
+          {/* TAB 7: RESOURCES */}
+          {activeTab === "resources" && (
+            <ClubResourcesTab
+              clubId={club.id}
+              myRole={club.my_role}
+              resources={club.resources || []}
+              isLoading={clubQuery.isRefetching}
+              onRefresh={() => clubQuery.refetch()}
+            />
+          )}
+
+          {/* TAB 8: ACHIEVEMENTS */}
+          {activeTab === "achievements" && (
+            <ClubAchievementsTab
+              clubId={club.id}
+              myRole={club.my_role}
+              achievements={club.achievements || []}
+              isLoading={clubQuery.isRefetching}
+              onRefresh={() => clubQuery.refetch()}
+            />
+          )}
+
+          {/* TAB 9: ABOUT */}
+          {activeTab === "about" && <ClubAboutTab club={club} />}
+
+          {/* TAB 10: ROOM OS LIVE CHAT */}
+          {activeTab === "chat" && (
+            <View style={{ flex: 1, minHeight: 400 }}>
+              {room ? (
+                <RoomChatTab
+                  conversationId={room.conversation_id}
+                  isMember={isMember}
+                />
+              ) : (
+                <View style={styles.centerBox}>
+                  <Ionicons
+                    name="chatbubbles-outline"
+                    size={48}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+                    Club chat channel is connecting...
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Club Leader Admin Dashboard Modal */}
+        {isLeader && (
+          <ClubAdminModal
+            visible={showAdminModal}
+            club={club}
+            onClose={() => setShowAdminModal(false)}
+            onRefreshClub={() => clubQuery.refetch()}
+          />
         )}
       </View>
-
-      {/* Clash Detector Modal */}
-      {showClashModal && (
-        <ClashDetectorModal
-          visible={showClashModal}
-          clubId={id!}
-          startsAt={eventStartsAt}
-          endsAt={eventEndsAt}
-          onClose={() => setShowClashModal(false)}
-          onProceedAnyway={() => {
-            createEventMutation.mutate({
-              club_id: id!,
-              title: eventTitle.trim(),
-              description: eventDesc.trim(),
-              starts_at: eventStartsAt,
-              ends_at: eventEndsAt,
-              location: eventLocation.trim() || undefined,
-            });
-          }}
-        />
-      )}
     </Screen>
   );
 }
 
-const s = StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 16,
   },
-  headerRow: {
-    alignItems: "center",
-    marginBottom: 8,
-    gap: 10,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerInfo: {
+  centerBox: {
     flex: 1,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  iconActionBtn: {
-    padding: 6,
-  },
-  badgeRow: {
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  tabBar: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    marginBottom: 12,
-  },
-  tabItem: {
-    flex: 1,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 5,
+    padding: 24,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  errorSub: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  retryBtn: {
+    paddingHorizontal: 20,
     paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 8,
+  },
+  retryBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  tabBarWrap: {
+    borderBottomWidth: 1,
+    paddingVertical: 4,
+  },
+  tabScroll: {
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  tabItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
   tabLabel: {
     fontSize: 13,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+  homeOverviewContent: {
+    padding: 16,
+    paddingBottom: 60,
+    gap: 14,
   },
-  card: {
-    padding: 14,
-    borderRadius: radius.lg,
-  },
-  descText: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  input: {
-    borderRadius: radius.md,
+  announcementCard: {
+    borderRadius: 16,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#f59e0b",
   },
-  presetBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.pill,
-    borderWidth: 1,
+  announcementHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
   },
-  eventCard: {
-    padding: 12,
-    borderRadius: radius.md,
-  },
-  eventTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  memberRow: {
+  announcementBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 0.5,
-    gap: 10,
+    gap: 6,
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  memberAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  announcementBadgeText: {
+    color: "#f59e0b",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  announcementDate: {
+    fontSize: 11,
+  },
+  announcementTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  announcementBody: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  spotlightCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  spotlightHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  spotlightTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  eventSpotTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  eventSpotDate: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  eventSpotBtn: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  memberName: {
-    fontSize: 14,
+  eventSpotBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  aboutSnippetCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  aboutText: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  readMoreBtn: {
+    marginTop: 8,
+  },
+  readMoreText: {
+    fontSize: 13,
     fontWeight: "600",
+  },
+  quickNavRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  quickNavCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 6,
+  },
+  quickNavTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  quickNavSub: {
+    fontSize: 11,
+  },
+  roomOsBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  roomOsLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  roomOsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  roomOsSub: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });

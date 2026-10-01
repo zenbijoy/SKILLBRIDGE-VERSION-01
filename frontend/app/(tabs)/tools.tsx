@@ -7,9 +7,11 @@ import React, {
   useState,
 } from "react";
 import {
+  Alert,
   FlatList,
   type LayoutChangeEvent,
   type ListRenderItemInfo,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -32,15 +34,16 @@ import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
-import { Muted, Screen, triggerHaptic } from "@/components/ui";
+import { Screen, triggerHaptic } from "@/components/ui";
 import { radius, spacing, useTheme, type AppPalette } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useOptionalAutoHideNavigation } from "@/navigation/AutoHideNavigationContext";
 
 // ---------------------------------------------------------------------------
-// Catalog model (data preserved verbatim from the original Tools screen)
+// Catalog model
 // ---------------------------------------------------------------------------
 
 type ToolBadge = "new" | "soon";
@@ -48,8 +51,10 @@ type ToolBadge = "new" | "soon";
 type ToolDef = {
   key: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  titleKey: string;
-  subtitleKey: string;
+  titleKey?: string;
+  title: string;
+  subtitleKey?: string;
+  subtitle: string;
   route: string;
   /** Theme token used for the icon tint. */
   colorKey?: keyof AppPalette;
@@ -60,6 +65,7 @@ type ToolDef = {
 
 type ToolCategoryDef = {
   key: string;
+  title: string;
   titleKey: string;
   tintKey: keyof AppPalette;
   tools: ToolDef[];
@@ -83,124 +89,259 @@ function badgePalette(badge: ToolBadge, colors: AppPalette): { bg: string; fg: s
 }
 
 // ---------------------------------------------------------------------------
-// Tool catalog — titles, subtitles, icons, routes and tints are the exact
-// values used by the previous implementation (i18n keys unchanged).
+// Comprehensive Tool Catalog — All student tools with concise, lightweight text
 // ---------------------------------------------------------------------------
 
 const TOOL_CATALOG: ToolCategoryDef[] = [
   {
+    key: "command-centers",
+    title: "Space & Control Hubs",
+    titleKey: "tools.spaceControlHubs",
+    tintKey: "primary",
+    tools: [
+      {
+        key: "club-manage",
+        icon: "shield-crown",
+        title: "Club Command",
+        titleKey: "tools.clubManageTitle",
+        subtitle: "Joined, created & member invites",
+        subtitleKey: "tools.clubManageSubtitle",
+        route: "/club/manage",
+        color: "#F59E0B",
+        badge: "new",
+      },
+      {
+        key: "room-manage",
+        icon: "door-open",
+        title: "Room Controls",
+        titleKey: "tools.roomManageTitle",
+        subtitle: "Hosted & joined room settings",
+        subtitleKey: "tools.roomManageSubtitle",
+        route: "/room/manage",
+        color: "#6366F1",
+        badge: "new",
+      },
+      {
+        key: "my-posts",
+        icon: "post-outline",
+        title: "My Posts Hub",
+        titleKey: "tools.myPostsTitle",
+        subtitle: "Previous posts, edit & re-upload",
+        subtitleKey: "tools.myPostsSubtitle",
+        route: "/posts",
+        color: "#10B981",
+        badge: "new",
+      },
+      {
+        key: "student-clubs",
+        icon: "account-group-outline",
+        title: "Club Directory",
+        subtitle: "Browse all campus societies",
+        route: "/clubs",
+        colorKey: "warning",
+      },
+    ],
+  },
+  {
     key: "academic",
+    title: "Academic & Learning",
     titleKey: "tools.academicEngines",
     tintKey: "primary",
     tools: [
       {
         key: "ask-help",
         icon: "help-circle-outline",
-        titleKey: "tools.askHelpTitle",
-        subtitleKey: "tools.askHelpSubtitle",
+        title: "Ask Help",
+        subtitle: "Peer Q&A & answers",
         route: "/help/questions",
         colorKey: "primary",
       },
       {
         key: "research-hub",
         icon: "flask-outline",
-        titleKey: "tools.researchHubTitle",
-        subtitleKey: "tools.researchHubSubtitle",
+        title: "Research Hub",
+        subtitle: "Faculty labs & papers",
         route: "/research",
         colorKey: "info",
       },
       {
         key: "skill-quizzes",
         icon: "brain",
-        titleKey: "tools.skillQuizzesTitle",
-        subtitleKey: "tools.skillQuizzesSubtitle",
+        title: "Skill Passport",
+        subtitle: "Custom AI verification",
         route: "/quiz",
         color: "#8B5CF6",
-      },
-      {
-        key: "academic-schedule",
-        icon: "calendar-clock",
-        titleKey: "tools.academicScheduleTitle",
-        subtitleKey: "tools.academicScheduleSubtitle",
-        route: "/schedule",
-        colorKey: "accent",
+        badge: "new",
       },
       {
         key: "tutor-bookings",
         icon: "calendar-check-outline",
-        titleKey: "tools.tutorBookingsTitle",
-        subtitleKey: "tools.tutorBookingsSubtitle",
+        title: "Peer Tutors",
+        subtitle: "Book 1-on-1 tutoring",
         route: "/bookings",
         colorKey: "success",
+        badge: "new",
+      },
+      {
+        key: "academic-schedule",
+        icon: "calendar-clock",
+        title: "Visual Routine",
+        subtitle: "Interactive schedule",
+        route: "/calendar",
+        colorKey: "accent",
+      },
+      {
+        key: "study-goals",
+        icon: "target",
+        title: "Study Goals",
+        subtitle: "Daily habit targets",
+        route: "/goals",
+        color: "#EC4899",
+      },
+      {
+        key: "semester-planner",
+        icon: "notebook-outline",
+        title: "Course Planner",
+        subtitle: "Roadmap & syllabi",
+        route: "/planner",
+        color: "#3B82F6",
+      },
+      {
+        key: "gpa-progress",
+        icon: "chart-line",
+        title: "Academic Progress",
+        subtitle: "GPA & milestone tracking",
+        route: "/progress",
+        color: "#10B981",
+      },
+      {
+        key: "achievements",
+        icon: "medal-outline",
+        title: "Honors & Badges",
+        subtitle: "Academic awards",
+        route: "/achievements",
+        color: "#F59E0B",
       },
     ],
   },
   {
     key: "community",
+    title: "Community & Spaces",
     titleKey: "tools.communityCampus",
     tintKey: "warning",
     tools: [
       {
+        key: "network-hub",
+        icon: "account-multiple-outline",
+        title: "Network Hub",
+        subtitle: "Connections & invites",
+        route: "/connections",
+        color: "#06B6D4",
+        badge: "new",
+      },
+      {
         key: "student-clubs",
         icon: "account-group-outline",
-        titleKey: "tools.studentClubsTitle",
-        subtitleKey: "tools.studentClubsSubtitle",
+        title: "Club Hub",
+        subtitle: "Societies & executives",
         route: "/clubs",
         colorKey: "warning",
       },
       {
         key: "campus-events",
         icon: "calendar-star",
-        titleKey: "tools.campusEventsTitle",
-        subtitleKey: "tools.campusEventsSubtitle",
+        title: "Campus Events",
+        subtitle: "Weather & conflicts AI",
         route: "/events",
         colorKey: "danger",
+        badge: "new",
+      },
+      {
+        key: "study-rooms",
+        icon: "door-open",
+        title: "Study Rooms",
+        subtitle: "Discord & Telegram spaces",
+        route: "/room/create",
+        color: "#6366F1",
       },
       {
         key: "campus-leaderboard",
         icon: "trophy-outline",
-        titleKey: "tools.campusLeaderboardTitle",
-        subtitleKey: "tools.campusLeaderboardSubtitle",
+        title: "Leaderboard",
+        subtitle: "Top student rankings",
         route: "/leaderboard",
         color: "#EAB308",
       },
       {
         key: "saved-materials",
         icon: "bookmark-multiple-outline",
-        titleKey: "tools.savedMaterialsTitle",
-        subtitleKey: "tools.savedMaterialsSubtitle",
+        title: "Saved Items",
+        subtitle: "Liked posts & research",
         route: "/saved",
         colorKey: "primary",
+      },
+      {
+        key: "hackathons",
+        icon: "code-tags",
+        title: "Challenges",
+        subtitle: "Campus hackathons",
+        route: "/challenges",
+        color: "#8B5CF6",
+      },
+      {
+        key: "live-streaming",
+        icon: "broadcast",
+        title: "Live Workshops",
+        subtitle: "Peer broadcast sessions",
+        route: "/live",
+        color: "#EF4444",
+      },
+      {
+        key: "campus-notices",
+        icon: "bell-outline",
+        title: "Campus Notices",
+        subtitle: "Department alerts",
+        route: "/notifications",
+        color: "#F59E0B",
       },
     ],
   },
   {
     key: "preferences",
+    title: "Preferences & Security",
     titleKey: "tools.preferencesConfig",
     tintKey: "accent",
     tools: [
       {
         key: "customize-feed",
         icon: "tune-variant",
-        titleKey: "tools.customizeFeedTitle",
-        subtitleKey: "tools.customizeFeedSubtitle",
+        title: "Customize Home",
+        subtitle: "Rearrange cards & widgets",
         route: "/dashboard/customize",
         colorKey: "primary",
       },
       {
         key: "media-integrations",
         icon: "youtube",
-        titleKey: "tools.mediaIntegrationsTitle",
-        subtitleKey: "tools.mediaIntegrationsSubtitle",
+        title: "Integrations",
+        subtitle: "Media & YouTube sync",
         route: "/settings/integrations",
         color: "#EF4444",
         badge: "new",
       },
       {
+        key: "campus-admin",
+        icon: "shield-crown-outline",
+        title: "Campus Admin",
+        subtitle: "Moderation & roles",
+        route: "/admin",
+        color: "#D97706",
+      },
+      {
         key: "settings-privacy",
         icon: "cog-outline",
-        titleKey: "tools.settingsPrivacyTitle",
-        subtitleKey: "tools.settingsPrivacySubtitle",
+        title: "Settings & Privacy",
+        subtitle: "Password & security",
         route: "/settings",
         colorKey: "muted",
       },
@@ -209,8 +350,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Flattened row model — one FlatList virtualises every card, while the pinned
-// category bar stays a sibling (never a nested scroll container).
+// Flattened row model
 // ---------------------------------------------------------------------------
 
 type ListRow =
@@ -219,14 +359,15 @@ type ListRow =
       kind: "section";
       key: string;
       categoryIndex: number;
-      titleKey: string;
+      title: string;
       tintKey: keyof AppPalette;
       count: number;
     }
-  | { kind: "cards"; key: string; categoryIndex: number; items: ToolDef[] };
+  | { kind: "cards"; key: string; categoryIndex: number; items: ToolDef[] }
+  | { kind: "signout"; key: string; categoryIndex: number };
 
 // ---------------------------------------------------------------------------
-// Sticky category pill — the active indicator is animated on the UI thread.
+// Sticky category pill
 // ---------------------------------------------------------------------------
 
 const CategoryPill = memo(function CategoryPill({
@@ -243,7 +384,6 @@ const CategoryPill = memo(function CategoryPill({
   onMeasure: (index: number, x: number, width: number) => void;
 }) {
   const { colors } = useTheme();
-  const { t } = useI18n();
   const progress = useSharedValue(active ? 1 : 0);
   const pressScale = useSharedValue(1);
 
@@ -288,7 +428,6 @@ const CategoryPill = memo(function CategoryPill({
     <Animated.View onLayout={handleLayout} style={[s.pill, containerStyle]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${t("tools.a11yCategory")}: ${label}`}
         accessibilityState={{ selected: active }}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -305,7 +444,7 @@ const CategoryPill = memo(function CategoryPill({
 });
 
 // ---------------------------------------------------------------------------
-// Tool card — tactile 0.97 press feedback, native-driven.
+// Tool card — tactile 0.97 press feedback, native-driven
 // ---------------------------------------------------------------------------
 
 const ToolCard = memo(function ToolCard({
@@ -318,7 +457,6 @@ const ToolCard = memo(function ToolCard({
   onOpen: (route: string) => void;
 }) {
   const { colors } = useTheme();
-  const { t } = useI18n();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -339,13 +477,12 @@ const ToolCard = memo(function ToolCard({
 
   const tint = toolTint(def, colors);
   const badge = def.badge ? badgePalette(def.badge, colors) : null;
-  const badgeLabel = def.badge === "new" ? t("tools.badgeNew") : t("tools.badgeSoon");
+  const badgeLabel = def.badge === "new" ? "NEW" : "SOON";
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={t(def.titleKey)}
-      accessibilityHint={t("tools.a11yTool")}
+      accessibilityLabel={def.title}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={handlePress}
@@ -366,11 +503,11 @@ const ToolCard = memo(function ToolCard({
             </View>
           ) : null}
         </View>
-        <Text numberOfLines={2} style={[s.cardTitle, { color: colors.text }]}>
-          {t(def.titleKey)}
+        <Text numberOfLines={1} style={[s.cardTitle, { color: colors.text }]}>
+          {def.title}
         </Text>
-        <Text numberOfLines={2} style={[s.cardSubtitle, { color: colors.muted }]}>
-          {t(def.subtitleKey)}
+        <Text numberOfLines={1} style={[s.cardSubtitle, { color: colors.muted }]}>
+          {def.subtitle}
         </Text>
       </Animated.View>
     </Pressable>
@@ -378,7 +515,7 @@ const ToolCard = memo(function ToolCard({
 });
 
 // ---------------------------------------------------------------------------
-// Section heading — reports its own y offset so a pill tap can scrollToOffset.
+// Section heading
 // ---------------------------------------------------------------------------
 
 const SectionHeading = memo(function SectionHeading({
@@ -417,57 +554,156 @@ const SectionHeading = memo(function SectionHeading({
 });
 
 // ---------------------------------------------------------------------------
-// Existing quick-profile card, preserved (now scrolls with the catalog).
+// Facebook-style Profile Card with Switcher Button
 // ---------------------------------------------------------------------------
 
 const ToolsProfileCard = memo(function ToolsProfileCard({
   profile,
-  onPress,
+  activePersona,
+  onOpenProfile,
+  onOpenSwitcher,
 }: {
   profile: Profile | undefined;
-  onPress: () => void;
+  activePersona: string;
+  onOpenProfile: () => void;
+  onOpenSwitcher: () => void;
 }) {
   const { colors } = useTheme();
-  const { t } = useI18n();
 
-  if (!profile) {
-    return null;
-  }
+  if (!profile) return null;
+
+  return (
+    <View style={s.profileCardContainer}>
+      <View style={[s.profileCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenProfile}
+          style={({ pressed }) => [s.profileMainClickable, { opacity: pressed ? 0.85 : 1 }]}
+        >
+          <View style={[s.avatarCircle, { backgroundColor: colors.primarySoft }]}>
+            <Text style={{ color: colors.primary, fontWeight: "900", fontSize: 16 }}>
+              {profile.full_name?.[0] || "U"}
+            </Text>
+          </View>
+          <View style={s.profileTextWrap}>
+            <Text numberOfLines={1} style={[s.profileName, { color: colors.text }]}>
+              {profile.full_name}
+            </Text>
+            <Text numberOfLines={1} style={[s.profileHandle, { color: colors.muted }]}>
+              @{profile.username} · {profile.university || "SkillBridge"}
+            </Text>
+            <View style={[s.activeRoleBadge, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+              <MaterialCommunityIcons name="shield-check" size={12} color={colors.primary} />
+              <Text style={[s.activeRoleText, { color: colors.primary }]}>{activePersona}</Text>
+            </View>
+          </View>
+        </Pressable>
+
+        {/* Facebook-style Switch Profile Button */}
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenSwitcher}
+          style={({ pressed }) => [
+            s.switchProfileBtn,
+            { backgroundColor: colors.primarySoft, opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <MaterialCommunityIcons name="account-switch-outline" size={16} color={colors.primary} />
+          <Text style={[s.switchProfileBtnText, { color: colors.primary }]}>Switch</Text>
+        </Pressable>
+      </View>
+
+      {/* Quick 1-tap Hubs Shortcut Strip */}
+      <View style={s.quickHubsStrip}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            triggerHaptic();
+            router.push("/club/manage" as any);
+          }}
+          style={({ pressed }) => [
+            s.quickHubBtn,
+            { backgroundColor: "#F59E0B14", borderColor: "#F59E0B44", opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <MaterialCommunityIcons name="shield-crown-outline" size={14} color="#D97706" />
+          <Text style={[s.quickHubBtnText, { color: "#D97706" }]}>My Clubs</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            triggerHaptic();
+            router.push("/room/manage" as any);
+          }}
+          style={({ pressed }) => [
+            s.quickHubBtn,
+            { backgroundColor: "#6366F114", borderColor: "#6366F144", opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <MaterialCommunityIcons name="door-open" size={14} color="#4F46E5" />
+          <Text style={[s.quickHubBtnText, { color: "#4F46E5" }]}>Room Controls</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            triggerHaptic();
+            router.push("/posts" as any);
+          }}
+          style={({ pressed }) => [
+            s.quickHubBtn,
+            { backgroundColor: "#10B98114", borderColor: "#10B98144", opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <MaterialCommunityIcons name="post-outline" size={14} color="#059669" />
+          <Text style={[s.quickHubBtnText, { color: "#059669" }]}>My Posts</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Sign Out Card Component
+// ---------------------------------------------------------------------------
+
+const SignOutCard = memo(function SignOutCard({
+  onSignOut,
+}: {
+  onSignOut: () => void;
+}) {
+  const { colors } = useTheme();
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={profile.full_name}
-      onPress={onPress}
+      onPress={onSignOut}
       style={({ pressed }) => [
-        s.profileCard,
-        { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.88 : 1 },
+        s.signOutCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          opacity: pressed ? 0.85 : 1,
+        },
       ]}
     >
-      <View style={[s.avatarCircle, { backgroundColor: colors.primarySoft }]}>
-        <Text style={{ color: colors.primary, fontWeight: "900", fontSize: 16 }}>
-          {profile.full_name?.[0] || "U"}
+      <View style={[s.signOutIconCircle, { backgroundColor: "#EF444415" }]}>
+        <MaterialCommunityIcons name="logout-variant" size={20} color="#EF4444" />
+      </View>
+      <View style={s.signOutTextWrap}>
+        <Text style={s.signOutTitle}>Sign Out</Text>
+        <Text style={[s.signOutSubtitle, { color: colors.muted }]}>
+          Safely log out of your session on this device
         </Text>
       </View>
-      <View style={s.profileTextWrap}>
-        <Text numberOfLines={1} style={[s.profileName, { color: colors.text }]}>
-          {profile.full_name}
-        </Text>
-        <Muted numberOfLines={1}>
-          @{profile.username} · {profile.university || "SkillBridge Member"}
-        </Muted>
-      </View>
-      <View style={[s.viewProfilePill, { backgroundColor: colors.primarySoft }]}>
-        <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 12 }}>
-          {t("tools.viewProfile")}
-        </Text>
-      </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={colors.muted} />
     </Pressable>
   );
 });
 
 // ---------------------------------------------------------------------------
-// Screen — dual-synced sticky category navigation
+// Main Tools Screen
 // ---------------------------------------------------------------------------
 
 export default function ToolsScreen() {
@@ -475,6 +711,11 @@ export default function ToolsScreen() {
   const { t } = useI18n();
   const { width } = useWindowDimensions();
   const autoHideNav = useOptionalAutoHideNavigation();
+
+  // Profile Switching State (Facebook style)
+  const [activePersonaId, setActivePersonaId] = useState("student");
+  const [activePersona, setActivePersona] = useState("🎓 Student Account");
+  const [switchModalVisible, setSwitchModalVisible] = useState(false);
 
   const { data, isRefetching, refetch } = useQuery({
     queryKey: ["me"],
@@ -488,7 +729,7 @@ export default function ToolsScreen() {
     [width, columns],
   );
 
-  // Flattened data: profile + per-category heading + grid rows of cards.
+  // Flattened data: Profile + categories + cards + Sign Out card
   const rows = useMemo<ListRow[]>(() => {
     const out: ListRow[] = [{ kind: "profile", key: "tools-profile", categoryIndex: 0 }];
     TOOL_CATALOG.forEach((category, categoryIndex) => {
@@ -496,7 +737,7 @@ export default function ToolsScreen() {
         kind: "section",
         key: `section-${category.key}`,
         categoryIndex,
-        titleKey: category.titleKey,
+        title: category.title,
         tintKey: category.tintKey,
         count: category.tools.length,
       });
@@ -508,6 +749,11 @@ export default function ToolsScreen() {
           items: category.tools.slice(start, start + columns),
         });
       }
+    });
+    out.push({
+      kind: "signout",
+      key: "tools-signout",
+      categoryIndex: TOOL_CATALOG.length - 1,
     });
     return out;
   }, [columns]);
@@ -543,7 +789,6 @@ export default function ToolsScreen() {
     [],
   );
 
-  /** Lock flag: released when the tap-triggered scroll settles (or on timeout). */
   const releaseManualScroll = useCallback(() => {
     if (manualLockTimer.current) {
       clearTimeout(manualLockTimer.current);
@@ -552,7 +797,6 @@ export default function ToolsScreen() {
     isManualScrolling.current = false;
   }, []);
 
-  /** Keeps the active pill centred inside the pinned bar. */
   const scrollCategoryIntoView = useCallback((index: number) => {
     const layout = pillLayouts.current[index];
     const viewport = screenWidthRef.current;
@@ -565,7 +809,6 @@ export default function ToolsScreen() {
     });
   }, []);
 
-  /** Tap-to-scroll, driven by pre-measured section offsets. */
   const handleCategoryPress = useCallback(
     (index: number) => {
       triggerHaptic();
@@ -587,7 +830,6 @@ export default function ToolsScreen() {
         return;
       }
 
-      // Section has not been laid out yet (still outside the render window).
       const rowIndex = sectionRowIndex[index];
       if (typeof rowIndex === "number") {
         listRef.current?.scrollToIndex({ index: rowIndex, animated: true, viewPosition: 0 });
@@ -596,7 +838,6 @@ export default function ToolsScreen() {
     [releaseManualScroll, scrollCategoryIntoView, sectionRowIndex],
   );
 
-  /** Fallback for scrollToIndex while a far section is still unmeasured. */
   const handleScrollToIndexFailed = useCallback(
     (info: { index: number; averageItemLength: number }) => {
       if (scrollToIndexRetries.current >= 2) return;
@@ -622,10 +863,6 @@ export default function ToolsScreen() {
     pillContentWidth.current = contentWidth;
   }, []);
 
-  /**
-   * Scroll-to-sync: fires only when rows cross the viewport threshold, so there
-   * is no per-frame JS work while scrolling.
-   */
   const handleViewableItemsChanged = useCallback(
     (info: { viewableItems: ViewToken<ListRow>[] }) => {
       if (isManualScrolling.current) return;
@@ -656,6 +893,30 @@ export default function ToolsScreen() {
     router.push("/(tabs)/profile" as any);
   }, []);
 
+  const handleOpenSwitcher = useCallback(() => {
+    triggerHaptic();
+    setSwitchModalVisible(true);
+  }, []);
+
+  const handleSignOut = useCallback(() => {
+    triggerHaptic();
+    Alert.alert("Sign Out", "Are you sure you want to log out of SkillBridge?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log Out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await supabase.auth.signOut();
+            router.replace("/(auth)/login" as any);
+          } catch (e: any) {
+            Alert.alert("Error", e?.message || "Failed to log out");
+          }
+        },
+      },
+    ]);
+  }, []);
+
   const handleRefresh = useCallback(() => {
     triggerHaptic();
     void refetch();
@@ -667,17 +928,26 @@ export default function ToolsScreen() {
     ({ item }: ListRenderItemInfo<ListRow>) => {
       switch (item.kind) {
         case "profile":
-          return <ToolsProfileCard profile={profile} onPress={handleOpenProfile} />;
+          return (
+            <ToolsProfileCard
+              profile={profile}
+              activePersona={activePersona}
+              onOpenProfile={handleOpenProfile}
+              onOpenSwitcher={handleOpenSwitcher}
+            />
+          );
         case "section":
           return (
             <SectionHeading
               categoryIndex={item.categoryIndex}
-              title={t(item.titleKey)}
+              title={item.title}
               count={item.count}
               tintKey={item.tintKey}
               onMeasure={handleSectionMeasure}
             />
           );
+        case "signout":
+          return <SignOutCard onSignOut={handleSignOut} />;
         default:
           return (
             <Animated.View entering={FadeInUp.duration(260)} style={s.cardsRow}>
@@ -688,7 +958,16 @@ export default function ToolsScreen() {
           );
       }
     },
-    [cardWidth, handleOpenProfile, handleOpenRoute, handleSectionMeasure, profile, t],
+    [
+      activePersona,
+      cardWidth,
+      handleOpenProfile,
+      handleOpenRoute,
+      handleOpenSwitcher,
+      handleSectionMeasure,
+      handleSignOut,
+      profile,
+    ],
   );
 
   const listBottomPadding = (autoHideNav?.bottomNavHeight ?? 72) + spacing.lg;
@@ -699,7 +978,7 @@ export default function ToolsScreen() {
       scroll={false}
       contentStyle={s.screen}
     >
-      {/* Pinned category bar — a sibling of the list, never a nested scroll view */}
+      {/* Pinned Category Pills Bar */}
       <View style={[s.stickyBar, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
         <ScrollView
           ref={categoryBarRef}
@@ -713,7 +992,7 @@ export default function ToolsScreen() {
             <CategoryPill
               key={category.key}
               index={index}
-              label={t(category.titleKey)}
+              label={category.title}
               active={index === activeIndex}
               onPress={handleCategoryPress}
               onMeasure={handlePillMeasure}
@@ -749,6 +1028,108 @@ export default function ToolsScreen() {
           />
         }
       />
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* Facebook-style Profile Switcher Modal                         */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      <Modal
+        visible={switchModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSwitchModalVisible(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={[s.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={s.modalHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="account-switch" size={22} color={colors.primary} />
+                <Text style={[s.modalHeaderTitle, { color: colors.text }]}>Switch Profile</Text>
+              </View>
+              <Pressable onPress={() => setSwitchModalVisible(false)} hitSlop={8}>
+                <MaterialCommunityIcons name="close" size={20} color={colors.muted} />
+              </Pressable>
+            </View>
+
+            <Text style={[s.modalHeaderSub, { color: colors.muted }]}>
+              Switch between student learning, peer tutor mode, or club administration
+            </Text>
+
+            <View style={s.personaList}>
+              {[
+                {
+                  id: "student",
+                  name: profile?.full_name || "Primary Student Profile",
+                  role: "Learning, Routine & Course Quizzes",
+                  icon: "school",
+                  tag: "🎓 Student Account",
+                },
+                {
+                  id: "tutor",
+                  name: `${profile?.full_name || "Member"} · Tutor`,
+                  role: "Teaching, Availability & Bookings",
+                  icon: "teach",
+                  tag: "👨‍🏫 Tutor Mode",
+                },
+                {
+                  id: "club_exec",
+                  name: `${profile?.full_name || "Member"} · Executive`,
+                  role: "Society Leadership & Campus Events",
+                  icon: "account-tie",
+                  tag: "🏛️ Club Exec",
+                },
+              ].map((item) => {
+                const isActive = activePersonaId === item.id;
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => {
+                      triggerHaptic();
+                      setActivePersonaId(item.id);
+                      setActivePersona(item.tag);
+                      setSwitchModalVisible(false);
+                      Alert.alert("Profile Switched", `Now active as: ${item.tag}`);
+                    }}
+                    style={[
+                      s.personaItem,
+                      {
+                        backgroundColor: isActive ? `${colors.primary}12` : colors.surface2,
+                        borderColor: isActive ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={[s.personaIconWrap, { backgroundColor: colors.primarySoft }]}>
+                      <MaterialCommunityIcons name={item.icon as any} size={20} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.personaItemName, { color: colors.text }]}>{item.name}</Text>
+                      <Text style={[s.personaItemRole, { color: colors.muted }]}>{item.role}</Text>
+                    </View>
+                    {isActive ? (
+                      <MaterialCommunityIcons name="check-circle" size={20} color={colors.primary} />
+                    ) : (
+                      <MaterialCommunityIcons name="radiobox-blank" size={20} color={colors.muted} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                setSwitchModalVisible(false);
+                router.push("/(auth)/login" as any);
+              }}
+              style={[s.addAccountBtn, { borderColor: colors.border }]}
+            >
+              <MaterialCommunityIcons name="plus-circle-outline" size={18} color={colors.primary} />
+              <Text style={[s.addAccountBtnText, { color: colors.primary }]}>
+                Add or link another student account
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -793,11 +1174,11 @@ const s = StyleSheet.create({
   },
   card: {
     width: "100%",
-    minHeight: 118,
+    minHeight: 106,
     borderRadius: radius.lg,
     borderWidth: 1,
     padding: 12,
-    gap: 6,
+    gap: 4,
     elevation: 1,
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 2 },
@@ -809,31 +1190,32 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 6,
+    marginBottom: 2,
   },
   cardIcon: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   cardTitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13.5,
+    lineHeight: 19,
     fontWeight: "800",
   },
   cardSubtitle: {
-    fontSize: 11.5,
-    lineHeight: 17,
+    fontSize: 11,
+    lineHeight: 16,
   },
   badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: radius.pill,
   },
   badgeText: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 9.5,
+    lineHeight: 14,
     fontWeight: "800",
   },
   sectionRow: {
@@ -851,8 +1233,8 @@ const s = StyleSheet.create({
   },
   sectionTitle: {
     flex: 1,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14.5,
+    lineHeight: 21,
     fontWeight: "800",
   },
   sectionCount: {
@@ -866,35 +1248,186 @@ const s = StyleSheet.create({
   },
   sectionCountText: {
     fontSize: 11,
-    lineHeight: 17,
+    lineHeight: 16,
     fontWeight: "800",
+  },
+  profileCardContainer: {
+    marginHorizontal: H_PADDING,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    gap: 8,
   },
   profileCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    justifyContent: "space-between",
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: 8,
+  },
+  quickHubsStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  quickHubBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  quickHubBtnText: {
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  profileMainClickable: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  profileTextWrap: { flex: 1, gap: 2 },
+  avatarCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileName: {
+    fontSize: 14.5,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  profileHandle: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  activeRoleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    marginTop: 2,
+  },
+  activeRoleText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  switchProfileBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+  },
+  switchProfileBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  signOutCard: {
+    flexDirection: "row",
+    alignItems: "center",
     padding: 14,
     borderRadius: radius.md,
     borderWidth: 1,
     marginHorizontal: H_PADDING,
     marginTop: spacing.md,
+    marginBottom: spacing.md,
+    gap: 12,
   },
-  profileTextWrap: { flex: 1, gap: 2 },
-  avatarCircle: {
+  signOutIconCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
   },
-  profileName: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: "700",
+  signOutTextWrap: { flex: 1, gap: 2 },
+  signOutTitle: {
+    fontSize: 14.5,
+    fontWeight: "800",
+    color: "#EF4444",
   },
-  viewProfilePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
+  signOutSubtitle: {
+    fontSize: 11.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  modalHeaderTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  modalHeaderSub: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  personaList: {
+    gap: 8,
+    marginTop: 4,
+  },
+  personaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+  },
+  personaIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  personaItemName: {
+    fontSize: 13.5,
+    fontWeight: "800",
+  },
+  personaItemRole: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  addAccountBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 42,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    marginTop: 4,
+  },
+  addAccountBtnText: {
+    fontSize: 12.5,
+    fontWeight: "800",
   },
 });

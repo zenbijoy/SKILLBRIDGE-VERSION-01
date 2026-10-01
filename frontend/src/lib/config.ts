@@ -18,7 +18,7 @@ if (exposedPrivilegedKeys.length > 0) {
 }
 
 // 2. Resolve API URL
-const DEFAULT_DEV_API_URL = "https://skillbridge-api-pd9c.onrender.com/api/v1";
+const DEFAULT_DEV_API_URL = "http://localhost:4000/api/v1";
 const expoApiUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
 
 let rawApiUrl =
@@ -48,7 +48,12 @@ export const API_URL = rawApiUrl || (!isProduction ? DEFAULT_DEV_API_URL : '');
 // Derive Socket.IO origin by removing only a trailing /api/v1
 export const SOCKET_URL = API_URL.replace(/\/api\/v1$/, '');
 
-// 3. Helper to extract project ref safely from URL
+// 3. Public web URL - used for share links / deep links that must open in a browser.
+// Falls back to the API origin (minus /api/v1) when no dedicated web URL is configured.
+const rawWebUrl = (process.env.EXPO_PUBLIC_WEB_URL ?? '').trim().replace(/\/+$/, '');
+export const WEB_URL = rawWebUrl || SOCKET_URL;
+
+// 4. Helper to extract project ref safely from URL
 export function getSupabaseProjectRef(url?: string): string {
   if (!url) return 'unknown';
   try {

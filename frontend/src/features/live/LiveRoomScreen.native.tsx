@@ -472,17 +472,20 @@ function Controls({
 }
 
 export default function LiveRoomScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+  // `sessionId` is optional: when supplied (from the room header presence strip)
+  // we join that exact session instead of letting the server guess by room.
+  const { roomId, sessionId } = useLocalSearchParams<{ roomId: string; sessionId?: string }>();
   const [creds, setCreds] = useState<LiveCreds | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lowDataMode, setLowDataMode] = useState(false);
 
   const fetchToken = useCallback(() => {
-    if (!roomId) return;
+    const target = sessionId || roomId;
+    if (!target) return;
     setLoading(true);
     setError(null);
-    api<LiveCreds>(`/live/token/${roomId}`, { method: "POST" })
+    api<LiveCreds>(`/live/token/${target}`, { method: "POST" })
       .then((data) => {
         setCreds(data);
         setLoading(false);
@@ -491,7 +494,7 @@ export default function LiveRoomScreen() {
         setError(e.message || "Failed to join live classroom.");
         setLoading(false);
       });
-  }, [roomId]);
+  }, [roomId, sessionId]);
 
   useEffect(() => {
     AsyncStorage.getItem("@low_data_mode").then((v) => {

@@ -12,14 +12,40 @@ import { triggerHaptic } from "@/components/ui";
 
 export default function CallScreen() {
   const router = useRouter();
-  const { id: targetId, name, avatar, type = "video" } = useLocalSearchParams<{
-    id: string;
-    name?: string;
-    avatar?: string;
-    type?: "audio" | "video";
+  const params = useLocalSearchParams<{
+    id: string | string[];
+    callId?: string | string[];
+    targetId?: string | string[];
+    userId?: string | string[];
+    name?: string | string[];
+    avatar?: string | string[];
+    type?: "audio" | "video" | string | string[];
   }>();
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const routeSegment = first(params.id);
+  const acceptedCallId = first(params.callId);
+  const targetParam = first(params.targetId);
+  const calleeParam = first(params.userId);
+  const name = first(params.name);
+  const avatar = first(params.avatar);
+  const rawType = first(params.type);
+  const type: "audio" | "video" = rawType === "audio" ? "audio" : "video";
 
+  // Outgoing calls route as /call/<peerId>. Incoming accept / resume routes as
+  // /call/<callId> (+ optional ?callId=). The store is the source of truth when
+  // IncomingCallModal already populated it; otherwise resolve from the route.
   const { activeCall, startCall, setCallStatus, setMinimized } = useCallStore();
+  const routeId = routeSegment;
+  const queryCallId = acceptedCallId;
+  // When the store already holds this call, this screen is a join/resume — never re-initiate.
+  const storeCallId = activeCall?.callId;
+  const isJoiningExistingCall =
+    Boolean(storeCallId) &&
+    (storeCallId === routeSegment || storeCallId === queryCallId || Boolean(queryCallId));
+  // Outgoing target is explicit via query (?targetId / ?userId) or, when this is
+  // NOT an existing-call join, the route segment itself is the peer id.
+  const targetId: string | undefined = targetParam || calleeParam || (isJoiningExistingCall ? activeCall?.peer.id : routeSegment);
+  const existingCallId: string | undefined = isJoiningExistingCall ? storeCallId : queryCallId;
   const [controlsVisible, setControlsVisible] = useState(true);
 
   // Un-minimize when entering CallScreen
@@ -66,8 +92,23 @@ export default function CallScreen() {
     let isCancelled = false;
 
     async function startOutgoingCall() {
+      // Join/resume path: IncomingCallModal (or a banner/tap) already created the
+      // call record and populated the store. Only ensure media is ready — never
+      // POST /calls again with the callId as if it were a peer id.
+      if (existingCallId) {
+        try {
+          const stream = await initLocalMedia(activeCall?.type || (type as "audio" | "video"));
+          await setupPeerConnection(stream);
+        } catch (err: any) {
+          if (!isCancelled) {
+            console.error("Failed to prepare media for existing call:", err);
+            setCallStatus("failed");
+          }
+        }
+        return;
+      }
       if (!targetId) return;
-      if (activeCall && activeCall.callId === targetId) return;
+      if (activeCall && targetId && activeCall.peer.id === targetId) return;
 
       try {
         setCallStatus("initiating");
@@ -98,8 +139,8 @@ export default function CallScreen() {
       }
     }
 
-    if (!activeCall || activeCall.callId !== targetId) {
-      startOutgoingCall();
+    if (existingCallId || !activeCall || (targetId && activeCall.peer.id !== targetId)) {
+      void startOutgoingCall();
     }
 
     return () => {

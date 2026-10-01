@@ -212,8 +212,8 @@ export default function HelpQuestionsScreen() {
             <Pressable
               onPress={() => {
                 triggerHaptic();
-                // Navigate into canonical room Q&A
-                router.push(`/room/${item.roomId}?tab=learn&qId=${item.id}` as any);
+                // Navigate into canonical question thread
+                router.push(`/help/questions/${item.id}` as any);
               }}
               style={({ pressed }) => [
                 s.questionCard,

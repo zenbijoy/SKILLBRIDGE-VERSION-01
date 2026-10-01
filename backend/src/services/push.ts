@@ -1,5 +1,6 @@
 import { admin } from "../lib/db.js";
 import { PushService } from "./PushService.js";
+import { getSocketServer } from "../socket.js";
 
 const preferenceByKind: Record<string, "messages" | "connections" | "rooms" | "sessions" | "teaching" | "system"> = {
   message: "messages",
@@ -44,11 +45,28 @@ export async function notifyUser(
   kind = "general",
   data: Record<string, string> = {},
 ) {
-  const { error } = await admin
+  const { data: record, error } = await admin
     .from("notifications")
-    .insert({ user_id: userId, title, body, kind, data });
+    .insert({ user_id: userId, title, body, kind, data })
+    .select("id")
+    .maybeSingle();
 
   if (error) throw error;
+
+  const io = getSocketServer();
+  if (io) {
+    io.to(`user:${userId}`).emit("notification:new", {
+      id: record?.id ?? null,
+      user_id: userId,
+      title,
+      body,
+      kind,
+      data,
+      priority: "normal",
+      read_at: null,
+      created_at: new Date().toISOString(),
+    });
+  }
 
   const [preferencesQ, profileQ] = await Promise.all([
     admin.from("notification_preferences").select("messages,connections,rooms,sessions,teaching,system").eq("user_id", userId).maybeSingle(),

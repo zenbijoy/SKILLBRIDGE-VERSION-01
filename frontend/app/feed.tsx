@@ -1,622 +1,579 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  TextInput,
   Alert,
   ActivityIndicator,
   FlatList,
-  Switch,
-  Image,
-  Platform,
-  Linking,
+  RefreshControl,
+  ScrollView,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
-import { Card, Pill, Row, Screen, Button, ErrorState } from "@/components/ui";
+import { Card, Row, Screen, ErrorState, triggerHaptic } from "@/components/ui";
 import { useTheme, radius } from "@/theme";
-import { nextGenBadges, nextGenAnimations } from "@/assets/nextgen";
+import { nextGenAnimations } from "@/assets/nextgen";
 import type { Profile } from "@/types";
+import { UniversalShareSheet } from "@/components/UniversalShareSheet";
+import {
+  PostCard,
+  PostComposer,
+  EditPostModal,
+  type SocialPost,
+  type ReactionType,
+  type PostType,
+} from "@/features/social";
 
-export type PostAttachment = {
-  id: string;
-  url: string;
-  mime_type: string;
-  file_size_bytes?: number;
-  display_order?: number;
-};
+interface FeedFilterOption {
+  type: PostType | "all";
+  label: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+}
 
-export type Post = {
-  id: string;
-  author_id: string;
-  author: Profile;
-  body: string;
-  is_anonymous: boolean;
-  anonymous_handle?: string;
-  media_urls: string[];
-  attachments?: PostAttachment[];
-  youtube?: {
-    videoId: string;
-    title: string;
-    thumbnailUrl: string;
-    durationSeconds?: number | null;
-  };
-  post_type?: string;
-  likes_count: number;
-  comments_count: number;
-  pinned: boolean;
-  my_reaction?: string | null;
-  created_at: string;
-};
-
-export type Comment = {
-  id: string;
-  post_id: string;
-  author: Profile;
-  body: string;
-  is_anonymous: boolean;
-  anonymous_handle?: string;
-  created_at: string;
-};
+const FILTER_OPTIONS: FeedFilterOption[] = [
+  { type: "all", label: "All Posts", icon: "earth" },
+  { type: "question", label: "Questions", icon: "help-circle-outline" },
+  { type: "poll", label: "Polls", icon: "poll" },
+  { type: "event", label: "Events", icon: "calendar-star" },
+  { type: "achievement", label: "Achievements", icon: "trophy-outline" },
+  { type: "opportunity", label: "Opportunities", icon: "briefcase-outline" },
+  { type: "study_note", label: "Study Notes", icon: "book-open-page-variant" },
+  { type: "code", label: "Code", icon: "code-tags" },
+  { type: "quote", label: "Quotes", icon: "format-quote-close" },
+];
 
 export default function CampusFeedScreen() {
   const { colors } = useTheme();
   const qc = useQueryClient();
-  const [postText, setPostText] = useState("");
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [showComposer, setShowComposer] = useState(false);
-  const [expandedCommentsPostId, setExpandedCommentsPostId] = useState<string | null>(null);
-  const [commentText, setCommentText] = useState("");
 
-  // Rich Media Attachments state
-  const [attachedMedia, setAttachedMedia] = useState<Array<{ mediaObjectId: string; url: string }>>([]);
-  const [showYouTubeInput, setShowYouTubeInput] = useState(false);
-  const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedType, setSelectedType] = useState<PostType | "all">("all");
+  const [selectedHashtag, setSelectedHashtag] = useState<string | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useQuery<{ posts: Post[]; next_cursor: string | null }>({
-    queryKey: ["campus-feed"],
-    queryFn: () => api("/feed"),
+  // Modals state
+  const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
+  const [sharingPost, setSharingPost] = useState<SocialPost | null>(null);
+
+  // Current logged in user profile
+  const { data: profile } = useQuery<Profile>({
+    queryKey: ["profile", "me"],
+    queryFn: () => api("/profiles/me"),
   });
 
-  const createPostMutation = useMutation({
-    mutationFn: () =>
-      api("/feed", {
-        method: "POST",
-        body: JSON.stringify({
-          body: postText,
-          is_anonymous: isAnonymous,
-          media_object_ids: attachedMedia.map((m) => m.mediaObjectId),
-          youtube_url: youtubeUrl.trim() ? youtubeUrl.trim() : undefined,
-        }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["campus-feed"] });
-      setPostText("");
-      setIsAnonymous(false);
-      setAttachedMedia([]);
-      setYoutubeUrl("");
-      setShowYouTubeInput(false);
-      setShowComposer(false);
+  // Query campus feed with filters
+  const feedQueryKey = ["campus-feed", selectedType, selectedHashtag];
+  const {
+    data,
+    isLoading,
+    isRefetching,
+    isError,
+    error,
+    refetch,
+  } = useQuery<{ posts: SocialPost[]; next_cursor: string | null }>({
+    queryKey: feedQueryKey,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (selectedType !== "all") {
+        params.append("post_type", selectedType);
+      }
+      if (selectedHashtag) {
+        params.append("hashtag", selectedHashtag);
+      }
+      const qs = params.toString();
+      return api(`/feed${qs ? `?${qs}` : ""}`);
     },
-    onError: (err: Error) => Alert.alert("Could not publish post", err.message),
   });
 
+  // Reactions mutation
   const reactionMutation = useMutation({
-    mutationFn: ({ postId, type }: { postId: string; type: string }) =>
+    mutationFn: ({ postId, type }: { postId: string; type: ReactionType }) =>
       api(`/feed/${postId}/reactions`, {
         method: "POST",
         body: JSON.stringify({ reaction_type: type }),
       }),
-    onSuccess: () => {
+    onMutate: async ({ postId, type }) => {
+      await qc.cancelQueries({ queryKey: feedQueryKey });
+      const previous = qc.getQueryData<{ posts: SocialPost[]; next_cursor: string | null }>(feedQueryKey);
+
+      if (previous) {
+        qc.setQueryData(feedQueryKey, {
+          ...previous,
+          posts: previous.posts.map((p) => {
+            if (p.id !== postId) return p;
+            const wasSameReaction = p.my_reaction === type;
+            const deltaLikes = wasSameReaction ? -1 : p.my_reaction ? 0 : 1;
+            return {
+              ...p,
+              my_reaction: wasSameReaction ? null : type,
+              likes_count: Math.max(0, p.likes_count + deltaLikes),
+            };
+          }),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(feedQueryKey, context.previous);
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["campus-feed"] });
     },
   });
 
-  const commentMutation = useMutation({
-    mutationFn: ({ postId, body }: { postId: string; body: string }) =>
-      api(`/feed/${postId}/comments`, {
+  // Poll vote mutation
+  const pollVoteMutation = useMutation({
+    mutationFn: async ({ postId, optionId }: { postId: string; optionId: string }) => {
+      const res = await api<{ success: boolean; poll: any }>(`/feed/${postId}/poll/vote`, {
         method: "POST",
-        body: JSON.stringify({ body, is_anonymous: isAnonymous }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["campus-feed"] });
-      qc.invalidateQueries({ queryKey: ["post-comments", expandedCommentsPostId] });
-      setCommentText("");
+        body: JSON.stringify({ option_id: optionId }),
+      });
+      return res;
     },
-    onError: (err: Error) => Alert.alert("Could not post comment", err.message),
+    onSuccess: (res, { postId }) => {
+      triggerHaptic("selection");
+      qc.setQueriesData({ queryKey: ["campus-feed"] }, (old: any) => {
+        if (!old?.posts) return old;
+        return {
+          ...old,
+          posts: old.posts.map((p: SocialPost) => {
+            if (p.id !== postId) return p;
+            return {
+              ...p,
+              poll: res.poll,
+            };
+          }),
+        };
+      });
+    },
+    onError: (err: Error) => Alert.alert("Voting Failed", err.message),
   });
 
+  // Save / Bookmark post mutation
+  const toggleSaveMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      const current = data?.posts.find((p) => p.id === postId);
+      const isSaved = current?.is_saved;
+      const res = await api<{ success: boolean; is_saved: boolean; saves_count: number }>(
+        `/feed/${postId}/save`,
+        { method: isSaved ? "DELETE" : "POST" },
+      );
+      return { postId, isSaved: res.is_saved, count: res.saves_count };
+    },
+    onSuccess: ({ postId, isSaved, count }) => {
+      triggerHaptic("selection");
+      qc.setQueriesData({ queryKey: ["campus-feed"] }, (old: any) => {
+        if (!old?.posts) return old;
+        return {
+          ...old,
+          posts: old.posts.map((p: SocialPost) => {
+            if (p.id !== postId) return p;
+            return {
+              ...p,
+              is_saved: isSaved,
+              saves_count: count,
+            };
+          }),
+        };
+      });
+    },
+    onError: (err: Error) => Alert.alert("Save Failed", err.message),
+  });
+
+  // Delete post mutation
   const deletePostMutation = useMutation({
     mutationFn: (postId: string) => api(`/feed/${postId}`, { method: "DELETE" }),
     onSuccess: () => {
+      triggerHaptic("notificationSuccess");
       qc.invalidateQueries({ queryKey: ["campus-feed"] });
-      Alert.alert("Post removed");
+      Alert.alert("Post Removed", "Your post has been deleted from the campus feed.");
     },
     onError: (err: Error) => Alert.alert("Could not delete post", err.message),
   });
 
-  // Direct presigned upload handler
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Edit post mutation
+  const editPostMutation = useMutation({
+    mutationFn: ({ postId, newBody }: { postId: string; newBody: string }) =>
+      api<{ post: SocialPost }>(`/feed/${postId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body: newBody }),
+      }),
+    onSuccess: (res) => {
+      triggerHaptic("notificationSuccess");
+      qc.setQueriesData({ queryKey: ["campus-feed"] }, (old: any) => {
+        if (!old?.posts) return old;
+        return {
+          ...old,
+          posts: old.posts.map((p: SocialPost) => {
+            if (p.id !== res.post.id) return p;
+            return {
+              ...p,
+              body: res.post.body,
+              is_edited: true,
+            };
+          }),
+        };
+      });
+      setEditingPost(null);
+    },
+    onError: (err: Error) => Alert.alert("Update Failed", err.message),
+  });
 
-    if (!file.type.startsWith("image/")) {
-      Alert.alert("Invalid File", "Only image files (JPEG, PNG, WEBP, GIF) are supported.");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      Alert.alert("File Too Large", "Maximum image attachment size is 10MB.");
-      return;
-    }
-
-    if (attachedMedia.length >= 4) {
-      Alert.alert("Limit Reached", "You can attach a maximum of 4 images per post.");
-      return;
-    }
-
-    try {
-      setIsUploading(true);
-      // 1. Request presigned direct upload ticket
-      const ticketRes = await api<{
-        ticket: { url: string; mediaObjectId: string; publicUrl?: string };
-      }>("/feed/upload-ticket", {
+  // Report post mutation
+  const reportPostMutation = useMutation({
+    mutationFn: ({ postId, reason }: { postId: string; reason: string }) =>
+      api(`/feed/${postId}/report`, {
         method: "POST",
-        body: JSON.stringify({ mimeType: file.type, fileSizeBytes: file.size }),
-      });
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      Alert.alert("Report Submitted", "Thank you. Our campus moderation team will review this post.");
+    },
+    onError: (err: Error) => Alert.alert("Report Failed", err.message),
+  });
 
-      // 2. Direct binary upload to R2 / Supabase
-      const uploadRes = await fetch(ticketRes.ticket.url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": file.type,
-        },
-        body: file,
-      });
-
-      if (!uploadRes.ok) {
-        throw new Error("Direct upload failed to storage provider");
-      }
-
-      // 3. Local object URL preview
-      const previewUrl = URL.createObjectURL(file);
-      setAttachedMedia((prev) => [
-        ...prev,
-        { mediaObjectId: ticketRes.ticket.mediaObjectId, url: previewUrl },
-      ]);
-    } catch (uploadErr) {
-      Alert.alert("Upload Failed", uploadErr instanceof Error ? uploadErr.message : "Failed to upload image");
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachedMedia((prev) => prev.filter((_, idx) => idx !== index));
+  const handleReport = (postId: string) => {
+    Alert.alert("Report Post", "Select reason for reporting this content:", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Spam / Promotion", onPress: () => reportPostMutation.mutate({ postId, reason: "Spam" }) },
+      { text: "Harassment / Hate", onPress: () => reportPostMutation.mutate({ postId, reason: "Harassment" }) },
+      { text: "Misleading Information", onPress: () => reportPostMutation.mutate({ postId, reason: "Misleading" }) },
+      { text: "Inappropriate Content", style: "destructive", onPress: () => reportPostMutation.mutate({ postId, reason: "Inappropriate" }) },
+    ]);
   };
 
   const posts = data?.posts ?? [];
+  const isAdmin = (profile?.roles || []).includes("admin") || (profile?.roles || []).includes("moderator");
 
   return (
     <Screen>
+      {/* ─────────────────────────────────────────────────────────────
+          1. TOP NAVIGATION HEADER
+      ───────────────────────────────────────────────────────────── */}
       <Row style={styles.header}>
-        <Row style={{ alignItems: "center", gap: 8 }}>
-          <Pressable onPress={() => router.back()}>
+        <Row style={{ alignItems: "center", gap: 10 }}>
+          <Pressable onPress={() => router.back()} hitSlop={8}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
           </Pressable>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Campus Wall & Feed</Text>
+          <View>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Campus Feed</Text>
+            <Text style={[styles.headerSubtitle, { color: colors.muted }]}>
+              University updates & discussions
+            </Text>
+          </View>
         </Row>
+
         <Pressable
-          onPress={() => setShowComposer(!showComposer)}
-          style={[styles.createBtn, { backgroundColor: colors.primary }]}
+          onPress={() => refetch()}
+          disabled={isRefetching}
+          style={[styles.iconButton, { borderColor: colors.border }]}
         >
-          <MaterialCommunityIcons name="pencil-plus" size={16} color="#FFFFFF" />
-          <Text style={styles.createBtnText}>New Post</Text>
+          {isRefetching ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <MaterialCommunityIcons name="reload" size={18} color={colors.text} />
+          )}
         </Pressable>
       </Row>
 
-      {/* Hidden File Input for Web */}
-      {Platform.OS === "web" && typeof document !== "undefined"
-        ? (React.createElement("input" as any, {
-            ref: fileInputRef,
-            type: "file",
-            accept: "image/jpeg,image/png,image/webp,image/gif",
-            style: { display: "none" },
-            onChange: handleFileSelect,
-          }) as any)
-        : null}
-
-      {/* Composer Card */}
-      {showComposer && (
-        <Card style={styles.composerCard}>
-          <Text style={[styles.composerTitle, { color: colors.text }]}>Create a Campus Post</Text>
-          <TextInput
-            style={[styles.postInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
-            placeholder="Share an update, question, resource, or study note..."
-            placeholderTextColor={colors.muted}
-            multiline
-            numberOfLines={4}
-            value={postText}
-            onChangeText={setPostText}
-          />
-
-          {/* Attached Images Preview Grid */}
-          {attachedMedia.length > 0 && (
-            <View style={styles.composerPreviewGrid}>
-              {attachedMedia.map((m, idx) => (
-                <View key={m.mediaObjectId} style={styles.previewThumbWrapper}>
-                  <Image source={{ uri: m.url }} style={styles.previewThumb} />
-                  <Pressable
-                    style={styles.removeThumbBtn}
-                    onPress={() => removeAttachment(idx)}
+      {/* ─────────────────────────────────────────────────────────────
+          2. FEED CATEGORY FILTER BAR
+      ───────────────────────────────────────────────────────────── */}
+      <View style={styles.filterSection}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+          <Row style={{ gap: 8, paddingHorizontal: 2 }}>
+            {FILTER_OPTIONS.map((opt) => {
+              const isSelected = selectedType === opt.type && !selectedHashtag;
+              return (
+                <Pressable
+                  key={opt.type}
+                  onPress={() => {
+                    triggerHaptic("selection");
+                    setSelectedType(opt.type);
+                    setSelectedHashtag(null);
+                  }}
+                  style={[
+                    styles.filterChip,
+                    {
+                      borderColor: isSelected ? colors.primary : colors.border,
+                      backgroundColor: isSelected ? colors.primary : colors.surface,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name={opt.icon}
+                    size={15}
+                    color={isSelected ? "#FFFFFF" : colors.muted}
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      { color: isSelected ? "#FFFFFF" : colors.text },
+                    ]}
                   >
-                    <MaterialCommunityIcons name="close" size={14} color="#FFFFFF" />
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          )}
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </Row>
+        </ScrollView>
 
-          {/* YouTube Link Field */}
-          {showYouTubeInput && (
-            <View style={{ marginBottom: 12 }}>
-              <TextInput
-                style={[styles.ytInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
-                placeholder="Paste YouTube Link or Video ID (e.g. https://youtu.be/dQw4w9WgXcQ)"
-                placeholderTextColor={colors.muted}
-                value={youtubeUrl}
-                onChangeText={setYoutubeUrl}
-              />
-            </View>
-          )}
-
-          {/* Media Attachment Action Buttons */}
-          <Row style={styles.mediaActionRow}>
-            <Row style={{ gap: 8 }}>
-              <Pressable
-                style={[styles.mediaBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
-                disabled={isUploading || attachedMedia.length >= 4}
-                onPress={() => {
-                  if (Platform.OS === "web" && fileInputRef.current) {
-                    fileInputRef.current.click();
-                  } else {
-                    Alert.alert("Attachment", "Image upload is supported on web browsers.");
-                  }
-                }}
-              >
-                {isUploading ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <MaterialCommunityIcons name="image-plus" size={18} color={colors.primary} />
-                )}
-                <Text style={[styles.mediaBtnText, { color: colors.text }]}>
-                  {attachedMedia.length > 0 ? `Photo (${attachedMedia.length}/4)` : "Add Photo"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[
-                  styles.mediaBtn,
-                  { borderColor: colors.border, backgroundColor: colors.surface },
-                  showYouTubeInput && { borderColor: "#ef4444" },
-                ]}
-                onPress={() => setShowYouTubeInput(!showYouTubeInput)}
-              >
-                <MaterialCommunityIcons name="youtube" size={18} color="#ef4444" />
-                <Text style={[styles.mediaBtnText, { color: colors.text }]}>YouTube</Text>
-              </Pressable>
-            </Row>
-
+        {/* Selected Hashtag Filter Banner */}
+        {selectedHashtag && (
+          <Row style={[styles.hashtagBanner, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
             <Row style={{ alignItems: "center", gap: 6 }}>
-              <MaterialCommunityIcons
-                name="incognito"
-                size={18}
-                color={isAnonymous ? colors.primary : colors.muted}
-              />
-              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600" }}>Anonymous</Text>
-              <Switch
-                value={isAnonymous}
-                onValueChange={setIsAnonymous}
-                trackColor={{ false: colors.border, true: colors.primary }}
-              />
+              <MaterialCommunityIcons name="pound" size={16} color={colors.primary} />
+              <Text style={[styles.hashtagBannerText, { color: colors.text }]}>
+                Showing posts tagged with <Text style={{ color: colors.primary, fontWeight: "700" }}>{selectedHashtag}</Text>
+              </Text>
             </Row>
-          </Row>
-
-          {isAnonymous && (
-            <Text style={[styles.anonNotice, { color: colors.muted }]}>
-              Your identity will be shielded as an Anonymous Student on the public feed.
-            </Text>
-          )}
-
-          <Row style={styles.composerActions}>
-            <Pressable onPress={() => setShowComposer(false)} style={styles.cancelBtn}>
-              <Text style={{ color: colors.muted }}>Cancel</Text>
-            </Pressable>
             <Pressable
-              onPress={() => createPostMutation.mutate()}
-              disabled={createPostMutation.isPending || !postText.trim() || isUploading}
-              style={[
-                styles.publishBtn,
-                { backgroundColor: colors.primary, opacity: postText.trim() && !isUploading ? 1 : 0.6 },
-              ]}
+              onPress={() => setSelectedHashtag(null)}
+              style={styles.clearHashtagBtn}
+              hitSlop={8}
             >
-              {createPostMutation.isPending ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.publishBtnText}>Publish Post</Text>
-              )}
+              <MaterialCommunityIcons name="close-circle" size={18} color={colors.muted} />
             </Pressable>
           </Row>
-        </Card>
-      )}
+        )}
+      </View>
 
-      {/* Feed List */}
+      {/* ─────────────────────────────────────────────────────────────
+          3. MASTER SOCIAL POST COMPOSER
+      ───────────────────────────────────────────────────────────── */}
+      <PostComposer
+        userProfile={profile}
+        onPostPublished={() => {
+          qc.invalidateQueries({ queryKey: ["campus-feed"] });
+        }}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
+          4. FEED CONTENT LIST
+      ───────────────────────────────────────────────────────────── */}
       {isError ? (
         <ErrorState
           detail={(error as Error)?.message || "Failed to load campus feed."}
           onRetry={() => refetch()}
         />
       ) : isLoading ? (
-        <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={[styles.loadingText, { color: colors.muted }]}>
+            Loading campus posts...
+          </Text>
+        </View>
       ) : posts.length === 0 ? (
         <Card style={styles.emptyCard}>
-          <Image
-            source={nextGenAnimations.livePulse}
-            style={{ width: 64, height: 64, marginBottom: 8 }}
-            resizeMode="contain"
+          <MaterialCommunityIcons
+            name={
+              selectedType === "question"
+                ? "help-circle-outline"
+                : selectedType === "poll"
+                  ? "poll"
+                  : selectedType === "event"
+                    ? "calendar-blank"
+                    : selectedType === "achievement"
+                      ? "trophy-outline"
+                      : "newspaper-variant-outline"
+            }
+            size={56}
+            color={colors.primary}
+            style={{ marginBottom: 12 }}
           />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>The campus wall is quiet</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-            Be the first to share an update, exam tip, or club event announcement!
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            {selectedHashtag
+              ? `No posts tagged with ${selectedHashtag}`
+              : selectedType === "all"
+                ? "The campus feed is quiet"
+                : `No ${selectedType.replace("_", " ")} posts yet`}
           </Text>
-          <Pressable
-            onPress={() => setShowComposer(true)}
-            style={[styles.createBtn, { backgroundColor: colors.primary, marginTop: 14 }]}
-          >
-            <MaterialCommunityIcons name="pencil" size={16} color="#FFFFFF" />
-            <Text style={styles.createBtnText}>Create First Post</Text>
-          </Pressable>
+          <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
+            {selectedHashtag
+              ? "Try exploring another topic or share your own thoughts with this hashtag!"
+              : "Be the first to share an update, exam tip, question, or project showcase with your university community."}
+          </Text>
         </Card>
       ) : (
-        posts.map((post) => {
-          const images = (post.attachments && post.attachments.length > 0)
-            ? post.attachments.map((a) => a.url)
-            : (post.media_urls || []);
+        <FlatList
+          data={posts}
+          keyExtractor={(item) => item.id}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefetching}
+              onRefresh={refetch}
+              tintColor={colors.primary}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <PostCard
+              key={item.id}
+              post={item}
+              currentUserId={profile?.id}
+              isAdmin={isAdmin}
+              onReact={(postId, type) => reactionMutation.mutate({ postId, type })}
+              onVotePoll={async (postId, optionId) => {
+                await pollVoteMutation.mutateAsync({ postId, optionId });
+              }}
+              onSave={(postId) => toggleSaveMutation.mutate(postId)}
+              onShare={(p) => setSharingPost(p)}
+              onDelete={(postId) => {
+                Alert.alert(
+                  "Delete Post",
+                  "Are you sure you want to delete this post? This action cannot be undone.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: () => deletePostMutation.mutate(postId),
+                    },
+                  ],
+                );
+              }}
+              onEdit={(p) => setEditingPost(p)}
+              onReport={(postId) => handleReport(postId)}
+              onHashtagPress={(tag) => {
+                triggerHaptic("selection");
+                setSelectedHashtag(tag);
+              }}
+              onMentionPress={(username) => {
+                Alert.alert("Campus Peer", `@${username}`);
+              }}
+            />
+          )}
+        />
+      )}
 
-          return (
-            <Card key={post.id} style={styles.postCard}>
-              <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                <Row style={{ alignItems: "center", gap: 10 }}>
-                  {post.is_anonymous ? (
-                    <Image source={nextGenBadges.trusted} style={styles.avatarBadge} resizeMode="contain" />
-                  ) : (
-                    <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface }]}>
-                      <MaterialCommunityIcons name="account" size={20} color={colors.primary} />
-                    </View>
-                  )}
-                  <View>
-                    <Row style={{ alignItems: "center", gap: 6 }}>
-                      <Text style={[styles.authorName, { color: colors.text }]}>
-                        {post.author?.full_name || "Campus Member"}
-                      </Text>
-                      {post.is_anonymous && <Pill tone="info">Anonymous</Pill>}
-                      {post.pinned && <Pill tone="primary">Pinned</Pill>}
-                    </Row>
-                    <Text style={[styles.timestamp, { color: colors.muted }]}>
-                      {new Date(post.created_at).toLocaleDateString()} · {new Date(post.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </View>
-                </Row>
+      {/* ─────────────────────────────────────────────────────────────
+          5. AUXILIARY MODALS: EDIT & SHARE
+      ───────────────────────────────────────────────────────────── */}
+      <EditPostModal
+        visible={Boolean(editingPost)}
+        post={editingPost}
+        onClose={() => setEditingPost(null)}
+        onSave={async (postId, newBody) => {
+          await editPostMutation.mutateAsync({ postId, newBody });
+        }}
+      />
 
-                <Pressable
-                  onPress={() =>
-                    Alert.alert("Post Options", "Choose an action", [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Delete Post",
-                        style: "destructive",
-                        onPress: () => deletePostMutation.mutate(post.id),
-                      },
-                    ])
-                  }
-                >
-                  <MaterialCommunityIcons name="dots-horizontal" size={20} color={colors.muted} />
-                </Pressable>
-              </Row>
-
-              <Text style={[styles.postBody, { color: colors.text }]}>{post.body}</Text>
-
-              {/* Multi-Image Grid Renderer */}
-              {images.length > 0 && (
-                <View style={styles.mediaGrid}>
-                  {images.length === 1 ? (
-                    <Image
-                      source={{ uri: images[0] }}
-                      style={styles.singleImage}
-                      resizeMode="cover"
-                    />
-                  ) : images.length === 2 ? (
-                    <Row style={{ gap: 6 }}>
-                      {images.map((url, i) => (
-                        <Image key={i} source={{ uri: url }} style={styles.doubleImage} resizeMode="cover" />
-                      ))}
-                    </Row>
-                  ) : images.length === 3 ? (
-                    <View style={{ gap: 6 }}>
-                      <Image source={{ uri: images[0] }} style={styles.tripleTopImage} resizeMode="cover" />
-                      <Row style={{ gap: 6 }}>
-                        <Image source={{ uri: images[1] }} style={styles.doubleImage} resizeMode="cover" />
-                        <Image source={{ uri: images[2] }} style={styles.doubleImage} resizeMode="cover" />
-                      </Row>
-                    </View>
-                  ) : (
-                    <View style={{ gap: 6 }}>
-                      <Row style={{ gap: 6 }}>
-                        <Image source={{ uri: images[0] }} style={styles.doubleImage} resizeMode="cover" />
-                        <Image source={{ uri: images[1] }} style={styles.doubleImage} resizeMode="cover" />
-                      </Row>
-                      <Row style={{ gap: 6 }}>
-                        <Image source={{ uri: images[2] }} style={styles.doubleImage} resizeMode="cover" />
-                        <Image source={{ uri: images[3] }} style={styles.doubleImage} resizeMode="cover" />
-                      </Row>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* YouTube Embed / Preview Card */}
-              {post.youtube && (
-                <Pressable
-                  onPress={() => {
-                    const ytUrl = `https://www.youtube.com/watch?v=${post.youtube!.videoId}`;
-                    Linking.openURL(ytUrl).catch(() => {});
-                  }}
-                  style={[styles.youtubeCard, { borderColor: colors.border }]}
-                >
-                  <View style={styles.youtubeThumbContainer}>
-                    <Image source={{ uri: post.youtube.thumbnailUrl }} style={styles.youtubeThumb} />
-                    <View style={styles.ytPlayOverlay}>
-                      <MaterialCommunityIcons name="youtube" size={36} color="#ef4444" />
-                    </View>
-                  </View>
-                  <View style={styles.youtubeMeta}>
-                    <Text style={[styles.youtubeTitle, { color: colors.text }]} numberOfLines={2}>
-                      {post.youtube.title}
-                    </Text>
-                    <Text style={[styles.youtubeSub, { color: colors.muted }]}>
-                      Watch on YouTube
-                    </Text>
-                  </View>
-                </Pressable>
-              )}
-
-              {/* Reactions Bar */}
-              <Row style={[styles.reactionsBar, { borderTopColor: colors.border }]}>
-                {[
-                  { type: "like", icon: "heart", label: "Like", count: post.likes_count },
-                  { type: "insightful", icon: "lightbulb-on", label: "Insight", count: 0 },
-                  { type: "celebrate", icon: "party-popper", label: "Celebrate", count: 0 },
-                ].map((r) => (
-                  <Pressable
-                    key={r.type}
-                    onPress={() => reactionMutation.mutate({ postId: post.id, type: r.type })}
-                    style={[
-                      styles.reactionBtn,
-                      post.my_reaction === r.type && { backgroundColor: colors.surface },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name={r.icon as any}
-                      size={16}
-                      color={post.my_reaction === r.type ? colors.primary : colors.muted}
-                    />
-                    <Text
-                      style={[
-                        styles.reactionText,
-                        { color: post.my_reaction === r.type ? colors.primary : colors.muted },
-                      ]}
-                    >
-                      {r.type === "like" ? post.likes_count : r.label}
-                    </Text>
-                  </Pressable>
-                ))}
-
-                <Pressable
-                  onPress={() =>
-                    setExpandedCommentsPostId(expandedCommentsPostId === post.id ? null : post.id)
-                  }
-                  style={styles.reactionBtn}
-                >
-                  <MaterialCommunityIcons name="comment-text-outline" size={16} color={colors.muted} />
-                  <Text style={[styles.reactionText, { color: colors.muted }]}>
-                    {post.comments_count}
-                  </Text>
-                </Pressable>
-              </Row>
-
-              {/* Comments Accordion */}
-              {expandedCommentsPostId === post.id && (
-                <View style={[styles.commentsSection, { borderTopColor: colors.border }]}>
-                  <Row style={{ gap: 8, marginTop: 8 }}>
-                    <TextInput
-                      style={[styles.commentInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
-                      placeholder="Write a comment..."
-                      placeholderTextColor={colors.muted}
-                      value={commentText}
-                      onChangeText={setCommentText}
-                    />
-                    <Pressable
-                      onPress={() => commentMutation.mutate({ postId: post.id, body: commentText })}
-                      disabled={commentMutation.isPending || !commentText.trim()}
-                      style={[styles.commentSendBtn, { backgroundColor: colors.primary }]}
-                    >
-                      <MaterialCommunityIcons name="send" size={16} color="#FFFFFF" />
-                    </Pressable>
-                  </Row>
-                </View>
-              )}
-            </Card>
-          );
-        })
+      {sharingPost && (
+        <UniversalShareSheet
+          visible={Boolean(sharingPost)}
+          sourceType="post"
+          sourceId={sharingPost.id}
+          sourceTitle={
+            sharingPost.body.length > 50
+              ? `${sharingPost.body.slice(0, 50)}...`
+              : sharingPost.body
+          }
+          sourceVisibility={sharingPost.visibility === "only_me" ? "private" : "public"}
+          onClose={() => setSharingPost(null)}
+          onShared={() => {
+            api(`/feed/${sharingPost.id}/share`, { method: "POST" }).catch(() => {});
+            setSharingPost(null);
+          }}
+        />
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  headerTitle: { fontSize: 20, fontWeight: "800" },
-  createBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.md },
-  createBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
-  composerCard: { padding: 14, marginBottom: 16, borderRadius: radius.lg },
-  composerTitle: { fontSize: 16, fontWeight: "700", marginBottom: 10 },
-  postInput: { borderWidth: 1, borderRadius: radius.md, padding: 12, fontSize: 14, minHeight: 90, textAlignVertical: "top", marginBottom: 10 },
-  composerPreviewGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
-  previewThumbWrapper: { width: 72, height: 72, borderRadius: radius.md, overflow: "hidden", position: "relative" },
-  previewThumb: { width: "100%", height: "100%" },
-  removeThumbBtn: { position: "absolute", top: 2, right: 2, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 10, width: 20, height: 20, alignItems: "center", justifyContent: "center" },
-  ytInput: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13 },
-  mediaActionRow: { alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-  mediaBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.md },
-  mediaBtnText: { fontSize: 12, fontWeight: "600" },
-  anonNotice: { fontSize: 12, marginTop: 4, fontStyle: "italic" },
-  composerActions: { justifyContent: "flex-end", gap: 10, marginTop: 10 },
-  cancelBtn: { paddingHorizontal: 12, paddingVertical: 8 },
-  publishBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: radius.md },
-  publishBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
-  emptyCard: { padding: 32, alignItems: "center", justifyContent: "center" },
-  emptyTitle: { fontSize: 16, fontWeight: "700", marginTop: 12 },
-  emptySubtitle: { fontSize: 13, marginTop: 4, textAlign: "center", lineHeight: 18 },
-  postCard: { padding: 14, marginBottom: 12, borderRadius: radius.lg },
-  avatarBadge: { width: 36, height: 36 },
-  avatarPlaceholder: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  authorName: { fontSize: 14, fontWeight: "700" },
-  timestamp: { fontSize: 11, marginTop: 2 },
-  postBody: { fontSize: 14, lineHeight: 22, marginTop: 10 },
-  mediaGrid: { marginTop: 10, borderRadius: radius.md, overflow: "hidden" },
-  singleImage: { width: "100%", height: 220, borderRadius: radius.md },
-  doubleImage: { flex: 1, height: 160, borderRadius: radius.md },
-  tripleTopImage: { width: "100%", height: 160, borderRadius: radius.md },
-  youtubeCard: { marginTop: 10, borderWidth: 1, borderRadius: radius.md, overflow: "hidden", flexDirection: "row", gap: 10, alignItems: "center" },
-  youtubeThumbContainer: { width: 120, height: 75, position: "relative", backgroundColor: "#000000" },
-  youtubeThumb: { width: "100%", height: "100%" },
-  ytPlayOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
-  youtubeMeta: { flex: 1, paddingRight: 8 },
-  youtubeTitle: { fontSize: 13, fontWeight: "700" },
-  youtubeSub: { fontSize: 11, marginTop: 2 },
-  reactionsBar: { borderTopWidth: 1, marginTop: 12, paddingTop: 8, justifyContent: "space-around" },
-  reactionBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderRadius: radius.sm },
-  reactionText: { fontSize: 12, fontWeight: "600" },
-  commentsSection: { borderTopWidth: 1, marginTop: 10, paddingTop: 6 },
-  commentInput: { flex: 1, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13 },
-  commentSendBtn: { width: 38, height: 38, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  header: {
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+    paddingHorizontal: 2,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    marginTop: 1,
+    fontWeight: "500",
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterSection: {
+    marginBottom: 12,
+  },
+  filterScroll: {
+    flexDirection: "row",
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 12.5,
+    fontWeight: "600",
+  },
+  hashtagBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  hashtagBannerText: {
+    fontSize: 12.5,
+  },
+  clearHashtagBtn: {
+    padding: 2,
+  },
+  listContent: {
+    paddingBottom: 40,
+  },
+  loadingContainer: {
+    paddingVertical: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 13,
+  },
+  emptyCard: {
+    padding: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    marginTop: 6,
+    textAlign: "center",
+    lineHeight: 18,
+    maxWidth: 280,
+  },
 });

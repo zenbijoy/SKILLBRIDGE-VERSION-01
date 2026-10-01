@@ -1,5 +1,54 @@
-import type { Server as SocketServer, Socket } from "socket.io";
+import type { Server as SocketServer } from "socket.io";
 import { admin } from "./lib/db.js";
+import { logger } from "./lib/logger.js";
+
+/**
+ * Lightweight real-time presence bus.
+ *
+ * LiveKit webhooks (join/leave) have no access to the Socket.IO server instance,
+ * so we keep a module-level reference that setupSocket() registers at boot.
+ * Room subscribers receive `room:presence` events with the live participant count.
+ */
+let ioRef: SocketServer | null = null;
+
+export function registerSocketServer(io: SocketServer): void {
+  ioRef = io;
+}
+
+export function getSocketServer(): SocketServer | null {
+  return ioRef;
+}
+
+export const roomPresenceRoom = (roomId: string) => `room:${roomId}`;
+export const sessionPresenceRoom = (sessionId: string) => `session:${sessionId}`;
+
+/**
+ * Broadcast the current live participant count to everyone watching the room.
+ * Silently no-ops when no socket server is registered (e.g. in tests).
+ */
+export function broadcastRoomPresence(
+  roomId: string,
+  payload: {
+    sessionId: string | null;
+    liveParticipantCount: number;
+    isLive: boolean;
+  },
+): void {
+  if (!ioRef) return;
+  try {
+    ioRef.to(roomPresenceRoom(roomId)).emit("room:presence", payload);
+    if (payload.sessionId) {
+      ioRef
+        .to(sessionPresenceRoom(payload.sessionId))
+        .emit("session:presence", payload);
+    }
+  } catch (err) {
+    logger.warn(
+      { event: "presence_broadcast_failed", roomId, err: (err as Error).message },
+      "Failed to broadcast room presence",
+    );
+  }
+}
 
 export const userConnections = new Map<string, number>();
 
@@ -18,6 +67,9 @@ function checkSignalingRateLimit(socketId: string, limit = 60, windowMs = 10000)
 }
 
 export function setupSocket(io: SocketServer) {
+  // Make the server instance reachable from webhook-driven presence broadcasts.
+  registerSocketServer(io);
+
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -85,6 +137,70 @@ export function setupSocket(io: SocketServer) {
     socket.on("join_conversation", handleJoin);
     socket.on("conversation:leave", handleLeave);
     socket.on("leave_conversation", handleLeave);
+
+    // ── Room presence (live classroom participant count) ────────────────────
+    const handleRoomSubscribe = async (payload: any) => {
+      const roomId = payload?.roomId || payload?.room_id;
+      if (typeof roomId !== "string") return;
+
+      // Only room members (or the public room itself) may observe presence.
+      const { data: membership } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", socket.data.userId)
+        .maybeSingle();
+
+      const { data: room } = await admin
+        .from("rooms")
+        .select("id, visibility")
+        .eq("id", roomId)
+        .maybeSingle();
+
+      if (!room) return;
+      if (membership) {
+        socket.join(roomPresenceRoom(roomId));
+      } else if (room.visibility === "public") {
+        socket.join(roomPresenceRoom(roomId));
+      } else {
+        return;
+      }
+
+      // Send the authoritative snapshot immediately so the client never renders "0".
+      const { data: liveSession } = await admin
+        .from("sessions")
+        .select("id")
+        .eq("room_id", roomId)
+        .eq("status", "live")
+        .order("starts_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let count = 0;
+      if (liveSession) {
+        const { count: c } = await admin
+          .from("livekit_attendance")
+          .select("id", { count: "exact", head: true })
+          .eq("session_id", liveSession.id)
+          .is("left_at", null);
+        count = c ?? 0;
+      }
+      socket.emit("room:presence", {
+        sessionId: liveSession?.id ?? null,
+        liveParticipantCount: count,
+        isLive: Boolean(liveSession),
+      });
+    };
+
+    const handleRoomUnsubscribe = (payload: any) => {
+      const roomId = payload?.roomId || payload?.room_id;
+      if (typeof roomId === "string") socket.leave(roomPresenceRoom(roomId));
+    };
+
+    socket.on("room:presence:subscribe", handleRoomSubscribe);
+    socket.on("room:subscribe", handleRoomSubscribe);
+    socket.on("room:presence:unsubscribe", handleRoomUnsubscribe);
+    socket.on("room:unsubscribe", handleRoomUnsubscribe);
 
     socket.on("typing:start", ({ conversationId }) => {
       if (typeof conversationId !== "string") return;

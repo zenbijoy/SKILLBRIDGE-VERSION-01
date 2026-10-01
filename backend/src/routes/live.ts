@@ -5,9 +5,44 @@ import { env } from "../config/env.js";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { logger } from "../lib/logger.js";
+import { broadcastRoomPresence } from "../socket.js";
+import { NotificationService } from "../services/notificationService.js";
 
 export const live = Router();
 export const liveWebhooks = Router();
+
+/**
+ * Count who is currently connected to a LiveKit session and push that number
+ * to every client watching the room. Silently returns when the session is gone.
+ */
+async function emitRoomPresence(sessionId: string): Promise<void> {
+  try {
+    const { data: session } = await admin
+      .from("sessions")
+      .select("id, room_id, status")
+      .eq("id", sessionId)
+      .maybeSingle();
+
+    if (!session) return;
+
+    const { count } = await admin
+      .from("livekit_attendance")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", sessionId)
+      .is("left_at", null);
+
+    broadcastRoomPresence(session.room_id as string, {
+      sessionId,
+      liveParticipantCount: count ?? 0,
+      isLive: session.status === "live",
+    });
+  } catch (err) {
+    logger.warn(
+      { event: "emit_room_presence_failed", sessionId, err: (err as Error).message },
+      "Failed to emit room presence",
+    );
+  }
+}
 
 function getWebhookReceiver(): WebhookReceiver | null {
   if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET) {
@@ -59,6 +94,8 @@ liveWebhooks.post("/", wrap(async (req, res) => {
         );
         throw rpcErr;
       }
+      // Push the updated count to everyone watching this room in real time.
+      await emitRoomPresence(meta.sessionId);
     }
   } else if (event.event === "participant_left") {
     let meta: any = {};
@@ -80,6 +117,7 @@ liveWebhooks.post("/", wrap(async (req, res) => {
         );
         throw rpcErr;
       }
+      await emitRoomPresence(meta.sessionId);
     }
   } else if (event.event === "room_finished") {
     const roomName = event.room?.name || "";
@@ -174,6 +212,31 @@ live.post(
 
         if (createErr || !newSession) throw createErr || new Error("Failed to create session");
         session = newSession;
+
+        // Dispatch ROOM_SESSION_LIVE notification to other room members asynchronously
+        void (async () => {
+          try {
+            const [{ data: roomData }, { data: members }] = await Promise.all([
+              admin.from("rooms").select("title").eq("id", targetRoomId).maybeSingle(),
+              admin.from("room_members").select("user_id").eq("room_id", targetRoomId).neq("user_id", req.userId!).limit(50),
+            ]);
+
+            const roomName = roomData?.title || "Study Room";
+            for (const m of members || []) {
+              void NotificationService.dispatch({
+                userId: m.user_id,
+                type: "ROOM_SESSION_LIVE",
+                title: "Live Session Started 🔴",
+                body: `A live study session is happening now in "${roomName}".`,
+                entityType: "room",
+                entityId: targetRoomId,
+                data: { roomId: targetRoomId, sessionId: newSession.id, route: "room" },
+              });
+            }
+          } catch (notifErr) {
+            logger.warn({ err: (notifErr as Error).message, targetRoomId }, "Failed dispatching live room session notification");
+          }
+        })();
       } else {
         return res.status(404).json({ error: "No active live session found in this room" });
       }
@@ -246,106 +309,12 @@ live.post(
 );
 
 // 1:1 WhatsApp-style Call Initiation Endpoint
-live.post(
-  "/calls/initiate",
-  wrap(async (req, res) => {
-    if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_URL) {
-      return res.status(503).json({
-        error: "LiveKit service not configured for calls.",
-        code: "LIVEKIT_NOT_CONFIGURED",
-      });
-    }
-
-    const { calleeId, callType } = z
-      .object({
-        calleeId: z.string().uuid(),
-        callType: z.enum(["audio", "video"]).default("video"),
-      })
-      .parse(req.body);
-
-    const callerId = req.userId!;
-    if (callerId === calleeId) {
-      return res.status(400).json({ error: "Cannot initiate call to self." });
-    }
-
-    const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const roomName = `sb-call-${callId}`;
-
-    // Get profiles of caller and callee
-    const { data: profiles } = await admin
-      .from("profiles")
-      .select("id, full_name, username, avatar_url")
-      .in("id", [callerId, calleeId]);
-
-    const caller = profiles?.find((p) => p.id === callerId);
-    const callee = profiles?.find((p) => p.id === calleeId);
-
-    const callerName = caller?.full_name || caller?.username || "SkillBridge User";
-    const calleeName = callee?.full_name || callee?.username || "SkillBridge Peer";
-
-    // Mint LiveKit Token for caller
-    const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-      identity: callerId,
-      name: callerName,
-      ttl: "1h",
-      metadata: JSON.stringify({ callId, callType, role: "caller" }),
-    });
-
-    at.addGrant({
-      roomJoin: true,
-      room: roomName,
-      canSubscribe: true,
-      canPublish: true,
-      canPublishData: true,
-    });
-
-    // Notify callee via push notification
-    try {
-      const { notifyUser } = await import("../services/push.js");
-      await notifyUser(
-        calleeId,
-        `Incoming ${callType} call`,
-        `${callerName} is calling you on SkillBridge…`,
-        "call",
-        { callId, callerId, callerName, roomName, callType },
-      );
-    } catch (err) {
-      logger.warn(
-        {
-          event: "call_push_notify_failed",
-          callId,
-          calleeId,
-          err: err instanceof Error ? err.message : err,
-        },
-        "Could not dispatch call push notification",
-      );
-    }
-
-    res.json({
-      callId,
-      roomName,
-      token: await at.toJwt(),
-      url: env.LIVEKIT_URL,
-      calleeName,
-      calleeAvatar: callee?.avatar_url || null,
-    });
-  }),
-);
-
-// 1:1 Call Termination Endpoint
-live.post(
-  "/calls/:id/end",
-  wrap(async (req, res) => {
-    const callId = req.params.id;
-    const { durationSeconds } = z
-      .object({
-        durationSeconds: z.number().int().min(0).default(0),
-      })
-      .parse(req.body);
-
-    res.json({ success: true, callId, durationSeconds, status: "ended" });
-  }),
-);
+// NOTE: the previous `/calls/initiate` + `/calls/:id/end` pair here was dead,
+// incomplete code reachable only from an unused client hook. It minted a
+// LiveKit token without any privacy/block checks and never rang the callee
+// (no accept/decline/ring over socket), so it could not work end to end.
+// The supported 1:1 call flow is the WebRTC pipeline in routes/calls.ts
+// (POST /calls -> socket `call:incoming` -> accept/reject -> call:* signaling).
 
 
 

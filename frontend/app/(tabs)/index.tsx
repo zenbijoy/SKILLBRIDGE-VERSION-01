@@ -20,6 +20,7 @@ import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { nextGenAnimations, nextGenAnimationsV2 } from "@/assets/nextgen";
+import { UpcomingWidget, type UpcomingSummary } from "@/features/calendar";
 
 export default function HomeScreen() {
   const { colors } = useTheme();
@@ -53,6 +54,12 @@ export default function HomeScreen() {
   const me = useQuery({
     queryKey: ["me"],
     queryFn: () => api<{ profile: Profile }>("/profiles/me"),
+  });
+
+  const upcomingQuery = useQuery({
+    queryKey: ["calendar-upcoming"],
+    queryFn: () => api<UpcomingSummary>("/calendar/upcoming"),
+    staleTime: 30_000,
   });
 
   useEffect(() => {
@@ -97,7 +104,14 @@ export default function HomeScreen() {
 
   const handleRefresh = async () => {
     setGreetingKey((prev) => prev + 1);
-    await Promise.all([dashboard.refetch(), me.refetch()]);
+    await Promise.all([
+      dashboard.refetch(),
+      me.refetch(),
+      upcomingQuery.refetch(),
+      qc.invalidateQueries({ queryKey: ["campus-feed"] }),
+      qc.invalidateQueries({ queryKey: ["help-questions", "feed-preview"] }),
+      qc.invalidateQueries({ queryKey: ["recommendations", "people-feed"] }),
+    ]);
   };
 
   return (
@@ -105,7 +119,7 @@ export default function HomeScreen() {
       <Screen
         header={<HomeNavbar />}
         onRefresh={handleRefresh}
-        refreshing={dashboard.isRefetching || me.isRefetching}
+        refreshing={dashboard.isRefetching || me.isRefetching || upcomingQuery.isRefetching}
       >
 
       {dashboard.isError ? (
@@ -163,6 +177,10 @@ export default function HomeScreen() {
             return (
               <View key="greeting_hero" style={{ gap: 10 }}>
                 <AnimatedGreeting key={greetingKey} name={firstName} mode={mode} />
+                <UpcomingWidget
+                  summary={upcomingQuery.data}
+                  isLoading={upcomingQuery.isLoading}
+                />
                 <FeaturedHeroCarousel mode={mode} />
               </View>
             );

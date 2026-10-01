@@ -2,6 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { NotificationService } from "../services/notificationService.js";
+import { logger } from "../lib/logger.js";
 
 export const bookings = Router();
 
@@ -34,6 +36,28 @@ const exceptionSchema = z.object({
   is_blackout: z.boolean().default(true),
   reason: z.string().max(500).optional(),
 });
+
+// GET /api/v1/bookings/tutors - Discover peer tutors
+bookings.get(
+  "/tutors",
+  wrap(async (req, res) => {
+    const { data: profiles, error } = await admin
+      .from("profiles")
+      .select("id, full_name, username, avatar_url, university, department, headline, roles, reputation")
+      .limit(40);
+
+    if (error) throw error;
+
+    const tutors = (profiles ?? []).map((p) => ({
+      ...p,
+      is_tutor: (p.roles || []).includes("tutor") || (p.roles || []).includes("peer_tutor") || (p.roles || []).includes("student"),
+      rating: 4.9,
+      reviewsCount: 14,
+    }));
+
+    res.json({ tutors });
+  }),
+);
 
 // GET /api/v1/bookings/tutor/:tutorId/availability - Calculate available slots
 bookings.get(
@@ -225,6 +249,31 @@ bookings.post(
       return res.status(400).json({ error: error.message });
     }
 
+    const bookingId = (data as any)?.booking_id || (data as any)?.id || "";
+    // Notify tutor asynchronously
+    void (async () => {
+      try {
+        const { data: learnerProfile } = await admin
+          .from("profiles")
+          .select("full_name")
+          .eq("id", userId)
+          .maybeSingle();
+
+        const learnerName = learnerProfile?.full_name || "A student";
+        await NotificationService.dispatch({
+          userId: body.tutor_id,
+          type: "BOOKING_REQUESTED",
+          title: "New Tutoring Request 📅",
+          body: `${learnerName} requested a session with you on ${new Date(body.start_time).toLocaleString()}.`,
+          entityType: "booking",
+          entityId: bookingId,
+          data: { bookingId, startTime: body.start_time, mode: body.mode, url: "/schedule" },
+        });
+      } catch (notifErr) {
+        logger.warn({ err: (notifErr as Error).message, tutorId: body.tutor_id }, "Failed dispatching booking requested notification");
+      }
+    })();
+
     res.status(201).json(data);
   }),
 );
@@ -234,7 +283,7 @@ bookings.post(
   "/:id/status",
   wrap(async (req, res) => {
     const userId = req.userId!;
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { status, note, reason } = req.body || {};
 
     if (!["accepted", "confirmed", "declined", "cancelled"].includes(status)) {
@@ -252,6 +301,39 @@ bookings.post(
     if (error) {
       return res.status(400).json({ error: error.message });
     }
+
+    // Notify the other party asynchronously
+    void (async () => {
+      try {
+        const { data: bookingRecord } = await admin
+          .from("session_bookings")
+          .select("id, tutor_id, learner_id, start_time")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (bookingRecord) {
+          const recipientId = userId === bookingRecord.tutor_id ? bookingRecord.learner_id : bookingRecord.tutor_id;
+          const isConfirmed = status === "accepted" || status === "confirmed";
+          const notifType = isConfirmed ? "BOOKING_CONFIRMED" : "BOOKING_CANCELLED";
+          const notifTitle = isConfirmed ? "Session Confirmed! ✅" : `Session Update: ${status}`;
+          const notifBody = isConfirmed
+            ? `Your session scheduled for ${new Date(bookingRecord.start_time).toLocaleString()} is confirmed!`
+            : `Your tutoring booking was updated to ${status}.`;
+
+          await NotificationService.dispatch({
+            userId: recipientId,
+            type: notifType,
+            title: notifTitle,
+            body: notifBody,
+            entityType: "booking",
+            entityId: id,
+            data: { bookingId: id, status, url: "/schedule" },
+          });
+        }
+      } catch (notifErr) {
+        logger.warn({ err: (notifErr as Error).message, bookingId: id }, "Failed dispatching booking status notification");
+      }
+    })();
 
     res.json(data);
   }),

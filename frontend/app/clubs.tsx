@@ -1,368 +1,548 @@
 import React, { useState, useMemo } from "react";
 import {
-  Alert,
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
   View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
+  Pressable,
 } from "react-native";
 import { router } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { api } from "@/lib/api";
-import { Button, Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
-import { radius, spacing, useTheme } from "@/theme";
-import { useI18n } from "@/i18n";
-import { nextGenAnimations, nextGenAnimationsV2, nextGenBadges } from "@/assets/nextgen";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
+import { Screen, H1, Muted, triggerHaptic } from "@/components/ui";
+import { useTheme } from "@/theme";
+import api from "@/services/api";
+import {
+  ClubItem,
+  ClubCategory,
+  CLUB_CATEGORIES,
+  ClubCard,
+  CreateClubModal,
+} from "@/features/clubs";
 
-type ClubItem = {
-  id: string;
-  name: string;
-  description?: string;
-  university?: string;
-  category?: string;
-  verified?: boolean;
-  room_id?: string;
-  logo_url?: string;
-  member_count?: number;
-  is_member?: boolean;
-  next_event?: {
-    id: string;
-    title: string;
-    starts_at: string;
-  };
-};
-
-const CATEGORIES = ["All", "Joined", "Academic", "Technical", "Cultural", "Sports"];
+type DiscoveryTab = "explore" | "recommended" | "my_clubs";
 
 export default function ClubsScreen() {
   const { colors } = useTheme();
-  const { t } = useI18n();
   const qc = useQueryClient();
 
+  const [activeTab, setActiveTab] = useState<DiscoveryTab>("explore");
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newClubName, setNewClubName] = useState("");
-  const [newClubCategory, setNewClubCategory] = useState("Academic");
-  const [newClubDesc, setNewClubDesc] = useState("");
-  const [newClubUni, setNewClubUni] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<ClubCategory | "All">("All");
 
+  // Filter chips
+  const [filterRecruiting, setFilterRecruiting] = useState(false);
+  const [filterEvents, setFilterEvents] = useState(false);
+  const [filterVerified, setFilterVerified] = useState(false);
+
+  // Modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Fetch all clubs
   const clubsQuery = useQuery({
     queryKey: ["clubs"],
-    queryFn: () => api<{ clubs: ClubItem[] }>("/clubs"),
+    queryFn: async () => {
+      const res = await api.get<{ clubs: ClubItem[] }>("/clubs");
+      return res.data?.clubs ?? [];
+    },
   });
 
+  // Fetch user's clubs
   const myClubsQuery = useQuery({
     queryKey: ["my-clubs"],
-    queryFn: () => api<{ memberships: { role: string; clubs: ClubItem }[] }>("/clubs/mine"),
-  });
+    queryFn: async () => {
+      const res = await api.get<{
+        memberships: { role: string; clubs: ClubItem }[];
+        followed_clubs?: ClubItem[];
+      }>("/clubs/mine");
+      const joined = (res.data?.memberships ?? [])
+        .map((m: { role: string; clubs: ClubItem }) => {
+          if (!m.clubs) return null;
+          return {
+            ...m.clubs,
+            is_member: true,
+            my_role: m.role as any,
+          };
+        })
+        .filter(Boolean) as ClubItem[];
 
-  const joinedClubIds = useMemo(() => {
-    return new Set((myClubsQuery.data?.memberships ?? []).map((m) => m.clubs?.id).filter(Boolean));
-  }, [myClubsQuery.data]);
+      const followed = (res.data?.followed_clubs ?? []).map((c: ClubItem) => ({
+        ...c,
+        is_following: true,
+      }));
 
-  const createClubMutation = useMutation({
-    mutationFn: () =>
-      api<ClubItem>("/clubs", {
-        method: "POST",
-        body: JSON.stringify({
-          name: newClubName.trim(),
-          description: newClubDesc.trim() || "Student organization",
-          university: newClubUni.trim() || undefined,
-        }),
-      }),
-    onSuccess: (data) => {
-      triggerHaptic();
-      qc.invalidateQueries({ queryKey: ["clubs"] });
-      qc.invalidateQueries({ queryKey: ["my-clubs"] });
-      setShowCreateModal(false);
-      setNewClubName("");
-      setNewClubDesc("");
-      setNewClubUni("");
-      Alert.alert("Club Registered! 🎉", "Your club has been created and linked to Room OS.", [
-        {
-          text: "Open Club",
-          onPress: () => router.push(`/club/${data.id}` as any),
-        },
-      ]);
-    },
-    onError: (err: any) => {
-      Alert.alert("Registration Failed", err.message || "Could not register club.");
+      return { joined, followed };
     },
   });
 
-  const allClubs = clubsQuery.data?.clubs ?? [];
+  // Fetch personalized recommended clubs
+  const recommendedQuery = useQuery({
+    queryKey: ["recommended-clubs"],
+    queryFn: async () => {
+      const res = await api.get<{ clubs: ClubItem[] }>("/clubs/recommended");
+      return res.data?.clubs ?? [];
+    },
+  });
 
+  const allClubs = clubsQuery.data ?? [];
+  const myJoinedClubs = myClubsQuery.data?.joined ?? [];
+  const myFollowedClubs = myClubsQuery.data?.followed ?? [];
+  const recommendedClubs = recommendedQuery.data ?? [];
+
+  const handleRefresh = async () => {
+    triggerHaptic();
+    await Promise.all([
+      clubsQuery.refetch(),
+      myClubsQuery.refetch(),
+      recommendedQuery.refetch(),
+    ]);
+  };
+
+  // Filter logic
   const filteredClubs = useMemo(() => {
-    return allClubs.filter((club) => {
+    let source = allClubs;
+
+    if (activeTab === "recommended") {
+      source = recommendedClubs.length > 0 ? recommendedClubs : allClubs;
+    } else if (activeTab === "my_clubs") {
+      source = [...myJoinedClubs, ...myFollowedClubs];
+    }
+
+    return source.filter((club: ClubItem) => {
+      // Search matching
+      const query = search.trim().toLowerCase();
       const matchesSearch =
-        search.trim().length === 0 ||
-        club.name.toLowerCase().includes(search.toLowerCase()) ||
-        club.description?.toLowerCase().includes(search.toLowerCase()) ||
-        club.university?.toLowerCase().includes(search.toLowerCase());
+        !query ||
+        club.name.toLowerCase().includes(query) ||
+        club.description?.toLowerCase().includes(query) ||
+        club.tagline?.toLowerCase().includes(query) ||
+        club.university?.toLowerCase().includes(query) ||
+        club.department?.toLowerCase().includes(query);
 
       if (!matchesSearch) return false;
 
-      if (selectedCategory === "All") return true;
-      if (selectedCategory === "Joined") return joinedClubIds.has(club.id);
+      // Category matching
+      if (selectedCategory !== "All") {
+        if ((club.category || "").toLowerCase() !== selectedCategory.toLowerCase()) {
+          return false;
+        }
+      }
 
-      const cat = club.category || "Academic";
-      return cat.toLowerCase() === selectedCategory.toLowerCase();
+      // Feature filters
+      if (filterVerified && !club.verified) return false;
+      if (filterEvents && !club.next_event) return false;
+
+      return true;
     });
-  }, [allClubs, search, selectedCategory, joinedClubIds]);
+  }, [
+    allClubs,
+    recommendedClubs,
+    myJoinedClubs,
+    myFollowedClubs,
+    activeTab,
+    search,
+    selectedCategory,
+    filterVerified,
+    filterEvents,
+  ]);
 
   return (
     <Screen>
-      {/* Top Header */}
-      <Row style={s.topHeader}>
-        <Row style={{ alignItems: "center", gap: 10 }}>
-          <Pressable onPress={() => router.back()} hitSlop={12} style={s.backBtn}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
-          </Pressable>
-          <View>
-            <H1 style={s.pageTitle}>Student Clubs</H1>
-            <Muted style={s.pageSubtitle}>Campus societies, debate teams & tech clubs</Muted>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {/* Top Header */}
+        <View style={styles.topHeader}>
+          <View style={styles.headerTitleWrap}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.backBtn}
+              >
+                <Ionicons name="arrow-back" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <View>
+                <H1 style={styles.pageTitle}>Club Hub</H1>
+                <Muted style={styles.pageSubtitle}>
+                  Student communities & campus organizations
+                </Muted>
+              </View>
+            </View>
           </View>
-        </Row>
-        <Button
-          title="Create"
-          variant="secondary"
-          onPress={() => setShowCreateModal(true)}
-        />
-      </Row>
 
+          <TouchableOpacity
+            style={[styles.createClubTopBtn, { backgroundColor: colors.primary }]}
+            onPress={() => setShowCreateModal(true)}
+          >
+            <Ionicons name="add" size={18} color="#fff" />
+            <Text style={styles.createClubTopBtnText}>Create Club</Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Search Input */}
-      <View style={[s.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <MaterialCommunityIcons name="magnify" size={20} color={colors.muted} />
-        <TextInput
-          placeholder="Search clubs, societies or topics..."
-          placeholderTextColor={colors.muted}
-          value={search}
-          onChangeText={setSearch}
-          style={[s.searchInput, { color: colors.text }]}
-        />
-        {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")} hitSlop={8}>
-            <MaterialCommunityIcons name="close-circle" size={18} color={colors.muted} />
-          </Pressable>
-        )}
-      </View>
+        {/* Search Bar */}
+        <View
+          style={[
+            styles.searchBar,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <Ionicons name="search" size={20} color={colors.textSecondary} />
+          <TextInput
+            placeholder="Search clubs, interests, events, projects..."
+            placeholderTextColor={colors.textSecondary}
+            value={search}
+            onChangeText={setSearch}
+            style={[styles.searchInput, { color: colors.text }]}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch("")}>
+              <Ionicons
+                name="close-circle"
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
 
-      {/* Filter Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll} contentContainerStyle={s.filterContent}>
-        {CATEGORIES.map((cat) => {
-          const isSelected = selectedCategory === cat;
-          return (
-            <Pressable
-              key={cat}
-              onPress={() => {
-                triggerHaptic();
-                setSelectedCategory(cat);
-              }}
+        {/* Discovery Segmented Tabs: Explore | Recommended | My Clubs */}
+        <View style={[styles.tabSegmentWrap, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            style={[
+              styles.tabSegment,
+              activeTab === "explore" && {
+                borderBottomColor: colors.primary,
+                borderBottomWidth: 2,
+              },
+            ]}
+            onPress={() => {
+              triggerHaptic();
+              setActiveTab("explore");
+            }}
+          >
+            <Ionicons
+              name="compass-outline"
+              size={18}
+              color={activeTab === "explore" ? colors.primary : colors.textSecondary}
+            />
+            <Text
               style={[
-                s.filterPill,
+                styles.tabSegmentText,
                 {
-                  backgroundColor: isSelected ? colors.primary : colors.surface,
-                  borderColor: isSelected ? colors.primary : colors.border,
+                  color:
+                    activeTab === "explore" ? colors.primary : colors.textSecondary,
+                  fontWeight: activeTab === "explore" ? "700" : "500",
                 },
               ]}
             >
+              Explore
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.tabSegment,
+              activeTab === "recommended" && {
+                borderBottomColor: colors.primary,
+                borderBottomWidth: 2,
+              },
+            ]}
+            onPress={() => {
+              triggerHaptic();
+              setActiveTab("recommended");
+            }}
+          >
+            <Ionicons
+              name="sparkles-outline"
+              size={18}
+              color={
+                activeTab === "recommended" ? colors.primary : colors.textSecondary
+              }
+            />
+            <Text
+              style={[
+                styles.tabSegmentText,
+                {
+                  color:
+                    activeTab === "recommended"
+                      ? colors.primary
+                      : colors.textSecondary,
+                  fontWeight: activeTab === "recommended" ? "700" : "500",
+                },
+              ]}
+            >
+              Recommended
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.tabSegment,
+              activeTab === "my_clubs" && {
+                borderBottomColor: colors.primary,
+                borderBottomWidth: 2,
+              },
+            ]}
+            onPress={() => {
+              triggerHaptic();
+              setActiveTab("my_clubs");
+            }}
+          >
+            <Ionicons
+              name="people-outline"
+              size={18}
+              color={activeTab === "my_clubs" ? colors.primary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.tabSegmentText,
+                {
+                  color:
+                    activeTab === "my_clubs" ? colors.primary : colors.textSecondary,
+                  fontWeight: activeTab === "my_clubs" ? "700" : "500",
+                },
+              ]}
+            >
+              My Clubs ({myJoinedClubs.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Category Pills (Horizontal Scroll) */}
+        <View style={styles.categoryWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            <TouchableOpacity
+              style={[
+                styles.catPill,
+                selectedCategory === "All" && {
+                  backgroundColor: colors.primary,
+                  borderColor: colors.primary,
+                },
+                { borderColor: colors.border },
+              ]}
+              onPress={() => {
+                triggerHaptic();
+                setSelectedCategory("All");
+              }}
+            >
               <Text
                 style={[
-                  s.filterText,
-                  { color: isSelected ? "#FFFFFF" : colors.text, fontWeight: isSelected ? "700" : "500" },
-                ]}
-              >
-                {cat}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      {/* Clubs List */}
-      {clubsQuery.isLoading ? (
-        <View style={{ gap: 10, marginTop: 12 }}>
-          <Skeleton height={80} />
-          <Skeleton height={80} />
-          <Skeleton height={80} />
-        </View>
-      ) : clubsQuery.isError ? (
-        <ErrorState
-          detail={(clubsQuery.error as Error).message}
-          onRetry={() => clubsQuery.refetch()}
-        />
-      ) : filteredClubs.length === 0 ? (
-        <Empty
-          icon="account-group"
-          title="No Clubs Found"
-          detail={search ? "Try adjusting your search terms or category filter." : "Be the first to create a student club on campus!"}
-        />
-      ) : (
-        <View style={s.clubList}>
-          {filteredClubs.map((club) => {
-            const isJoined = joinedClubIds.has(club.id);
-            return (
-              <Pressable
-                key={club.id}
-                onPress={() => {
-                  triggerHaptic();
-                  router.push(`/club/${club.id}` as any);
-                }}
-                style={({ pressed }) => [
-                  s.clubRow,
+                  styles.catPillText,
                   {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.8 : 1,
+                    color: selectedCategory === "All" ? "#fff" : colors.text,
+                    fontWeight: selectedCategory === "All" ? "700" : "500",
                   },
                 ]}
               >
-                {/* Club Icon Avatar */}
-                <View style={[s.clubAvatar, { backgroundColor: colors.primarySoft }]}>
-                  <MaterialCommunityIcons name="account-group" size={24} color={colors.primary} />
-                </View>
+                All
+              </Text>
+            </TouchableOpacity>
 
-                {/* Club Info */}
-                <View style={s.clubInfo}>
-                  <Row style={{ alignItems: "center", gap: 6 }}>
-                    <Text style={[s.clubName, { color: colors.text }]} numberOfLines={1}>
-                      {club.name}
-                    </Text>
-                    {club.verified ? (
-                      <Image
-                        source={nextGenBadges.verifiedClub}
-                        style={{ width: 16, height: 16 }}
-                        resizeMode="contain"
-                      />
-                    ) : null}
-                  </Row>
-                  <Text style={[s.clubCategory, { color: colors.muted }]} numberOfLines={1}>
-                    {club.category || "Academic Society"} · {club.university || "Campus Wide"}
+            {CLUB_CATEGORIES.map((cat) => {
+              const isSel = selectedCategory === cat.id;
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.catPill,
+                    isSel && {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
+                    { borderColor: colors.border },
+                  ]}
+                  onPress={() => {
+                    triggerHaptic();
+                    setSelectedCategory(cat.id as ClubCategory);
+                  }}
+                >
+                  <Ionicons
+                    name={cat.icon as any}
+                    size={14}
+                    color={isSel ? "#fff" : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.catPillText,
+                      {
+                        color: isSel ? "#fff" : colors.text,
+                        fontWeight: isSel ? "700" : "500",
+                      },
+                    ]}
+                  >
+                    {cat.label}
                   </Text>
-                  {club.description ? (
-                    <Text style={[s.clubDesc, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {club.description}
-                    </Text>
-                  ) : null}
-                </View>
-
-                {/* Action CTA */}
-                <View style={s.clubAction}>
-                  <Pill tone={isJoined ? "accent" : "default"}>
-                    {isJoined ? "Joined" : "View"}
-                  </Pill>
-                </View>
-              </Pressable>
-            );
-          })}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
-      )}
 
-      {/* Create Club Modal */}
-      <Modal visible={showCreateModal} animationType="slide" transparent>
-        <View style={s.modalOverlay}>
-          <View style={[s.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Row style={s.modalHeader}>
-              <H2>Register New Club</H2>
-              <Pressable onPress={() => setShowCreateModal(false)} hitSlop={12}>
-                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-              </Pressable>
-            </Row>
-            <Muted style={{ marginBottom: 14 }}>
-              Registered clubs receive a persistent Room OS collaboration space, event conflict detection, and community channels.
-            </Muted>
+        {/* Filter Quick-Toggles */}
+        <View style={styles.quickFiltersRow}>
+          <TouchableOpacity
+            style={[
+              styles.quickFilterChip,
+              filterVerified && {
+                backgroundColor: "rgba(59, 130, 246, 0.15)",
+                borderColor: colors.primary,
+              },
+              { borderColor: colors.border },
+            ]}
+            onPress={() => {
+              triggerHaptic();
+              setFilterVerified((prev) => !prev);
+            }}
+          >
+            <Ionicons
+              name={filterVerified ? "checkmark-circle" : "shield-checkmark-outline"}
+              size={14}
+              color={filterVerified ? colors.primary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.quickFilterText,
+                { color: filterVerified ? colors.primary : colors.text },
+              ]}
+            >
+              Verified Only
+            </Text>
+          </TouchableOpacity>
 
-            <View style={{ gap: 12 }}>
-              <View>
-                <Text style={[s.fieldLabel, { color: colors.text }]}>Club Name</Text>
-                <TextInput
-                  placeholder="e.g. Robotics & AI Club"
-                  placeholderTextColor={colors.muted}
-                  value={newClubName}
-                  onChangeText={setNewClubName}
-                  style={[s.modalInput, { backgroundColor: colors.bg, color: colors.text, borderColor: colors.border }]}
-                />
-              </View>
+          <TouchableOpacity
+            style={[
+              styles.quickFilterChip,
+              filterEvents && {
+                backgroundColor: "rgba(16, 185, 129, 0.15)",
+                borderColor: "#10b981",
+              },
+              { borderColor: colors.border },
+            ]}
+            onPress={() => {
+              triggerHaptic();
+              setFilterEvents((prev) => !prev);
+            }}
+          >
+            <Ionicons
+              name={filterEvents ? "checkmark-circle" : "calendar-outline"}
+              size={14}
+              color={filterEvents ? "#10b981" : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.quickFilterText,
+                { color: filterEvents ? "#10b981" : colors.text },
+              ]}
+            >
+              Upcoming Events
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-              <View>
-                <Text style={[s.fieldLabel, { color: colors.text }]}>Category</Text>
-                <Row style={{ flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-                  {["Academic", "Technical", "Cultural", "Sports"].map((cat) => (
-                    <Pressable
-                      key={cat}
-                      onPress={() => setNewClubCategory(cat)}
-                      style={[
-                        s.categoryOption,
-                        {
-                          backgroundColor: newClubCategory === cat ? colors.primary : colors.bg,
-                          borderColor: newClubCategory === cat ? colors.primary : colors.border,
-                        },
-                      ]}
-                    >
-                      <Text style={{ color: newClubCategory === cat ? "#FFF" : colors.text, fontSize: 12, fontWeight: "600" }}>
-                        {cat}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </Row>
-              </View>
-
-              <View>
-                <Text style={[s.fieldLabel, { color: colors.text }]}>Description & Mission</Text>
-                <TextInput
-                  placeholder="What is your club's primary purpose and activities?"
-                  placeholderTextColor={colors.muted}
-                  value={newClubDesc}
-                  onChangeText={setNewClubDesc}
-                  multiline
-                  numberOfLines={3}
-                  style={[s.modalInput, { height: 75, backgroundColor: colors.bg, color: colors.text, borderColor: colors.border }]}
-                />
-              </View>
-
-              <View>
-                <Text style={[s.fieldLabel, { color: colors.text }]}>University (Optional)</Text>
-                <TextInput
-                  placeholder="e.g. Dhaka University"
-                  placeholderTextColor={colors.muted}
-                  value={newClubUni}
-                  onChangeText={setNewClubUni}
-                  style={[s.modalInput, { backgroundColor: colors.bg, color: colors.text, borderColor: colors.border }]}
-                />
-              </View>
-            </View>
-
-            <Row style={{ gap: 10, marginTop: 18 }}>
-              <View style={{ flex: 1 }}>
-                <Button title="Cancel" variant="ghost" onPress={() => setShowCreateModal(false)} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button
-                  title={createClubMutation.isPending ? "Creating..." : "Create Club"}
-                  disabled={createClubMutation.isPending || newClubName.trim().length < 3}
-                  onPress={() => createClubMutation.mutate()}
-                />
-              </View>
-            </Row>
+        {/* Main Clubs List */}
+        {clubsQuery.isLoading ? (
+          <View style={styles.centerLoading}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+              Discovering student clubs...
+            </Text>
           </View>
-        </View>
-      </Modal>
+        ) : filteredClubs.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="people-outline" size={54} color={colors.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              {activeTab === "my_clubs"
+                ? "Your community is waiting."
+                : "No Clubs Found"}
+            </Text>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+              {activeTab === "my_clubs"
+                ? "You haven't joined or followed any campus clubs yet. Explore university clubs or start your own!"
+                : "Try adjusting your search terms or category filters to discover exciting campus societies."}
+            </Text>
+            <TouchableOpacity
+              style={[styles.emptyActionBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                if (activeTab === "my_clubs") {
+                  setActiveTab("explore");
+                } else {
+                  setShowCreateModal(true);
+                }
+              }}
+            >
+              <Ionicons
+                name={
+                  activeTab === "my_clubs"
+                    ? "compass-outline"
+                    : "add-circle-outline"
+                }
+                size={18}
+                color="#fff"
+              />
+              <Text style={styles.emptyActionBtnText}>
+                {activeTab === "my_clubs" ? "Explore Clubs" : "Create a Club"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredClubs}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={clubsQuery.isRefetching}
+                onRefresh={handleRefresh}
+                tintColor={colors.primary}
+              />
+            }
+            renderItem={({ item }) => (
+              <ClubCard
+                club={item}
+                onJoinToggle={() => handleRefresh()}
+                onFollowToggle={() => handleRefresh()}
+              />
+            )}
+          />
+        )}
+
+        {/* Create Club Modal */}
+        <CreateClubModal
+          visible={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={(newClubId) => {
+            handleRefresh();
+            router.push(`/club/${newClubId}` as any);
+          }}
+        />
+      </View>
     </Screen>
   );
 }
 
-const s = StyleSheet.create({
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   topHeader: {
-    justifyContent: "space-between",
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    marginRight: 10,
   },
   backBtn: {
     padding: 4,
@@ -373,107 +553,135 @@ const s = StyleSheet.create({
   },
   pageSubtitle: {
     fontSize: 12,
+    marginTop: 2,
+  },
+  createClubTopBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  createClubTopBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
+    marginHorizontal: 16,
     marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
-    padding: 0,
   },
-  filterScroll: {
-    maxHeight: 40,
-    marginBottom: 12,
+  tabSegmentWrap: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    paddingHorizontal: 8,
   },
-  filterContent: {
-    gap: 8,
-    alignItems: "center",
-  },
-  filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
-  filterText: {
-    fontSize: 13,
-  },
-  clubList: {
-    gap: 8,
-  },
-  clubRow: {
+  tabSegment: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: 12,
-  },
-  clubAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
-  clubInfo: {
-    flex: 1,
-    gap: 2,
+  tabSegmentText: {
+    fontSize: 13,
   },
-  clubName: {
-    fontSize: 15,
-    fontWeight: "700",
+  categoryWrap: {
+    marginVertical: 10,
   },
-  clubCategory: {
-    fontSize: 12,
+  categoryScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
   },
-  clubDesc: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  clubAction: {
-    marginLeft: 4,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    justifyContent: "center",
-    padding: 16,
-  },
-  modalContent: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    padding: 20,
-  },
-  modalHeader: {
-    justifyContent: "space-between",
+  catPill: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  modalInput: {
-    borderRadius: radius.md,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
   },
-  categoryOption: {
+  catPillText: {
+    fontSize: 13,
+  },
+  quickFiltersRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    gap: 8,
+    marginBottom: 10,
+  },
+  quickFilterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: radius.pill,
+    borderRadius: 14,
     borderWidth: 1,
+  },
+  quickFilterText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  centerLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 60,
+  },
+  loadingText: {
+    fontSize: 14,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 60,
+    gap: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  emptySub: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  emptyActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 8,
+  },
+  emptyActionBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 60,
   },
 });
