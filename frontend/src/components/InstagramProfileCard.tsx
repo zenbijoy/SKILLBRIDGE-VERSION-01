@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -6,6 +6,7 @@ import type { Profile } from "@/types";
 import { triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
+import { useConnections } from "@/features/connections/useConnections";
 
 interface InstagramProfileCardProps {
   profile: Profile;
@@ -22,7 +23,18 @@ export function InstagramProfileCard({
 }: InstagramProfileCardProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
-  const [connected, setConnected] = useState(false);
+  const {
+    getConnectionStatus,
+    sendRequest,
+    withdrawRequest,
+    acceptRequest,
+    getIncomingRequest,
+    getOutgoingRequest,
+    promptWithdrawRequest,
+    promptRemoveConnection,
+  } = useConnections();
+
+  const status = getConnectionStatus(profile.id);
 
   const initial = (profile.full_name?.trim()?.[0] || "U").toUpperCase();
   const subtitle = profile.department || profile.university || "Campus Peer";
@@ -35,7 +47,32 @@ export function InstagramProfileCard({
   const handleConnect = (e: any) => {
     e.stopPropagation?.();
     triggerHaptic();
-    setConnected((prev) => !prev);
+
+    if (status === "self") {
+      router.push("/(tabs)/profile" as any);
+      return;
+    }
+
+    if (status === "connected") {
+      promptRemoveConnection(profile);
+      return;
+    }
+
+    if (status === "pending_outgoing") {
+      promptWithdrawRequest(profile);
+      return;
+    }
+
+    if (status === "pending_incoming") {
+      const inc = getIncomingRequest(profile.id);
+      if (inc) {
+        acceptRequest(inc.id, profile);
+      }
+      return;
+    }
+
+    // Status is 'none' -> Send real request
+    sendRequest(profile.id);
     if (onConnect) {
       onConnect(profile.id);
     }
@@ -45,6 +82,54 @@ export function InstagramProfileCard({
     triggerHaptic();
     router.push(`/user/${profile.id}` as any);
   };
+
+  // Determine button label, icon and style based on real LinkedIn connection status
+  const getButtonConfig = () => {
+    switch (status) {
+      case "self":
+        return {
+          label: "You",
+          icon: "account" as const,
+          bgColor: colors.surface2,
+          borderColor: colors.border,
+          textColor: colors.muted,
+        };
+      case "connected":
+        return {
+          label: t("feed.connected", "Connected"),
+          icon: "check" as const,
+          bgColor: colors.surface2,
+          borderColor: colors.border,
+          textColor: colors.primary,
+        };
+      case "pending_outgoing":
+        return {
+          label: "Pending",
+          icon: "clock-outline" as const,
+          bgColor: colors.surface2,
+          borderColor: colors.border,
+          textColor: colors.muted,
+        };
+      case "pending_incoming":
+        return {
+          label: "Accept",
+          icon: "account-check" as const,
+          bgColor: colors.primary,
+          borderColor: colors.primary,
+          textColor: "#FFFFFF",
+        };
+      default:
+        return {
+          label: t("feed.connect", "Connect"),
+          icon: "account-plus" as const,
+          bgColor: colors.primary,
+          borderColor: colors.primary,
+          textColor: "#FFFFFF",
+        };
+    }
+  };
+
+  const btnConfig = getButtonConfig();
 
   return (
     <Pressable
@@ -94,30 +179,30 @@ export function InstagramProfileCard({
         </View>
       </View>
 
-      {/* Instagram-style Connect / Requested Button */}
+      {/* Real LinkedIn-style Connect / Pending / Connected Action Button */}
       <Pressable
         onPress={handleConnect}
         style={({ pressed }) => [
           styles.actionBtn,
           {
-            backgroundColor: connected ? colors.surface2 : colors.primary,
-            borderColor: connected ? colors.border : colors.primary,
+            backgroundColor: btnConfig.bgColor,
+            borderColor: btnConfig.borderColor,
             opacity: pressed ? 0.85 : 1,
           },
         ]}
       >
         <MaterialCommunityIcons
-          name={connected ? "check" : "account-plus"}
+          name={btnConfig.icon}
           size={14}
-          color={connected ? colors.text : "#FFFFFF"}
+          color={btnConfig.textColor}
         />
         <Text
           style={[
             styles.actionBtnText,
-            { color: connected ? colors.text : "#FFFFFF" },
+            { color: btnConfig.textColor },
           ]}
         >
-          {connected ? t("feed.connected", "Connected") : t("feed.connect", "Connect")}
+          {btnConfig.label}
         </Text>
       </Pressable>
     </Pressable>

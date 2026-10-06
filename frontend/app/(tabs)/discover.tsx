@@ -31,6 +31,7 @@ import { useI18n } from "@/i18n";
 import { nextGenAnimations } from "@/assets/nextgen";
 import { InstagramProfileCard } from "@/components/InstagramProfileCard";
 import { SuggestedRoomCard } from "@/components/SuggestedRoomCard";
+import { useConnections } from "@/features/connections/useConnections";
 
 type AIMatch = {
   profile: Profile;
@@ -113,29 +114,19 @@ export default function DiscoverScreen() {
   });
 
   const qc = useQueryClient();
-  const connectionsQuery = useQuery<{
-    connections: Profile[];
-    incoming: { id: string; requester: Profile; created_at?: string }[];
-  }>({
-    queryKey: ["connections"],
-    queryFn: () => api("/connections"),
-    staleTime: 15_000,
-  });
-
-  const respondMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "accepted" | "declined" }) =>
-      api(`/connections/requests/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      }),
-    onSuccess: () => {
-      triggerHaptic("notificationSuccess");
-      qc.invalidateQueries({ queryKey: ["connections"] });
-    },
-    onError: (err: Error) => {
-      Alert.alert("Action Failed", err.message || "Could not process request.");
-    },
-  });
+  const {
+    connections,
+    incoming,
+    outgoing,
+    getConnectionStatus,
+    sendRequest,
+    promptWithdrawRequest,
+    acceptRequest,
+    declineRequest,
+    getIncomingRequest,
+    refetch: refetchConnections,
+    isRefetching: isConnectionsRefetching,
+  } = useConnections();
 
   const isRefreshing =
     aiMatches.isRefetching ||
@@ -144,7 +135,7 @@ export default function DiscoverScreen() {
     clubsQuery.isRefetching ||
     researchQuery.isRefetching ||
     eventsQuery.isRefetching ||
-    connectionsQuery.isRefetching;
+    isConnectionsRefetching;
 
   const onRefresh = async () => {
     await Promise.all([
@@ -154,60 +145,98 @@ export default function DiscoverScreen() {
       clubsQuery.refetch(),
       researchQuery.refetch(),
       eventsQuery.refetch(),
-      connectionsQuery.refetch(),
+      refetchConnections(),
     ]);
   };
 
-  // Compact Person Row Component
-  const renderPersonRow = (p: Profile, matchMetadata?: string) => (
-    <Pressable
-      key={p.id}
-      onPress={() => {
-        triggerHaptic();
-        router.push(`/user/${p.id}` as any);
-      }}
-      style={({ pressed }) => [
-        s.compactRow,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: pressed ? 0.85 : 1,
-        },
-      ]}
-    >
-      <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
-        {p.avatar_url ? (
-          <Image source={{ uri: p.avatar_url }} style={s.avatarImg} />
-        ) : (
-          <Text style={[s.avatarText, { color: colors.primary }]}>
-            {p.full_name?.[0] || "U"}
-          </Text>
-        )}
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Row style={{ alignItems: "center", gap: 6 }}>
-          <Text style={[s.rowTitle, { color: colors.text }]} numberOfLines={1}>
-            {p.full_name}
-          </Text>
-          {matchMetadata ? (
-            <Pill tone="accent">{matchMetadata}</Pill>
-          ) : null}
-        </Row>
-        <Muted numberOfLines={1} style={{ fontSize: 12 }}>
-          {[p.department, p.university].filter(Boolean).join(" • ") || `@${p.username}`}
-        </Muted>
-      </View>
-      <Button
-        title={t("discover.view")}
-        compact
-        variant="secondary"
+  // Compact Person Row Component with LinkedIn-style direct connect action
+  const renderPersonRow = (p: Profile, matchMetadata?: string) => {
+    const status = getConnectionStatus(p.id);
+    return (
+      <Pressable
+        key={p.id}
         onPress={() => {
           triggerHaptic();
           router.push(`/user/${p.id}` as any);
         }}
-      />
-    </Pressable>
-  );
+        style={({ pressed }) => [
+          s.compactRow,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ]}
+      >
+        <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
+          {p.avatar_url ? (
+            <Image source={{ uri: p.avatar_url }} style={s.avatarImg} />
+          ) : (
+            <Text style={[s.avatarText, { color: colors.primary }]}>
+              {p.full_name?.[0] || "U"}
+            </Text>
+          )}
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Row style={{ alignItems: "center", gap: 6 }}>
+            <Text style={[s.rowTitle, { color: colors.text }]} numberOfLines={1}>
+              {p.full_name}
+            </Text>
+            {matchMetadata ? (
+              <Pill tone="accent">{matchMetadata}</Pill>
+            ) : null}
+          </Row>
+          <Muted numberOfLines={1} style={{ fontSize: 12 }}>
+            {[p.department, p.university].filter(Boolean).join(" • ") || `@${p.username}`}
+          </Muted>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          {status === "self" ? (
+            <Button
+              title="You"
+              compact
+              variant="ghost"
+              disabled
+            />
+          ) : status === "connected" ? (
+            <Button
+              title="Connected ✓"
+              compact
+              variant="secondary"
+              onPress={() => {
+                triggerHaptic();
+                router.push(`/user/${p.id}` as any);
+              }}
+            />
+          ) : status === "pending_outgoing" ? (
+            <Button
+              title="Pending"
+              compact
+              variant="secondary"
+              onPress={() => promptWithdrawRequest(p)}
+            />
+          ) : status === "pending_incoming" ? (
+            <Button
+              title="Accept"
+              compact
+              variant="primary"
+              onPress={() => {
+                const inc = getIncomingRequest(p.id);
+                if (inc) acceptRequest(inc.id, p);
+              }}
+            />
+          ) : (
+            <Button
+              title="+ Connect"
+              compact
+              variant="primary"
+              onPress={() => sendRequest(p.id)}
+            />
+          )}
+        </View>
+      </Pressable>
+    );
+  };
 
   // Compact Room Row Component
   const renderRoomRow = (r: Room) => (
@@ -476,9 +505,9 @@ export default function DiscoverScreen() {
             <Row style={{ alignItems: "center", gap: 5 }}>
               <MaterialCommunityIcons name="account-arrow-right-outline" size={16} color={colors.primary} />
               <Text style={[s.hubBtnText, { color: colors.primary, fontWeight: "700" }]}>Requests</Text>
-              {(connectionsQuery.data?.incoming?.length ?? 0) > 0 && (
+              {(incoming?.length ?? 0) > 0 && (
                 <View style={[s.hubBadge, { backgroundColor: colors.danger }]}>
-                  <Text style={s.hubBadgeText}>{connectionsQuery.data?.incoming.length}</Text>
+                  <Text style={s.hubBadgeText}>{incoming.length}</Text>
                 </View>
               )}
             </Row>
@@ -507,9 +536,9 @@ export default function DiscoverScreen() {
             <Row style={{ alignItems: "center", gap: 5 }}>
               <MaterialCommunityIcons name="account-multiple-outline" size={16} color={colors.success} />
               <Text style={[s.hubBtnText, { color: colors.text }]}>My Network</Text>
-              {(connectionsQuery.data?.connections?.length ?? 0) > 0 && (
+              {(connections?.length ?? 0) > 0 && (
                 <Text style={{ fontSize: 11, fontWeight: "700", color: colors.muted }}>
-                  ({connectionsQuery.data?.connections.length})
+                  ({connections.length})
                 </Text>
               )}
             </Row>
@@ -531,13 +560,13 @@ export default function DiscoverScreen() {
       </View>
 
       {/* Incoming Connection Requests Carousel (if any pending) */}
-      {(connectionsQuery.data?.incoming?.length ?? 0) > 0 && (
+      {(incoming?.length ?? 0) > 0 && (
         <View style={[s.incomingRequestsContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <Row style={{ alignItems: "center", gap: 6 }}>
               <View style={[s.pulseDot, { backgroundColor: colors.danger }]} />
               <Text style={[s.incomingTitle, { color: colors.text }]}>
-                Connection Requests ({connectionsQuery.data?.incoming.length})
+                Connection Requests ({incoming.length})
               </Text>
             </Row>
             <Pressable onPress={() => { triggerHaptic(); router.push("/connections?tab=requests" as any); }}>
@@ -546,7 +575,7 @@ export default function DiscoverScreen() {
           </Row>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-            {connectionsQuery.data?.incoming.map((req) => (
+            {incoming.map((req) => (
               <View
                 key={req.id}
                 style={[s.incomingRequestCard, { backgroundColor: colors.background, borderColor: colors.border }]}
@@ -579,8 +608,7 @@ export default function DiscoverScreen() {
                     <Button
                       title="Confirm"
                       compact
-                      onPress={() => respondMutation.mutate({ id: req.id, status: "accepted" })}
-                      disabled={respondMutation.isPending}
+                      onPress={() => acceptRequest(req.id, req.requester)}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
@@ -588,8 +616,7 @@ export default function DiscoverScreen() {
                       title="Delete"
                       compact
                       variant="ghost"
-                      onPress={() => respondMutation.mutate({ id: req.id, status: "declined" })}
-                      disabled={respondMutation.isPending}
+                      onPress={() => declineRequest(req.id)}
                     />
                   </View>
                 </Row>

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# SkillBridge — Single VPS Deploy (Backend + Admin)
-# VPS   : 118.179.110.183
+# SkillBridge — Single VPS Deploy (Backend + Admin + Web Frontend)
+# VPS   : 80.225.247.237
 # API   : https://ruetskillbridge.duckdns.org
 # Admin : https://ruetskillbridgeadmin.duckdns.org
+# Web   : https://ruetskillbridgeweb.duckdns.org
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 INFRA_DIR="$REPO_DIR/infra"
 
 echo "========================================"
-echo "  SkillBridge Full Deploy (API + Admin)"
+echo "  SkillBridge Full Deploy (API + Admin + Web)"
 echo "  $(date)"
 echo "========================================"
 
@@ -30,3 +31,4 @@ echo ""
 echo "✅ Done!"
 echo "   API   : https://ruetskillbridge.duckdns.org/api/v1/health"
 echo "   Admin : https://ruetskillbridgeadmin.duckdns.org"
+echo "   Web   : https://ruetskillbridgeweb.duckdns.org"

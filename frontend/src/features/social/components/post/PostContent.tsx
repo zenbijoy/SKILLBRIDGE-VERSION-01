@@ -4,7 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme, radius } from "@/theme";
 import { Row } from "@/components/ui";
 import type { SocialPost } from "../../types";
-import { VISUAL_THEMES } from "../../constants";
+import { resolvePostAppearance, tokenizeInline } from "../../utils/postText";
 
 interface PostContentProps {
   post: SocialPost;
@@ -19,15 +19,20 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
   const { colors } = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const isTextArt =
-    post.post_type === "text_art" ||
-    (Boolean(post.appearance?.theme) && post.appearance?.theme !== "default") ||
-    post.appearance?.backgroundType === "gradient";
+  const appearance = resolvePostAppearance(post.appearance);
+  /** Text-art keeps its oversized / centred "quote card" typography. */
+  const isTextArt = post.post_type === "text_art";
+  /** Any author-picked background renders a Facebook-style coloured post body. */
+  const hasThemedBackground = !appearance.isDefault;
+
+  // Palette used for the body so text stays readable on a themed background.
+  const bodyColor = hasThemedBackground ? appearance.textColor || colors.text : colors.text;
+  const accentColor = hasThemedBackground ? appearance.accentColor || colors.primary : colors.primary;
+  const mutedColor = hasThemedBackground
+    ? `${appearance.textColor || colors.text}CC`
+    : colors.muted;
 
   if (isTextArt) {
-    const theme =
-      VISUAL_THEMES.find((t) => t.id === post.appearance?.theme) ||
-      VISUAL_THEMES[1]!; // fallback to Midnight
 
     const textLength = (post.body || "").length;
     let fontSize = 22;
@@ -51,16 +56,21 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
 
     return (
       <LinearGradient
-        colors={theme.gradientColors}
+        colors={appearance.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.textArtCard, theme.borderColor ? { borderColor: theme.borderColor, borderWidth: 1 } : null]}
+        style={[
+          styles.textArtCard,
+          appearance.borderColor
+            ? { borderColor: appearance.borderColor, borderWidth: 1 }
+            : null,
+        ]}
       >
         <Text
           style={[
             styles.textArtBody,
             {
-              color: post.appearance?.textColor || theme.textColor,
+              color: appearance.textColor || colors.text,
               fontSize,
               lineHeight,
               textAlign,
@@ -73,125 +83,93 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
     );
   }
 
-  // Parse inline markdown tokens: **bold**, *italic*, `code`, [text](url), #tag, @mention, URLs
-  const renderInlineTokens = (rawText: string, keyPrefix: string) => {
+  // Renders inline markdown tokens: **bold**, *italic*, `code`, [text](url),
+  // #hashtag, @mention and bare/schemed URLs.
+  //
+  // Uses `tokenizeInline` (a single-pass scanner) instead of `String.split` with
+  // a capture-group regex, which previously interleaved the regex's inner groups
+  // into the rendered output and duplicated/mangled the text.
+  const renderInlineTokens = (
+    rawText: string,
+    keyPrefix: string,
+    textColor: string = colors.text,
+    linkColor: string = colors.primary,
+  ) => {
     if (!rawText) return null;
 
-    // Regex tokenizes into matching groups while retaining plain text pieces
-    const tokenRegex =
-      /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|#[a-zA-Z0-9_\u0980-\u09FF]+|@[a-zA-Z0-9_]+|https?:\/\/[^\s]+|(?:www\.)[^\s]+|[a-zA-Z0-9-]+\.(?:com|ai|org|net|edu|io|app|dev)(?:\/[^\s]*)?)/g;
-
-    const parts = rawText.split(tokenRegex);
-
-    return parts.map((part, index) => {
-      if (!part) return null;
+    return tokenizeInline(rawText).map((token, index) => {
       const key = `${keyPrefix}-${index}`;
 
-      // Bold: **text**
-      if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-        return (
-          <Text key={key} style={[styles.boldText, { color: colors.text }]}>
-            {part.slice(2, -2)}
-          </Text>
-        );
+      switch (token.type) {
+        case "bold":
+          return (
+            <Text key={key} style={[styles.boldText, { color: textColor }]}>
+              {token.value}
+            </Text>
+          );
+
+        case "italic":
+          return (
+            <Text key={key} style={[styles.italicText, { color: textColor }]}>
+              {token.value}
+            </Text>
+          );
+
+        case "code":
+          return (
+            <Text
+              key={key}
+              style={[
+                styles.inlineCode,
+                {
+                  backgroundColor: colors.surface2 || `${colors.primary}15`,
+                  color: colors.primary,
+                },
+              ]}
+            >
+              {token.value}
+            </Text>
+          );
+
+        case "link":
+        case "url":
+          return (
+            <Text
+              key={key}
+              style={[styles.linkText, { color: linkColor }]}
+              onPress={() => {
+                if (token.href) Linking.openURL(token.href).catch(() => {});
+              }}
+            >
+              {token.value}
+            </Text>
+          );
+
+        case "hashtag":
+          return (
+            <Text
+              key={key}
+              style={[styles.hashtag, { color: linkColor }]}
+              onPress={() => onHashtagPress?.(token.value)}
+            >
+              {token.value}
+            </Text>
+          );
+
+        case "mention":
+          return (
+            <Text
+              key={key}
+              style={[styles.mention, { color: linkColor }]}
+              onPress={() => onMentionPress?.(token.value.slice(1))}
+            >
+              {token.value}
+            </Text>
+          );
+
+        default:
+          return <Text key={key}>{token.value}</Text>;
       }
-
-      // Italic: *text*
-      if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
-        return (
-          <Text key={key} style={[styles.italicText, { color: colors.text }]}>
-            {part.slice(1, -1)}
-          </Text>
-        );
-      }
-
-      // Inline code: `code`
-      if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
-        return (
-          <Text
-            key={key}
-            style={[
-              styles.inlineCode,
-              {
-                backgroundColor: colors.surface2 || `${colors.primary}15`,
-                color: colors.primary,
-              },
-            ]}
-          >
-            {part.slice(1, -1)}
-          </Text>
-        );
-      }
-
-      // Markdown link: [text](url)
-      const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (linkMatch) {
-        const [, label, href] = linkMatch;
-        return (
-          <Text
-            key={key}
-            style={[styles.linkText, { color: colors.primary }]}
-            onPress={() => {
-              if (href) Linking.openURL(href).catch(() => {});
-            }}
-          >
-            {label}
-          </Text>
-        );
-      }
-
-      // Hashtag: #tag
-      if (part.startsWith("#") && part.length > 1) {
-        return (
-          <Text
-            key={key}
-            style={[styles.hashtag, { color: colors.primary }]}
-            onPress={() => onHashtagPress?.(part)}
-          >
-            {part}
-          </Text>
-        );
-      }
-
-      // Mention: @user
-      if (part.startsWith("@") && part.length > 1) {
-        return (
-          <Text
-            key={key}
-            style={[styles.mention, { color: colors.accent || colors.primary }]}
-            onPress={() => onMentionPress?.(part.slice(1))}
-          >
-            {part}
-          </Text>
-        );
-      }
-
-      // Web URLs and domain names (e.g. ChatGPT.com, Leonardo.ai)
-      const isUrl =
-        part.startsWith("http://") ||
-        part.startsWith("https://") ||
-        part.startsWith("www.") ||
-        /^[a-zA-Z0-9-]+\.(com|ai|org|net|edu|io|app|dev)(\/[^\s]*)?$/i.test(part);
-
-      if (isUrl) {
-        const destination = part.startsWith("http")
-          ? part
-          : part.startsWith("www.")
-            ? `https://${part}`
-            : `https://${part}`;
-        return (
-          <Text
-            key={key}
-            style={[styles.linkText, { color: colors.primary }]}
-            onPress={() => Linking.openURL(destination).catch(() => {})}
-          >
-            {part}
-          </Text>
-        );
-      }
-
-      // Plain text chunk
-      return <Text key={key}>{part}</Text>;
     });
   };
 
@@ -200,70 +178,101 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
   const hasBlocks = Array.isArray(blocks) && blocks.length > 0;
 
   if (hasBlocks) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.blocksContainer}>
-          {blocks.map((block, idx) => {
-            if (block.type === "heading") {
-              return (
-                <Text
-                  key={idx}
-                  style={[
-                    styles.headingBlock,
-                    { color: colors.text, fontSize: block.level === 1 ? 19 : 17 },
-                  ]}
-                >
-                  {block.content}
-                </Text>
-              );
-            }
-            if (block.type === "quote") {
-              return (
-                <View
-                  key={idx}
-                  style={[
-                    styles.quoteBlock,
-                    { borderLeftColor: colors.primary, backgroundColor: colors.surface },
-                  ]}
-                >
-                  <Text style={[styles.quoteText, { color: colors.text }]}>{block.content}</Text>
-                </View>
-              );
-            }
-            if (block.type === "code") {
-              return (
-                <View key={idx} style={styles.codeBlock}>
-                  <Text style={styles.codeText}>{block.content}</Text>
-                </View>
-              );
-            }
-            if (block.type === "list") {
-              return (
-                <View key={idx} style={{ marginVertical: 4 }}>
-                  {(block.items || []).map((item, itemIdx) => (
-                    <Text key={itemIdx} style={[styles.listItem, { color: colors.text }]}>
-                      {block.ordered ? `${itemIdx + 1}. ` : "• "}
-                      {item}
-                    </Text>
-                  ))}
-                </View>
-              );
-            }
-            if (block.type === "divider") {
-              return <View key={idx} style={[styles.divider, { backgroundColor: colors.border }]} />;
-            }
+    const blocksView = (
+      <View style={styles.blocksContainer}>
+        {blocks.map((block, idx) => {
+          if (block.type === "heading") {
             return (
-              <Text key={idx} style={[styles.standardBody, { color: colors.text }]}>
-                {renderInlineTokens(block.content || "", `blk-${idx}`)}
+              <Text
+                key={idx}
+                style={[
+                  styles.headingBlock,
+                  { color: bodyColor, fontSize: block.level === 1 ? 19 : 17 },
+                ]}
+              >
+                {block.content}
               </Text>
             );
-          })}
-        </View>
+          }
+          if (block.type === "quote") {
+            return (
+              <View
+                key={idx}
+                style={[
+                  styles.quoteBlock,
+                  {
+                    borderLeftColor: accentColor,
+                    backgroundColor: hasThemedBackground
+                      ? "rgba(255,255,255,0.10)"
+                      : colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.quoteText, { color: bodyColor }]}>{block.content}</Text>
+              </View>
+            );
+          }
+          if (block.type === "code") {
+            return (
+              <View key={idx} style={styles.codeBlock}>
+                <Text style={styles.codeText}>{block.content}</Text>
+              </View>
+            );
+          }
+          if (block.type === "list") {
+            return (
+              <View key={idx} style={{ marginVertical: 4 }}>
+                {(block.items || []).map((item, itemIdx) => (
+                  <Text key={itemIdx} style={[styles.listItem, { color: bodyColor }]}>
+                    {block.ordered ? `${itemIdx + 1}. ` : "• "}
+                    {item}
+                  </Text>
+                ))}
+              </View>
+            );
+          }
+          if (block.type === "divider") {
+            return (
+              <View
+                key={idx}
+                style={[
+                  styles.divider,
+                  { backgroundColor: hasThemedBackground ? "rgba(255,255,255,0.25)" : colors.border },
+                ]}
+              />
+            );
+          }
+          return (
+            <Text key={idx} style={[styles.standardBody, { color: bodyColor }]}>
+              {renderInlineTokens(block.content || "", `blk-${idx}`, bodyColor, accentColor)}
+            </Text>
+          );
+        })}
       </View>
     );
+
+    if (hasThemedBackground) {
+      return (
+        <LinearGradient
+          colors={appearance.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.themedBody,
+            appearance.borderColor
+              ? { borderColor: appearance.borderColor, borderWidth: 1 }
+              : null,
+          ]}
+        >
+          {blocksView}
+        </LinearGradient>
+      );
+    }
+
+    return <View style={styles.container}>{blocksView}</View>;
   }
 
-  // Standard Post Body Rendering with LinkedIn-Style Truncation & Formatting
+  // Standard Post Body Rendering with Truncation & Formatting
   const rawBody = post.body || "";
   const lines = rawBody.split("\n");
   const isLong = rawBody.length > TRUNCATE_CHAR_LIMIT || lines.length > TRUNCATE_LINE_LIMIT;
@@ -293,10 +302,10 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
       // Heading 1: # Title
       if (trimmed.startsWith("# ")) {
         return (
-          <Text key={lineIdx} style={[styles.heading1, { color: colors.text }]}>
-            {renderInlineTokens(trimmed.slice(2), `h1-${lineIdx}`)}
+          <Text key={lineIdx} style={[styles.heading1, { color: bodyColor }]}>
+            {renderInlineTokens(trimmed.slice(2), `h1-${lineIdx}`, bodyColor, accentColor)}
             {isLastLine && showMoreButton && (
-              <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: colors.muted }]}>
+              <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: mutedColor }]}>
                 {" ... more"}
               </Text>
             )}
@@ -307,10 +316,10 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
       // Heading 2: ## Subtitle
       if (trimmed.startsWith("## ")) {
         return (
-          <Text key={lineIdx} style={[styles.heading2, { color: colors.text }]}>
-            {renderInlineTokens(trimmed.slice(3), `h2-${lineIdx}`)}
+          <Text key={lineIdx} style={[styles.heading2, { color: bodyColor }]}>
+            {renderInlineTokens(trimmed.slice(3), `h2-${lineIdx}`, bodyColor, accentColor)}
             {isLastLine && showMoreButton && (
-              <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: colors.muted }]}>
+              <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: mutedColor }]}>
                 {" ... more"}
               </Text>
             )}
@@ -321,10 +330,10 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
       // Heading 3: ### Subtitle
       if (trimmed.startsWith("### ")) {
         return (
-          <Text key={lineIdx} style={[styles.heading3, { color: colors.text }]}>
-            {renderInlineTokens(trimmed.slice(4), `h3-${lineIdx}`)}
+          <Text key={lineIdx} style={[styles.heading3, { color: bodyColor }]}>
+            {renderInlineTokens(trimmed.slice(4), `h3-${lineIdx}`, bodyColor, accentColor)}
             {isLastLine && showMoreButton && (
-              <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: colors.muted }]}>
+              <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: mutedColor }]}>
                 {" ... more"}
               </Text>
             )}
@@ -339,11 +348,16 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
             key={lineIdx}
             style={[
               styles.quoteBlock,
-              { borderLeftColor: colors.primary, backgroundColor: colors.surface2 || colors.surface },
+              {
+                borderLeftColor: accentColor,
+                backgroundColor: hasThemedBackground
+                  ? "rgba(255,255,255,0.10)"
+                  : colors.surface2 || colors.surface,
+              },
             ]}
           >
-            <Text style={[styles.quoteText, { color: colors.text }]}>
-              {renderInlineTokens(trimmed.slice(2), `quote-${lineIdx}`)}
+            <Text style={[styles.quoteText, { color: bodyColor }]}>
+              {renderInlineTokens(trimmed.slice(2), `quote-${lineIdx}`, bodyColor, accentColor)}
             </Text>
           </View>
         );
@@ -354,11 +368,11 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
         const itemContent = trimmed.replace(/^([•\-\*])\s+/, "");
         return (
           <Row key={lineIdx} style={styles.listItemRow}>
-            <Text style={[styles.bulletDot, { color: colors.primary }]}>•</Text>
-            <Text style={[styles.listText, { color: colors.text }]}>
-              {renderInlineTokens(itemContent, `bullet-${lineIdx}`)}
+            <Text style={[styles.bulletDot, { color: accentColor }]}>•</Text>
+            <Text style={[styles.listText, { color: bodyColor }]}>
+              {renderInlineTokens(itemContent, `bullet-${lineIdx}`, bodyColor, accentColor)}
               {isLastLine && showMoreButton && (
-                <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: colors.muted }]}>
+                <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: mutedColor }]}>
                   {" ... more"}
                 </Text>
               )}
@@ -373,11 +387,11 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
         const [, prefix, rest] = numMatch;
         return (
           <Row key={lineIdx} style={styles.listItemRow}>
-            <Text style={[styles.numberPrefix, { color: colors.primary }]}>{prefix} </Text>
-            <Text style={[styles.listText, { color: colors.text }]}>
-              {renderInlineTokens(rest, `num-${lineIdx}`)}
+            <Text style={[styles.numberPrefix, { color: accentColor }]}>{prefix} </Text>
+            <Text style={[styles.listText, { color: bodyColor }]}>
+              {renderInlineTokens(rest, `num-${lineIdx}`, bodyColor, accentColor)}
               {isLastLine && showMoreButton && (
-                <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: colors.muted }]}>
+                <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: mutedColor }]}>
                   {" ... more"}
                 </Text>
               )}
@@ -393,10 +407,10 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
 
       // Regular line
       return (
-        <Text key={lineIdx} style={[styles.standardBody, { color: colors.text }]}>
-          {renderInlineTokens(line, `p-${lineIdx}`)}
+        <Text key={lineIdx} style={[styles.standardBody, { color: bodyColor }]}>
+          {renderInlineTokens(line, `p-${lineIdx}`, bodyColor, accentColor)}
           {isLastLine && showMoreButton && (
-            <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: colors.muted }]}>
+            <Text onPress={() => setIsExpanded(true)} style={[styles.moreBtn, { color: mutedColor }]}>
               {" ... more"}
             </Text>
           )}
@@ -405,21 +419,51 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
     });
   };
 
-  return (
-    <View style={styles.container}>
+  const renderedBody = (
+    <>
       {renderFormattedLines(displayedText)}
       {isLong && isExpanded && (
         <Pressable onPress={() => setIsExpanded(false)} style={styles.lessBtnWrap}>
-          <Text style={[styles.lessBtn, { color: colors.muted }]}>less</Text>
+          <Text style={[styles.lessBtn, { color: mutedColor }]}>less</Text>
         </Pressable>
       )}
-    </View>
+    </>
   );
+
+  // Facebook-style authored background: colour the whole post body, while the
+  // header / media / action bar keep the app surface so they stay readable.
+  if (hasThemedBackground) {
+    return (
+      <LinearGradient
+        colors={appearance.gradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[
+          styles.themedBody,
+          appearance.borderColor
+            ? { borderColor: appearance.borderColor, borderWidth: 1 }
+            : null,
+        ]}
+      >
+        {renderedBody}
+      </LinearGradient>
+    );
+  }
+
+  return <View style={styles.container}>{renderedBody}</View>;
 }
 
 const styles = StyleSheet.create({
   container: {
     marginVertical: 4,
+  },
+  /** Facebook-style authored background behind the post text. */
+  themedBody: {
+    marginVertical: 6,
+    borderRadius: radius.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    overflow: "hidden",
   },
   standardBody: {
     fontSize: 14.5,

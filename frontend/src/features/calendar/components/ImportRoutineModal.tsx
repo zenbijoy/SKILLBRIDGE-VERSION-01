@@ -11,6 +11,7 @@ import {
   Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import type { AcademicProfile, AcademicRoutine } from "../types";
 import { useTheme, radius } from "@/theme";
@@ -30,6 +31,7 @@ export function ImportRoutineModal({
   onExtractionSuccess,
 }: ImportRoutineModalProps) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   // Selected file state
   const [selectedFile, setSelectedFile] = useState<{
@@ -142,6 +144,7 @@ export function ImportRoutineModal({
         method: "POST",
         body: JSON.stringify({
           fileBase64: selectedFile.base64,
+          fileMimeType: selectedFile.mimeType,
           mimeType: selectedFile.mimeType,
           fileName: selectedFile.name,
           department: department.trim(),
@@ -150,6 +153,14 @@ export function ImportRoutineModal({
           batch: batch.trim(),
           university: university.trim(),
           additionalContext: additionalContext.trim(),
+          context: {
+            university: university.trim(),
+            department: department.trim(),
+            semester: semester.trim(),
+            section: section.trim(),
+            batch: batch.trim(),
+            userNotes: additionalContext.trim(),
+          },
         }),
       });
 
@@ -235,31 +246,6 @@ export function ImportRoutineModal({
           </View>
 
           <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-            {/* Safety Guarantee Callout */}
-            <View
-              style={[
-                styles.safetyCallout,
-                {
-                  backgroundColor: isDark ? colors.surface2 : "#F0FDF4",
-                  borderColor: isDark ? colors.border : "#BBF7D0",
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="shield-check"
-                size={18}
-                color="#16A34A"
-              />
-              <Text
-                style={[
-                  styles.safetyText,
-                  { color: isDark ? colors.text : "#15803D" },
-                ]}
-              >
-                Zero-Risk Guarantee: AI creates an editable draft. You will
-                verify each class before any reminders are activated.
-              </Text>
-            </View>
 
             {/* Step 1: Select File */}
             <Text style={[styles.sectionHeading, { color: colors.text }]}>
@@ -473,7 +459,10 @@ export function ImportRoutineModal({
           <View
             style={[
               styles.sheetFooter,
-              { borderTopColor: isDark ? colors.border : "#E2E8F0" },
+              {
+                borderTopColor: isDark ? colors.border : "#E2E8F0",
+                paddingBottom: Math.max(insets.bottom, 24) + 16,
+              },
             ]}
           >
             <Pressable

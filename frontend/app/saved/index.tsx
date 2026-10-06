@@ -25,10 +25,11 @@ import {
   type SavedItem,
 } from "@/features/growth/growthApi";
 
-type MediaTypeTab = "all" | "liked" | "videos" | "audio" | "research";
+type MediaTypeTab = "all" | "posts" | "liked" | "videos" | "audio" | "research";
 
 const MEDIA_TABS: { key: MediaTypeTab; label: string; icon: string }[] = [
   { key: "all", label: "All Saved", icon: "bookmark" },
+  { key: "posts", label: "Bookmarked", icon: "bookmark-outline" },
   { key: "liked", label: "Liked Posts", icon: "heart" },
   { key: "videos", label: "Watch Later", icon: "play-circle" },
   { key: "audio", label: "Audio", icon: "headset" },
@@ -105,6 +106,10 @@ export default function SavedLibraryScreen() {
           it.collection?.name?.toLowerCase().includes("audio") ||
           it.collection?.name?.toLowerCase().includes("podcast")
       );
+    }
+    if (activeMediaTab === "posts") {
+      // Posts bookmarked via the feed's Save action (saved_items.entity_type === "post")
+      return items.filter((it) => it.entity_type === "post");
     }
     if (activeMediaTab === "research") {
       return items.filter(

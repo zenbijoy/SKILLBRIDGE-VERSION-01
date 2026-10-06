@@ -12,19 +12,19 @@ import {
 } from "react-native";
 import { useTheme } from "@/theme";
 
-// Master symbol aspect ratio: width 584px : height 374px
-const SYMBOL_ASPECT_RATIO = 584 / 374;
+// Master symbol aspect ratio: width 512px : height 512px (1:1 square)
+const SYMBOL_ASPECT_RATIO = 1;
 
-// Optimized local bundled brand mark asset
+// Bundled official brand mark asset
 const BRAND_MARK_ASSET = require("@/../assets/branding/skillbridge-mark.png");
 
 export interface SkillBridgeLoaderProps {
   /**
    * Logical width of the brand mark:
-   * - "small": 48px
-   * - "medium": 80px (default for card/inline loading)
-   * - "large": 120px
-   * - "hero": 140px (default for full-screen boots)
+   * - "small": 44px
+   * - "medium": 72px (default for card/inline loading)
+   * - "large": 100px
+   * - "hero": 120px (default for full-screen boots)
    * - custom numeric width
    */
   size?: "small" | "medium" | "large" | "hero" | number;
@@ -38,7 +38,6 @@ export interface SkillBridgeLoaderProps {
   background?: string;
   /**
    * Optional status message displayed below the logo mark.
-   * Default is undefined: NO text is displayed by default.
    */
   message?: string;
   /**
@@ -84,87 +83,109 @@ export function SkillBridgeLoader({
     typeof size === "number"
       ? size
       : size === "small"
-      ? 48
+      ? 44
       : size === "medium"
-      ? 80
+      ? 72
       : size === "large"
-      ? 120
-      : 140; // hero / fullScreen
+      ? 100
+      : 120; // hero / fullScreen
   const height = Math.round(width / SYMBOL_ASPECT_RATIO);
 
-  // Animated values (created once via useState initializer to comply with React 19 lint rules)
+  // Animated values
   const [scaleAnim] = useState(() => new Animated.Value(1));
-  const [opacityAnim] = useState(() => new Animated.Value(0.95));
+  const [glowAnim] = useState(() => new Animated.Value(0.4));
   const [translateYAnim] = useState(() => new Animated.Value(0));
+  const [barAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (reduceMotion) {
       scaleAnim.setValue(1);
-      opacityAnim.setValue(1);
+      glowAnim.setValue(0.5);
       translateYAnim.setValue(0);
+      barAnim.setValue(0.5);
       return;
     }
 
     const useNativeDriver = Platform.OS !== "web";
-    const duration = 700;
-    const easing = Easing.inOut(Easing.quad);
 
-    const animation = Animated.loop(
+    // Logo pulsing animation
+    const pulseAnimation = Animated.loop(
       Animated.parallel([
         Animated.sequence([
           Animated.timing(scaleAnim, {
-            toValue: 1.025,
-            duration,
-            easing,
+            toValue: 1.06,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
             useNativeDriver,
           }),
           Animated.timing(scaleAnim, {
-            toValue: 0.975,
-            duration,
-            easing,
+            toValue: 0.96,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
             useNativeDriver,
           }),
         ]),
         Animated.sequence([
-          Animated.timing(opacityAnim, {
-            toValue: 1.0,
-            duration,
-            easing,
+          Animated.timing(glowAnim, {
+            toValue: 0.85,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
             useNativeDriver,
           }),
-          Animated.timing(opacityAnim, {
-            toValue: 0.88,
-            duration,
-            easing,
+          Animated.timing(glowAnim, {
+            toValue: 0.35,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
             useNativeDriver,
           }),
         ]),
         Animated.sequence([
           Animated.timing(translateYAnim, {
-            toValue: -1.5,
-            duration,
-            easing,
+            toValue: -3,
+            duration: 900,
+            easing: Easing.inOut(Easing.quad),
             useNativeDriver,
           }),
           Animated.timing(translateYAnim, {
-            toValue: 1.5,
-            duration,
-            easing,
+            toValue: 3,
+            duration: 900,
+            easing: Easing.inOut(Easing.quad),
             useNativeDriver,
           }),
         ]),
       ])
     );
 
-    animation.start();
+    // Progress bar runner animation (fullScreen only)
+    const barAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(barAnim, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false,
+        }),
+        Animated.timing(barAnim, {
+          toValue: 0,
+          duration: 1100,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false,
+        }),
+      ])
+    );
+
+    pulseAnimation.start();
+    if (fullScreen) {
+      barAnimation.start();
+    }
 
     return () => {
-      animation.stop();
+      pulseAnimation.stop();
+      barAnimation.stop();
     };
-  }, [reduceMotion, scaleAnim, opacityAnim, translateYAnim]);
+  }, [reduceMotion, fullScreen, scaleAnim, glowAnim, translateYAnim, barAnim]);
 
-  const containerBg =
-    background ?? (fullScreen ? colors.bg : "transparent");
+  const containerBg = background ?? (fullScreen ? colors.bg : "transparent");
 
   const containerStyle = [
     styles.container,
@@ -173,29 +194,72 @@ export function SkillBridgeLoader({
     style,
   ];
 
+  const barWidth = barAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["15%", "90%"],
+  });
+
   return (
     <View style={containerStyle} testID={testID} accessibilityRole="progressbar">
-      <Animated.View
-        style={{
-          width,
-          height,
-          transform: [
-            { scale: reduceMotion ? 1 : scaleAnim },
-            { translateY: reduceMotion ? 0 : translateYAnim },
-          ],
-          opacity: reduceMotion ? 1 : opacityAnim,
-        }}
-      >
-        <Image
-          source={BRAND_MARK_ASSET}
-          style={{ width, height }}
-          resizeMode="contain"
-          accessible
-          accessibilityLabel="SkillBridge"
-        />
-      </Animated.View>
+      <View style={styles.logoWrapper}>
+        {/* Ambient Glow Aura */}
+        {fullScreen && (
+          <Animated.View
+            style={[
+              styles.glowAura,
+              {
+                width: width * 1.5,
+                height: height * 1.5,
+                borderRadius: (width * 1.5) / 2,
+                backgroundColor: colors.primary,
+                opacity: reduceMotion ? 0.2 : glowAnim,
+                transform: [{ scale: reduceMotion ? 1 : scaleAnim }],
+              },
+            ]}
+          />
+        )}
 
-      {message ? (
+        <Animated.View
+          style={{
+            width,
+            height,
+            transform: [
+              { scale: reduceMotion ? 1 : scaleAnim },
+              { translateY: reduceMotion ? 0 : translateYAnim },
+            ],
+          }}
+        >
+          <Image
+            source={BRAND_MARK_ASSET}
+            style={{ width, height, borderRadius: width * 0.2 }}
+            resizeMode="contain"
+            accessible
+            accessibilityLabel="SkillBridge"
+          />
+        </Animated.View>
+      </View>
+
+      {fullScreen ? (
+        <View style={styles.brandContent}>
+          <Text style={[styles.brandTitle, { color: colors.text }]}>SkillBridge</Text>
+          <Text style={[styles.brandTagline, { color: isDark ? colors.textSecondary : colors.muted }]}>
+            {message || "Campus Peer Learning & Skills"}
+          </Text>
+
+          {/* Animated Progress Bar */}
+          <View style={[styles.progressTrack, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)" }]}>
+            <Animated.View
+              style={[
+                styles.progressBar,
+                {
+                  width: barWidth,
+                  backgroundColor: colors.primary,
+                },
+              ]}
+            />
+          </View>
+        </View>
+      ) : message ? (
         <Text
           style={[
             styles.message,
@@ -220,9 +284,44 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  logoWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  glowAura: {
+    position: "absolute",
+    filter: "blur(20px)" as any,
+  },
+  brandContent: {
+    alignItems: "center",
+    marginTop: 22,
+  },
+  brandTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    letterSpacing: -0.6,
+  },
+  brandTagline: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "500",
+    letterSpacing: 0.3,
+  },
+  progressTrack: {
+    width: 140,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 24,
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%",
+    borderRadius: 2,
+  },
   message: {
-    marginTop: 16,
-    fontSize: 14,
+    marginTop: 14,
+    fontSize: 13,
     fontWeight: "500",
     textAlign: "center",
     letterSpacing: 0.2,

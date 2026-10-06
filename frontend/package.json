@@ -1,6 +1,6 @@
 {
   "name": "skillbridge-mobile",
-  "version": "2.0.1",
+  "version": "2.0.4",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -79,6 +79,11 @@
   },
   "overrides": {},
   "expo": {
+    "autolinking": {
+      "buildFromSource": [
+        ".*expo-av.*"
+      ]
+    },
     "doctor": {
       "appConfigFieldsNotSyncedCheck": {
         "enabled": false

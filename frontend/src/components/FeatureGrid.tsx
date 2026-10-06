@@ -6,51 +6,60 @@ import { radius, useTheme } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
 import { AskHelpComposerModal } from "@/features/help/AskHelpComposerModal";
 
-const items: [keyof typeof MaterialCommunityIcons.glyphMap, string, Href | "ask_help"][] = [
-  ["newspaper-variant-outline", "Campus Feed", "/feed" as any],
-  ["help-circle-outline", "Ask Help", "ask_help"],
-  ["account-group-outline", "Start Room", "/rooms"],
-  ["calendar-clock", "Schedule", "/schedule"],
-  ["brain", "Quiz", "/quiz"],
-  ["flask-outline", "Research", "/research"],
-  ["calendar-star", "Events", "/events"],
-  ["bookmark-outline", "Saved", "/saved"],
-  ["account-multiple-outline", "Connections", "/connections"],
+const items: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  badge: string;
+  color: string;
+  target: Href | "ask_help";
+}[] = [
+  { icon: "newspaper-variant-outline", label: "Campus Feed", badge: "Trending", color: "#3B82F6", target: "/feed" as any },
+  { icon: "help-circle-outline", label: "Ask Doubt", badge: "Live Q&A", color: "#F59E0B", target: "ask_help" },
+  { icon: "account-group-outline", label: "Study Rooms", badge: "Video & Chat", color: "#8B5CF6", target: "/rooms" },
+  { icon: "calendar-clock", label: "Timetable", badge: "Classes", color: "#10B981", target: "/schedule" },
+  { icon: "brain", label: "Skill Quizzes", badge: "Earn XP", color: "#EC4899", target: "/quiz" },
+  { icon: "flask-outline", label: "Research Labs", badge: "Collaborate", color: "#06B6D4", target: "/research" },
+  { icon: "calendar-star", label: "Campus Events", badge: "Workshops", color: "#6366F1", target: "/events" },
+  { icon: "bookmark-outline", label: "Saved Vault", badge: "Notes", color: "#14B8A6", target: "/saved" },
+  { icon: "account-multiple-outline", label: "Peer Network", badge: "Mentors", color: "#F97316", target: "/connections" },
 ];
 
 export function FeatureGrid({ compact = false }: { compact?: boolean }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [showHelpComposer, setShowHelpComposer] = useState(false);
   const visible = compact ? items.slice(0, 4) : items;
 
   return (
     <>
       <View style={s.grid}>
-        {visible.map(([icon, label, target]) => (
+        {visible.map((item) => (
           <Pressable
             accessibilityRole="button"
-            key={label}
+            key={item.label}
             onPress={() => {
               triggerHaptic();
-              if (target === "ask_help") {
+              if (item.target === "ask_help") {
                 setShowHelpComposer(true);
               } else {
-                router.push(target);
+                router.push(item.target);
               }
             }}
             style={({ pressed }) => [
               s.item,
               {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                opacity: pressed ? 0.75 : 1,
+                backgroundColor: isDark ? "#131926" : "#FFFFFF",
+                borderColor: isDark ? "#1F293D" : "#E2E8F0",
+                opacity: pressed ? 0.78 : 1,
               },
             ]}
           >
-            <View style={[s.iconWrap, { backgroundColor: colors.primarySoft }]}>
-              <MaterialCommunityIcons name={icon} size={22} color={colors.primary} />
+            <View style={[s.iconWrap, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : `${item.color}15` }]}>
+              <MaterialCommunityIcons name={item.icon} size={22} color={item.color} />
             </View>
-            <Text style={[s.label, { color: colors.text }]}>{label}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.label, { color: colors.text }]}>{item.label}</Text>
+              <Text style={[s.badgeText, { color: item.color }]}>{item.badge}</Text>
+            </View>
           </Pressable>
         ))}
       </View>
@@ -69,7 +78,22 @@ export function FeatureGrid({ compact = false }: { compact?: boolean }) {
 
 const s = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  item: { width: "48%", minHeight: 78, borderRadius: radius.lg, borderWidth: 1, padding: 12, flexDirection: "row", alignItems: "center", gap: 10 },
-  iconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  label: { flex: 1, fontWeight: "800", fontSize: 13 },
+  item: {
+    width: "48.5%",
+    minHeight: 70,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  iconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  label: { fontWeight: "800", fontSize: 13, letterSpacing: -0.2 },
+  badgeText: { fontSize: 10, fontWeight: "700", marginTop: 1 },
 });

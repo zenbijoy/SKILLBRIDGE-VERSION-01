@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated as RNAnimated,
@@ -85,6 +85,34 @@ export function Screen({
 
   const isRefreshing = refreshing || internalRefreshing;
 
+  // Dynamic directional scroll inertia:
+  // Down scroll: fast speed, low friction ("normal" / 0.998)
+  // Up scroll: slower speed, more controlled friction (0.982)
+  const [scrollDecelRate, setScrollDecelRate] = useState<number | "normal" | "fast">("normal");
+  const lastTouchPageY = useRef<number | null>(null);
+
+  const handleTouchStart = useCallback((e: any) => {
+    lastTouchPageY.current = e.nativeEvent?.pageY ?? null;
+  }, []);
+
+  const handleTouchMove = useCallback((e: any) => {
+    const pageY = e.nativeEvent?.pageY;
+    if (pageY != null && lastTouchPageY.current != null) {
+      const deltaTouch = pageY - lastTouchPageY.current;
+      // Finger moved DOWN on screen (deltaTouch > 8) => user scrolling UP towards top:
+      // Controlled, somewhat slower glide
+      if (deltaTouch > 8) {
+        setScrollDecelRate(0.982);
+      }
+      // Finger moved UP on screen (deltaTouch < -8) => user scrolling DOWN into feed:
+      // Fast, brisk, fluid glide
+      else if (deltaTouch < -8) {
+        setScrollDecelRate("normal");
+      }
+    }
+    lastTouchPageY.current = pageY;
+  }, []);
+
   const hasFloatingHeader = Boolean(header && autoHideNav);
   const topInsetCalculated = hasFloatingHeader
     ? (autoHideNavContext?.headerHeight && autoHideNavContext.headerHeight > 0
@@ -118,6 +146,9 @@ export function Screen({
         <Animated.ScrollView
           onScroll={autoHideNav && autoHideNavContext ? autoHideNavContext.scrollHandler : undefined}
           scrollEventThrottle={16}
+          decelerationRate={scrollDecelRate}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           contentContainerStyle={[
             styles.scroll,
             hasFloatingHeader && { paddingTop: topInsetCalculated },

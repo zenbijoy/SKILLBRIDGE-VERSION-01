@@ -82,20 +82,38 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    ndkVersion rootProject.ext.ndkVersion
+    ndkVersion rootProject.ext.has('ndkVersion') ? rootProject.ext.ndkVersion : "27.1.12297006"
 
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace 'com.skillbridge.app'
+
+    // --- Production release signing -------------------------------------------
+    // Loads gitignored frontend/android/key.properties (created by
+    // scripts/build-release-apk.ps1). Falls back to the debug keystore so
+    // local/dev builds keep working even without it.
+    def keystoreProperties = new Properties()
+    def keystorePropertiesFile = rootProject.file('key.properties')
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+    }
+    def hasReleaseKeystore = keystorePropertiesFile.exists() &&
+            keystoreProperties.getProperty('storeFile') != null
+
     defaultConfig {
         applicationId 'com.skillbridge.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "2.0.1"
+        versionCode 7
+        versionName "2.0.6"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+
+        // Optional Google Maps tile key for react-native-maps (MAPS_API_KEY
+        // property in gradle.properties / key.properties). Empty = as before.
+        manifestPlaceholders["mapsApiKey"] =
+                (findProperty('MAPS_API_KEY') ?: keystoreProperties.getProperty('mapsApiKey', '')).toString()
     }
     signingConfigs {
         debug {
@@ -104,15 +122,21 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            storeFile file(keystoreProperties.getProperty('storeFile', 'skillbridge-release.keystore'))
+            storePassword keystoreProperties.getProperty('storePassword', '')
+            keyAlias keystoreProperties.getProperty('keyAlias', 'skillbridge')
+            keyPassword keystoreProperties.getProperty('keyPassword', '')
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Production keystore when key.properties exists, so shared/released
+            // APKs are upgradeable with a stable signature. Debug fallback otherwise.
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

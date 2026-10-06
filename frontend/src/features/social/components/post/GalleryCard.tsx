@@ -120,7 +120,7 @@ export function GalleryCard({ images = [], attachments = [], youtube }: GalleryC
         );
       })}
 
-      {/* 4. Multi-Image Grid Layouts with LinkedIn-Style Page Counter Badge */}
+      {/* 4. Multi-Image Grid Layouts with Page Counter Badge */}
       {allImages.length > 0 && (
         <View style={styles.gridContainer}>
           {allImages.length > 1 && (

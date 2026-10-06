@@ -42,6 +42,8 @@ sessions.post(
         ends_at: z.string().datetime().optional(),
         mode: z.enum(["online", "offline", "hybrid"]),
         campus_location: z.string().max(200).optional(),
+        title: z.string().max(200).optional(),
+        description: z.string().max(1000).optional(),
       })
       .parse(req.body);
     const { data: member } = await admin

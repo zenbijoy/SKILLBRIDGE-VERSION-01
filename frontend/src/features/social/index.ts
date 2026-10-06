@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./constants";
+export * from "./utils/postText";
 export { PostCard } from "./components/post/PostCard";
 export { PostHeader } from "./components/post/PostHeader";
 export { PostContent } from "./components/post/PostContent";

@@ -542,7 +542,7 @@ profiles.get(
       .eq("user_id", id);
     const { data: connection } = await admin
       .from("connection_requests")
-      .select("status")
+      .select("id,requester_id,recipient_id,status")
       .or(
         bidirectionalFilter("requester_id", "recipient_id", req.userId!, id),
       )
@@ -587,6 +587,18 @@ profiles.get(
       }
     } catch {}
 
+    let connectionStatus = "none";
+    if (edge) {
+      connectionStatus = "accepted";
+    } else if (connection?.status === "pending") {
+      connectionStatus =
+        connection.requester_id === req.userId
+          ? "pending_outgoing"
+          : "pending_incoming";
+    } else if (connection?.status) {
+      connectionStatus = connection.status;
+    }
+
     const userSkills = (skills ?? []) as unknown as UserSkillWithSkill[];
     res.json({
       profile,
@@ -596,7 +608,8 @@ profiles.get(
         proficiency: x.proficiency,
       })),
       mutualCount: mutualCount ?? 0,
-      connectionStatus: edge ? "accepted" : (connection?.status ?? "none"),
+      connectionStatus,
+      connectionRequestId: connection?.id ?? null,
       mutualRooms,
       mutualRoomsCount: mutualRooms.length,
     });

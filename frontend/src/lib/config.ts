@@ -110,12 +110,12 @@ const expoGoogleIosClientId = Constants.expoConfig?.extra?.googleIosClientId as 
 
 export const GOOGLE_WEB_CLIENT_ID = (
   process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ??
-  (!isProduction ? expoGoogleWebClientId : '') ??
+  expoGoogleWebClientId ??
   ''
 ).trim();
 
 export const GOOGLE_IOS_CLIENT_ID = (
   process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ??
-  (!isProduction ? expoGoogleIosClientId : '') ??
+  expoGoogleIosClientId ??
   ''
 ).trim();

@@ -30,6 +30,8 @@ const createSchema = z
     tags: z.array(z.string().max(40)).max(10).default([]),
     rules: z.string().max(1000).optional().default(""),
     campus_location: z.string().max(200).optional().nullable(),
+    cover_image_url: z.string().url().max(1000).optional().nullable(),
+    is_teacher_mode: z.boolean().optional().default(false),
   })
   .refine(
     (data) => data.mode === "online" || (Boolean(data.campus_location) && data.campus_location!.trim().length > 0),
@@ -58,6 +60,7 @@ rooms.get(
     // "status" (live/scheduled/open) + "mode" (online/offline/hybrid) are also
     // server-side now — client-side filtering loses rooms on other pages.
     const mine = req.query.mine === "true";
+    const teacherModeParam = req.query.teacher_mode === "true";
     const topic = typeof req.query.topic === "string" ? req.query.topic.trim() : "";
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const statusParam = typeof req.query.status === "string" ? req.query.status.trim() : "";
@@ -65,8 +68,15 @@ rooms.get(
     const statusFilter = ["live", "scheduled", "open"].includes(statusParam) ? statusParam : "";
     const modeFilter = ["online", "offline", "hybrid"].includes(modeParam) ? modeParam : "";
 
+    // Helper to normalize dynamic fields
+    const normalizeRoom = (r: any) => ({
+      ...r,
+      cover_image_url: r.cover_image_url || r.appearance?.cover_image_url || null,
+      is_teacher_mode: Boolean(r.is_teacher_mode ?? r.appearance?.is_teacher_mode ?? false),
+    });
+
     // Only the public, shared feed is safe to cache across users.
-    const cacheKey = `rooms:public:p${page}:l${limit}:t${topic}:q${q}:s${statusFilter}:m${modeFilter}`;
+    const cacheKey = `rooms:public:p${page}:l${limit}:t${topic}:q${q}:s${statusFilter}:m${modeFilter}:tm${teacherModeParam}`;
     if (!mine) {
       const cached = await cacheGet<Record<string, unknown>>(cacheKey);
       if (cached) return res.json(cached);
@@ -113,10 +123,15 @@ rooms.get(
         }
       }
 
+      if (teacherModeParam) {
+        mineQuery = mineQuery.eq("appearance->>is_teacher_mode", "true");
+      }
+
       const { data, count, error } = await mineQuery.range(from, to);
 
       if (error) throw error;
-      return res.json({ rooms: data ?? [], total: count ?? 0, page, limit });
+      const normalizedRooms = (data ?? []).map(normalizeRoom);
+      return res.json({ rooms: normalizedRooms, total: count ?? 0, page, limit });
     }
 
     let query = admin.from("rooms").select("*", { count: "exact" }).eq("visibility", "public");
@@ -128,6 +143,9 @@ rooms.get(
     }
     if (modeFilter) {
       query = query.eq("mode", modeFilter);
+    }
+    if (teacherModeParam) {
+      query = query.eq("appearance->>is_teacher_mode", "true");
     }
 
     if (topic) {
@@ -148,8 +166,9 @@ rooms.get(
       .range(from, to);
 
     if (error) throw error;
+    const normalizedRooms = (data ?? []).map(normalizeRoom);
     const result = {
-      rooms: data ?? [],
+      rooms: normalizedRooms,
       total: count ?? 0,
       page,
       limit,
@@ -180,6 +199,36 @@ rooms.post(
     });
     if (error) throw error;
 
+    // Persist cover_image_url and is_teacher_mode.
+    // NOTE: supabase-js never throws on query errors — it returns { error } — so the
+    // fallback must check `error` explicitly. The appearance JSON mirror keeps the
+    // feature working even before migration 041 adds the dedicated columns.
+    if (body.cover_image_url || body.is_teacher_mode) {
+      const appearance = {
+        accent_color: null,
+        theme: "auto",
+        cover_image_url: body.cover_image_url || null,
+        is_teacher_mode: Boolean(body.is_teacher_mode),
+      };
+      const { error: coverErr } = await admin
+        .from("rooms")
+        .update({
+          cover_image_url: body.cover_image_url || null,
+          is_teacher_mode: Boolean(body.is_teacher_mode),
+          appearance,
+        })
+        .eq("id", v_room_id);
+      if (coverErr) {
+        const { error: fallbackErr } = await admin
+          .from("rooms")
+          .update({ appearance })
+          .eq("id", v_room_id);
+        if (fallbackErr) {
+          console.warn("[rooms] failed to persist cover/teacher mode", fallbackErr.message);
+        }
+      }
+    }
+
     await invalidateRoomCache();
 
     const { data: room, error: fetchErr } = await admin
@@ -188,7 +237,14 @@ rooms.post(
       .eq("id", v_room_id)
       .single();
     if (fetchErr) throw fetchErr;
-    res.status(201).json(room);
+
+    const normalizedRoom = {
+      ...room,
+      cover_image_url: room.cover_image_url || room.appearance?.cover_image_url || null,
+      is_teacher_mode: Boolean(room.is_teacher_mode ?? room.appearance?.is_teacher_mode ?? false),
+    };
+
+    res.status(201).json(normalizedRoom);
   }),
 );
 
@@ -328,11 +384,17 @@ rooms.get(
         (sessions ?? []).find(
           (s: any) => s.status === "scheduled" || s.status === "live" || s.status === "draft",
         ) ?? null;
+      const normalizedRoom = {
+        ...room,
+        cover_image_url: room.cover_image_url || room.appearance?.cover_image_url || null,
+        is_teacher_mode: Boolean(room.is_teacher_mode ?? room.appearance?.is_teacher_mode ?? false),
+      };
       return res.json({
-        room,
+        room: normalizedRoom,
         membership: null,
         members: [],
         teachingRequests: [],
+        myTeachingRequest: null,
         sessions: nextSession ? [nextSession] : [],
         resources: [],
         liveSession: (sessions ?? []).find((s: any) => s.status === "live") ?? null,
@@ -393,11 +455,22 @@ rooms.get(
       };
     });
 
+    const normalizedRoom = {
+      ...room,
+      cover_image_url: room.cover_image_url || room.appearance?.cover_image_url || null,
+      is_teacher_mode: Boolean(room.is_teacher_mode ?? room.appearance?.is_teacher_mode ?? false),
+    };
+
+    const myTeachingRequest = (teach ?? []).find(
+      (tr: any) => tr.volunteer?.id === req.userId! || (tr as any).volunteer_id === req.userId!,
+    ) ?? null;
+
     res.json({
-      room,
+      room: normalizedRoom,
       membership,
       members: normalizedMembers,
       teachingRequests: teach ?? [],
+      myTeachingRequest,
       sessions: sessions ?? [],
       resources: resources ?? [],
       liveSession,
@@ -513,6 +586,219 @@ rooms.delete(
       
     if (error) throw error;
     res.status(204).end();
+  }),
+);
+
+// GET /api/v1/rooms/:id/teach-requests - List teaching volunteers & requests
+rooms.get(
+  "/:id/teach-requests",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member) {
+      return res.status(403).json({ error: "Must join room first" });
+    }
+
+    let query = admin
+      .from("teaching_requests")
+      .select(
+        "id,status,note,created_at,decided_at,volunteer:profiles!teaching_requests_volunteer_id_fkey(id, full_name, username, avatar_url, reputation)",
+      )
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: false });
+
+    // Students only see their own requests; host/teachers/moderators see all requests
+    if (!["owner", "teacher", "moderator"].includes(member.role)) {
+      query = query.eq("volunteer_id", req.userId!);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ requests: data ?? [] });
+  }),
+);
+
+// Aliases for teach-requests
+rooms.post(
+  "/:id/teach-requests",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { note } = z.object({ note: z.string().max(500).default("") }).parse(req.body);
+    const { data: m } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", id)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+    if (!m) return res.status(403).json({ error: "Must join room first" });
+    const { data, error } = await admin
+      .from("teaching_requests")
+      .upsert(
+        { room_id: id, volunteer_id: req.userId!, note, status: "pending" },
+        { onConflict: "room_id,volunteer_id" },
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    const { data: room } = await admin
+      .from("rooms")
+      .select("owner_id,title")
+      .eq("id", id)
+      .single();
+    if (room)
+      await notifyUser(
+        room.owner_id,
+        "New teaching volunteer",
+        `A member volunteered to teach in ${room.title}.`,
+        "room",
+        { roomId: id },
+      );
+    res.status(201).json(data);
+  }),
+);
+
+rooms.patch(
+  "/:id/teach-requests/:requestId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const requestId = z.string().uuid().parse(req.params.requestId);
+    const { status } = z
+      .object({ status: z.enum(["accepted", "rejected"]) })
+      .parse(req.body);
+    const { data: room } = await admin
+      .from("rooms")
+      .select("owner_id")
+      .eq("id", roomId)
+      .single();
+    if (room?.owner_id !== req.userId)
+      return res.status(403).json({ error: "Only room owner can decide" });
+    if (status === "accepted") {
+      const { error } = await admin.rpc("accept_teaching_request", {
+        p_room_id: roomId,
+        p_request_id: requestId,
+      });
+      if (error) throw error;
+      res.json({ status: "accepted" });
+    } else {
+      const { error } = await admin
+        .from("teaching_requests")
+        .update({ status: "rejected", decided_at: new Date().toISOString() })
+        .eq("id", requestId);
+      if (error) throw error;
+      res.json({ status: "rejected" });
+    }
+  }),
+);
+
+rooms.delete(
+  "/:id/teach-requests/:requestId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const requestId = z.string().uuid().parse(req.params.requestId);
+    const { data: request } = await admin
+      .from("teaching_requests")
+      .select("volunteer_id, status")
+      .eq("id", requestId)
+      .eq("room_id", roomId)
+      .single();
+    if (!request) return res.status(404).json({ error: "Request not found" });
+    if (request.volunteer_id !== req.userId) {
+      const { data: room } = await admin
+        .from("rooms")
+        .select("owner_id")
+        .eq("id", roomId)
+        .single();
+      if (room?.owner_id !== req.userId) {
+        return res.status(403).json({ error: "Not authorized to cancel this request" });
+      }
+    }
+    const { error } = await admin
+      .from("teaching_requests")
+      .delete()
+      .eq("id", requestId);
+    if (error) throw error;
+    res.status(204).end();
+  }),
+);
+
+// POST /api/v1/rooms/:id/classes - Schedule or launch a classroom session in this room
+rooms.post(
+  "/:id/classes",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        title: z.string().trim().min(3, "Class title must be at least 3 characters").max(150),
+        description: z.string().max(1000).optional().default(""),
+        starts_at: z.string().datetime(),
+        ends_at: z.string().datetime().optional(),
+        mode: z.enum(["online", "offline", "hybrid"]).default("online"),
+        campus_location: z.string().max(200).optional().nullable(),
+      })
+      .parse(req.body);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+      return res.status(403).json({ error: "Teacher, moderator, or owner role required to schedule classes" });
+    }
+
+    const { data: session, error } = await admin
+      .from("sessions")
+      .insert({
+        room_id: roomId,
+        teacher_id: req.userId!,
+        title: body.title,
+        description: body.description,
+        starts_at: body.starts_at,
+        ends_at: body.ends_at,
+        mode: body.mode,
+        campus_location: body.mode === "online" ? null : body.campus_location,
+        status: "scheduled",
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Notify room members
+    const { data: members } = await admin
+      .from("room_members")
+      .select("user_id")
+      .eq("room_id", roomId);
+
+    const { data: roomData } = await admin
+      .from("rooms")
+      .select("title")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    for (const m of (members ?? []).slice(0, 100)) {
+      if (m.user_id !== req.userId) {
+        void NotificationService.dispatch({
+          userId: m.user_id,
+          type: "ROOM_SESSION_LIVE",
+          title: "New Class Scheduled 🎓",
+          body: `"${body.title}" was scheduled in ${roomData?.title || "your room"}.`,
+          entityType: "room",
+          entityId: roomId,
+          data: { roomId, sessionId: session.id, route: "room" },
+        });
+      }
+    }
+
+    res.status(201).json({ session });
   }),
 );
 
@@ -2618,12 +2904,14 @@ rooms.patch(
         default_landing_tab: z.enum(["posts", "chat", "learn", "media"]).optional(),
         appearance: z.record(z.string(), z.any()).optional(),
         is_archived: z.boolean().optional(),
+        cover_image_url: z.string().url().max(1000).optional().nullable(),
+        is_teacher_mode: z.boolean().optional(),
       })
       .parse(req.body);
 
     const { data: room } = await admin
       .from("rooms")
-      .select("owner_id")
+      .select("owner_id, appearance")
       .eq("id", roomId)
       .maybeSingle();
 
@@ -2631,16 +2919,51 @@ rooms.patch(
       return res.status(403).json({ error: "Only the room owner can modify room settings" });
     }
 
-    const { data: updated, error } = await admin
-      .from("rooms")
-      .update(body)
-      .eq("id", roomId)
-      .select()
-      .single();
+    const mergedAppearance = {
+      ...(room.appearance || {}),
+      ...(body.appearance || {}),
+      ...(body.cover_image_url !== undefined ? { cover_image_url: body.cover_image_url } : {}),
+      ...(body.is_teacher_mode !== undefined ? { is_teacher_mode: body.is_teacher_mode } : {}),
+    };
 
-    if (error) throw error;
+    const updatePayload: Record<string, any> = {
+      ...body,
+      appearance: mergedAppearance,
+    };
+
+    let updated: any = null;
+    try {
+      const { data, error } = await admin
+        .from("rooms")
+        .update(updatePayload)
+        .eq("id", roomId)
+        .select()
+        .single();
+      if (error) throw error;
+      updated = data;
+    } catch {
+      // Fallback if specific columns aren't directly on table yet
+      delete updatePayload.cover_image_url;
+      delete updatePayload.is_teacher_mode;
+      const { data, error } = await admin
+        .from("rooms")
+        .update(updatePayload)
+        .eq("id", roomId)
+        .select()
+        .single();
+      if (error) throw error;
+      updated = data;
+    }
+
     await invalidateRoomCache();
-    res.json({ room: updated });
+
+    const normalizedRoom = {
+      ...updated,
+      cover_image_url: updated.cover_image_url || updated.appearance?.cover_image_url || null,
+      is_teacher_mode: Boolean(updated.is_teacher_mode ?? updated.appearance?.is_teacher_mode ?? false),
+    };
+
+    res.json({ room: normalizedRoom });
   }),
 );
 

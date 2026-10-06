@@ -30,14 +30,24 @@ const NOISE_THRESHOLD = 2;
 const VELOCITY_HIDE_THRESHOLD = 700;
 const VELOCITY_SHOW_THRESHOLD = -400;
 
-const TIMING_CONFIG_HEADER = {
-  duration: 200,
-  easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+const TIMING_CONFIG_HEADER_HIDE = {
+  duration: 150,
+  easing: Easing.out(Easing.quad),
 };
 
-const TIMING_CONFIG_BOTTOM = {
-  duration: 210,
-  easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+const TIMING_CONFIG_BOTTOM_HIDE = {
+  duration: 160,
+  easing: Easing.out(Easing.quad),
+};
+
+const TIMING_CONFIG_HEADER_SHOW = {
+  duration: 270,
+  easing: Easing.out(Easing.cubic),
+};
+
+const TIMING_CONFIG_BOTTOM_SHOW = {
+  duration: 280,
+  easing: Easing.out(Easing.cubic),
 };
 
 export type NavigationMode = "feed" | "fixed" | "room" | "immersive" | "reader" | "profile";
@@ -137,9 +147,9 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
         bottomNavTranslateY.value = 0;
         headerOpacity.value = 1;
       } else {
-        headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER);
-        bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM);
-        headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER);
+        headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER_SHOW);
+        bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM_SHOW);
+        headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER_SHOW);
       }
     },
     [headerTranslateY, bottomNavTranslateY, headerOpacity, isNavVisibleShared, downwardAccumulator, upwardAccumulator]
@@ -155,9 +165,9 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
     const targetHeaderY = -(headerHeightShared.value + insetsTopShared.value + 4);
     const targetBottomY = bottomNavHeightShared.value + insetsBottomShared.value + 24;
 
-    headerTranslateY.value = withTiming(targetHeaderY, TIMING_CONFIG_HEADER);
-    bottomNavTranslateY.value = withTiming(targetBottomY, TIMING_CONFIG_BOTTOM);
-    headerOpacity.value = withTiming(0.96, TIMING_CONFIG_HEADER);
+    headerTranslateY.value = withTiming(targetHeaderY, TIMING_CONFIG_HEADER_HIDE);
+    bottomNavTranslateY.value = withTiming(targetBottomY, TIMING_CONFIG_BOTTOM_HIDE);
+    headerOpacity.value = withTiming(0.96, TIMING_CONFIG_HEADER_HIDE);
   }, [
     isLockedShared,
     isAtTopShared,
@@ -224,9 +234,9 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
         if (!isNavVisibleShared.value) {
           isNavVisibleShared.value = true;
           runOnJS(syncVisibilityState)(true);
-          headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER);
-          bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM);
-          headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER);
+          headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER_SHOW);
+          bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM_SHOW);
+          headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER_SHOW);
         }
         return;
       }
@@ -256,9 +266,9 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
           runOnJS(syncVisibilityState)(false);
           const targetHeaderY = -(headerHeightShared.value + insetsTopShared.value + 4);
           const targetBottomY = bottomNavHeightShared.value + insetsBottomShared.value + 24;
-          headerTranslateY.value = withTiming(targetHeaderY, TIMING_CONFIG_HEADER);
-          bottomNavTranslateY.value = withTiming(targetBottomY, TIMING_CONFIG_BOTTOM);
-          headerOpacity.value = withTiming(0.96, TIMING_CONFIG_HEADER);
+          headerTranslateY.value = withTiming(targetHeaderY, TIMING_CONFIG_HEADER_HIDE);
+          bottomNavTranslateY.value = withTiming(targetBottomY, TIMING_CONFIG_BOTTOM_HIDE);
+          headerOpacity.value = withTiming(0.96, TIMING_CONFIG_HEADER_HIDE);
         }
         downwardAccumulator.value = 0;
         upwardAccumulator.value = 0;
@@ -269,9 +279,9 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
         if (!isNavVisibleShared.value) {
           isNavVisibleShared.value = true;
           runOnJS(syncVisibilityState)(true);
-          headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER);
-          bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM);
-          headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER);
+          headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER_SHOW);
+          bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM_SHOW);
+          headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER_SHOW);
         }
         downwardAccumulator.value = 0;
         upwardAccumulator.value = 0;
@@ -288,9 +298,9 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
             runOnJS(syncVisibilityState)(false);
             const targetHeaderY = -(headerHeightShared.value + insetsTopShared.value + 4);
             const targetBottomY = bottomNavHeightShared.value + insetsBottomShared.value + 24;
-            headerTranslateY.value = withTiming(targetHeaderY, TIMING_CONFIG_HEADER);
-            bottomNavTranslateY.value = withTiming(targetBottomY, TIMING_CONFIG_BOTTOM);
-            headerOpacity.value = withTiming(0.96, TIMING_CONFIG_HEADER);
+            headerTranslateY.value = withTiming(targetHeaderY, TIMING_CONFIG_HEADER_HIDE);
+            bottomNavTranslateY.value = withTiming(targetBottomY, TIMING_CONFIG_BOTTOM_HIDE);
+            headerOpacity.value = withTiming(0.96, TIMING_CONFIG_HEADER_HIDE);
           }
         }
       } else {
@@ -300,9 +310,9 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
         if (upwardAccumulator.value >= SHOW_DISTANCE_THRESHOLD && !isNavVisibleShared.value) {
           isNavVisibleShared.value = true;
           runOnJS(syncVisibilityState)(true);
-          headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER);
-          bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM);
-          headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER);
+          headerTranslateY.value = withTiming(0, TIMING_CONFIG_HEADER_SHOW);
+          bottomNavTranslateY.value = withTiming(0, TIMING_CONFIG_BOTTOM_SHOW);
+          headerOpacity.value = withTiming(1, TIMING_CONFIG_HEADER_SHOW);
         }
       }
     },

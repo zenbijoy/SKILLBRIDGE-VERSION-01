@@ -65,12 +65,22 @@ export interface Room {
   default_landing_tab?: string;
   appearance?: Record<string, any>;
   is_archived?: boolean;
+  cover_image_url?: string | null;
+  is_teacher_mode?: boolean;
+  my_teach_request?: {
+    id: string;
+    status: "pending" | "approved" | "rejected";
+    note?: string | null;
+    approved_at?: string | null;
+  } | null;
 }
 
 export interface Session {
   id: string;
   room_id: string;
   teacher_id: string;
+  title?: string | null;
+  description?: string | null;
   starts_at: string;
   ends_at?: string | null;
   mode: RoomMode;
@@ -82,6 +92,24 @@ export interface Session {
   recording_provider?: "youtube" | "google_drive" | "r2" | "custom" | null;
   recording_status?: "none" | "recording" | "uploading" | "ready" | "failed" | null;
   recording_duration_seconds?: number | null;
+}
+
+export interface TeachingRequest {
+  id: string;
+  room_id: string;
+  user_id: string;
+  status: "pending" | "approved" | "rejected";
+  note?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  user?: {
+    id: string;
+    full_name?: string | null;
+    avatar_url?: string | null;
+    username?: string | null;
+    headline?: string | null;
+  };
 }
 
 export interface EventItem {

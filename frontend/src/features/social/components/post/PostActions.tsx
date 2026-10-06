@@ -39,7 +39,7 @@ export function PostActions({
   return (
     <View style={styles.container}>
       {/* 1. Engagement Counts Summary Bar */}
-      {(post.likes_count > 0 || post.comments_count > 0 || post.shares_count > 0) && (
+      {(post.likes_count > 0 || post.comments_count > 0 || post.shares_count > 0 || post.saves_count > 0) && (
         <Row style={[styles.statsRow, { borderBottomColor: colors.border }]}>
           <Row style={{ alignItems: "center", gap: 4 }}>
             {post.likes_count > 0 && (
@@ -72,6 +72,11 @@ export function PostActions({
                 {post.shares_count} {post.shares_count === 1 ? "share" : "shares"}
               </Text>
             )}
+            {post.saves_count > 0 && (
+              <Text style={[styles.statsText, { color: colors.muted }]}>
+                · {post.saves_count} {post.saves_count === 1 ? "save" : "saves"}
+              </Text>
+            )}
           </Row>
         </Row>
       )}
@@ -96,6 +101,10 @@ export function PostActions({
             setShowPicker(true);
           }}
           style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            activeReaction ? `Remove ${activeReaction.label}` : "Like this post"
+          }
         >
           {activeReaction ? (
             <Row style={{ alignItems: "center", gap: 6 }}>
@@ -116,6 +125,8 @@ export function PostActions({
         <Pressable
           onPress={onCommentPress}
           style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Comment on this post"
         >
           <MaterialCommunityIcons name="comment-outline" size={18} color={colors.muted} />
           <Text style={[styles.actionBtnText, { color: colors.muted }]}>Comment</Text>
@@ -125,6 +136,8 @@ export function PostActions({
         <Pressable
           onPress={onSharePress}
           style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Repost this post to your profile"
         >
           <MaterialCommunityIcons name="repeat-variant" size={19} color={colors.muted} />
           <Text style={[styles.actionBtnText, { color: colors.muted }]}>Repost</Text>
@@ -134,9 +147,38 @@ export function PostActions({
         <Pressable
           onPress={onSharePress}
           style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Send post to a friend"
         >
           <MaterialCommunityIcons name="send-outline" size={18} color={colors.muted} />
           <Text style={[styles.actionBtnText, { color: colors.muted }]}>Send</Text>
+        </Pressable>
+
+        {/* Bookmark / Save Button */}
+        <Pressable
+          onPress={onSavePress}
+          style={({ pressed }) => [
+            styles.actionBtn,
+            pressed && { opacity: 0.7 },
+            post.is_saved && { backgroundColor: `${colors.primary}15` },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={post.is_saved ? "Remove bookmark" : "Bookmark this post"}
+          accessibilityState={{ selected: Boolean(post.is_saved) }}
+        >
+          <MaterialCommunityIcons
+            name={post.is_saved ? "bookmark" : "bookmark-outline"}
+            size={18}
+            color={post.is_saved ? colors.primary : colors.muted}
+          />
+          <Text
+            style={[
+              styles.actionBtnText,
+              { color: post.is_saved ? colors.primary : colors.muted, fontWeight: post.is_saved ? "700" : "600" },
+            ]}
+          >
+            {post.is_saved ? "Saved" : "Save"}
+          </Text>
         </Pressable>
       </Row>
     </View>
@@ -172,7 +214,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   actionsRow: {
-    justifyContent: "space-around",
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
     paddingTop: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -181,15 +224,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 4,
+    flex: 1,
     paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 2,
     borderRadius: radius.sm,
     minHeight: 36,
   },
   actionBtnText: {
-    fontSize: 12.5,
+    fontSize: 11,
     fontWeight: "600",
+    flexShrink: 1,
   },
   activeEmoji: {
     fontSize: 16,

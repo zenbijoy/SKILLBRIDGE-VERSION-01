@@ -12,13 +12,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { useI18n } from "@/i18n";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { Button, triggerHaptic } from "@/components/ui";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { onboardingIllustrations } from "@/assets/illustrations";
+import { WelcomeUIMockup } from "@/features/welcome/WelcomeUIMockup";
 
 type WelcomeContentResponse = {
   contentSets: {
@@ -30,7 +29,6 @@ type WelcomeContentResponse = {
 type WelcomeCopy = { id: string; title: string; body: string };
 type WelcomeSlide = {
   id: string;
-  image: number;
   title: string;
   subtitle: string;
   accent: string;
@@ -63,28 +61,24 @@ export default function WelcomeCarouselScreen() {
   const slides: WelcomeSlide[] = [
     {
       id: "discover",
-      image: onboardingIllustrations.discover,
       title: serverCopy.get("discover")?.title ?? t("welcome.discoverTitle"),
       subtitle: serverCopy.get("discover")?.body ?? t("welcome.discoverSubtitle"),
       accent: "#2563EB",
     },
     {
       id: "connect",
-      image: onboardingIllustrations.connect,
       title: serverCopy.get("connect")?.title ?? t("welcome.connectTitle"),
       subtitle: serverCopy.get("connect")?.body ?? t("welcome.connectSubtitle"),
       accent: "#0F9F75",
     },
     {
       id: "level_up",
-      image: onboardingIllustrations.levelUp,
       title: serverCopy.get("level_up")?.title ?? t("welcome.levelUpTitle"),
       subtitle: serverCopy.get("level_up")?.body ?? t("welcome.levelUpSubtitle"),
       accent: "#4F46E5",
     },
     {
       id: "launch",
-      image: onboardingIllustrations.launch,
       title: serverCopy.get("launch")?.title ?? t("welcome.launchTitle"),
       subtitle: serverCopy.get("launch")?.body ?? t("welcome.launchSubtitle"),
       accent: "#D97706",
@@ -117,7 +111,14 @@ export default function WelcomeCarouselScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={["top", "bottom", "left", "right"]}>
       {/* Top Header Bar with Skip */}
       <View style={styles.topBar}>
-        <Text style={[styles.logoText, { color: colors.primary }]}>SkillBridge</Text>
+        <View style={styles.brandContainer}>
+          <Image
+            source={require("@/../assets/branding/skillbridge-mark.png")}
+            style={styles.logoMark}
+            resizeMode="contain"
+          />
+          <Text style={[styles.logoText, { color: colors.text }]}>SkillBridge</Text>
+        </View>
         {activeIndex < slides.length - 1 ? (
           <Pressable onPress={handleSkip} hitSlop={12} style={styles.skipButton}>
             <Text style={[styles.skipText, { color: colors.muted }]}>{t("welcome.skip")}</Text>
@@ -140,18 +141,9 @@ export default function WelcomeCarouselScreen() {
         getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
         renderItem={({ item }) => (
           <View style={[styles.slide, { width }]}>
-            {/* Artwork Container */}
-            <View style={[styles.imageWrapper, { width: Math.min(width * 0.85, 560), height: Math.min(height * 0.48, 560) }]}>
-              <Image
-                source={item.image}
-                style={styles.artworkImage}
-                resizeMode="contain"
-                accessibilityLabel={item.title}
-              />
-              <LinearGradient
-                colors={["transparent", isDark ? "rgba(10,12,18,0.85)" : "rgba(255,255,255,0.9)"]}
-                style={styles.imageGradient}
-              />
+            {/* Real App UI Screen Mockup Preview */}
+            <View style={[styles.imageWrapper, { width: Math.min(width * 0.88, 360), height: Math.min(height * 0.44, 340) }]}>
+              <WelcomeUIMockup slideId={item.id} />
             </View>
 
             {/* Content Container */}
@@ -207,6 +199,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
+  brandContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  logoMark: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
   logoText: {
     fontSize: 20,
     fontWeight: "900",
@@ -226,22 +228,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   imageWrapper: {
-    borderRadius: radius.xl,
+    borderRadius: 24,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
-  },
-  artworkImage: {
-    width: "100%",
-    height: "100%",
-  },
-  imageGradient: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 80,
   },
   textContainer: {
     width: "100%",

@@ -3,14 +3,14 @@
     "name": "SkillBridge",
     "slug": "skillbridge",
     "scheme": "skillbridge",
-    "version": "2.0.1",
+    "version": "2.0.6",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.skillbridge.app",
-      "buildNumber": "1",
+      "buildNumber": "6",
       "infoPlist": {
         "NSCameraUsageDescription": "SkillBridge requires camera access so you can participate in live peer learning rooms and video classes.",
         "NSMicrophoneUsageDescription": "SkillBridge requires microphone access to let you speak in live audio and video learning sessions."
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.skillbridge.app",
-      "versionCode": 2,
+      "versionCode": 7,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF",
@@ -30,6 +30,9 @@
         "POST_NOTIFICATIONS",
         "MODIFY_AUDIO_SETTINGS",
         "BLUETOOTH",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "ACCESS_NETWORK_STATE",
         "INTERNET"
       ]
     },
@@ -74,7 +77,8 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiUrl": "https://skillbridge-api-pd9c.onrender.com/api/v1",
+      "apiUrl": "https://ruetskillbridge.duckdns.org/api/v1",
+      "googleWebClientId": "939253168628-57q343ic7iep2sgpo0e9786553mi6n0e.apps.googleusercontent.com",
       "router": {},
       "eas": {
         "projectId": "0fb7ccd3-897e-4e93-8da7-7fa7b4c222bc"

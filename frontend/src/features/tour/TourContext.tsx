@@ -52,6 +52,7 @@ interface TourContextType {
   isLastStep: boolean;
   startTour: () => void;
   nextStep: () => void;
+  previousStep: () => void;
   skipStep: () => void;
   skipTour: () => void;
   restartTour: () => void;
@@ -208,6 +209,16 @@ export function TourProvider({ children, enabled = true }: { children: React.Rea
     setIsActive(false);
   }, [chapters.length, currentStepIndex, navigateTo, saveProgress]);
 
+  const previousStep = useCallback(() => {
+    triggerHaptic();
+    if (currentStepIndex > 0) {
+      const prevIndex = currentStepIndex - 1;
+      setCurrentStepIndex(prevIndex);
+      navigateTo(prevIndex);
+      void saveProgress(prevIndex, "in_progress");
+    }
+  }, [currentStepIndex, navigateTo, saveProgress]);
+
   const skipStep = useCallback(() => {
     triggerHaptic();
     if (currentStepIndex < chapters.length - 1) {
@@ -241,10 +252,11 @@ export function TourProvider({ children, enabled = true }: { children: React.Rea
     isLastStep: currentStepIndex === chapters.length - 1,
     startTour,
     nextStep,
+    previousStep,
     skipStep,
     skipTour,
     restartTour,
-  }), [chapters, currentChapter, currentStepIndex, enabled, isActive, nextStep, restartTour, skipStep, skipTour, startTour, tourVersion]);
+  }), [chapters, currentChapter, currentStepIndex, enabled, isActive, nextStep, previousStep, restartTour, skipStep, skipTour, startTour, tourVersion]);
 
   return <TourContext.Provider value={value}>{children}</TourContext.Provider>;
 }

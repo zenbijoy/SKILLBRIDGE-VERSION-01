@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,10 +24,15 @@ import type { Profile, Room } from "@/types";
 import { Button, Card, Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import { PostContent } from "@/features/social/components/post/PostContent";
 import { GalleryCard } from "@/features/social/components/post/GalleryCard";
 import { PostHeader } from "@/features/social/components/post/PostHeader";
 import { PostActions } from "@/features/social/components/post/PostActions";
+import { AppearancePicker } from "@/features/social/components/composer/AppearancePicker";
+import { MentionPicker } from "@/features/social/components/composer/MentionPicker";
+import { extractHashtags, extractMentionUsernames } from "@/features/social/utils/postText";
+import type { PostAppearance, PostMention } from "@/features/social/types";
 
 interface ClubTarget {
   id: string;
@@ -45,6 +52,9 @@ const QUICK_TAGS = [
   "#Research",
   "#StudyTips",
 ];
+
+/** Keeps composer input within the backend `body` column budget. */
+const MAX_BODY_LENGTH = 5000;
 
 interface AttachedMedia {
   url: string;
@@ -76,6 +86,7 @@ export function PostComposerModal({
   const { colors } = useTheme();
   const { t } = useI18n();
   const qc = useQueryClient();
+  const keyboardHeight = useKeyboardHeight();
 
   const [activeTab, setActiveTab] = useState<"write" | "preview">("write");
   const [body, setBody] = useState("");
@@ -83,6 +94,14 @@ export function PostComposerModal({
   const [audience, setAudience] = useState<AudienceType>(initialAudience || "public");
   const [selectedTargetId, setSelectedTargetId] = useState<string>("");
   const [isAnonymous, setIsAnonymous] = useState(false);
+
+  // Facebook-style post background theme
+  const [appearance, setAppearance] = useState<PostAppearance>({});
+  const [showThemePicker, setShowThemePicker] = useState(false);
+
+  // @mentions selected through the MentionPicker
+  const [mentions, setMentions] = useState<PostMention[]>([]);
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
 
   // Attachments
   const [attachedMedia, setAttachedMedia] = useState<AttachedMedia[]>([]);
@@ -127,6 +146,29 @@ export function PostComposerModal({
     queryFn: () => api<{ clubs: ClubTarget[] }>("/clubs"),
     enabled: visible && audience === "club",
   });
+
+  // Insert text at the current caret (replacing any selection) and keep focus
+  const insertAtSelection = (insertText: string) => {
+    const start =
+      selection.start >= 0 && selection.start <= body.length ? selection.start : body.length;
+    const end = selection.end >= start && selection.end <= body.length ? selection.end : start;
+    const newBody = body.slice(0, start) + insertText + body.slice(end);
+    setBody(newBody);
+    const next = start + insertText.length;
+    setSelection({ start: next, end: next });
+  };
+
+  /** Inserts `@username ` and records the mention so the backend notifies them. */
+  const handleInsertMention = (mention: PostMention) => {
+    triggerHaptic("selection");
+    insertAtSelection(`@${mention.username} `);
+    setMentions((prev) =>
+      prev.some((m) => m.id.toLowerCase() === mention.id.toLowerCase())
+        ? prev
+        : [...prev, mention],
+    );
+    inputRef.current?.focus();
+  };
 
   // Apply Selection-Aware Formatting Tool
   const applyFormatting = (prefix: string, suffix = "", defaultText = "") => {
@@ -289,7 +331,7 @@ export function PostComposerModal({
     }
   };
 
-  // Pick Document / PDF (for LinkedIn-style slide carousel posts)
+  // Pick Document / PDF
   const handlePickDocument = async () => {
     if (attachedMedia.length >= 8) {
       Alert.alert("Limit Reached", "Max 8 attachments allowed per post.");
@@ -384,8 +426,10 @@ export function PostComposerModal({
 
   const addTag = (tag: string) => {
     triggerHaptic();
-    setBody((prev) => (prev.includes(tag) ? prev : `${prev.trim()} ${tag} `));
+    insertAtSelection(tag.endsWith(" ") ? tag : `${tag} `);
   };
+
+  const hasCustomBackground = Boolean(appearance.theme && appearance.theme !== "default");
 
   // Poll options helpers
   const handleAddPollOption = () => {
@@ -441,6 +485,14 @@ export function PostComposerModal({
             }
           : undefined;
 
+      // Mentions: only the picked people carry a resolvable profile id, which is
+      // what the backend schema (uuid) requires. Keep only picked mentions that
+      // are still present in the composed text so deleted names don't notify.
+      const typedUsernames = extractMentionUsernames(finalBody).map((u) => u.toLowerCase());
+      const mentionPayload = mentions
+        .filter((m) => typedUsernames.includes(m.username.toLowerCase()))
+        .map((m) => ({ id: m.id, username: m.username, full_name: m.full_name }));
+
       return api("/feed", {
         method: "POST",
         body: JSON.stringify({
@@ -450,6 +502,16 @@ export function PostComposerModal({
           media_object_ids: mediaObjectIds,
           youtube_url: youtubeUrl.trim() || undefined,
           poll: pollData,
+          appearance: hasCustomBackground
+            ? {
+                theme: appearance.theme,
+                backgroundType: appearance.backgroundType,
+                textColor: appearance.textColor,
+                alignment: appearance.alignment,
+              }
+            : undefined,
+          mentions: mentionPayload,
+          hashtags: extractHashtags(finalBody),
         }),
       });
     },
@@ -466,6 +528,9 @@ export function PostComposerModal({
       setPollQuestion("");
       setPollOptions(["", ""]);
       setIsAnonymous(false);
+      setMentions([]);
+      setAppearance({});
+      setShowThemePicker(false);
       setActiveTab("write");
       onPostCreated?.();
       onClose();
@@ -483,11 +548,15 @@ export function PostComposerModal({
   // Mock Post object for live preview
   const previewPost: any = {
     id: "preview-id",
-    body: body.trim() || "What's on your mind? Type your thoughts to preview formatting...",
+    // No placeholder text: an empty body renders nothing, exactly like the feed.
+    body: body.trim(),
     created_at: new Date().toISOString(),
     is_anonymous: isAnonymous,
     author: currentUser,
     post_type: "standard",
+    appearance,
+    visibility: "public",
+    is_saved: false,
     media_urls: attachedMedia.map((m) => m.url),
     attachments: attachedMedia.map((m, i) => ({
       id: `att-${i}`,
@@ -495,10 +564,16 @@ export function PostComposerModal({
       media_type: m.mediaType,
       name: m.fileName,
     })),
+    mentions,
+    hashtags: extractHashtags(body),
     likes_count: 0,
     comments_count: 0,
     shares_count: 0,
+    saves_count: 0,
   };
+
+  const hasPreviewContent =
+    previewPost.body.length > 0 || attachedMedia.length > 0 || showPollBuilder;
 
   return (
     <Modal
@@ -506,13 +581,28 @@ export function PostComposerModal({
       animationType="slide"
       transparent
       onRequestClose={onClose}
+      statusBarTranslucent
     >
+      <KeyboardAvoidingView
+        style={s.keyboardHost}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        enabled={Platform.OS === "ios"}
+      >
       <View style={s.overlay}>
         <Pressable style={s.backdrop} onPress={onClose} />
         <Animated.View
           entering={FadeInDown.springify().damping(18)}
           exiting={FadeOutDown}
-          style={[s.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={[
+            s.sheet,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              // Android does not shrink a Modal's own window, so reserve the
+              // keyboard height here to keep the caret fully visible.
+              marginBottom: keyboardHeight,
+            },
+          ]}
         >
           {/* Header */}
           <Row style={s.headerRow}>
@@ -576,34 +666,43 @@ export function PostComposerModal({
             />
           </Row>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.content}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          >
             {activeTab === "preview" ? (
               /* LIVE PREVIEW TAB */
               <View style={s.previewWrapper}>
-                <View style={[s.previewHintBanner, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
-                  <MaterialCommunityIcons name="information-outline" size={16} color={colors.primary} />
-                  <Text style={[s.previewHintText, { color: colors.primary }]}>
-                    LinkedIn-Style Feed Live Preview (How other members will see your post)
-                  </Text>
-                </View>
+                {!hasPreviewContent ? (
+                  <View style={[s.previewHintBanner, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+                    <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.muted} />
+                    <Text style={[s.previewHintText, { color: colors.muted }]}>
+                      Start writing and your post preview will appear here.
+                    </Text>
+                  </View>
+                ) : null}
 
-                <Card style={[s.previewCard, { borderColor: colors.border }]}>
-                  <PostHeader post={previewPost} />
-                  <PostContent post={previewPost} />
-                  {attachedMedia.length > 0 && (
-                    <GalleryCard
-                      images={attachedMedia.map((m) => m.url)}
-                      attachments={previewPost.attachments}
+                {hasPreviewContent ? (
+                  <Card style={[s.previewCard, { borderColor: colors.border }]}>
+                    <PostHeader post={previewPost} />
+                    <PostContent post={previewPost} />
+                    {attachedMedia.length > 0 && (
+                      <GalleryCard
+                        images={attachedMedia.map((m) => m.url)}
+                        attachments={previewPost.attachments}
+                      />
+                    )}
+                    <PostActions
+                      post={previewPost}
+                      onReact={() => {}}
+                      onCommentPress={() => setActiveTab("write")}
+                      onSharePress={() => {}}
+                      onSavePress={() => setActiveTab("write")}
                     />
-                  )}
-                  <PostActions
-                    post={previewPost}
-                    onReact={() => {}}
-                    onCommentPress={() => {}}
-                    onSharePress={() => {}}
-                    onSavePress={() => {}}
-                  />
-                </Card>
+                  </Card>
+                ) : null}
               </View>
             ) : (
               /* WRITE TAB */
@@ -732,18 +831,39 @@ export function PostComposerModal({
                 )}
 
                 {/* Main Post Text Area */}
-                <TextInput
-                  ref={inputRef}
-                  style={[s.postInput, { color: colors.text, borderColor: colors.border }]}
-                  multiline
-                  numberOfLines={7}
-                  placeholder={t("feed.composerPrompt1") || "What do you want to talk about?"}
-                  placeholderTextColor={colors.muted}
-                  value={body}
-                  onChangeText={setBody}
-                  onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
-                  textAlignVertical="top"
-                />
+                <View style={[s.postInputWrap, { borderColor: colors.border }]}>
+                  <TextInput
+                    ref={inputRef}
+                    style={[s.postInput, { color: colors.text }]}
+                    multiline
+                    numberOfLines={7}
+                    placeholder={t("feed.composerPrompt1") || "What do you want to talk about?"}
+                    placeholderTextColor={colors.muted}
+                    value={body}
+                    onChangeText={setBody}
+                    onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                    textAlignVertical="top"
+                    maxLength={MAX_BODY_LENGTH}
+                  />
+                  <Row style={s.counterRow}>
+                    <Text style={[s.counterHint, { color: colors.muted }]} numberOfLines={1}>
+                      {mentions.length > 0
+                        ? `Notifying ${mentions.length} peer${mentions.length === 1 ? "" : "s"}`
+                        : "Tip: tap @ to mention a campus peer"}
+                    </Text>
+                    <Text
+                      style={[
+                        s.counterText,
+                        {
+                          color:
+                            body.length > MAX_BODY_LENGTH - 100 ? colors.warning : colors.muted,
+                        },
+                      ]}
+                    >
+                      {body.length}/{MAX_BODY_LENGTH}
+                    </Text>
+                  </Row>
+                </View>
 
                 {/* Advanced Rich Text Formatting Toolbar */}
                 <View style={[s.formattingToolbar, { borderColor: colors.border, backgroundColor: colors.surface2 }]}>
@@ -828,8 +948,79 @@ export function PostComposerModal({
                     >
                       <MaterialCommunityIcons name="link-variant" size={20} color={colors.text} />
                     </Pressable>
+
+                    {/* Mention a campus peer */}
+                    <Pressable
+                      onPress={() => {
+                        triggerHaptic();
+                        setShowMentionPicker(true);
+                      }}
+                      style={[s.toolBtn, mentions.length > 0 && { backgroundColor: `${colors.primary}18` }]}
+                      accessibilityLabel="Mention a campus peer"
+                    >
+                      <MaterialCommunityIcons
+                        name="at"
+                        size={20}
+                        color={mentions.length > 0 ? colors.primary : colors.text}
+                      />
+                    </Pressable>
+
+                    {/* Facebook-style post background */}
+                    <Pressable
+                      onPress={() => {
+                        triggerHaptic();
+                        setShowThemePicker((prev) => !prev);
+                      }}
+                      style={[s.toolBtn, showThemePicker && { backgroundColor: `${colors.primary}18` }]}
+                      accessibilityLabel="Change post background"
+                      accessibilityState={{ expanded: showThemePicker }}
+                    >
+                      <MaterialCommunityIcons
+                        name="palette"
+                        size={20}
+                        color={showThemePicker || hasCustomBackground ? colors.primary : colors.text}
+                      />
+                    </Pressable>
                   </ScrollView>
                 </View>
+
+                {/* Selected chips for picked mentions */}
+                {mentions.length > 0 && (
+                  <View style={s.selectedMentionsRow}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                      {mentions.map((m) => (
+                        <Pressable
+                          key={m.id}
+                          onPress={() => {
+                            setMentions((prev) => prev.filter((x) => x.id !== m.id));
+                            triggerHaptic("selection");
+                          }}
+                          style={[s.selectedMentionChip, { backgroundColor: `${colors.primary}15`, borderColor: `${colors.primary}40` }]}
+                          accessibilityLabel={`Remove mention of ${m.full_name}`}
+                        >
+                          <Text style={[s.selectedMentionText, { color: colors.primary }]}>@{m.username}</Text>
+                          <MaterialCommunityIcons name="close" size={12} color={colors.primary} />
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* Background theme picker */}
+                {showThemePicker && (
+                  <View style={[s.themePanel, { borderColor: colors.border }]}>
+                    <Row style={s.themePanelHeader}>
+                      <Text style={[s.themePanelTitle, { color: colors.text }]}>Post background</Text>
+                      <Pressable onPress={() => setShowThemePicker(false)} hitSlop={10}>
+                        <MaterialCommunityIcons name="close" size={18} color={colors.muted} />
+                      </Pressable>
+                    </Row>
+                    <AppearancePicker
+                      appearance={appearance}
+                      onChangeAppearance={setAppearance}
+                    />
+                  </View>
+                )}
 
                 {/* Media Attachment Action Buttons Bar */}
                 <View style={[s.mediaActionsBar, { borderColor: colors.border }]}>
@@ -933,9 +1124,6 @@ export function PostComposerModal({
                     <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                       <Text style={{ color: colors.text, fontSize: 13, fontWeight: "700" }}>
                         Attached Media ({attachedMedia.length}/8)
-                      </Text>
-                      <Text style={{ color: colors.muted, fontSize: 11 }}>
-                        Displays in LinkedIn carousel format
                       </Text>
                     </Row>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
@@ -1099,11 +1287,23 @@ export function PostComposerModal({
           </ScrollView>
         </Animated.View>
       </View>
+      </KeyboardAvoidingView>
+
+      {/* @mention picker */}
+      <MentionPicker
+        visible={showMentionPicker}
+        onSelect={handleInsertMention}
+        onClose={() => setShowMentionPicker(false)}
+      />
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
+  /** Host for KeyboardAvoidingView so the sheet can lift above the keyboard. */
+  keyboardHost: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -1209,13 +1409,63 @@ const s = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
   },
-  postInput: {
+  postInputWrap: {
     borderWidth: 1,
     borderRadius: radius.lg,
+  },
+  postInput: {
     padding: 14,
+    paddingBottom: 6,
     fontSize: 15,
-    minHeight: 130,
+    minHeight: 120,
     lineHeight: 22,
+  },
+  counterRow: {
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+    paddingTop: 2,
+    gap: 10,
+  },
+  counterHint: {
+    fontSize: 11,
+    flexShrink: 1,
+  },
+  counterText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  selectedMentionsRow: {
+    marginTop: 2,
+  },
+  selectedMentionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  selectedMentionText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  themePanel: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    overflow: "hidden",
+  },
+  themePanelHeader: {
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  themePanelTitle: {
+    fontSize: 13,
+    fontWeight: "700",
   },
   formattingToolbar: {
     borderWidth: 1,

@@ -10,6 +10,7 @@
     "dev:usb": "powershell -ExecutionPolicy Bypass -File ./scripts/start-usb-dev.ps1",
     "dev:backend": "npm run dev --prefix backend",
     "android:dev-build": "powershell -ExecutionPolicy Bypass -File ./scripts/build-dev-android.ps1",
+    "android:release": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-release-apk.ps1",
     "dev:web": "npm run web --prefix frontend",
     "dev:admin": "npm run dev --prefix admin",
     "frontend": "npm run start --prefix frontend",

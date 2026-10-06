@@ -26,7 +26,7 @@ interface DayViewProps {
   onAddEventForDate: (iso: string) => void;
 }
 
-const HOUR_HEIGHT = 76;
+const HOUR_HEIGHT = 52;
 const START_HOUR = 8;
 const TOTAL_HOURS = 10;
 
@@ -162,8 +162,8 @@ export function DayView({
               0,
               ((startMin - START_HOUR * 60) / 60) * HOUR_HEIGHT
             );
-            const duration = Math.max(35, endMin - startMin);
-            const height = Math.max(48, (duration / 60) * HOUR_HEIGHT - 6);
+            const duration = Math.max(30, endMin - startMin);
+            const height = Math.max(36, (duration / 60) * HOUR_HEIGHT - 4);
 
             const active = isCurrentlyActive(
               ev.start_time,
@@ -324,29 +324,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderRadius: radius.md,
     borderWidth: 1,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   dayName: {
-    fontSize: 16,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "700",
   },
   eventCountText: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 11,
+    marginTop: 1,
   },
   addSlotBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: radius.sm,
   },
   addSlotText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
   },
   timelineContainer: {
@@ -364,14 +365,14 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   timeLabelBox: {
-    width: 65,
-    paddingRight: 8,
+    width: 52,
+    paddingRight: 6,
     alignItems: "flex-end",
-    transform: [{ translateY: -7 }],
+    transform: [{ translateY: -6 }],
   },
   timeLabel: {
-    fontSize: 10,
-    fontWeight: "700",
+    fontSize: 9.5,
+    fontWeight: "600",
   },
   guideLine: {
     flex: 1,
@@ -387,27 +388,27 @@ const styles = StyleSheet.create({
   },
   nowBadge: {
     backgroundColor: "#DC2626",
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
     paddingVertical: 1,
-    borderRadius: 4,
-    marginLeft: 15,
+    borderRadius: 3,
+    marginLeft: 12,
   },
   nowBadgeText: {
     color: "#FFFFFF",
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: "800",
   },
   nowLine: {
     flex: 1,
-    height: 1.8,
+    height: 1.5,
     backgroundColor: "#DC2626",
   },
   eventsOverlay: {
     position: "absolute",
     top: 0,
     bottom: 0,
-    left: 70,
-    right: 8,
+    left: 56,
+    right: 6,
   },
   eventCard: {
     position: "absolute",
@@ -415,12 +416,13 @@ const styles = StyleSheet.create({
     right: 0,
     borderRadius: radius.sm,
     borderWidth: 1,
-    padding: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
     justifyContent: "space-between",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 3,
+    shadowRadius: 2,
     elevation: 2,
   },
   cardHeader: {
@@ -431,21 +433,21 @@ const styles = StyleSheet.create({
   cardTitleWrap: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
     flex: 1,
   },
   typeBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
   },
   typeText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: "700",
     textTransform: "uppercase",
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 11.5,
     fontWeight: "700",
     flex: 1,
   },

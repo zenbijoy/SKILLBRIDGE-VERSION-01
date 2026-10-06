@@ -12,6 +12,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import { useTheme, radius } from "@/theme";
 import {
@@ -50,6 +51,7 @@ const FILTER_OPTIONS: { key: string; label: string; icon: string }[] = [
 ];
 
 export default function ScheduleScreen() {
+  const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const queryClient = useQueryClient();
 
@@ -372,6 +374,8 @@ export default function ScheduleScreen() {
         style={[
           styles.topNavBar,
           {
+            paddingTop: Math.max(insets.top, 24) + 14,
+            paddingBottom: 14,
             backgroundColor: isDark ? colors.surface : "#FFFFFF",
             borderBottomColor: isDark ? colors.border : "#E2E8F0",
           },
@@ -491,6 +495,9 @@ export default function ScheduleScreen() {
 
       <ScrollView
         style={styles.scrollBody}
+        contentContainerStyle={{
+          paddingBottom: Math.max(insets.bottom, 24) + 120,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* 3. Reusable "What's Next?" / Upcoming Academic Widget */}
@@ -783,7 +790,12 @@ export default function ScheduleScreen() {
       </ScrollView>
 
       {/* 8. Floating Action Cluster (Add Task, Add Class, Import) */}
-      <View style={styles.fabCluster}>
+      <View
+        style={[
+          styles.fabCluster,
+          { bottom: Math.max(insets.bottom, 24) + 48 },
+        ]}
+      >
         <Pressable
           onPress={() => setIsImportModalOpen(true)}
           style={[styles.miniFab, { backgroundColor: colors.surface, borderColor: colors.border }]}

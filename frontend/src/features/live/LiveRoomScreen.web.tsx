@@ -15,7 +15,7 @@ interface LiveCreds {
 }
 
 export default function LiveRoomScreenWeb() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+  const { roomId, sessionId } = useLocalSearchParams<{ roomId: string; sessionId?: string }>();
   const [creds, setCreds] = useState<LiveCreds | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,10 +38,11 @@ export default function LiveRoomScreenWeb() {
   const [savingSession, setSavingSession] = useState(false);
 
   const fetchToken = useCallback(() => {
-    if (!roomId) return;
+    const target = sessionId || roomId;
+    if (!target) return;
     setLoading(true);
     setError(null);
-    api<LiveCreds>(`/live/token/${roomId}`, { method: "POST" })
+    api<LiveCreds>(`/live/token/${target}`, { method: "POST" })
       .then((data) => {
         setCreds(data);
         setLoading(false);
@@ -50,7 +51,7 @@ export default function LiveRoomScreenWeb() {
         setError(e.message || "Failed to join live classroom");
         setLoading(false);
       });
-  }, [roomId]);
+  }, [roomId, sessionId]);
 
   useEffect(() => {
     fetchToken();

@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Profile, Room } from "@/types";
@@ -25,18 +25,12 @@ import {
   triggerHaptic,
 } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
-
-type IncomingRequest = {
-  id: string;
-  requester: Profile;
-  created_at?: string;
-};
+import { useConnections } from "@/features/connections/useConnections";
 
 type ActiveTab = "requests" | "network" | "explore" | "history";
 
 export default function ConnectionsScreen() {
   const { colors, isDark } = useTheme();
-  const qc = useQueryClient();
   const params = useLocalSearchParams<{ tab?: ActiveTab }>();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(
@@ -44,8 +38,8 @@ export default function ConnectionsScreen() {
       ? (params.tab as ActiveTab)
       : "requests"
   );
+  const [requestSubTab, setRequestSubTab] = useState<"received" | "sent">("received");
   const [networkSearch, setNetworkSearch] = useState("");
-  const [sentRequestIds, setSentRequestIds] = useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     if (params.tab && ["requests", "network", "explore", "history"].includes(params.tab)) {
@@ -53,27 +47,35 @@ export default function ConnectionsScreen() {
     }
   }, [params.tab]);
 
-  // 1. Fetch Connections, Incoming Requests & Suggestions
-  const { data, isLoading, isError, error, refetch, isRefetching } = useQuery<{
-    connections: Profile[];
-    incoming: IncomingRequest[];
-    suggested: Profile[];
-  }>({
-    queryKey: ["connections"],
-    queryFn: () => api("/connections"),
-    staleTime: 15_000,
-  });
+  // Centralized LinkedIn-grade connections hook
+  const {
+    connections,
+    incoming,
+    outgoing,
+    suggested,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+    getConnectionStatus,
+    getIncomingRequest,
+    sendRequest,
+    withdrawRequest,
+    acceptRequest,
+    declineRequest,
+    promptRemoveConnection,
+    promptWithdrawRequest,
+    isMutating,
+  } = useConnections();
 
-  // 2. Fetch User's Joined Rooms for History tab
+  // Fetch User's Joined Rooms for History tab
   const roomsQuery = useQuery<{ rooms: Room[] }>({
     queryKey: ["my-rooms-history"],
     queryFn: () => api("/rooms/mine"),
     enabled: activeTab === "history",
   });
 
-  const incoming = data?.incoming ?? [];
-  const connections = useMemo(() => data?.connections ?? [], [data]);
-  const suggested = data?.suggested ?? [];
   const joinedRooms = roomsQuery.data?.rooms ?? [];
 
   // Filtered Connections
@@ -88,67 +90,6 @@ export default function ConnectionsScreen() {
         c.university?.toLowerCase().includes(q),
     );
   }, [connections, networkSearch]);
-
-  // Mutation: Respond to incoming request
-  const respondMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "accepted" | "declined" }) =>
-      api(`/connections/requests/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      }),
-    onSuccess: (_, vars) => {
-      triggerHaptic("notificationSuccess");
-      qc.invalidateQueries({ queryKey: ["connections"] });
-    },
-    onError: (err: Error) => {
-      Alert.alert("Action Failed", err.message || "Could not process request.");
-    },
-  });
-
-  // Mutation: Send Connection Request
-  const sendRequestMutation = useMutation({
-    mutationFn: (recipientId: string) =>
-      api("/connections/requests", {
-        method: "POST",
-        body: JSON.stringify({ recipientId }),
-      }),
-    onMutate: (recipientId) => {
-      triggerHaptic("selection");
-      setSentRequestIds((prev) => ({ ...prev, [recipientId]: true }));
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["connections"] });
-    },
-    onError: (err: Error, recipientId) => {
-      setSentRequestIds((prev) => ({ ...prev, [recipientId]: false }));
-      Alert.alert("Could not connect", err.message || "Failed to send request.");
-    },
-  });
-
-  // Mutation: Remove Connection
-  const removeMutation = useMutation({
-    mutationFn: (userId: string) =>
-      api(`/connections/${userId}`, { method: "DELETE" }),
-    onSuccess: () => {
-      triggerHaptic();
-      qc.invalidateQueries({ queryKey: ["connections"] });
-    },
-  });
-
-  const handleRemovePrompt = (friend: Profile) => {
-    Alert.alert(
-      "Remove Connection",
-      `Are you sure you want to remove ${friend.full_name || friend.username} from your network?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: () => removeMutation.mutate(friend.id),
-        },
-      ],
-    );
-  };
 
   return (
     <Screen scroll={false}>
@@ -340,120 +281,257 @@ export default function ConnectionsScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 60 }}
         >
-          {/* TAB 1: INCOMING REQUESTS (FACEBOOK STYLE) */}
+          {/* TAB 1: INCOMING & OUTGOING REQUESTS (LINKEDIN STYLE) */}
           {activeTab === "requests" && (
             <View style={{ gap: 12 }}>
-              {incoming.length === 0 ? (
-                <Empty
-                  title="No Pending Requests"
-                  detail="When classmates send you a connection request, you'll see them here."
-                />
-              ) : (
-                incoming.map((req) => (
-                  <View
-                    key={req.id}
+              {/* Sub-tabs: Received vs Sent */}
+              <Row style={s.subTabsRow}>
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setRequestSubTab("received");
+                  }}
+                  style={[
+                    s.subTabBtn,
+                    requestSubTab === "received"
+                      ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                      : { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Text
                     style={[
-                      s.requestCard,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border,
-                      },
+                      s.subTabText,
+                      { color: requestSubTab === "received" ? "#FFFFFF" : colors.text },
                     ]}
                   >
-                    <Pressable
-                      onPress={() => router.push(`/user/${req.requester.id}` as any)}
-                      style={s.profilePreviewRow}
+                    Received ({incoming.length})
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setRequestSubTab("sent");
+                  }}
+                  style={[
+                    s.subTabBtn,
+                    requestSubTab === "sent"
+                      ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                      : { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      s.subTabText,
+                      { color: requestSubTab === "sent" ? "#FFFFFF" : colors.text },
+                    ]}
+                  >
+                    Sent ({outgoing.length})
+                  </Text>
+                </Pressable>
+              </Row>
+
+              {requestSubTab === "received" ? (
+                incoming.length === 0 ? (
+                  <Empty
+                    title="No Pending Requests"
+                    detail="When classmates send you a connection request, you'll see them here."
+                  />
+                ) : (
+                  incoming.map((req) => (
+                    <View
+                      key={req.id}
+                      style={[
+                        s.requestCard,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                        },
+                      ]}
                     >
-                      {req.requester.avatar_url ? (
-                        <Image
-                          source={{ uri: req.requester.avatar_url }}
-                          style={s.avatar}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View
+                      <Pressable
+                        onPress={() => router.push(`/user/${req.requester.id}` as any)}
+                        style={s.profilePreviewRow}
+                      >
+                        {req.requester.avatar_url ? (
+                          <Image
+                            source={{ uri: req.requester.avatar_url }}
+                            style={s.avatar}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              s.avatarFallback,
+                              { backgroundColor: colors.primarySoft },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                s.avatarInitial,
+                                { color: colors.primary },
+                              ]}
+                            >
+                              {(req.requester.full_name?.[0] || "U").toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text
+                            style={[s.personName, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
+                            {req.requester.full_name}
+                          </Text>
+                          <Muted numberOfLines={1} style={{ fontSize: 12 }}>
+                            @{req.requester.username}
+                            {req.requester.department
+                              ? ` • ${req.requester.department}`
+                              : ""}
+                          </Muted>
+                          {req.requester.university ? (
+                            <Muted numberOfLines={1} style={{ fontSize: 11 }}>
+                              {req.requester.university}
+                            </Muted>
+                          ) : null}
+                        </View>
+                      </Pressable>
+
+                      {/* Action Buttons: Confirm & Delete */}
+                      <Row style={s.requestActions}>
+                        <Pressable
+                          onPress={() => acceptRequest(req.id, req.requester)}
+                          disabled={isMutating}
                           style={[
-                            s.avatarFallback,
-                            { backgroundColor: colors.primarySoft },
+                            s.confirmBtn,
+                            { backgroundColor: colors.primary },
+                          ]}
+                        >
+                          <Text style={s.confirmBtnText}>Confirm</Text>
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() => declineRequest(req.id)}
+                          disabled={isMutating}
+                          style={[
+                            s.declineBtn,
+                            {
+                              backgroundColor: isDark
+                                ? colors.surface2
+                                : "#F1F5F9",
+                              borderColor: colors.border,
+                            },
                           ]}
                         >
                           <Text
-                            style={[
-                              s.avatarInitial,
-                              { color: colors.primary },
-                            ]}
+                            style={[s.declineBtnText, { color: colors.text }]}
                           >
-                            {(req.requester.full_name?.[0] || "U").toUpperCase()}
+                            Delete
                           </Text>
-                        </View>
-                      )}
-
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text
-                          style={[s.personName, { color: colors.text }]}
-                          numberOfLines={1}
-                        >
-                          {req.requester.full_name}
-                        </Text>
-                        <Muted numberOfLines={1} style={{ fontSize: 12 }}>
-                          @{req.requester.username}
-                          {req.requester.department
-                            ? ` • ${req.requester.department}`
-                            : ""}
-                        </Muted>
-                        {req.requester.university ? (
-                          <Muted numberOfLines={1} style={{ fontSize: 11 }}>
-                            {req.requester.university}
-                          </Muted>
-                        ) : null}
-                      </View>
-                    </Pressable>
-
-                    {/* Action Buttons: Confirm & Delete */}
-                    <Row style={s.requestActions}>
-                      <Pressable
-                        onPress={() =>
-                          respondMutation.mutate({
-                            id: req.id,
-                            status: "accepted",
-                          })
-                        }
-                        disabled={respondMutation.isPending}
+                        </Pressable>
+                      </Row>
+                    </View>
+                  ))
+                )
+              ) : (
+                /* Sent Requests tab */
+                outgoing.length === 0 ? (
+                  <Empty
+                    title="No Sent Invitations"
+                    detail="You haven't sent any pending invitations yet. Explore classmates to connect!"
+                  />
+                ) : (
+                  outgoing.map((req) => {
+                    const person = req.recipient;
+                    const recipientId = req.recipient_id;
+                    const name = person?.full_name || "SkillBridge Student";
+                    return (
+                      <View
+                        key={req.id}
                         style={[
-                          s.confirmBtn,
-                          { backgroundColor: colors.primary },
-                        ]}
-                      >
-                        <Text style={s.confirmBtnText}>Confirm</Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={() =>
-                          respondMutation.mutate({
-                            id: req.id,
-                            status: "declined",
-                          })
-                        }
-                        disabled={respondMutation.isPending}
-                        style={[
-                          s.declineBtn,
+                          s.requestCard,
                           {
-                            backgroundColor: isDark
-                              ? colors.surface2
-                              : "#F1F5F9",
+                            backgroundColor: colors.surface,
                             borderColor: colors.border,
                           },
                         ]}
                       >
-                        <Text
-                          style={[s.declineBtnText, { color: colors.text }]}
+                        <Pressable
+                          onPress={() => router.push(`/user/${recipientId}` as any)}
+                          style={s.profilePreviewRow}
                         >
-                          Delete
-                        </Text>
-                      </Pressable>
-                    </Row>
-                  </View>
-                ))
+                          {person?.avatar_url ? (
+                            <Image
+                              source={{ uri: person.avatar_url }}
+                              style={s.avatar}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View
+                              style={[
+                                s.avatarFallback,
+                                { backgroundColor: colors.primarySoft },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  s.avatarInitial,
+                                  { color: colors.primary },
+                                ]}
+                              >
+                                {(name[0] || "U").toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+
+                          <View style={{ flex: 1, gap: 2 }}>
+                            <Text
+                              style={[s.personName, { color: colors.text }]}
+                              numberOfLines={1}
+                            >
+                              {name}
+                            </Text>
+                            <Muted numberOfLines={1} style={{ fontSize: 12 }}>
+                              {person?.department || person?.university || (person?.username ? `@${person.username}` : "Invited classmate")}
+                            </Muted>
+                            <Row style={{ alignItems: "center", gap: 4, marginTop: 2 }}>
+                              <MaterialCommunityIcons name="clock-outline" size={13} color={colors.accent || colors.primary} />
+                              <Muted style={{ fontSize: 11, color: colors.accent || colors.primary }}>
+                                Invitation Pending
+                              </Muted>
+                            </Row>
+                          </View>
+                        </Pressable>
+
+                        <Row style={s.requestActions}>
+                          <Pressable
+                            onPress={() => {
+                              if (person) {
+                                promptWithdrawRequest(person);
+                              } else {
+                                withdrawRequest(recipientId, req.id);
+                              }
+                            }}
+                            disabled={isMutating}
+                            style={[
+                              s.declineBtn,
+                              {
+                                backgroundColor: isDark ? colors.surface2 : "#F1F5F9",
+                                borderColor: colors.border,
+                              },
+                            ]}
+                          >
+                            <Row style={{ alignItems: "center", gap: 6 }}>
+                              <MaterialCommunityIcons name="close-circle-outline" size={16} color={colors.muted} />
+                              <Text style={[s.declineBtnText, { color: colors.text }]}>Withdraw</Text>
+                            </Row>
+                          </Pressable>
+                        </Row>
+                      </View>
+                    );
+                  })
+                )
               )}
             </View>
           )}
@@ -610,7 +688,7 @@ export default function ConnectionsScreen() {
                       </Pressable>
 
                       <Pressable
-                        onPress={() => handleRemovePrompt(friend)}
+                        onPress={() => promptRemoveConnection(friend)}
                         hitSlop={8}
                         style={s.menuDotBtn}
                       >
@@ -637,7 +715,12 @@ export default function ConnectionsScreen() {
                 />
               ) : (
                 suggested.map((peer) => {
-                  const isSent = Boolean(sentRequestIds[peer.id]);
+                  const status = getConnectionStatus(peer.id);
+                  const isPendingOut = status === "pending_outgoing";
+                  const isPendingIn = status === "pending_incoming";
+                  const isConn = status === "connected";
+                  const isSelf = status === "self";
+
                   return (
                     <View
                       key={peer.id}
@@ -696,31 +779,76 @@ export default function ConnectionsScreen() {
                       </Pressable>
 
                       <Pressable
-                        onPress={() => sendRequestMutation.mutate(peer.id)}
-                        disabled={isSent || sendRequestMutation.isPending}
+                        onPress={() => {
+                          if (isPendingOut) {
+                            promptWithdrawRequest(peer);
+                          } else if (isPendingIn) {
+                            const inReq = getIncomingRequest(peer.id);
+                            if (inReq) acceptRequest(inReq.id, peer);
+                            else sendRequest(peer.id);
+                          } else if (isConn) {
+                            router.push(`/user/${peer.id}` as any);
+                          } else if (!isSelf) {
+                            sendRequest(peer.id);
+                          }
+                        }}
+                        disabled={isSelf || isMutating}
                         style={[
                           s.addFriendBtn,
                           {
-                            backgroundColor: isSent
+                            backgroundColor: isConn
+                              ? colors.primarySoft
+                              : isPendingOut
                               ? isDark
                                 ? colors.surface2
                                 : "#E2E8F0"
                               : colors.primary,
+                            borderWidth: isPendingOut ? 1 : 0,
+                            borderColor: colors.border,
                           },
                         ]}
                       >
                         <MaterialCommunityIcons
-                          name={isSent ? "check" : "account-plus"}
+                          name={
+                            isConn
+                              ? "check-bold"
+                              : isPendingOut
+                              ? "clock-outline"
+                              : isPendingIn
+                              ? "account-check"
+                              : "account-plus"
+                          }
                           size={16}
-                          color={isSent ? colors.muted : "#FFFFFF"}
+                          color={
+                            isConn
+                              ? colors.primary
+                              : isPendingOut
+                              ? colors.muted
+                              : "#FFFFFF"
+                          }
                         />
                         <Text
                           style={[
                             s.addFriendBtnText,
-                            { color: isSent ? colors.muted : "#FFFFFF" },
+                            {
+                              color:
+                                isConn
+                                  ? colors.primary
+                                  : isPendingOut
+                                  ? colors.muted
+                                  : "#FFFFFF",
+                            },
                           ]}
                         >
-                          {isSent ? "Request Sent" : "Add Connection"}
+                          {isConn
+                            ? "Connected ✓"
+                            : isPendingOut
+                            ? "Pending (Tap to withdraw)"
+                            : isPendingIn
+                            ? "Accept Request"
+                            : isSelf
+                            ? "You"
+                            : "Add Connection"}
                         </Text>
                       </Pressable>
                     </View>
@@ -829,6 +957,23 @@ const s = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     alignItems: "center",
+  },
+  subTabsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 4,
+  },
+  subTabBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subTabText: {
+    fontSize: 13,
+    fontWeight: "700",
   },
   tabPill: {
     paddingHorizontal: 14,

@@ -24,11 +24,11 @@ interface WeekViewProps {
   onAddEventForDate: (iso: string) => void;
 }
 
-const HOUR_HEIGHT = 64;
+const HOUR_HEIGHT = 44;
 const START_HOUR = 8; // 08:00
 const TOTAL_HOURS = 10; // 08:00 to 18:00
-const DAY_COLUMN_WIDTH = 100;
-const TIME_GUTTER_WIDTH = 50;
+const DAY_COLUMN_WIDTH = 70;
+const TIME_GUTTER_WIDTH = 42;
 
 export function WeekView({
   currentDate,
@@ -202,10 +202,10 @@ export function WeekView({
                           0,
                           ((startMin - START_HOUR * 60) / 60) * HOUR_HEIGHT
                         );
-                        const durationMinutes = Math.max(30, endMin - startMin);
+                        const durationMinutes = Math.max(25, endMin - startMin);
                         const height = Math.max(
-                          34,
-                          (durationMinutes / 60) * HOUR_HEIGHT - 4
+                          26,
+                          (durationMinutes / 60) * HOUR_HEIGHT - 3
                         );
 
                         const cfg =

@@ -53,14 +53,6 @@ export function AnimatedGreeting({ name, mode, onDismiss }: AnimatedGreetingProp
   }
 
   const fullGreeting = `${greetingPrefix}, ${name} ${greetingEmoji}`;
-  const subtitle =
-    mode === "learn"
-      ? language === "bn"
-        ? "আজ নতুন কী শিখতে চান? আপনার স্টাডি নেটওয়ার্ক প্রস্তুত।"
-        : "Explore peer study rooms and expand your knowledge."
-      : language === "bn"
-        ? "নিজের জ্ঞান শেয়ার করুন এবং ক্যাম্পাস রেপুটেশন বাড়ান।"
-        : "Mentor fellow learners and build your academic influence.";
 
   // 2. Typewriter Effect
   const [displayedText, setDisplayedText] = useState("");
@@ -106,7 +98,7 @@ export function AnimatedGreeting({ name, mode, onDismiss }: AnimatedGreetingProp
     }, 10_000);
 
     return () => clearTimeout(vanishTimer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDismiss is declared below and only touches stable setters
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTypingDone]);
 
   const handleDismiss = () => {
@@ -129,7 +121,19 @@ export function AnimatedGreeting({ name, mode, onDismiss }: AnimatedGreetingProp
             {displayedText}
             {cursorVisible && <Text style={[s.cursor, { color: colors.primary }]}>|</Text>}
           </Text>
-          <Text style={[s.subtitle, { color: colors.muted }]}>{subtitle}</Text>
+
+          {/* Visual Interactive Status Chips instead of long text */}
+          <View style={s.chipsRow}>
+            <View style={[s.statusChip, { backgroundColor: "rgba(249, 115, 22, 0.12)" }]}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#EA580C" }}>🔥 5-Day Streak</Text>
+            </View>
+            <View style={[s.statusChip, { backgroundColor: "rgba(59, 130, 246, 0.12)" }]}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#2563EB" }}>⚡ Level 10</Text>
+            </View>
+            <View style={[s.statusChip, { backgroundColor: "rgba(16, 185, 129, 0.12)" }]}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#059669" }}>🟢 Campus Live</Text>
+            </View>
+          </View>
         </View>
 
         <Pressable
@@ -173,6 +177,18 @@ const s = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "500",
+  },
+  chipsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+    flexWrap: "wrap",
+  },
+  statusChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   closeButton: {
     padding: 6,

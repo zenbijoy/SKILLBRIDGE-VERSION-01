@@ -143,7 +143,7 @@ export function configureGoogleSignIn(): void {
       webClientId: GOOGLE_WEB_CLIENT_ID || undefined,
       iosClientId: GOOGLE_IOS_CLIENT_ID || undefined,
       scopes: ["profile", "email"],
-      offlineAccess: true,
+      offlineAccess: false,
     });
     isGoogleSigninConfigured = true;
   } catch (err) {
@@ -278,6 +278,10 @@ export async function signInWithGoogle(): Promise<GoogleOAuthResult> {
     }
 
     // 3. Native Platform Fallback (e.g. Expo Go or dev client without compiled RNGoogleSignin)
+    if (platform === "android" && !__DEV__ && process.env.NODE_ENV !== "test" && !isNativeGoogleSignInSupported()) {
+      throw new Error("Native Google Sign-In is required on this device, but the module could not be initialized.");
+    }
+
     logAuthEvent("oauth_google_started", {
       provider: "google",
       platform,

@@ -22,8 +22,13 @@ connections.get(
       : { data: [] as any[] };
     const { data: incoming } = await admin
       .from("connection_requests")
-      .select("id,requester:profiles!connection_requests_requester_id_fkey(*)")
+      .select("id,requester_id,created_at,requester:profiles!connection_requests_requester_id_fkey(*)")
       .eq("recipient_id", uid)
+      .eq("status", "pending");
+    const { data: outgoing } = await admin
+      .from("connection_requests")
+      .select("id,recipient_id,status,created_at,recipient:profiles!connection_requests_recipient_id_fkey(*)")
+      .eq("requester_id", uid)
       .eq("status", "pending");
     const { data: suggested } = await admin.rpc("suggest_connections", {
       p_user_id: uid,
@@ -32,6 +37,7 @@ connections.get(
     res.json({
       connections: people ?? [],
       incoming: incoming ?? [],
+      outgoing: outgoing ?? [],
       suggested: suggested ?? [],
     });
   }),
@@ -47,6 +53,51 @@ connections.post(
     const blocked = await isBlocked(req.userId!, recipientId);
     if (blocked)
       return res.status(403).json({ error: "Connection unavailable" });
+
+    // 1. Check if already connected
+    const [a, b] = [req.userId!, recipientId].sort();
+    const { data: existingEdge } = await admin
+      .from("connections")
+      .select("id")
+      .eq("user_a", a)
+      .eq("user_b", b)
+      .maybeSingle();
+
+    if (existingEdge) {
+      return res.status(200).json({ status: "accepted", alreadyConnected: true });
+    }
+
+    // 2. Check if recipient already sent me a pending request (mutual connect -> auto-accept)
+    const { data: existingInverse } = await admin
+      .from("connection_requests")
+      .select("id")
+      .eq("requester_id", recipientId)
+      .eq("recipient_id", req.userId!)
+      .eq("status", "pending")
+      .maybeSingle();
+
+    if (existingInverse) {
+      await admin.from("connection_requests").update({
+        status: "accepted",
+        responded_at: new Date().toISOString(),
+      }).eq("id", existingInverse.id);
+
+      await admin.from("connections").upsert(
+        { user_a: a, user_b: b, user_ids: [a, b] },
+        { onConflict: "user_a,user_b" },
+      );
+
+      await notifyUser(
+        recipientId,
+        "Connection accepted",
+        "Your connection request was accepted.",
+        "connection",
+      );
+
+      return res.status(200).json({ status: "accepted", autoAccepted: true });
+    }
+
+    // 3. Upsert outgoing pending request
     const { data, error } = await admin
       .from("connection_requests")
       .upsert(
@@ -101,6 +152,35 @@ connections.patch(
       );
     }
     res.json(r);
+  }),
+);
+// Withdraw / Cancel request by request ID (requester or recipient)
+connections.delete(
+  "/requests/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { error } = await admin
+      .from("connection_requests")
+      .delete()
+      .eq("id", id)
+      .or(`requester_id.eq.${req.userId!},recipient_id.eq.${req.userId!}`);
+    if (error) throw error;
+    res.status(204).end();
+  }),
+);
+// Withdraw / Cancel pending request directly by target recipient user ID
+connections.delete(
+  "/requests/to/:recipientId",
+  wrap(async (req, res) => {
+    const recipientId = z.string().uuid().parse(req.params.recipientId);
+    const { error } = await admin
+      .from("connection_requests")
+      .delete()
+      .eq("recipient_id", recipientId)
+      .eq("requester_id", req.userId!)
+      .eq("status", "pending");
+    if (error) throw error;
+    res.status(204).end();
   }),
 );
 connections.delete(

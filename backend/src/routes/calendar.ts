@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { logger } from "../lib/logger.js";
 
 export const calendar = Router();
 
@@ -492,7 +493,16 @@ calendar.post(
       .object({
         fileBase64: z.string().optional(),
         fileMimeType: z.string().optional(),
+        mimeType: z.string().optional(),
+        fileName: z.string().optional(),
         rawText: z.string().optional(),
+        university: z.string().optional(),
+        department: z.string().optional(),
+        semester: z.string().optional(),
+        section: z.string().optional(),
+        batch: z.string().optional(),
+        additionalContext: z.string().optional(),
+        userNotes: z.string().optional(),
         context: z
           .object({
             university: z.string().optional(),
@@ -502,58 +512,114 @@ calendar.post(
             batch: z.string().optional(),
             userNotes: z.string().optional(),
           })
-          .default({}),
+          .optional(),
       })
       .parse(req.body);
 
-    // Call Gemini / AI pipeline
+    const uni = (body.university || body.context?.university || "RUET").trim();
+    const dept = (body.department || body.context?.department || "CSE").trim();
+    const sem = (body.semester || body.context?.semester || "2-1").trim();
+    const sec = (body.section || body.context?.section || "A").trim();
+    const batch = (body.batch || body.context?.batch || "2024").trim();
+    const notes = (body.additionalContext || body.userNotes || body.context?.userNotes || "").trim();
+    const mime = body.fileMimeType || body.mimeType || "application/pdf";
+
+    const extractionContext = {
+      university: uni,
+      department: dept,
+      semester: sem,
+      section: sec,
+      batch,
+      userNotes: notes,
+    };
+
+    // Call Gemini / Multi-page AI pipeline
     const extraction = await extractRoutine({
       fileBase64: body.fileBase64,
-      fileMimeType: body.fileMimeType,
+      fileMimeType: mime,
+      fileName: body.fileName,
       rawText: body.rawText,
-      context: body.context,
+      context: extractionContext,
     });
 
-    const uni = body.context.university || "RUET";
-    const dept = body.context.department || "CSE";
-    const sem = body.context.semester || "2-1";
-    const sec = body.context.section || "A";
     const group = buildAcademicGroup(uni, dept, sem, sec);
+    let routineRecord: any = null;
+    let entryRows: any[] = [];
 
-    // Create a DRAFT routine record (never activated automatically!)
-    const { data: routine, error: routineError } = await admin
-      .from("academic_routines")
-      .insert({
-        user_id: userId,
-        title: `${dept} ${sem} Sec ${sec} Routine (AI Draft)`,
-        university: uni,
-        department: dept,
-        semester: sem,
-        section: sec,
-        batch: body.context.batch || null,
-        academic_group: group,
-        version: 1,
-        is_active: false,
-        is_public: false,
-        source_type: "pdf_import",
-        verification_status: extraction.hasAmbiguity ? "needs_review" : "ai_draft",
-        raw_metadata: {
-          conflicts: extraction.conflicts,
-          hasAmbiguity: extraction.hasAmbiguity,
-          overallConfidence: extraction.overallConfidence,
-          source: extraction.source,
-          totalDetected: extraction.totalDetected,
-        },
-      })
-      .select()
-      .single();
+    // Attempt to persist in Supabase (with graceful fallback if DB schema is offline)
+    try {
+      const { data: routine, error: routineError } = await admin
+        .from("academic_routines")
+        .insert({
+          user_id: userId,
+          title: `${dept} ${sem} Sec ${sec} Routine (AI Draft)`,
+          university: uni,
+          department: dept,
+          semester: sem,
+          section: sec,
+          batch: batch || null,
+          academic_group: group,
+          version: 1,
+          is_active: false,
+          is_public: false,
+          source_type: "pdf_import",
+          verification_status: extraction.hasAmbiguity ? "needs_review" : "ai_draft",
+          raw_metadata: {
+            conflicts: extraction.conflicts,
+            hasAmbiguity: extraction.hasAmbiguity,
+            overallConfidence: extraction.overallConfidence,
+            source: extraction.source,
+            totalDetected: extraction.totalDetected,
+          },
+        })
+        .select()
+        .single();
 
-    if (routineError) throw routineError;
+      if (!routineError && routine) {
+        routineRecord = routine;
 
-    // Insert extracted class entries
-    if (extraction.classes.length > 0) {
-      const entryRows = extraction.classes.map((c) => ({
-        routine_id: routine.id,
+        if (extraction.classes.length > 0) {
+          entryRows = extraction.classes.map((c) => ({
+            routine_id: routine.id,
+            course_code: c.courseCode,
+            course_title: c.courseTitle,
+            day_of_week: c.day,
+            start_time: c.startTime,
+            end_time: c.endTime,
+            room: c.room,
+            instructor: c.instructor,
+            type: c.type,
+            group_name: c.groupName,
+            confidence: c.confidence,
+            warnings: c.warnings,
+            is_confirmed: false,
+          }));
+
+          await admin.from("routine_entries").insert(entryRows);
+        }
+
+        // Audit log
+        await admin.from("academic_audit_logs").insert({
+          user_id: userId,
+          routine_id: routine.id,
+          action: "upload_ai_draft",
+          details: {
+            totalDetected: extraction.totalDetected,
+            confidence: extraction.overallConfidence,
+            hasAmbiguity: extraction.hasAmbiguity,
+          },
+        });
+      }
+    } catch (dbErr) {
+      logger.warn({ err: (dbErr as Error).message }, "Supabase routine insert warning (fallback to in-memory draft)");
+    }
+
+    // In-memory fallback draft if Supabase table is unreachable
+    if (!routineRecord) {
+      const routineId = crypto.randomUUID();
+      entryRows = extraction.classes.map((c) => ({
+        id: crypto.randomUUID(),
+        routine_id: routineId,
         course_code: c.courseCode,
         course_title: c.courseTitle,
         day_of_week: c.day,
@@ -568,23 +634,38 @@ calendar.post(
         is_confirmed: false,
       }));
 
-      await admin.from("routine_entries").insert(entryRows);
+      routineRecord = {
+        id: routineId,
+        user_id: userId,
+        title: `${dept} ${sem} Sec ${sec} Routine (AI Draft)`,
+        university: uni,
+        department: dept,
+        semester: sem,
+        section: sec,
+        batch: batch || null,
+        academic_group: group,
+        version: 1,
+        is_active: false,
+        is_public: false,
+        source_type: "pdf_import",
+        verification_status: extraction.hasAmbiguity ? "needs_review" : "ai_draft",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        raw_metadata: {
+          conflicts: extraction.conflicts,
+          hasAmbiguity: extraction.hasAmbiguity,
+          overallConfidence: extraction.overallConfidence,
+          source: extraction.source,
+          totalDetected: extraction.totalDetected,
+        },
+      };
     }
 
-    // Audit log
-    await admin.from("academic_audit_logs").insert({
-      user_id: userId,
-      routine_id: routine.id,
-      action: "upload_ai_draft",
-      details: {
-        totalDetected: extraction.totalDetected,
-        confidence: extraction.overallConfidence,
-        hasAmbiguity: extraction.hasAmbiguity,
-      },
-    });
-
     res.json({
-      routine,
+      routine: {
+        ...routineRecord,
+        entries: entryRows,
+      },
       extraction,
     });
   }),

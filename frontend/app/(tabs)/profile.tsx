@@ -209,6 +209,18 @@ export default function OwnProfileScreen() {
                     onPress={handleShare}
                   />
                 </View>
+                <View style={{ flex: 1 }}>
+                  <Button
+                    title="My Posts"
+                    variant="secondary"
+                    compact
+                    icon="newspaper-variant-outline"
+                    onPress={() => {
+                      triggerHaptic();
+                      router.push("/posts" as any);
+                    }}
+                  />
+                </View>
               </Row>
 
               {/* Statistics Strip: Reputation, Connections, Rooms */}

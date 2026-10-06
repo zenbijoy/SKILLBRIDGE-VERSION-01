@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Alert, Image, Linking, Pressable, StyleSheet, Text, View, TextInput } from "react-native";
 import Animated, { FadeInUp, useSharedValue, useAnimatedProps, withTiming, withDelay } from "react-native-reanimated";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Dashboard, Profile } from "@/types";
 import { Button, Card, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
@@ -13,6 +13,12 @@ import { FeatureGrid } from "@/components/FeatureGrid";
 import { HomeNavbar } from "@/components/home/HomeNavbar";
 import { AnimatedGreeting } from "@/components/home/AnimatedGreeting";
 import { FeaturedHeroCarousel } from "@/components/home/FeaturedHeroCarousel";
+import {
+  CampusFeatureDock,
+  LiveClassSpotlightWidget,
+  MomentumWidget,
+  StreakActivityWidget,
+} from "@/components/home/CampusWidgets";
 import { PersonalizedHomeFeed } from "@/components/home/PersonalizedHomeFeed";
 import { PostComposerModal, type AudienceType } from "@/components/home/PostComposerModal";
 import { useAppStore } from "@/state/useAppStore";
@@ -23,7 +29,7 @@ import { nextGenAnimationsV2 } from "@/assets/nextgen";
 import { UpcomingWidget, type UpcomingSummary } from "@/features/calendar";
 
 export default function HomeScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { t, language } = useI18n();
   const qc = useQueryClient();
   const { mode, cachedProfile, setCachedProfile } = useAppStore();
@@ -175,13 +181,18 @@ export default function HomeScreen() {
 
           case "greeting_hero":
             return (
-              <View key="greeting_hero" style={{ gap: 10 }}>
+              <View key="greeting_hero" style={{ gap: 12 }}>
                 <AnimatedGreeting key={greetingKey} name={firstName} mode={mode} />
+                <CampusFeatureDock />
+                <StreakActivityWidget streakDays={(d?.stats as any)?.streakDays ?? 5} />
+                {d?.urgentRooms?.length ? (
+                  <LiveClassSpotlightWidget room={d.urgentRooms[0]} />
+                ) : null}
                 <UpcomingWidget
                   summary={upcomingQuery.data}
                   isLoading={upcomingQuery.isLoading}
                 />
-                <FeaturedHeroCarousel mode={mode} />
+                <FeaturedHeroCarousel key={greetingKey} mode={mode} />
               </View>
             );
 
@@ -226,15 +237,14 @@ export default function HomeScreen() {
 
           case "momentum_stats":
             return (
-              <Card key="momentum_stats">
-                <H2>{t("home.momentum")}</H2>
-                <View style={styles.statsGrid}>
-                  <Stat n={d?.stats?.reputation ?? 0} label={t("home.reputation")} />
-                  <Stat n={d?.stats?.connections ?? 0} label={t("home.connections")} />
-                  <Stat n={d?.stats?.sessionsTaught ?? 0} label={t("home.taught")} />
-                  <Stat n={d?.stats?.sessionsAttended ?? 0} label={t("home.learned")} />
-                </View>
-              </Card>
+              <View key="momentum_stats">
+                <SectionHeader
+                  title="Campus Momentum"
+                  action={t("common.more")}
+                  onAction={() => router.push("/leaderboard" as any)}
+                />
+                <MomentumWidget stats={d?.stats} />
+              </View>
             );
 
           case "quick_actions":
@@ -262,7 +272,15 @@ export default function HomeScreen() {
                 ) : dashboard.isLoading ? (
                   <Skeleton height={120} />
                 ) : (
-                  <Muted>{t("home.noRooms")}</Muted>
+                  <View style={[styles.emptyWidgetBox, { backgroundColor: isDark ? "#131926" : "#F8FAFC", borderColor: isDark ? "#1F293D" : "#E2E8F0" }]}>
+                    <Ionicons name="sparkles" size={20} color={colors.primary} />
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text, marginTop: 4 }}>
+                      No Urgent Doubts Right Now
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.muted }}>
+                      All peer classrooms are up to date!
+                    </Text>
+                  </View>
                 )}
               </View>
             );
@@ -311,7 +329,15 @@ export default function HomeScreen() {
                     </Card>
                   ))
                 ) : (
-                  <Muted>{t("home.noSessions")}</Muted>
+                  <View style={[styles.emptyWidgetBox, { backgroundColor: isDark ? "#131926" : "#F8FAFC", borderColor: isDark ? "#1F293D" : "#E2E8F0" }]}>
+                    <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text, marginTop: 4 }}>
+                      No Upcoming Sessions Today
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.muted }}>
+                      Plan a study session or book a peer mentor!
+                    </Text>
+                  </View>
                 )}
               </View>
             );
@@ -597,6 +623,15 @@ const styles = StyleSheet.create({
   announcementBody: {
     fontSize: 13,
     marginTop: 2,
+  },
+  emptyWidgetBox: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 4,
+    gap: 2,
   },
   floatingFabContainer: {
     position: "absolute",

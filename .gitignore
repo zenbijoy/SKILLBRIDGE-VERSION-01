@@ -11,9 +11,11 @@ web-build/
 *.log
 *.jks
 *.keystore
+key.properties
 *.p8
 *.p12
 *.apk
+*.pid
 google-services.json
 GoogleService-Info.plist
 .idea/

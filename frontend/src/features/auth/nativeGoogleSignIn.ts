@@ -16,9 +16,30 @@ export function setNativeGoogleSignInSupportedForTesting(supported: boolean | nu
   testMockOverride = supported;
 }
 
+let cachedModule: any = null;
+
 /**
- * Safely checks whether the native Google Sign-In TurboModule/legacy module
- * is registered in the native binary, without throwing invariant violations.
+ * Lazily loads the native Google Sign-In module only if confirmed registered in the binary.
+ */
+export function getNativeGoogleSigninModule(): any | null {
+  if (cachedModule) return cachedModule;
+  if (Platform.OS === "web") return null;
+
+  if (testMockOverride === false) {
+    return null;
+  }
+
+  try {
+    cachedModule = require("@react-native-google-signin/google-signin");
+    return cachedModule;
+  } catch (e) {
+    console.warn("[GoogleSignIn] Could not load native @react-native-google-signin/google-signin module:", e);
+    return null;
+  }
+}
+
+/**
+ * Safely checks whether the native Google Sign-In module is registered in the native binary.
  */
 export function isNativeGoogleSignInSupported(): boolean {
   if (Platform.OS === "web") return false;
@@ -32,35 +53,8 @@ export function isNativeGoogleSignInSupported(): boolean {
     return true;
   }
 
-  try {
-    const ReactNative = require("react-native");
-    const turbo = ReactNative.TurboModuleRegistry?.get?.("RNGoogleSignin");
-    if (turbo != null) return true;
-
-    const legacy = ReactNative.NativeModules?.RNGoogleSignin;
-    return legacy != null;
-  } catch {
-    return false;
-  }
-}
-
-let cachedModule: any = null;
-
-/**
- * Lazily loads the native Google Sign-In module only if confirmed registered in the binary.
- */
-export function getNativeGoogleSigninModule(): any | null {
-  if (cachedModule) return cachedModule;
-  if (!isNativeGoogleSignInSupported()) return null;
-
-  try {
-    // Dynamic require ensures NativeGoogleSignin.js is never evaluated when the native module is missing
-    cachedModule = require("@react-native-google-signin/google-signin");
-    return cachedModule;
-  } catch (e) {
-    console.warn("[GoogleSignIn] Could not load native @react-native-google-signin/google-signin module:", e);
-    return null;
-  }
+  const mod = getNativeGoogleSigninModule();
+  return Boolean(mod?.GoogleSignin);
 }
 
 export function resetNativeGoogleSignInCache(): void {

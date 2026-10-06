@@ -58,7 +58,7 @@ export function FeaturedHeroCarousel({ mode, onDismiss }: FeaturedHeroCarouselPr
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
     transform: [{ scaleY: scaleY.value }],
-    maxHeight: scaleY.value === 0 ? 0 : 260,
+    maxHeight: scaleY.value * 320,
     marginBottom: scaleY.value * 16,
   }));
 
@@ -76,6 +76,22 @@ export function FeaturedHeroCarousel({ mode, onDismiss }: FeaturedHeroCarouselPr
 
     return () => clearInterval(interval);
   }, [isDismissed]);
+
+  // Auto vanish after 10 seconds, reappears on screen reload/refresh
+  useEffect(() => {
+    if (isDismissed) return;
+    const autoVanishTimer = setTimeout(() => {
+      opacity.value = withTiming(0, { duration: 450, easing: Easing.out(Easing.quad) });
+      scaleY.value = withTiming(0, { duration: 500, easing: Easing.inOut(Easing.quad) }, (finished) => {
+        if (finished) {
+          runOnJS(setIsDismissed)(true);
+          if (onDismiss) runOnJS(onDismiss)();
+        }
+      });
+    }, 10000);
+
+    return () => clearTimeout(autoVanishTimer);
+  }, [isDismissed, onDismiss]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = event.nativeEvent.contentOffset.x;
@@ -132,26 +148,32 @@ export function FeaturedHeroCarousel({ mode, onDismiss }: FeaturedHeroCarouselPr
           <Text style={s.cardTitle}>
             {mode === "learn"
               ? language === "bn"
-                ? "আজ নতুন কী শিখবেন?"
-                : "What will you master today?"
+                ? "মেন্টর ও স্টাডি পার্টনার"
+                : "Knowledge Network"
               : language === "bn"
-                ? "কাকে সাহায্য করবেন আজ?"
-                : "Who will you empower today?"}
+                ? "ক্যাম্পাস মেন্টরশিপ"
+                : "Peer Empowerment"}
           </Text>
 
-          <Text style={s.cardDetail}>
-            {mode === "learn"
-              ? language === "bn"
-                ? "ক্যাম্পাসের অভিজ্ঞ মেন্টর ও সহপাঠীদের সাথে কানেক্ট করুন।"
-                : "Join live study rooms and discover verified campus mentors."
-              : language === "bn"
-                ? "কাদের আপনার স্কিল দরকার তা দেখে লাইভ সেশনে শেখান।"
-                : "Share your expertise, answer peer questions, and boost your streak."}
-          </Text>
+          {/* Visual Glanceable Badges instead of heavy text */}
+          <View style={s.chipRow}>
+            <View style={s.microChip}>
+              <Text style={s.chipEmoji}>🎓</Text>
+              <Text style={s.chipText}>{language === "bn" ? "টপ মেন্টর" : "Top Mentors"}</Text>
+            </View>
+            <View style={s.microChip}>
+              <Text style={s.chipEmoji}>⚡</Text>
+              <Text style={s.chipText}>{language === "bn" ? "লাইভ কানেক্ট" : "Instant Connect"}</Text>
+            </View>
+            <View style={s.microChip}>
+              <Text style={s.chipEmoji}>🏆</Text>
+              <Text style={s.chipText}>{language === "bn" ? "+50 XP" : "+50 XP"}</Text>
+            </View>
+          </View>
 
-          <Row style={{ marginTop: 12, justifyContent: "flex-start", gap: 10 }}>
+          <Row style={{ marginTop: 8, justifyContent: "flex-start", gap: 10 }}>
             <Button
-              title={mode === "learn" ? "মেন্টর খুঁজুন" : "স্টাডি রুম খুলুন"}
+              title={mode === "learn" ? (language === "bn" ? "মেন্টর খুঁজুন" : "Find Mentors") : (language === "bn" ? "রুম খুলুন" : "Host Room")}
               variant="primary"
               compact
               onPress={() => {
@@ -189,16 +211,30 @@ export function FeaturedHeroCarousel({ mode, onDismiss }: FeaturedHeroCarouselPr
           </View>
 
           <Text style={s.cardTitle}>
-            {language === "bn" ? "ভার্চুয়াল লার্নিং রুমে যোগ দিন" : "Jump Into Interactive Rooms"}
+            {language === "bn" ? "ভার্চুয়াল লার্নিং রুমে যোগ দিন" : "Join Virtual Study Rooms"}
           </Text>
-
-          <Text style={s.cardDetail}>
+          <Text style={{ fontSize: 13, color: "#E0E7FF", lineHeight: 18, marginTop: 2 }}>
             {language === "bn"
               ? "সহপাঠীদের সাথে ইনস্ট্যান্ট ভিডিও কল, স্ক্রিন শেয়ার ও গ্রুপ স্টাডি।"
-              : "Collaborate real-time with peers using LiveKit HD audio/video rooms."}
+              : "Instant video calls, screen sharing & collaborative group study."}
           </Text>
 
-          <Row style={{ marginTop: 12, justifyContent: "flex-start", gap: 10 }}>
+          <View style={s.chipRow}>
+            <View style={[s.microChip, { backgroundColor: "rgba(99, 102, 241, 0.25)" }]}>
+              <Text style={s.chipEmoji}>📹</Text>
+              <Text style={[s.chipText, { color: "#C7D2FE" }]}>HD Audio/Video</Text>
+            </View>
+            <View style={[s.microChip, { backgroundColor: "rgba(99, 102, 241, 0.25)" }]}>
+              <Text style={s.chipEmoji}>💬</Text>
+              <Text style={[s.chipText, { color: "#C7D2FE" }]}>Live Chat</Text>
+            </View>
+            <View style={[s.microChip, { backgroundColor: "rgba(99, 102, 241, 0.25)" }]}>
+              <Text style={s.chipEmoji}>🖥</Text>
+              <Text style={[s.chipText, { color: "#C7D2FE" }]}>Screen Share</Text>
+            </View>
+          </View>
+
+          <Row style={{ marginTop: 8, justifyContent: "flex-start", gap: 10 }}>
             <Button
               title={language === "bn" ? "রুম এক্সপ্লোর করুন" : "Browse Rooms"}
               variant="secondary"
@@ -237,16 +273,25 @@ export function FeaturedHeroCarousel({ mode, onDismiss }: FeaturedHeroCarouselPr
           </View>
 
           <Text style={s.cardTitle}>
-            {language === "bn" ? "প্রোফাইল কোয়েস্ট সম্পন্ন করুন" : "Boost Your Campus Reputation"}
+            {language === "bn" ? "ক্যাম্পাস রেপুটেশন বুস্ট" : "Campus Reputation & XP"}
           </Text>
 
-          <Text style={s.cardDetail}>
-            {language === "bn"
-              ? "স্কিল ও পরিচিতি যুক্ত করে ভেরিফায়েড ব্যাজ এবং লিডারবোর্ড র‍্যাংক বাড়ান।"
-              : "Complete onboarding steps, answer campus questions, and earn badges."}
-          </Text>
+          <View style={s.chipRow}>
+            <View style={[s.microChip, { backgroundColor: "rgba(59, 130, 246, 0.2)" }]}>
+              <Text style={s.chipEmoji}>⭐</Text>
+              <Text style={[s.chipText, { color: "#BFDBFE" }]}>Verified Badge</Text>
+            </View>
+            <View style={[s.microChip, { backgroundColor: "rgba(59, 130, 246, 0.2)" }]}>
+              <Text style={s.chipEmoji}>🔥</Text>
+              <Text style={[s.chipText, { color: "#BFDBFE" }]}>Daily Streaks</Text>
+            </View>
+            <View style={[s.microChip, { backgroundColor: "rgba(59, 130, 246, 0.2)" }]}>
+              <Text style={s.chipEmoji}>🚀</Text>
+              <Text style={[s.chipText, { color: "#BFDBFE" }]}>Top 5% Rank</Text>
+            </View>
+          </View>
 
-          <Row style={{ marginTop: 12, justifyContent: "flex-start", gap: 10 }}>
+          <Row style={{ marginTop: 8, justifyContent: "flex-start", gap: 10 }}>
             <Button
               title={language === "bn" ? "মিশন দেখুন" : "View Quests"}
               variant="primary"
@@ -327,15 +372,34 @@ const s = StyleSheet.create({
     padding: 4,
   },
   cardTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: "900",
     color: "#FFFFFF",
     letterSpacing: -0.3,
   },
-  cardDetail: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: "rgba(255,255,255,0.82)",
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  microChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  chipEmoji: {
+    fontSize: 11,
+  },
+  chipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   dotsRow: {
     flexDirection: "row",

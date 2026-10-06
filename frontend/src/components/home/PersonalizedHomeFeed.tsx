@@ -243,14 +243,35 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
     onError: (err: Error) => Alert.alert("Voting Failed", err.message),
   });
 
-  // 6. Save/Bookmark mutation
+  // 6. Save/Bookmark mutation — toggles save/unsave (mirrors app/feed.tsx)
   const toggleSaveMutation = useMutation({
-    mutationFn: (postId: string) =>
-      api(`/feed/${postId}/save`, { method: "POST" }),
-    onSuccess: () => {
-      triggerHaptic();
+    mutationFn: async (postId: string) => {
+      const current = allPosts.find((p) => p.id === postId);
+      const res = await api<{ success: boolean; is_saved: boolean; saves_count: number }>(
+        `/feed/${postId}/save`,
+        { method: current?.is_saved ? "DELETE" : "POST" },
+      );
+      return { postId, isSaved: res.is_saved, count: res.saves_count };
+    },
+    onSuccess: ({ postId, isSaved, count }) => {
+      triggerHaptic("selection");
+      qc.setQueryData<
+        InfiniteData<{ posts: SocialPost[]; next_cursor: string | null; has_more?: boolean }>
+      >(["campus-feed"], (old) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            posts: page.posts.map((p) =>
+              p.id !== postId ? p : { ...p, is_saved: isSaved, saves_count: count },
+            ),
+          })),
+        };
+      });
       qc.invalidateQueries({ queryKey: ["campus-feed"] });
     },
+    onError: (err: Error) => Alert.alert("Save Failed", err.message),
   });
 
   // 7. Delete post mutation

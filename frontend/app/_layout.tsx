@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
@@ -15,6 +15,7 @@ import { TourProvider } from "@/features/tour/TourContext";
 import { TourOverlay } from "@/features/tour/TourOverlay";
 import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal";
 import { ActiveCallBanner } from "@/features/calls/components/ActiveCallBanner";
+import { AppPermissionsModal } from "@/features/permissions/AppPermissionsModal";
 import { useI18n } from "@/i18n";
 import { SkillBridgeLoader } from "@/components/ui";
 import { AutoHideNavigationProvider } from "@/navigation/AutoHideNavigationContext";
@@ -53,7 +54,21 @@ const client = new QueryClient({
 
 function Gate() {
   const { session, initializing } = useAuth();
-  const loading = initializing;
+  const [minSplashElapsed, setMinSplashElapsed] = useState(false);
+
+  useEffect(() => {
+    // Hide native static splash immediately once React Native root mounts
+    SplashScreen.hideAsync().catch(() => {});
+
+    // Present the animated logo loading interface on cold entry
+    const timer = setTimeout(() => {
+      setMinSplashElapsed(true);
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const loading = initializing || !minSplashElapsed;
   const segments = useSegments();
   const router = useRouter();
   const pushEnabled = usePreferencesStore((state) => state.pushEnabled);
@@ -225,6 +240,7 @@ function Gate() {
       <TourOverlay />
       <IncomingCallModal />
       <ActiveCallBanner />
+      <AppPermissionsModal />
     </TourProvider>
   );
 }

@@ -21,6 +21,7 @@ interface PreferencesState {
   autoplayMedia: boolean;
   downloadOnWifiOnly: boolean;
   pushEnabled: boolean;
+  hasCompletedPermissionsPrompt: boolean;
   recentSearches: string[];
   showHomeFeed: boolean;
   setTheme: (theme: ThemePreference) => void;
@@ -35,6 +36,7 @@ interface PreferencesState {
   setAutoplayMedia: (enabled: boolean) => void;
   setDownloadOnWifiOnly: (enabled: boolean) => void;
   setPushEnabled: (enabled: boolean) => void;
+  setHasCompletedPermissionsPrompt: (completed: boolean) => void;
   setShowHomeFeed: (enabled: boolean) => void;
   addRecentSearch: (query: string) => void;
   removeRecentSearch: (query: string) => void;
@@ -56,6 +58,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       autoplayMedia: true,
       downloadOnWifiOnly: true,
       pushEnabled: true,
+      hasCompletedPermissionsPrompt: false,
       recentSearches: [],
       showHomeFeed: true,
       setTheme: (theme) => set({ theme }),
@@ -79,6 +82,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         downloadOnWifiOnly: state.dataSaver === "extreme" ? true : downloadOnWifiOnly,
       })),
       setPushEnabled: (pushEnabled) => set({ pushEnabled }),
+      setHasCompletedPermissionsPrompt: (hasCompletedPermissionsPrompt) => set({ hasCompletedPermissionsPrompt }),
       addRecentSearch: (query) =>
         set((state) => {
           const normalized = query.trim();
@@ -114,6 +118,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         autoplayMedia: state.autoplayMedia,
         downloadOnWifiOnly: state.downloadOnWifiOnly,
         pushEnabled: state.pushEnabled,
+        hasCompletedPermissionsPrompt: state.hasCompletedPermissionsPrompt,
         recentSearches: state.recentSearches,
         showHomeFeed: state.showHomeFeed,
       }),

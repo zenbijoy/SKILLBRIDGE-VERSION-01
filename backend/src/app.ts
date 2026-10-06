@@ -109,7 +109,7 @@ export function createApp(io?: SocketServer) {
   );
   app.use(
     express.json({
-      limit: "1mb",
+      limit: "25mb",
       verify: (req: any, _res, buf) => {
         req.rawBody = buf.toString();
       },

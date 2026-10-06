@@ -30,12 +30,14 @@ import {
 } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
+import { useConnections } from "@/features/connections/useConnections";
 
 type UserProfileData = {
   profile: Profile & { role?: string };
   skills: { name: string; kind: string; proficiency: number }[];
   mutualCount: number;
   connectionStatus: string;
+  connectionRequestId?: string;
   mutualRooms?: { id: string; title: string; topic?: string }[];
   mutualRoomsCount?: number;
 };
@@ -58,19 +60,16 @@ export default function UserProfile() {
     enabled: Boolean(id),
   });
 
-  const connectMutation = useMutation({
-    mutationFn: () =>
-      api(`/connections/requests`, {
-        method: "POST",
-        body: JSON.stringify({ recipientId: id }),
-      }),
-    onSuccess: () => {
-      triggerHaptic();
-      qc.invalidateQueries({ queryKey: ["profile", id] });
-      Alert.alert("Request Sent! 🤝", "Your connection request has been sent.");
-    },
-    onError: (err: any) => Alert.alert("Connection Failed", err.message),
-  });
+  const {
+    getConnectionStatus,
+    getIncomingRequest,
+    sendRequest,
+    acceptRequest,
+    declineRequest,
+    promptRemoveConnection,
+    promptWithdrawRequest,
+    isMutating,
+  } = useConnections();
 
   const blockMutation = useMutation({
     mutationFn: () =>
@@ -190,6 +189,20 @@ export default function UserProfile() {
 
   const isTutor = d.profile.role === "peer_tutor" || d.skills.some((s) => s.proficiency >= 4);
 
+  const hookStatus = id ? getConnectionStatus(id) : "none";
+  const effectiveStatus =
+    isSelf
+      ? "self"
+      : hookStatus !== "none"
+      ? hookStatus
+      : d.connectionStatus === "connected" || d.connectionStatus === "accepted"
+      ? "connected"
+      : d.connectionStatus === "pending_outgoing" || d.connectionStatus === "pending"
+      ? "pending_outgoing"
+      : d.connectionStatus === "pending_incoming"
+      ? "pending_incoming"
+      : "none";
+
   return (
     <Screen>
       <ScrollView contentContainerStyle={s.scrollContainer}>
@@ -278,21 +291,79 @@ export default function UserProfile() {
           </Animated.View>
         )}
 
-        {/* Connection Status Button */}
+        {/* Connection Status Controls (LinkedIn Style) */}
         {!isSelf && (
           <Animated.View entering={FadeInUp.delay(280).springify()} style={{ marginVertical: 8 }}>
-            <Button
-              title={
-                d.connectionStatus === "none"
-                  ? "+ Connect"
-                  : d.connectionStatus === "pending"
-                  ? "Connection Requested"
-                  : "Connected ✓"
-              }
-              disabled={d.connectionStatus !== "none" || connectMutation.isPending}
-              variant={d.connectionStatus === "accepted" ? "secondary" : "primary"}
-              onPress={() => connectMutation.mutate()}
-            />
+            {effectiveStatus === "pending_incoming" ? (
+              <Row style={{ gap: 10 }}>
+                <View style={{ flex: 2 }}>
+                  <Button
+                    title="Accept Request"
+                    variant="primary"
+                    disabled={isMutating}
+                    onPress={() => {
+                      const inReq = id ? getIncomingRequest(id) : null;
+                      const reqId = inReq?.id || d.connectionRequestId;
+                      if (reqId) {
+                        acceptRequest(reqId, d.profile);
+                      } else if (id) {
+                        sendRequest(id);
+                      }
+                    }}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Button
+                    title="Decline"
+                    variant="secondary"
+                    disabled={isMutating}
+                    onPress={() => {
+                      const inReq = id ? getIncomingRequest(id) : null;
+                      const reqId = inReq?.id || d.connectionRequestId;
+                      if (reqId) {
+                        declineRequest(reqId);
+                      }
+                    }}
+                  />
+                </View>
+              </Row>
+            ) : effectiveStatus === "pending_outgoing" ? (
+              <Button
+                title="Pending Invitation ⏳ (Tap to Withdraw)"
+                variant="secondary"
+                disabled={isMutating}
+                onPress={() => promptWithdrawRequest(d.profile)}
+              />
+            ) : effectiveStatus === "connected" ? (
+              <Button
+                title="Connected ✓ (Manage)"
+                variant="secondary"
+                onPress={() => {
+                  Alert.alert(
+                    "Connection",
+                    `You are connected with ${d.profile.full_name || d.profile.username}.`,
+                    [
+                      { text: "Send Message", onPress: handleMessage },
+                      {
+                        text: "Remove Connection",
+                        style: "destructive",
+                        onPress: () => promptRemoveConnection(d.profile),
+                      },
+                      { text: "Cancel", style: "cancel" },
+                    ]
+                  );
+                }}
+              />
+            ) : (
+              <Button
+                title="+ Connect"
+                variant="primary"
+                disabled={isMutating}
+                onPress={() => {
+                  if (id) sendRequest(id);
+                }}
+              />
+            )}
           </Animated.View>
         )}
 
