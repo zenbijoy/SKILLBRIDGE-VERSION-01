@@ -205,9 +205,8 @@ begin
   values(new.id,coalesce(new.raw_user_meta_data->>'full_name','New member'),'user_'||substr(replace(new.id::text,'-',''),1,10));
   return new;
 end $$;
-drop trigger if exists on_auth_user_created on auth.users;
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created after insert ON auth.users for each row execute procedure public.handle_new_user();
 
 create or replace function public.join_room_atomic(p_room_id uuid,p_user_id uuid) returns jsonb language plpgsql security definer set search_path=public as $$
 declare r public.rooms; existing boolean;
@@ -232,8 +231,8 @@ begin
   if TG_OP='DELETE' then perform public.recompute_reputation(old.user_id); return old; end if;
   perform public.recompute_reputation(new.user_id); return new;
 end $$;
-drop trigger if exists points_reputation_after on public.points_ledger;
-create trigger points_reputation_after after insert or update or delete on public.points_ledger for each row execute procedure public.points_after_change();
+DROP TRIGGER IF EXISTS points_reputation_after ON public.points_ledger;
+CREATE TRIGGER points_reputation_after after insert or update or delete ON public.points_ledger for each row execute procedure public.points_after_change();
 
 create or replace function public.find_dm_conversation(p_user_a uuid,p_user_b uuid)
 returns table(id uuid,title text,kind text,updated_at timestamptz) language sql security definer set search_path=public as $$
@@ -294,76 +293,76 @@ alter table public.notifications enable row level security;
 alter table public.device_tokens enable row level security;
 alter table public.reports enable row level security;
 
-drop policy if exists profile_public_read on public.profiles;
-create policy profile_public_read on public.profiles for select using (profile_visibility='public' or id=auth.uid());
-drop policy if exists profile_self_update on public.profiles;
-create policy profile_self_update on public.profiles for update using(id=auth.uid()) with check(id=auth.uid());
-drop policy if exists skills_read on public.skills;
-create policy skills_read on public.skills for select using(true);
-drop policy if exists user_skills_read on public.user_skills;
-create policy user_skills_read on public.user_skills for select using(user_id=auth.uid() or exists(select 1 from public.profiles p where p.id=user_id and p.profile_visibility='public'));
-drop policy if exists user_skills_self on public.user_skills;
-create policy user_skills_self on public.user_skills for all using(user_id=auth.uid()) with check(user_id=auth.uid());
-drop policy if exists connection_request_involved on public.connection_requests;
-create policy connection_request_involved on public.connection_requests for select using(auth.uid() in(requester_id,recipient_id));
-drop policy if exists connections_involved on public.connections;
-create policy connections_involved on public.connections for select using(auth.uid() in(user_a,user_b));
-drop policy if exists blocks_owner on public.blocks;
-create policy blocks_owner on public.blocks for all using(blocker_id=auth.uid()) with check(blocker_id=auth.uid());
-drop policy if exists room_public_read on public.rooms;
-create policy room_public_read on public.rooms for select using(visibility='public' or owner_id=auth.uid() or exists(select 1 from public.room_members rm where rm.room_id=id and rm.user_id=auth.uid()));
-drop policy if exists room_members_self_read on public.room_members;
-create policy room_members_self_read on public.room_members for select using(user_id=auth.uid());
-drop policy if exists sessions_member_read on public.sessions;
-create policy sessions_member_read on public.sessions for select using(teacher_id=auth.uid() or exists(select 1 from public.session_participants sp where sp.session_id=id and sp.user_id=auth.uid()));
-drop policy if exists reviews_public_read on public.reviews;
-create policy reviews_public_read on public.reviews for select using(true);
-drop policy if exists clubs_public_read on public.clubs;
-create policy clubs_public_read on public.clubs for select using(true);
-drop policy if exists club_members_public_read on public.club_members;
-create policy club_members_public_read on public.club_members for select using(true);
-drop policy if exists events_public_read on public.events;
-create policy events_public_read on public.events for select using(status in ('published','open','completed'));
-drop policy if exists applications_self_read on public.event_applications;
-create policy applications_self_read on public.event_applications for select using(user_id=auth.uid());
-drop policy if exists resources_room_read on public.resources;
-create policy resources_room_read on public.resources for select using(room_id is null or exists(select 1 from public.room_members rm where rm.room_id=room_id and rm.user_id=auth.uid()));
-drop policy if exists saved_self on public.saved_items;
-create policy saved_self on public.saved_items for all using(user_id=auth.uid()) with check(user_id=auth.uid());
-drop policy if exists ledger_self_read on public.points_ledger;
-create policy ledger_self_read on public.points_ledger for select using(user_id=auth.uid());
-drop policy if exists achievements_read on public.achievements;
-create policy achievements_read on public.achievements for select using(true);
-drop policy if exists user_achievements_read on public.user_achievements;
-create policy user_achievements_read on public.user_achievements for select using(true);
-drop policy if exists quizzes_read on public.quizzes;
-create policy quizzes_read on public.quizzes for select using(active=true);
+DROP POLICY IF EXISTS profile_public_read ON public.profiles;
+CREATE POLICY profile_public_read ON public.profiles for select using (profile_visibility='public' or id=auth.uid());
+DROP POLICY IF EXISTS profile_self_update ON public.profiles;
+CREATE POLICY profile_self_update ON public.profiles for update using(id=auth.uid()) with check(id=auth.uid());
+DROP POLICY IF EXISTS skills_read ON public.skills;
+CREATE POLICY skills_read ON public.skills for select using(true);
+DROP POLICY IF EXISTS user_skills_read ON public.user_skills;
+CREATE POLICY user_skills_read ON public.user_skills for select using(user_id=auth.uid() or exists(select 1 from public.profiles p where p.id=user_id and p.profile_visibility='public'));
+DROP POLICY IF EXISTS user_skills_self ON public.user_skills;
+CREATE POLICY user_skills_self ON public.user_skills for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+DROP POLICY IF EXISTS connection_request_involved ON public.connection_requests;
+CREATE POLICY connection_request_involved ON public.connection_requests for select using(auth.uid() in(requester_id,recipient_id));
+DROP POLICY IF EXISTS connections_involved ON public.connections;
+CREATE POLICY connections_involved ON public.connections for select using(auth.uid() in(user_a,user_b));
+DROP POLICY IF EXISTS blocks_owner ON public.blocks;
+CREATE POLICY blocks_owner ON public.blocks for all using(blocker_id=auth.uid()) with check(blocker_id=auth.uid());
+DROP POLICY IF EXISTS room_public_read ON public.rooms;
+CREATE POLICY room_public_read ON public.rooms for select using(visibility='public' or owner_id=auth.uid() or exists(select 1 from public.room_members rm where rm.room_id=id and rm.user_id=auth.uid()));
+DROP POLICY IF EXISTS room_members_self_read ON public.room_members;
+CREATE POLICY room_members_self_read ON public.room_members for select using(user_id=auth.uid());
+DROP POLICY IF EXISTS sessions_member_read ON public.sessions;
+CREATE POLICY sessions_member_read ON public.sessions for select using(teacher_id=auth.uid() or exists(select 1 from public.session_participants sp where sp.session_id=id and sp.user_id=auth.uid()));
+DROP POLICY IF EXISTS reviews_public_read ON public.reviews;
+CREATE POLICY reviews_public_read ON public.reviews for select using(true);
+DROP POLICY IF EXISTS clubs_public_read ON public.clubs;
+CREATE POLICY clubs_public_read ON public.clubs for select using(true);
+DROP POLICY IF EXISTS club_members_public_read ON public.club_members;
+CREATE POLICY club_members_public_read ON public.club_members for select using(true);
+DROP POLICY IF EXISTS events_public_read ON public.events;
+CREATE POLICY events_public_read ON public.events for select using(status in ('published','open','completed'));
+DROP POLICY IF EXISTS applications_self_read ON public.event_applications;
+CREATE POLICY applications_self_read ON public.event_applications for select using(user_id=auth.uid());
+DROP POLICY IF EXISTS resources_room_read ON public.resources;
+CREATE POLICY resources_room_read ON public.resources for select using(room_id is null or exists(select 1 from public.room_members rm where rm.room_id=room_id and rm.user_id=auth.uid()));
+DROP POLICY IF EXISTS saved_self ON public.saved_items;
+CREATE POLICY saved_self ON public.saved_items for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+DROP POLICY IF EXISTS ledger_self_read ON public.points_ledger;
+CREATE POLICY ledger_self_read ON public.points_ledger for select using(user_id=auth.uid());
+DROP POLICY IF EXISTS achievements_read ON public.achievements;
+CREATE POLICY achievements_read ON public.achievements for select using(true);
+DROP POLICY IF EXISTS user_achievements_read ON public.user_achievements;
+CREATE POLICY user_achievements_read ON public.user_achievements for select using(true);
+DROP POLICY IF EXISTS quizzes_read ON public.quizzes;
+CREATE POLICY quizzes_read ON public.quizzes for select using(active=true);
 -- Intentionally no client SELECT policy on quiz_questions: correct_answer must never be exposed. API service role returns safe fields only.
-drop policy if exists attempts_self_read on public.quiz_attempts;
-create policy attempts_self_read on public.quiz_attempts for select using(user_id=auth.uid());
-drop policy if exists notifications_self on public.notifications;
-create policy notifications_self on public.notifications for select using(user_id=auth.uid());
-drop policy if exists device_tokens_self on public.device_tokens;
-create policy device_tokens_self on public.device_tokens for all using(user_id=auth.uid()) with check(user_id=auth.uid());
-drop policy if exists reports_self_insert on public.reports;
-create policy reports_self_insert on public.reports for insert with check(reporter_id=auth.uid());
-drop policy if exists reports_self_read on public.reports;
-create policy reports_self_read on public.reports for select using(reporter_id=auth.uid());
+DROP POLICY IF EXISTS attempts_self_read ON public.quiz_attempts;
+CREATE POLICY attempts_self_read ON public.quiz_attempts for select using(user_id=auth.uid());
+DROP POLICY IF EXISTS notifications_self ON public.notifications;
+CREATE POLICY notifications_self ON public.notifications for select using(user_id=auth.uid());
+DROP POLICY IF EXISTS device_tokens_self ON public.device_tokens;
+CREATE POLICY device_tokens_self ON public.device_tokens for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+DROP POLICY IF EXISTS reports_self_insert ON public.reports;
+CREATE POLICY reports_self_insert ON public.reports for insert with check(reporter_id=auth.uid());
+DROP POLICY IF EXISTS reports_self_read ON public.reports;
+CREATE POLICY reports_self_read ON public.reports for select using(reporter_id=auth.uid());
 
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values
  ('avatars','avatars',true,5242880,array['image/jpeg','image/png','image/webp']),
  ('resources','resources',false,26214400,array['application/pdf','image/jpeg','image/png','image/webp','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
 on conflict(id) do nothing;
-drop policy if exists avatars_public_read on storage.objects;
-create policy avatars_public_read on storage.objects for select using(bucket_id='avatars');
-drop policy if exists avatars_self_insert on storage.objects;
-create policy avatars_self_insert on storage.objects for insert to authenticated with check(bucket_id='avatars' and (storage.foldername(name))[1]=auth.uid()::text);
-drop policy if exists avatars_self_update on storage.objects;
-create policy avatars_self_update on storage.objects for update to authenticated using(bucket_id='avatars' and (storage.foldername(name))[1]=auth.uid()::text);
-drop policy if exists resources_member_read on storage.objects;
-create policy resources_member_read on storage.objects for select to authenticated using(bucket_id='resources' and exists(select 1 from public.room_members rm where rm.user_id=auth.uid() and rm.room_id::text=(storage.foldername(name))[2]));
-drop policy if exists resources_member_write on storage.objects;
-create policy resources_member_write on storage.objects for insert to authenticated with check(bucket_id='resources' and (storage.foldername(name))[1]=auth.uid()::text and exists(select 1 from public.room_members rm where rm.user_id=auth.uid() and rm.room_id::text=(storage.foldername(name))[2]));
+DROP POLICY IF EXISTS avatars_public_read ON storage.objects;
+CREATE POLICY avatars_public_read ON storage.objects for select using(bucket_id='avatars');
+DROP POLICY IF EXISTS avatars_self_insert ON storage.objects;
+CREATE POLICY avatars_self_insert ON storage.objects for insert to authenticated with check(bucket_id='avatars' and (storage.foldername(name))[1]=auth.uid()::text);
+DROP POLICY IF EXISTS avatars_self_update ON storage.objects;
+CREATE POLICY avatars_self_update ON storage.objects for update to authenticated using(bucket_id='avatars' and (storage.foldername(name))[1]=auth.uid()::text);
+DROP POLICY IF EXISTS resources_member_read ON storage.objects;
+CREATE POLICY resources_member_read ON storage.objects for select to authenticated using(bucket_id='resources' and exists(select 1 from public.room_members rm where rm.user_id=auth.uid() and rm.room_id::text=(storage.foldername(name))[2]));
+DROP POLICY IF EXISTS resources_member_write ON storage.objects;
+CREATE POLICY resources_member_write ON storage.objects for insert to authenticated with check(bucket_id='resources' and (storage.foldername(name))[1]=auth.uid()::text and exists(select 1 from public.room_members rm where rm.user_id=auth.uid() and rm.room_id::text=(storage.foldername(name))[2]));
 
 
 -- =========================================
@@ -401,12 +400,16 @@ alter table public.research_projects enable row level security;
 alter table public.research_collaboration_requests enable row level security;
 
 -- Only owner can manage projects, public can read public projects
-create policy "Public projects are visible to all" on public.research_projects for select using (visibility = 'public');
-create policy "Owners can manage their projects" on public.research_projects using (auth.uid() = owner_id);
+DROP POLICY IF EXISTS "Public projects are visible to all" ON public.research_projects;
+CREATE POLICY "Public projects are visible to all" ON public.research_projects for select using (visibility = 'public');
+DROP POLICY IF EXISTS "Owners can manage their projects" ON public.research_projects;
+CREATE POLICY "Owners can manage their projects" ON public.research_projects using (auth.uid() = owner_id);
 
 -- Collaboration requests
-create policy "Users can see their own requests" on public.research_collaboration_requests for select using (auth.uid() = requester_id);
-create policy "Project owners can see requests for their project" on public.research_collaboration_requests for select using (
+DROP POLICY IF EXISTS "Users can see their own requests" ON public.research_collaboration_requests;
+CREATE POLICY "Users can see their own requests" ON public.research_collaboration_requests for select using (auth.uid() = requester_id);
+DROP POLICY IF EXISTS "Project owners can see requests for their project" ON public.research_collaboration_requests;
+CREATE POLICY "Project owners can see requests for their project" ON public.research_collaboration_requests for select using (
   exists (select 1 from public.research_projects p where p.id = project_id and p.owner_id = auth.uid())
 );
 -- Backend handles creation and updates
@@ -443,8 +446,8 @@ create table if not exists public.audit_logs (
 );
 alter table public.user_settings enable row level security;
 alter table public.audit_logs enable row level security;
-drop policy if exists settings_self on public.user_settings;
-create policy settings_self on public.user_settings for all using(user_id=auth.uid()) with check(user_id=auth.uid());
+DROP POLICY IF EXISTS settings_self ON public.user_settings;
+CREATE POLICY settings_self ON public.user_settings for all using(user_id=auth.uid()) with check(user_id=auth.uid());
 -- Audit logs are service-role/admin only; no direct client policy.
 
 create or replace function public.mutual_connection_count(p_user_a uuid,p_user_b uuid)
@@ -1117,8 +1120,8 @@ CREATE TABLE IF NOT EXISTS message_reactions (
 
 ALTER TABLE message_reactions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can see reactions in their conversations"
-ON message_reactions FOR SELECT
+DROP POLICY IF EXISTS "Users can see reactions in their conversations" ON message_reactions;
+CREATE POLICY "Users can see reactions in their conversations" ON message_reactions FOR SELECT
 USING (
     EXISTS (
         SELECT 1 FROM messages m
@@ -1144,8 +1147,8 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 
 ALTER TABLE notification_preferences ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can read their own notification preferences"
-ON notification_preferences FOR SELECT
+DROP POLICY IF EXISTS "Users can read their own notification preferences" ON notification_preferences;
+CREATE POLICY "Users can read their own notification preferences" ON notification_preferences FOR SELECT
 USING (auth.uid() = user_id);
 
 -- 4. LiveKit Attendance
@@ -1160,8 +1163,8 @@ CREATE TABLE IF NOT EXISTS livekit_attendance (
 
 ALTER TABLE livekit_attendance ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view attendance for their sessions"
-ON livekit_attendance FOR SELECT
+DROP POLICY IF EXISTS "Users can view attendance for their sessions" ON livekit_attendance;
+CREATE POLICY "Users can view attendance for their sessions" ON livekit_attendance FOR SELECT
 USING (
     EXISTS (
         SELECT 1 FROM sessions s
@@ -1225,8 +1228,7 @@ CREATE POLICY push_receipts_service_role ON public.push_receipts TO service_role
 
 -- 5. Add idempotency and soft-delete policies for messages
 DROP POLICY IF EXISTS "Users can read conversation messages" ON messages;
-CREATE POLICY "Users can read conversation messages"
-ON messages FOR SELECT
+CREATE POLICY "Users can read conversation messages" ON messages FOR SELECT
 USING (
     soft_deleted = false AND
     EXISTS (
@@ -1237,8 +1239,8 @@ USING (
 );
 
 -- Allow senders to see their soft_deleted messages (to show "Message deleted")
-CREATE POLICY "Senders can see their soft_deleted messages"
-ON messages FOR SELECT
+DROP POLICY IF EXISTS "Senders can see their soft_deleted messages" ON messages;
+CREATE POLICY "Senders can see their soft_deleted messages" ON messages FOR SELECT
 USING (
     soft_deleted = true AND sender_id = auth.uid()
 );
@@ -1344,12 +1346,8 @@ CREATE TABLE IF NOT EXISTS public.message_delivery_receipts (
 
 ALTER TABLE public.message_delivery_receipts ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS message_delivery_receipts_self_read
-ON public.message_delivery_receipts;
-
-drop policy if exists message_delivery_receipts_self_read on public.message_delivery_receipts;
-CREATE POLICY message_delivery_receipts_self_read
-ON public.message_delivery_receipts
+DROP POLICY IF EXISTS message_delivery_receipts_self_read ON public.message_delivery_receipts;
+CREATE POLICY message_delivery_receipts_self_read ON public.message_delivery_receipts
 FOR SELECT
 USING(user_id=auth.uid());
 
@@ -1410,13 +1408,13 @@ ALTER TABLE public.admin_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_role_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_assignments ENABLE ROW LEVEL SECURITY;
 
-drop policy if exists admin_roles_read on public.admin_roles;
+DROP POLICY IF EXISTS admin_roles_read ON public.admin_roles;
 CREATE POLICY admin_roles_read ON public.admin_roles FOR SELECT USING (true);
-drop policy if exists admin_permissions_read on public.admin_permissions;
+DROP POLICY IF EXISTS admin_permissions_read ON public.admin_permissions;
 CREATE POLICY admin_permissions_read ON public.admin_permissions FOR SELECT USING (true);
-drop policy if exists admin_role_permissions_read on public.admin_role_permissions;
+DROP POLICY IF EXISTS admin_role_permissions_read ON public.admin_role_permissions;
 CREATE POLICY admin_role_permissions_read ON public.admin_role_permissions FOR SELECT USING (true);
-drop policy if exists admin_assignments_read on public.admin_assignments;
+DROP POLICY IF EXISTS admin_assignments_read ON public.admin_assignments;
 CREATE POLICY admin_assignments_read ON public.admin_assignments FOR SELECT USING (true);
 
 REVOKE ALL ON TABLE public.admin_roles FROM anon,authenticated;
@@ -1581,13 +1579,13 @@ CREATE TABLE IF NOT EXISTS public.research_members (
   PRIMARY KEY (project_id, user_id)
 );
 ALTER TABLE public.research_members ENABLE ROW LEVEL SECURITY;
-drop policy if exists research_members_select on public.research_members;
+DROP POLICY IF EXISTS research_members_select ON public.research_members;
 CREATE POLICY research_members_select ON public.research_members FOR SELECT USING (true);
-drop policy if exists research_members_insert on public.research_members;
+DROP POLICY IF EXISTS research_members_insert ON public.research_members;
 CREATE POLICY research_members_insert ON public.research_members FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid())
 );
-drop policy if exists research_members_delete on public.research_members;
+DROP POLICY IF EXISTS research_members_delete ON public.research_members;
 CREATE POLICY research_members_delete ON public.research_members FOR DELETE USING (
   EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid()) OR auth.uid() = user_id
 );
@@ -1599,11 +1597,11 @@ CREATE TABLE IF NOT EXISTS public.saved_research_projects (
   PRIMARY KEY (project_id, user_id)
 );
 ALTER TABLE public.saved_research_projects ENABLE ROW LEVEL SECURITY;
-drop policy if exists saved_research_projects_select on public.saved_research_projects;
+DROP POLICY IF EXISTS saved_research_projects_select ON public.saved_research_projects;
 CREATE POLICY saved_research_projects_select ON public.saved_research_projects FOR SELECT USING (auth.uid() = user_id);
-drop policy if exists saved_research_projects_insert on public.saved_research_projects;
+DROP POLICY IF EXISTS saved_research_projects_insert ON public.saved_research_projects;
 CREATE POLICY saved_research_projects_insert ON public.saved_research_projects FOR INSERT WITH CHECK (auth.uid() = user_id);
-drop policy if exists saved_research_projects_delete on public.saved_research_projects;
+DROP POLICY IF EXISTS saved_research_projects_delete ON public.saved_research_projects;
 CREATE POLICY saved_research_projects_delete ON public.saved_research_projects FOR DELETE USING (auth.uid() = user_id);
 
 CREATE TABLE IF NOT EXISTS public.research_publications (
@@ -1615,13 +1613,13 @@ CREATE TABLE IF NOT EXISTS public.research_publications (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.research_publications ENABLE ROW LEVEL SECURITY;
-drop policy if exists research_publications_select on public.research_publications;
+DROP POLICY IF EXISTS research_publications_select ON public.research_publications;
 CREATE POLICY research_publications_select ON public.research_publications FOR SELECT USING (true);
-drop policy if exists research_publications_insert on public.research_publications;
+DROP POLICY IF EXISTS research_publications_insert ON public.research_publications;
 CREATE POLICY research_publications_insert ON public.research_publications FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid())
 );
-drop policy if exists research_publications_delete on public.research_publications;
+DROP POLICY IF EXISTS research_publications_delete ON public.research_publications;
 CREATE POLICY research_publications_delete ON public.research_publications FOR DELETE USING (
   EXISTS (SELECT 1 FROM public.research_projects WHERE id = project_id AND owner_id = auth.uid())
 );
@@ -1874,21 +1872,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_active_room_invitee ON public.room_invitati
 ALTER TABLE public.room_invitations ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS room_invitations_select ON public.room_invitations;
-drop policy if exists room_invitations_select on public.room_invitations;
 CREATE POLICY room_invitations_select ON public.room_invitations FOR SELECT USING (
     auth.uid() = inviter_id OR auth.uid() = invitee_id OR
     EXISTS (SELECT 1 FROM public.room_members WHERE room_id = room_invitations.room_id AND user_id = auth.uid() AND role IN ('owner', 'moderator'))
 );
 
 DROP POLICY IF EXISTS room_invitations_insert ON public.room_invitations;
-drop policy if exists room_invitations_insert on public.room_invitations;
 CREATE POLICY room_invitations_insert ON public.room_invitations FOR INSERT WITH CHECK (
     auth.uid() = inviter_id AND
     EXISTS (SELECT 1 FROM public.room_members WHERE room_id = room_invitations.room_id AND user_id = auth.uid() AND role IN ('owner', 'moderator'))
 );
 
 DROP POLICY IF EXISTS room_invitations_update ON public.room_invitations;
-drop policy if exists room_invitations_update on public.room_invitations;
 CREATE POLICY room_invitations_update ON public.room_invitations FOR UPDATE USING (
     auth.uid() = invitee_id OR auth.uid() = inviter_id OR
     EXISTS (SELECT 1 FROM public.room_members WHERE room_id = room_invitations.room_id AND user_id = auth.uid() AND role IN ('owner', 'moderator'))
@@ -2262,28 +2257,23 @@ ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
 
 -- 7. Define RLS Policies
 DROP POLICY IF EXISTS "Anyone can read dashboard configs" ON public.dashboard_configs;
-CREATE POLICY "Anyone can read dashboard configs"
-  ON public.dashboard_configs FOR SELECT
+CREATE POLICY "Anyone can read dashboard configs" ON public.dashboard_configs FOR SELECT
   USING (true);
 
 DROP POLICY IF EXISTS "Users can read own layout" ON public.user_dashboard_layouts;
-CREATE POLICY "Users can read own layout"
-  ON public.user_dashboard_layouts FOR SELECT
+CREATE POLICY "Users can read own layout" ON public.user_dashboard_layouts FOR SELECT
   USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Users can update own layout" ON public.user_dashboard_layouts;
-CREATE POLICY "Users can update own layout"
-  ON public.user_dashboard_layouts FOR ALL
+CREATE POLICY "Users can update own layout" ON public.user_dashboard_layouts FOR ALL
   USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Anyone can read active announcements" ON public.announcements;
-CREATE POLICY "Anyone can read active announcements"
-  ON public.announcements FOR SELECT
+CREATE POLICY "Anyone can read active announcements" ON public.announcements FOR SELECT
   USING (is_active = true AND (ends_at IS NULL OR ends_at > now()));
 
 DROP POLICY IF EXISTS "Anyone can read feature flags" ON public.feature_flags;
-CREATE POLICY "Anyone can read feature flags"
-  ON public.feature_flags FOR SELECT
+CREATE POLICY "Anyone can read feature flags" ON public.feature_flags FOR SELECT
   USING (true);
 
 -- 8. Atomic Stored Procedures
@@ -2512,20 +2502,15 @@ ALTER TABLE public.announcement_dismissals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.experience_content_sets ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS announcement_dismissals_self_read ON public.announcement_dismissals;
-drop policy if exists announcement_dismissals_self_read on public.announcement_dismissals;
-CREATE POLICY announcement_dismissals_self_read
-  ON public.announcement_dismissals FOR SELECT
+CREATE POLICY announcement_dismissals_self_read ON public.announcement_dismissals FOR SELECT
   USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS experience_content_sets_active_read ON public.experience_content_sets;
-drop policy if exists experience_content_sets_active_read on public.experience_content_sets;
-CREATE POLICY experience_content_sets_active_read
-  ON public.experience_content_sets FOR SELECT
+CREATE POLICY experience_content_sets_active_read ON public.experience_content_sets FOR SELECT
   USING (is_active);
 
 DROP POLICY IF EXISTS "Anyone can read active announcements" ON public.announcements;
-CREATE POLICY "Anyone can read active announcements"
-  ON public.announcements FOR SELECT
+CREATE POLICY "Anyone can read active announcements" ON public.announcements FOR SELECT
   USING (
     is_active = true
     AND starts_at <= now()
@@ -3423,13 +3408,13 @@ END;
 $$;
 
 -- RLS POLICIES
-CREATE POLICY "Users can manage their own goals"
-  ON public.learning_goals FOR ALL
+DROP POLICY IF EXISTS "Users can manage their own goals" ON public.learning_goals;
+CREATE POLICY "Users can manage their own goals" ON public.learning_goals FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Public and connections can view permitted goals"
-  ON public.learning_goals FOR SELECT
+DROP POLICY IF EXISTS "Public and connections can view permitted goals" ON public.learning_goals;
+CREATE POLICY "Public and connections can view permitted goals" ON public.learning_goals FOR SELECT
   USING (
     visibility = 'public'
     OR (visibility = 'connections' AND EXISTS (
@@ -3439,67 +3424,67 @@ CREATE POLICY "Public and connections can view permitted goals"
     ))
   );
 
-CREATE POLICY "Users can manage milestones for their goals"
-  ON public.goal_milestones FOR ALL
+DROP POLICY IF EXISTS "Users can manage milestones for their goals" ON public.goal_milestones;
+CREATE POLICY "Users can manage milestones for their goals" ON public.goal_milestones FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can manage their planner preferences"
-  ON public.study_planner_preferences FOR ALL
+DROP POLICY IF EXISTS "Users can manage their planner preferences" ON public.study_planner_preferences;
+CREATE POLICY "Users can manage their planner preferences" ON public.study_planner_preferences FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can manage their study plan blocks"
-  ON public.study_plan_blocks FOR ALL
+DROP POLICY IF EXISTS "Users can manage their study plan blocks" ON public.study_plan_blocks;
+CREATE POLICY "Users can manage their study plan blocks" ON public.study_plan_blocks FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can manage their calendar reminders"
-  ON public.calendar_reminders FOR ALL
+DROP POLICY IF EXISTS "Users can manage their calendar reminders" ON public.calendar_reminders;
+CREATE POLICY "Users can manage their calendar reminders" ON public.calendar_reminders FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Tutors can manage their availability rules"
-  ON public.tutor_availability_rules FOR ALL
+DROP POLICY IF EXISTS "Tutors can manage their availability rules" ON public.tutor_availability_rules;
+CREATE POLICY "Tutors can manage their availability rules" ON public.tutor_availability_rules FOR ALL
   USING (auth.uid() = tutor_id)
   WITH CHECK (auth.uid() = tutor_id);
 
-CREATE POLICY "Anyone can view active tutor availability"
-  ON public.tutor_availability_rules FOR SELECT
+DROP POLICY IF EXISTS "Anyone can view active tutor availability" ON public.tutor_availability_rules;
+CREATE POLICY "Anyone can view active tutor availability" ON public.tutor_availability_rules FOR SELECT
   USING (is_active = true);
 
-CREATE POLICY "Tutors can manage availability exceptions"
-  ON public.tutor_availability_exceptions FOR ALL
+DROP POLICY IF EXISTS "Tutors can manage availability exceptions" ON public.tutor_availability_exceptions;
+CREATE POLICY "Tutors can manage availability exceptions" ON public.tutor_availability_exceptions FOR ALL
   USING (auth.uid() = tutor_id)
   WITH CHECK (auth.uid() = tutor_id);
 
-CREATE POLICY "Anyone can view tutor availability exceptions"
-  ON public.tutor_availability_exceptions FOR SELECT
+DROP POLICY IF EXISTS "Anyone can view tutor availability exceptions" ON public.tutor_availability_exceptions;
+CREATE POLICY "Anyone can view tutor availability exceptions" ON public.tutor_availability_exceptions FOR SELECT
   USING (true);
 
-CREATE POLICY "Participants can view and manage their bookings"
-  ON public.session_bookings FOR ALL
+DROP POLICY IF EXISTS "Participants can view and manage their bookings" ON public.session_bookings;
+CREATE POLICY "Participants can view and manage their bookings" ON public.session_bookings FOR ALL
   USING (auth.uid() = learner_id OR auth.uid() = tutor_id)
   WITH CHECK (auth.uid() = learner_id OR auth.uid() = tutor_id);
 
-CREATE POLICY "Participants can view booking status history"
-  ON public.booking_status_history FOR SELECT
+DROP POLICY IF EXISTS "Participants can view booking status history" ON public.booking_status_history;
+CREATE POLICY "Participants can view booking status history" ON public.booking_status_history FOR SELECT
   USING (EXISTS (
     SELECT 1 FROM public.session_bookings b
     WHERE b.id = booking_id AND (b.learner_id = auth.uid() OR b.tutor_id = auth.uid())
   ));
 
-CREATE POLICY "Users can manage their saved collections"
-  ON public.saved_collections FOR ALL
+DROP POLICY IF EXISTS "Users can manage their saved collections" ON public.saved_collections;
+CREATE POLICY "Users can manage their saved collections" ON public.saved_collections FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Anyone can view active challenge definitions"
-  ON public.challenge_definitions FOR SELECT
+DROP POLICY IF EXISTS "Anyone can view active challenge definitions" ON public.challenge_definitions;
+CREATE POLICY "Anyone can view active challenge definitions" ON public.challenge_definitions FOR SELECT
   USING (is_active = true);
 
-CREATE POLICY "Admins can manage challenge definitions"
-  ON public.challenge_definitions FOR ALL
+DROP POLICY IF EXISTS "Admins can manage challenge definitions" ON public.challenge_definitions;
+CREATE POLICY "Admins can manage challenge definitions" ON public.challenge_definitions FOR ALL
   USING (EXISTS (
     SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND 'admin' = ANY(p.roles)
   ))
@@ -3507,17 +3492,17 @@ CREATE POLICY "Admins can manage challenge definitions"
     SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND 'admin' = ANY(p.roles)
   ));
 
-CREATE POLICY "Users can view and update their challenge progress"
-  ON public.challenge_progress FOR ALL
+DROP POLICY IF EXISTS "Users can view and update their challenge progress" ON public.challenge_progress;
+CREATE POLICY "Users can view and update their challenge progress" ON public.challenge_progress FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Anyone can view achievement definitions"
-  ON public.achievement_definitions FOR SELECT
+DROP POLICY IF EXISTS "Anyone can view achievement definitions" ON public.achievement_definitions;
+CREATE POLICY "Anyone can view achievement definitions" ON public.achievement_definitions FOR SELECT
   USING (is_active = true);
 
-CREATE POLICY "Admins can manage achievement definitions"
-  ON public.achievement_definitions FOR ALL
+DROP POLICY IF EXISTS "Admins can manage achievement definitions" ON public.achievement_definitions;
+CREATE POLICY "Admins can manage achievement definitions" ON public.achievement_definitions FOR ALL
   USING (EXISTS (
     SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND 'admin' = ANY(p.roles)
   ))
@@ -3525,17 +3510,17 @@ CREATE POLICY "Admins can manage achievement definitions"
     SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND 'admin' = ANY(p.roles)
   ));
 
-CREATE POLICY "Users can view their own achievements and public ones"
-  ON public.user_achievements FOR SELECT
+DROP POLICY IF EXISTS "Users can view their own achievements and public ones" ON public.user_achievements;
+CREATE POLICY "Users can view their own achievements and public ones" ON public.user_achievements FOR SELECT
   USING (auth.uid() = user_id OR is_public = true);
 
-CREATE POLICY "Users can manage their own achievement visibility"
-  ON public.user_achievements FOR UPDATE
+DROP POLICY IF EXISTS "Users can manage their own achievement visibility" ON public.user_achievements;
+CREATE POLICY "Users can manage their own achievement visibility" ON public.user_achievements FOR UPDATE
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can view their own activity events"
-  ON public.user_activity_events FOR SELECT
+DROP POLICY IF EXISTS "Users can view their own activity events" ON public.user_activity_events;
+CREATE POLICY "Users can view their own activity events" ON public.user_activity_events FOR SELECT
   USING (auth.uid() = user_id);
 
 -- ============================================================================
@@ -4122,8 +4107,8 @@ CREATE INDEX IF NOT EXISTS idx_calls_active ON public.calls(caller_id, callee_id
 ALTER TABLE public.calls ENABLE ROW LEVEL SECURITY;
 
 -- Select Policy: Call participants and elevated admins
-CREATE POLICY "Call participants can view their call records"
-ON public.calls FOR SELECT
+DROP POLICY IF EXISTS "Call participants can view their call records" ON public.calls;
+CREATE POLICY "Call participants can view their call records" ON public.calls FOR SELECT
 USING (
     caller_id = auth.uid() OR
     callee_id = auth.uid() OR
@@ -4133,16 +4118,16 @@ USING (
 );
 
 -- Insert Policy: Authenticated users can only initiate calls where they are the caller
-CREATE POLICY "Authenticated users can initiate calls"
-ON public.calls FOR INSERT
+DROP POLICY IF EXISTS "Authenticated users can initiate calls" ON public.calls;
+CREATE POLICY "Authenticated users can initiate calls" ON public.calls FOR INSERT
 WITH CHECK (
     auth.uid() = caller_id AND
     caller_id <> callee_id
 );
 
 -- Update Policy: Call participants can update call state
-CREATE POLICY "Call participants can update call state"
-ON public.calls FOR UPDATE
+DROP POLICY IF EXISTS "Call participants can update call state" ON public.calls;
+CREATE POLICY "Call participants can update call state" ON public.calls FOR UPDATE
 USING (
     caller_id = auth.uid() OR
     callee_id = auth.uid()
@@ -4268,9 +4253,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-drop trigger if exists update_admin_accounts_timestamp on admin_accounts;
-CREATE TRIGGER update_admin_accounts_timestamp
-BEFORE UPDATE ON admin_accounts
+DROP TRIGGER IF EXISTS update_admin_accounts_timestamp ON admin_accounts;
+CREATE TRIGGER update_admin_accounts_timestamp BEFORE UPDATE ON admin_accounts
 FOR EACH ROW
 EXECUTE FUNCTION update_admin_accounts_updated_at();
 
@@ -4282,23 +4266,23 @@ ALTER TABLE admin_audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Block browser clients from modifying authorization tables directly
 -- Only service_role can perform writes
-drop policy if exists admin_accounts_read_self on admin_accounts;
+DROP POLICY IF EXISTS admin_accounts_read_self ON admin_accounts;
 CREATE POLICY admin_accounts_read_self ON admin_accounts
   FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
-drop policy if exists admin_accounts_service_all on admin_accounts;
+DROP POLICY IF EXISTS admin_accounts_service_all ON admin_accounts;
 CREATE POLICY admin_accounts_service_all ON admin_accounts
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-drop policy if exists admin_invitations_service_all on admin_invitations;
+DROP POLICY IF EXISTS admin_invitations_service_all ON admin_invitations;
 CREATE POLICY admin_invitations_service_all ON admin_invitations
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-drop policy if exists admin_bootstrap_state_service_all on admin_bootstrap_state;
+DROP POLICY IF EXISTS admin_bootstrap_state_service_all ON admin_bootstrap_state;
 CREATE POLICY admin_bootstrap_state_service_all ON admin_bootstrap_state
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-drop policy if exists admin_audit_logs_service_all on admin_audit_logs;
+DROP POLICY IF EXISTS admin_audit_logs_service_all ON admin_audit_logs;
 CREATE POLICY admin_audit_logs_service_all ON admin_audit_logs
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
@@ -4398,9 +4382,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-drop trigger if exists on_auth_user_created on auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
+CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE PROCEDURE public.handle_new_user();
 
@@ -4814,9 +4796,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-drop trigger if exists on_auth_user_created on auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
+CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE PROCEDURE public.handle_new_user();
 
@@ -4936,9 +4916,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-drop trigger if exists on_auth_user_created on auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
+CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE PROCEDURE public.handle_new_user();
 
@@ -5284,7 +5262,8 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'moderation_cases' AND policyname = 'moderation_cases_service_role_all'
   ) THEN
-    CREATE POLICY moderation_cases_service_role_all ON public.moderation_cases FOR ALL USING (true) WITH CHECK (true);
+    DROP POLICY IF EXISTS moderation_cases_service_role_all ON public.moderation_cases;
+CREATE POLICY moderation_cases_service_role_all ON public.moderation_cases FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
@@ -5316,7 +5295,8 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'notification_campaigns' AND policyname = 'notification_campaigns_service_role_all'
   ) THEN
-    CREATE POLICY notification_campaigns_service_role_all ON public.notification_campaigns FOR ALL USING (true) WITH CHECK (true);
+    DROP POLICY IF EXISTS notification_campaigns_service_role_all ON public.notification_campaigns;
+CREATE POLICY notification_campaigns_service_role_all ON public.notification_campaigns FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
@@ -5339,7 +5319,8 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'search_analytics_events' AND policyname = 'search_analytics_service_role_all'
   ) THEN
-    CREATE POLICY search_analytics_service_role_all ON public.search_analytics_events FOR ALL USING (true) WITH CHECK (true);
+    DROP POLICY IF EXISTS search_analytics_service_role_all ON public.search_analytics_events;
+CREATE POLICY search_analytics_service_role_all ON public.search_analytics_events FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
@@ -5370,12 +5351,14 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'app_version_control' AND policyname = 'app_version_control_service_role_all'
   ) THEN
-    CREATE POLICY app_version_control_service_role_all ON public.app_version_control FOR ALL USING (true) WITH CHECK (true);
+    DROP POLICY IF EXISTS app_version_control_service_role_all ON public.app_version_control;
+CREATE POLICY app_version_control_service_role_all ON public.app_version_control FOR ALL USING (true) WITH CHECK (true);
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'app_version_control' AND policyname = 'app_version_control_public_read'
   ) THEN
-    CREATE POLICY app_version_control_public_read ON public.app_version_control FOR SELECT USING (true);
+    DROP POLICY IF EXISTS app_version_control_public_read ON public.app_version_control;
+CREATE POLICY app_version_control_public_read ON public.app_version_control FOR SELECT USING (true);
   END IF;
 END $$;
 
@@ -5435,7 +5418,9 @@ CREATE TABLE IF NOT EXISTS club_follows (
 );
 
 ALTER TABLE club_follows ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view club followers count" ON club_follows;
 CREATE POLICY "Anyone can view club followers count" ON club_follows FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can follow/unfollow clubs" ON club_follows;
 CREATE POLICY "Users can follow/unfollow clubs" ON club_follows FOR ALL
   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
@@ -5459,12 +5444,15 @@ CREATE TABLE IF NOT EXISTS club_posts (
 );
 
 ALTER TABLE club_posts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public can view club posts" ON club_posts;
 CREATE POLICY "Public can view club posts" ON club_posts FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Club members can insert posts" ON club_posts;
 CREATE POLICY "Club members can insert posts" ON club_posts FOR INSERT
   WITH CHECK (
     EXISTS (SELECT 1 FROM club_members cm WHERE cm.club_id = club_posts.club_id AND cm.user_id = auth.uid())
     OR EXISTS (SELECT 1 FROM clubs c WHERE c.id = club_posts.club_id AND c.created_by = auth.uid())
   );
+DROP POLICY IF EXISTS "Authors or admins can update/delete posts" ON club_posts;
 CREATE POLICY "Authors or admins can update/delete posts" ON club_posts FOR ALL
   USING (
     author_id = auth.uid()
@@ -5487,7 +5475,9 @@ CREATE TABLE IF NOT EXISTS club_post_likes (
 );
 
 ALTER TABLE club_post_likes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view likes" ON club_post_likes;
 CREATE POLICY "Anyone can view likes" ON club_post_likes FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Authenticated users can toggle likes" ON club_post_likes;
 CREATE POLICY "Authenticated users can toggle likes" ON club_post_likes FOR ALL
   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
@@ -5500,9 +5490,12 @@ CREATE TABLE IF NOT EXISTS club_post_comments (
 );
 
 ALTER TABLE club_post_comments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view comments" ON club_post_comments;
 CREATE POLICY "Anyone can view comments" ON club_post_comments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Authenticated users can comment" ON club_post_comments;
 CREATE POLICY "Authenticated users can comment" ON club_post_comments FOR INSERT
   WITH CHECK (auth.uid() = author_id);
+DROP POLICY IF EXISTS "Comment authors can delete comments" ON club_post_comments;
 CREATE POLICY "Comment authors can delete comments" ON club_post_comments FOR DELETE
   USING (author_id = auth.uid());
 
@@ -5519,7 +5512,9 @@ CREATE TABLE IF NOT EXISTS club_teams (
 );
 
 ALTER TABLE club_teams ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view club teams" ON club_teams;
 CREATE POLICY "Anyone can view club teams" ON club_teams FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admins can manage club teams" ON club_teams;
 CREATE POLICY "Admins can manage club teams" ON club_teams FOR ALL
   USING (
     EXISTS (
@@ -5551,7 +5546,9 @@ CREATE TABLE IF NOT EXISTS club_recruitments (
 );
 
 ALTER TABLE club_recruitments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view open recruitments" ON club_recruitments;
 CREATE POLICY "Anyone can view open recruitments" ON club_recruitments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Club admins can manage recruitments" ON club_recruitments;
 CREATE POLICY "Club admins can manage recruitments" ON club_recruitments FOR ALL
   USING (
     EXISTS (
@@ -5586,8 +5583,10 @@ CREATE TABLE IF NOT EXISTS club_applications (
 );
 
 ALTER TABLE club_applications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Applicants can view their own application" ON club_applications;
 CREATE POLICY "Applicants can view their own application" ON club_applications FOR SELECT
   USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Club admins can view and manage all applications" ON club_applications;
 CREATE POLICY "Club admins can view and manage all applications" ON club_applications FOR ALL
   USING (
     EXISTS (
@@ -5597,6 +5596,7 @@ CREATE POLICY "Club admins can view and manage all applications" ON club_applica
         AND cm.role IN ('owner', 'admin', 'president', 'vice_president', 'moderator')
     )
   );
+DROP POLICY IF EXISTS "Users can submit applications" ON club_applications;
 CREATE POLICY "Users can submit applications" ON club_applications FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
@@ -5622,7 +5622,9 @@ CREATE TABLE IF NOT EXISTS club_projects (
 );
 
 ALTER TABLE club_projects ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view club projects" ON club_projects;
 CREATE POLICY "Anyone can view club projects" ON club_projects FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Club admins or project leads can manage projects" ON club_projects;
 CREATE POLICY "Club admins or project leads can manage projects" ON club_projects FOR ALL
   USING (
     lead_id = auth.uid()
@@ -5651,7 +5653,9 @@ CREATE TABLE IF NOT EXISTS club_project_tasks (
 );
 
 ALTER TABLE club_project_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Club members can view project tasks" ON club_project_tasks;
 CREATE POLICY "Club members can view project tasks" ON club_project_tasks FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Project members can manage tasks" ON club_project_tasks;
 CREATE POLICY "Project members can manage tasks" ON club_project_tasks FOR ALL
   USING (auth.role() = 'authenticated');
 
@@ -5675,12 +5679,14 @@ CREATE TABLE IF NOT EXISTS club_resources (
 );
 
 ALTER TABLE club_resources ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "View resources based on permission" ON club_resources;
 CREATE POLICY "View resources based on permission" ON club_resources FOR SELECT
   USING (
     permission = 'public'
     OR (permission IN ('followers', 'public') AND EXISTS (SELECT 1 FROM club_follows cf WHERE cf.club_id = club_resources.club_id AND cf.user_id = auth.uid()))
     OR EXISTS (SELECT 1 FROM club_members cm WHERE cm.club_id = club_resources.club_id AND cm.user_id = auth.uid())
   );
+DROP POLICY IF EXISTS "Club members can upload resources" ON club_resources;
 CREATE POLICY "Club members can upload resources" ON club_resources FOR INSERT
   WITH CHECK (
     EXISTS (SELECT 1 FROM club_members cm WHERE cm.club_id = club_resources.club_id AND cm.user_id = auth.uid())
@@ -5701,7 +5707,9 @@ CREATE TABLE IF NOT EXISTS club_achievements (
 );
 
 ALTER TABLE club_achievements ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view club achievements" ON club_achievements;
 CREATE POLICY "Anyone can view club achievements" ON club_achievements FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Club admins can manage achievements" ON club_achievements;
 CREATE POLICY "Club admins can manage achievements" ON club_achievements FOR ALL
   USING (
     EXISTS (
@@ -5726,6 +5734,7 @@ CREATE TABLE IF NOT EXISTS club_event_attendance (
 );
 
 ALTER TABLE club_event_attendance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Attendees and admins can view attendance" ON club_event_attendance;
 CREATE POLICY "Attendees and admins can view attendance" ON club_event_attendance FOR SELECT
   USING (
     user_id = auth.uid() 
@@ -5737,6 +5746,7 @@ CREATE POLICY "Attendees and admins can view attendance" ON club_event_attendanc
         AND cm.role IN ('owner', 'admin', 'president', 'moderator')
     )
   );
+DROP POLICY IF EXISTS "Users can check in to events" ON club_event_attendance;
 CREATE POLICY "Users can check in to events" ON club_event_attendance FOR INSERT
   WITH CHECK (user_id = auth.uid());
 
@@ -5756,7 +5766,9 @@ CREATE TABLE IF NOT EXISTS club_polls (
 );
 
 ALTER TABLE club_polls ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Club members can view polls" ON club_polls;
 CREATE POLICY "Club members can view polls" ON club_polls FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Club leaders can create polls" ON club_polls;
 CREATE POLICY "Club leaders can create polls" ON club_polls FOR INSERT
   WITH CHECK (
     EXISTS (SELECT 1 FROM club_members cm WHERE cm.club_id = club_polls.club_id AND cm.user_id = auth.uid())
@@ -5772,7 +5784,9 @@ CREATE TABLE IF NOT EXISTS club_poll_votes (
 );
 
 ALTER TABLE club_poll_votes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view poll votes counts" ON club_poll_votes;
 CREATE POLICY "Anyone can view poll votes counts" ON club_poll_votes FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Club members can vote once" ON club_poll_votes;
 CREATE POLICY "Club members can vote once" ON club_poll_votes FOR INSERT
   WITH CHECK (user_id = auth.uid());
 
@@ -5789,6 +5803,7 @@ CREATE TABLE IF NOT EXISTS club_audit_logs (
 );
 
 ALTER TABLE club_audit_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Club admins can view audit logs" ON club_audit_logs;
 CREATE POLICY "Club admins can view audit logs" ON club_audit_logs FOR SELECT
   USING (
     EXISTS (
