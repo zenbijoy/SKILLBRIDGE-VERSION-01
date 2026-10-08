@@ -154,6 +154,24 @@ export default function QuizScreen() {
   const startTimeRef = useRef<number>(0);
   const appStateRef = useRef(AppState.currentState);
 
+  // Stable refs to prevent stale closure on auto-submit (H1 fix)
+  const sessionRef = useRef<QuizSession | null>(null);
+  const answersRef = useRef<Record<string, number>>({});
+  const elapsedSecondsRef = useRef<number>(0);
+  const isSubmittingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    elapsedSecondsRef.current = elapsedSeconds;
+  }, [elapsedSeconds]);
+
   const [customSkillInput, setCustomSkillInput] = useState("");
   const [customConditionInput, setCustomConditionInput] = useState("");
   const [customDifficulty, setCustomDifficulty] = useState<Difficulty>("medium");
@@ -169,25 +187,39 @@ export default function QuizScreen() {
   });
 
   const stopTimer = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
   }, []);
 
   const handleSubmit = useCallback((autoSubmit = false) => {
-    if (!session) return;
+    const activeSession = sessionRef.current || session;
+    if (!activeSession || isSubmittingRef.current || submitMutation.isPending) return;
+    isSubmittingRef.current = true;
     if (!autoSubmit) triggerHaptic();
-    submitMutation.mutate({ session_id: session.session_id, answers, elapsed: elapsedSeconds });
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- submitMutation is declared below and is a stable mutation handle
-  }, [session, answers, elapsedSeconds]);
+    submitMutation.mutate({
+      session_id: activeSession.session_id,
+      answers: answersRef.current,
+      elapsed: elapsedSecondsRef.current,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   const startTimer = useCallback((limitSeconds: number) => {
+    stopTimer();
     setTimeLeft(limitSeconds);
     startTimeRef.current = Date.now();
     timerRef.current = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
       setElapsedSeconds(elapsed);
+      elapsedSecondsRef.current = elapsed;
       const remaining = limitSeconds - elapsed;
       if (remaining <= 0) {
-        clearInterval(timerRef.current!);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
         setTimeLeft(0);
         Alert.alert("Time is up!", "Your assessment has been auto-submitted.");
         handleSubmit(true);
@@ -195,7 +227,7 @@ export default function QuizScreen() {
         setTimeLeft(remaining);
       }
     }, 1000);
-  }, [handleSubmit]);
+  }, [handleSubmit, stopTimer]);
 
   useEffect(() => {
     if (mode !== "quiz" || !session) return;
@@ -208,12 +240,15 @@ export default function QuizScreen() {
             "/quiz/violation",
             { method: "POST", body: JSON.stringify({ session_id: session.session_id }) }
           );
-          if (vr.terminated) {
+          if (vr?.violation_count !== undefined) {
+            setViolationCount(vr.violation_count);
+          }
+          if (vr?.terminated) {
             stopTimer();
             Alert.alert("Assessment Terminated", "You left the assessment screen too many times.");
             resetToMenu();
           } else {
-            Alert.alert("Warning " + vr.violation_count + "/" + session.max_violations, "Leaving the app counts as a violation.");
+            Alert.alert("Warning " + (vr?.violation_count ?? newCount) + "/" + session.max_violations, "Leaving the app counts as a violation.");
           }
         } catch { /* best-effort */ }
       }
@@ -244,6 +279,10 @@ export default function QuizScreen() {
       }),
     onSuccess: (data) => {
       triggerHaptic();
+      sessionRef.current = data;
+      answersRef.current = {};
+      elapsedSecondsRef.current = 0;
+      isSubmittingRef.current = false;
       setSession(data);
       setCurrentIdx(0);
       setAnswers({});
@@ -263,6 +302,7 @@ export default function QuizScreen() {
     onSuccess: (data) => {
       triggerHaptic();
       stopTimer();
+      isSubmittingRef.current = false;
       setResult(data);
       setMode("review");
       setReviewIdx(0);
@@ -270,7 +310,10 @@ export default function QuizScreen() {
       qc.invalidateQueries({ queryKey: ["quiz-passport"] });
       qc.invalidateQueries({ queryKey: ["leaderboard"] });
     },
-    onError: (e: any) => Alert.alert("Submission failed", e.message ?? "Please try again."),
+    onError: (e: any) => {
+      isSubmittingRef.current = false;
+      Alert.alert("Submission failed", e.message ?? "Please try again.");
+    },
   });
 
   const resetToMenu = () => {
@@ -337,18 +380,32 @@ export default function QuizScreen() {
           </Row>
 
           <Text style={[s.sectionLabel, { color: colors.text }]}>Assessment Topic</Text>
-          <Pressable
-            style={[s.topicInput, { backgroundColor: colors.surface2, borderColor: topic ? colors.primary : colors.border }]}
-            onPress={() => Alert.prompt?.("Enter Topic",
-              "Specific sub-topic (e.g. 'Linked Lists', 'SQL Joins')",
-              (text) => { if (text?.trim()) setTopic(text.trim()); },
-              "plain-text", topic)}
+          <View
+            style={[
+              s.topicInput,
+              { backgroundColor: colors.surface2, borderColor: topic.trim() ? colors.primary : colors.border },
+            ]}
           >
-            <MaterialCommunityIcons name="pencil-outline" size={18} color={topic ? colors.primary : colors.muted} />
-            <Text style={[s.topicText, { color: topic ? colors.text : colors.muted }]}>
-              {topic || "Tap to enter a topic (e.g. 'Recursion', 'SQL Joins')"}
-            </Text>
-          </Pressable>
+            <MaterialCommunityIcons
+              name="pencil-outline"
+              size={18}
+              color={topic.trim() ? colors.primary : colors.muted}
+            />
+            <TextInput
+              value={topic}
+              onChangeText={setTopic}
+              placeholder="e.g. 'Linked Lists', 'SQL Joins', 'Hooks'"
+              placeholderTextColor={colors.muted}
+              style={[s.topicText, { color: colors.text }]}
+              autoCapitalize="words"
+              returnKeyType="done"
+            />
+            {topic.length > 0 && (
+              <Pressable onPress={() => setTopic("")} hitSlop={8}>
+                <MaterialCommunityIcons name="close-circle" size={16} color={colors.muted} />
+              </Pressable>
+            )}
+          </View>
 
           <Row style={{ gap: 8, marginVertical: 14 }}>
             {[
@@ -456,7 +513,13 @@ export default function QuizScreen() {
                 {question.options.map((option, optIdx) => {
                   const isSel = answers[question.id] === optIdx;
                   return (
-                    <Pressable key={question.id + optIdx} onPress={() => { triggerHaptic(); setAnswers((p) => ({ ...p, [question.id]: optIdx })); }}
+                    <Pressable
+                      key={question.id + optIdx}
+                      onPress={() => {
+                        triggerHaptic();
+                        answersRef.current = { ...answersRef.current, [question.id]: optIdx };
+                        setAnswers((p) => ({ ...p, [question.id]: optIdx }));
+                      }}
                       style={[s.optionTile, { backgroundColor: isSel ? colors.primarySoft : colors.surface2, borderColor: isSel ? colors.primary : colors.border }]}>
                       <View style={[s.optionLetter, { backgroundColor: isSel ? colors.primary : colors.border }]}>
                         <Text style={{ color: isSel ? "#fff" : colors.muted, fontWeight: "800", fontSize: 12 }}>{["A","B","C","D"][optIdx]}</Text>

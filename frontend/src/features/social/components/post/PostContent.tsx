@@ -149,7 +149,7 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
           return (
             <Text
               key={key}
-              style={[styles.hashtag, { color: linkColor }]}
+              style={[styles.hashtag, { color: colors.primary }]}
               onPress={() => onHashtagPress?.(token.value)}
             >
               {token.value}
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   standardBody: {
-    fontSize: 14.5,
+    fontSize: 15,
     lineHeight: 22,
     letterSpacing: 0.1,
   },

@@ -32,13 +32,21 @@ connections.get(
       .eq("status", "pending");
     const { data: suggested } = await admin.rpc("suggest_connections", {
       p_user_id: uid,
-      p_limit: 10,
+      p_limit: 20,
     });
+
+    const pendingIds = new Set<string>([
+      uid,
+      ...(incoming ?? []).map((i: any) => i.requester_id || i.requester?.id).filter(Boolean),
+      ...(outgoing ?? []).map((o: any) => o.recipient_id).filter(Boolean),
+    ]);
+    const cleanSuggested = (suggested ?? []).filter((s: any) => !pendingIds.has(s.id));
+
     res.json({
       connections: people ?? [],
       incoming: incoming ?? [],
       outgoing: outgoing ?? [],
-      suggested: suggested ?? [],
+      suggested: cleanSuggested.slice(0, 10),
     });
   }),
 );

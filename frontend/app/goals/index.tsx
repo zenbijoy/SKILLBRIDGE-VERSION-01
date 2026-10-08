@@ -16,6 +16,7 @@ import { GrowthHero } from "@/components/GrowthHero";
 import { GrowthEmptyState } from "@/components/GrowthEmptyState";
 import { growthIllustrations512 } from "@/assets/illustrations";
 import { fetchGoals, type LearningGoal } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function GoalsScreen() {
   const { colors } = useTheme();
@@ -42,6 +43,10 @@ export default function GoalsScreen() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadGoals();
+    const interval = setInterval(() => {
+      void loadGoals();
+    }, 20_000);
+    return () => clearInterval(interval);
   }, [loadGoals]);
 
   const onRefresh = () => {
@@ -68,6 +73,7 @@ export default function GoalsScreen() {
   };
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -263,6 +269,7 @@ export default function GoalsScreen() {
         </ScrollView>
       )}
     </View>
+    </Screen>
   );
 }
 

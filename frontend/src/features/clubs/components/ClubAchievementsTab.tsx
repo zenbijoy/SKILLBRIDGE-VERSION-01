@@ -14,36 +14,51 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "../../../theme/ThemeProvider";
 import { ClubAchievement, ClubRole } from "../types";
+import { isClubOfficer } from "../constants";
+import { useI18n } from "../../../i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
 
 interface ClubAchievementsTabProps {
   clubId: string;
   myRole?: ClubRole | null;
-  achievements: ClubAchievement[];
-  isLoading: boolean;
-  onRefresh: () => void;
+  achievements?: ClubAchievement[];
+  isLoading?: boolean;
+  onRefresh?: () => void;
 }
 
 export const ClubAchievementsTab: React.FC<ClubAchievementsTabProps> = ({
   clubId,
   myRole,
-  achievements,
-  isLoading,
+  achievements: initialAchievements,
+  isLoading: initialLoading = false,
   onRefresh,
 }) => {
   const { colors } = useTheme();
-  const isLeader =
-    myRole &&
-    [
-      "owner",
-      "admin",
-      "president",
-      "vice_president",
-      "secretary",
-      "executive",
-    ].includes(myRole);
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const isLeader = isClubOfficer(myRole);
+
+  const {
+    data: queryAchievements,
+    isLoading: isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ["club-achievements", clubId],
+    queryFn: async () => {
+      const res = await api.get<{ achievements: ClubAchievement[] }>(
+        `/clubs/${clubId}/achievements`
+      );
+      return res.data?.achievements ?? [];
+    },
+    initialData: initialAchievements?.length ? initialAchievements : undefined,
+  });
+
+  const achievements = queryAchievements ?? initialAchievements ?? [];
+  const loading = isFetching || initialLoading;
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [title, setTitle] = useState("");
@@ -74,9 +89,11 @@ export const ClubAchievementsTab: React.FC<ClubAchievementsTabProps> = ({
       setDate("");
       setImageUrl("");
       setLinkUrl("");
-      onRefresh();
-    } catch (err: any) {
-      Alert.alert("Error", err?.response?.data?.message || "Failed to add achievement.");
+      queryClient.invalidateQueries({ queryKey: ["club-achievements", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["club", clubId] });
+      onRefresh?.();
+    } catch (err: unknown) {
+      Alert.alert("Error", clubErrorMessage(err, t));
     } finally {
       setAdding(false);
     }
@@ -86,7 +103,7 @@ export const ClubAchievementsTab: React.FC<ClubAchievementsTabProps> = ({
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.topBar}>
         <Text style={[styles.heading, { color: colors.text }]}>
-          Hall of Fame & Milestones
+          {t("clubs.tabs.achievements", "Achievements")}
         </Text>
         {isLeader && (
           <TouchableOpacity
@@ -94,27 +111,31 @@ export const ClubAchievementsTab: React.FC<ClubAchievementsTabProps> = ({
             onPress={() => setShowAddModal(true)}
           >
             <Ionicons name="trophy-outline" size={16} color="#fff" />
-            <Text style={styles.addBtnText}>Add Award</Text>
+            <Text style={styles.addBtnText}>
+              {t("clubs.addAchievement", "Add Award")}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {isLoading ? (
+      {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={{ color: colors.textSecondary, marginTop: 10 }}>
-            Loading achievements...
+            {t("common.loading", "Loading...")}
           </Text>
         </View>
       ) : achievements.length === 0 ? (
         <View style={styles.centerBox}>
           <Ionicons name="trophy-outline" size={48} color={colors.textSecondary} />
           <Text style={[styles.centerTitle, { color: colors.text }]}>
-            No Achievements Listed Yet
+            {t("clubs.empty.achievements", "No Achievements Listed Yet")}
           </Text>
           <Text style={[styles.centerSub, { color: colors.textSecondary }]}>
-            When this club wins hackathons, presents research, hosts landmark summits, or
-            earns departmental honors, their glory will be showcased here!
+            {t(
+              "clubs.empty.achievementsSub",
+              "When this club wins hackathons, presents research, hosts landmark summits, or earns honors, their glory will be showcased here!"
+            )}
           </Text>
           {isLeader && (
             <TouchableOpacity
@@ -122,7 +143,9 @@ export const ClubAchievementsTab: React.FC<ClubAchievementsTabProps> = ({
               onPress={() => setShowAddModal(true)}
             >
               <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.emptyBtnText}>Add First Achievement</Text>
+              <Text style={styles.emptyBtnText}>
+                {t("clubs.addAchievement", "Add First Achievement")}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -131,6 +154,11 @@ export const ClubAchievementsTab: React.FC<ClubAchievementsTabProps> = ({
           data={achievements}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingBottom: 60 }}
+          onRefresh={() => {
+            refetch();
+            onRefresh?.();
+          }}
+          refreshing={isFetching}
           renderItem={({ item }) => (
             <View
               style={[

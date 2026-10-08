@@ -19,6 +19,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { Empty, ErrorState, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type TabType = "chats" | "calls";
 type ChatFilter = "all" | "unread" | "groups" | "archived";
@@ -88,6 +89,7 @@ function formatCallDuration(seconds: number): string {
 
 export default function Inbox() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { t } = useI18n();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -315,7 +317,7 @@ export default function Inbox() {
             </View>
           )}
           {item.is_online !== false ? (
-            <View style={[styles.onlineDot, { backgroundColor: "#10B981", borderColor: colors.surface }]} />
+            <View style={[styles.onlineDot, { backgroundColor: colors.success, borderColor: colors.surface }]} />
           ) : null}
         </View>
 
@@ -369,7 +371,7 @@ export default function Inbox() {
             ) : null}
             {isUnread && (
               <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-                <Text style={styles.unreadBadgeText}>
+                <Text style={[styles.unreadBadgeText, { color: colors.white }]}>
                   {item.unread_count! > 99 ? "99+" : item.unread_count}
                 </Text>
               </View>
@@ -417,7 +419,7 @@ export default function Inbox() {
               numberOfLines={1}
               style={[
                 styles.callPeerName,
-                { color: isMissed ? "#EF4444" : colors.text },
+                { color: isMissed ? colors.danger : colors.text },
               ]}
             >
               {peerName}
@@ -432,7 +434,7 @@ export default function Inbox() {
                     : "phone-incoming"
                 }
                 size={14}
-                color={isMissed ? "#EF4444" : isOutgoing ? "#64748B" : "#10B981"}
+                color={isMissed ? colors.danger : isOutgoing ? colors.muted : colors.success}
               />
               <Text style={[styles.callMetaText, { color: colors.muted }]}>
                 {item.type === "video" ? "Video" : "Voice"}
@@ -467,8 +469,17 @@ export default function Inbox() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Telegram-style Top Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+      {/* Top Header with Safe Area Insets */}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: Math.max(insets.top, 16) + 4,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surface,
+          },
+        ]}
+      >
         <View style={styles.headerTop}>
           {/* Always visible Search Bar matching Picture 4 */}
           <View
@@ -520,7 +531,7 @@ export default function Inbox() {
               <MaterialCommunityIcons
                 name={activeTab === "chats" ? "square-edit-outline" : "phone-plus"}
                 size={18}
-                color="#FFFFFF"
+                color={colors.white}
               />
             </Pressable>
           </View>
@@ -549,7 +560,7 @@ export default function Inbox() {
             </Text>
             {totalUnread > 0 && (
               <View style={[styles.tabBadge, { backgroundColor: colors.primary }]}>
-                <Text style={styles.tabBadgeText}>{totalUnread > 99 ? "99+" : totalUnread}</Text>
+                <Text style={[styles.tabBadgeText, { color: colors.white }]}>{totalUnread > 99 ? "99+" : totalUnread}</Text>
               </View>
             )}
           </Pressable>
@@ -603,7 +614,7 @@ export default function Inbox() {
                 <Text
                   style={[
                     styles.filterPillText,
-                    { color: chatFilter === filterKey ? "#FFFFFF" : colors.text },
+                    { color: chatFilter === filterKey ? colors.white : colors.text },
                   ]}
                 >
                   {filterKey === "all"
@@ -634,12 +645,12 @@ export default function Inbox() {
                 <MaterialCommunityIcons
                   name="archive-arrow-down-outline"
                   size={14}
-                  color={chatFilter === "archived" ? "#FFFFFF" : colors.muted}
+                  color={chatFilter === "archived" ? colors.white : colors.muted}
                 />
                 <Text
                   style={[
                     styles.filterPillText,
-                    { color: chatFilter === "archived" ? "#FFFFFF" : colors.text },
+                    { color: chatFilter === "archived" ? colors.white : colors.text },
                   ]}
                 >
                   {t("inbox.archived")}
@@ -753,7 +764,7 @@ export default function Inbox() {
           onPress={() => setContextItem(null)}
         >
           <View style={[styles.actionSheet, { backgroundColor: colors.surface }]}>
-            <View style={styles.sheetHandle} />
+            <View style={[styles.sheetHandle, { backgroundColor: colors.muted }]} />
             <Text style={[styles.sheetTitle, { color: colors.text }]} numberOfLines={1}>
               {contextItem?.title || "Conversation"}
             </Text>
@@ -850,7 +861,7 @@ export default function Inbox() {
           onPress={() => setMutePickerVisible(false)}
         >
           <View style={[styles.actionSheet, { backgroundColor: colors.surface }]}>
-            <View style={styles.sheetHandle} />
+            <View style={[styles.sheetHandle, { backgroundColor: colors.muted }]} />
             <Text style={[styles.sheetTitle, { color: colors.text }]}>Mute Notifications</Text>
 
             {[
@@ -1252,7 +1263,7 @@ export default function Inbox() {
                 }}
                 style={[styles.createGroupBtn, { backgroundColor: colors.primary }]}
               >
-                <Text style={styles.createGroupBtnText}>
+                <Text style={[styles.createGroupBtnText, { color: colors.white }]}>
                   Create Group ({selectedPeers.length} selected)
                 </Text>
               </Pressable>
@@ -1338,7 +1349,6 @@ export default function Inbox() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    paddingTop: 48,
     paddingHorizontal: 16,
     paddingBottom: 10,
     borderBottomWidth: 1,
@@ -1395,7 +1405,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   segmentActive: {
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -1417,7 +1426,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   tabBadgeText: {
-    color: "#FFFFFF",
     fontSize: 10,
     fontWeight: "800",
   },
@@ -1489,9 +1497,7 @@ const styles = StyleSheet.create({
     width: 13,
     height: 13,
     borderRadius: 6.5,
-    backgroundColor: "#10B981",
     borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   chatMiddle: {
     flex: 1,
@@ -1537,7 +1543,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   unreadBadgeText: {
-    color: "#FFFFFF",
     fontSize: 11,
     fontWeight: "800",
   },
@@ -1587,7 +1592,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#94A3B8",
     alignSelf: "center",
     marginBottom: 12,
   },
@@ -1679,7 +1683,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   createGroupBtnText: {
-    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
   },

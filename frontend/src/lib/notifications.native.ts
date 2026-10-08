@@ -85,7 +85,10 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
     } else if (data.bookingId) {
       router.push("/schedule" as any);
     } else if (data.callId) {
-      router.push(`/call/${data.callId}` as any);
+      // Include ?callId= so the Call screen treats this as an
+      // incoming/ringing call to resume — NOT a new outgoing call
+      // to a peer whose id happens to equal the call id.
+      router.push(`/call/${data.callId}?callId=${data.callId}` as any);
     }
   }, [lastNotificationResponse, router]);
 }

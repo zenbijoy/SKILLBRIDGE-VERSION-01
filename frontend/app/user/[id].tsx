@@ -28,6 +28,7 @@ import {
   Skeleton,
   triggerHaptic,
 } from "@/components/ui";
+import { useUserPresence } from "@/features/presence/usePresence";
 import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
 import { useConnections } from "@/features/connections/useConnections";
@@ -49,6 +50,7 @@ export default function UserProfile() {
   const qc = useQueryClient();
 
   const isSelf = session?.user?.id === id;
+  const isUserOnline = useUserPresence(id);
 
   const [showReport, setShowReport] = useState(false);
   const [reportReason, setReportReason] = useState("Spam or scam");
@@ -230,6 +232,11 @@ export default function UserProfile() {
                 @{d.profile.username} · {d.profile.university || "SkillBridge Campus"}
               </Muted>
               <Row style={{ gap: 6, marginTop: 4, alignItems: "center" }}>
+                {!isSelf && (
+                  <Pill tone={isUserOnline ? "success" : "default"}>
+                    {isUserOnline ? "Active Now" : "Offline"}
+                  </Pill>
+                )}
                 <Pill tone="accent">{d.profile.reputation} rep</Pill>
                 <Pill>{d.mutualCount} mutual connections</Pill>
                 {isTutor && <Pill tone="primary">PEER TUTOR</Pill>}
@@ -307,7 +314,7 @@ export default function UserProfile() {
                       if (reqId) {
                         acceptRequest(reqId, d.profile);
                       } else if (id) {
-                        sendRequest(id);
+                        sendRequest(id, d.profile);
                       }
                     }}
                   />
@@ -329,7 +336,7 @@ export default function UserProfile() {
               </Row>
             ) : effectiveStatus === "pending_outgoing" ? (
               <Button
-                title="Pending Invitation ⏳ (Tap to Withdraw)"
+                title="Request Sent ⏳ (Tap to Withdraw)"
                 variant="secondary"
                 disabled={isMutating}
                 onPress={() => promptWithdrawRequest(d.profile)}
@@ -360,7 +367,7 @@ export default function UserProfile() {
                 variant="primary"
                 disabled={isMutating}
                 onPress={() => {
-                  if (id) sendRequest(id);
+                  if (id) sendRequest(id, d.profile);
                 }}
               />
             )}

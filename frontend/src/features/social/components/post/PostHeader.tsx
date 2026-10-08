@@ -71,7 +71,7 @@ export function PostHeader({ post, onOpenMenu, onAuthorPress }: PostHeaderProps)
 
         {/* Info Column */}
         <View style={styles.infoCol}>
-          {/* Line 1: Name + Badges + Following */}
+          {/* Line 1: Name + Badges + Connection */}
           <Row style={styles.nameRow}>
             <Pressable onPress={post.is_anonymous ? undefined : onAuthorPress}>
               <Text style={[styles.authorName, { color: colors.text }]} numberOfLines={1}>
@@ -81,7 +81,7 @@ export function PostHeader({ post, onOpenMenu, onAuthorPress }: PostHeaderProps)
 
             {!post.is_anonymous && (
               <Row style={{ alignItems: "center", gap: 3 }}>
-                <MaterialCommunityIcons name="check-decagram" size={14} color="#0A66C2" />
+                <MaterialCommunityIcons name="check-decagram" size={15} color="#0A66C2" />
                 <Text style={[styles.connectionText, { color: colors.muted }]}>
                   {" • 1st"}
                 </Text>
@@ -104,7 +104,7 @@ export function PostHeader({ post, onOpenMenu, onAuthorPress }: PostHeaderProps)
             {post.pinned && <Pill tone="primary">Pinned</Pill>}
           </Row>
 
-          {/* Line 2: Headline / Role / University */}
+          {/* Line 2: Headline / Role / University (if exists) */}
           {headline ? (
             <Text style={[styles.headlineText, { color: colors.muted }]} numberOfLines={1}>
               {headline}
@@ -142,7 +142,7 @@ export function PostHeader({ post, onOpenMenu, onAuthorPress }: PostHeaderProps)
           hitSlop={10}
           style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.6 }]}
         >
-          <MaterialCommunityIcons name="dots-horizontal" size={20} color={colors.muted} />
+          <MaterialCommunityIcons name="dots-horizontal" size={22} color={colors.muted} />
         </Pressable>
       )}
     </Row>
@@ -152,36 +152,36 @@ export function PostHeader({ post, onOpenMenu, onAuthorPress }: PostHeaderProps)
 const styles = StyleSheet.create({
   container: {
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
+    alignItems: "center",
+    marginBottom: 10,
   },
   authorRow: {
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 10,
     flex: 1,
   },
   avatarBadge: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
   },
   avatarImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     backgroundColor: "#334155",
   },
   avatarPlaceholder: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
   infoCol: {
     flex: 1,
-    gap: 1,
+    gap: 2,
   },
   nameRow: {
     alignItems: "center",
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   authorName: {
-    fontSize: 14.5,
+    fontSize: 15,
     fontWeight: "700",
     letterSpacing: 0.1,
   },
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   metaText: {
-    fontSize: 11,
+    fontSize: 11.5,
   },
   visibilityBadge: {
     alignItems: "center",

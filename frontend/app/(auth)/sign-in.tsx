@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -11,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import Animated, { FadeIn, FadeInDown, SlideInDown } from "react-native-reanimated";
@@ -22,6 +23,7 @@ import { spacing, useTheme } from "@/theme";
 import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
 import { signInWithGoogle } from "@/features/auth/googleOAuth";
 import { useI18n } from "@/i18n";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 export default function SignIn() {
   const { colors, isDark } = useTheme();
@@ -29,11 +31,56 @@ export default function SignIn() {
   const isBn = language === "bn";
   const params = useLocalSearchParams<{ email?: string }>();
 
+  // ---------------------------------------------------------------------------
+  // Responsive hero sizing: the banner and bridge artwork scale with the device
+  // screen (portrait) instead of using fixed pixel sizes. Bounds keep the hero
+  // from becoming too tall on small phones or too large on tablets.
+  // ---------------------------------------------------------------------------
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const heroHeight = Math.round(Math.min(Math.max(windowHeight * 0.24, 180), 300));
+  const heroContentWidth = Math.min(windowWidth, 520); // matches scrollContent maxWidth
+  const bridgeImageWidth = Math.round(Math.min(heroContentWidth * 0.62, 300));
+  const bridgeImageHeight = Math.round(bridgeImageWidth / 2); // source artwork is 2:1
+
   const [email, setEmail] = useState(params?.email ? decodeURIComponent(params.email) : "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [busy, setBusy] = useState(false);
+
+  // ---------------------------------------------------------------------------
+  // Keyboard-aware form scrolling
+  // The Android window uses `adjustResize`, but there is a race between the
+  // field gaining focus and the keyboard appearing, so the focused field can
+  // still end up hidden behind the keyboard. We track each field's position in
+  // the scroll content and explicitly bring the focused field into view when
+  // focus changes or the keyboard opens.
+  // ---------------------------------------------------------------------------
+  const scrollRef = useRef<ScrollView>(null);
+  const keyboardHeight = useKeyboardHeight();
+  const focusedFieldRef = useRef<string | null>(null);
+  const cardY = useRef(0);
+  const formY = useRef(0);
+  const fieldY = useRef<Record<string, number>>({});
+
+  function scrollFieldIntoView(key: string) {
+    const target = cardY.current + formY.current + (fieldY.current[key] ?? 0);
+    scrollRef.current?.scrollTo({ y: Math.max(0, target - 96), animated: true });
+  }
+
+  function handleFieldFocus(key: string) {
+    focusedFieldRef.current = key;
+    if (keyboardHeight > 0) {
+      scrollFieldIntoView(key);
+    }
+  }
+
+  useEffect(() => {
+    if (keyboardHeight > 0 && focusedFieldRef.current) {
+      scrollFieldIntoView(focusedFieldRef.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyboardHeight]);
 
   async function submit() {
     if (!email.trim() || !password) {
@@ -97,12 +144,19 @@ export default function SignIn() {
   return (
     <ScreenContainer edges={["top", "bottom"]}>
       <ScrollView
-        contentContainerStyle={s.scrollContent}
+        ref={scrollRef}
+        contentContainerStyle={[s.scrollContent, { paddingBottom: keyboardHeight }]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
         {/* TOP HERO BANNER: Features the user's authentic bridge illustration */}
-        <View style={[s.heroBannerContainer, { backgroundColor: isDark ? "#0A0F1D" : "#F1F5F9" }]}>
+        <View
+          style={[
+            s.heroBannerContainer,
+            { height: heroHeight, backgroundColor: isDark ? "#0A0F1D" : "#F1F5F9" },
+          ]}
+        >
           <LinearGradient
             colors={isDark ? ["#0F172A", "#0B0F19"] : ["#F8FAFC", "#EEF2F6"]}
             style={StyleSheet.absoluteFill}
@@ -133,7 +187,7 @@ export default function SignIn() {
           <Animated.View entering={FadeIn.duration(600)} style={s.bridgeImageWrap}>
             <Image
               source={require("@/../assets/branding/skillbridge-bridge-logo.png")}
-              style={s.bridgeImage}
+              style={{ width: bridgeImageWidth, height: bridgeImageHeight }}
               resizeMode="contain"
             />
           </Animated.View>
@@ -142,6 +196,9 @@ export default function SignIn() {
         {/* OVERLAPPING AUTH SHEET CARD */}
         <Animated.View
           entering={SlideInDown.duration(450)}
+          onLayout={(e) => {
+            cardY.current = e.nativeEvent.layout.y;
+          }}
           style={[
             s.cardSheet,
             {
@@ -172,9 +229,17 @@ export default function SignIn() {
           </View>
 
           {/* FORM INPUTS */}
-          <View style={s.formContainer}>
+          <View
+            style={s.formContainer}
+            onLayout={(e) => {
+              formY.current = e.nativeEvent.layout.y;
+            }}
+          >
             {/* Email Field with Amber Icon Box */}
             <View
+              onLayout={(e) => {
+                fieldY.current.email = e.nativeEvent.layout.y;
+              }}
               style={[
                 s.inputWrapper,
                 {
@@ -196,11 +261,15 @@ export default function SignIn() {
                 autoCapitalize="none"
                 autoComplete="email"
                 textContentType="emailAddress"
+                onFocus={() => handleFieldFocus("email")}
               />
             </View>
 
             {/* Password Field with Amber Icon Box & Toggle Eye */}
             <View
+              onLayout={(e) => {
+                fieldY.current.password = e.nativeEvent.layout.y;
+              }}
               style={[
                 s.inputWrapper,
                 {
@@ -222,6 +291,7 @@ export default function SignIn() {
                 autoCapitalize="none"
                 autoComplete="password"
                 textContentType="password"
+                onFocus={() => handleFieldFocus("password")}
               />
               <TouchableOpacity
                 onPress={() => {
@@ -318,7 +388,11 @@ export default function SignIn() {
                   },
                 ]}
               >
-                <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
+                <Image
+                  source={require("@/../assets/branding/google-logo.png")}
+                  style={s.googleLogo}
+                  resizeMode="contain"
+                />
                 <Text style={[s.socialBtnText, { color: colors.text }]}>
                   {isBn ? "Google দিয়ে সাইন ইন করুন" : "Sign in with Google"}
                 </Text>
@@ -382,9 +456,11 @@ export default function SignIn() {
 const s = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
   },
   heroBannerContainer: {
-    height: 195,
     width: "100%",
     paddingTop: 12,
     paddingHorizontal: 16,
@@ -431,10 +507,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 26,
-  },
-  bridgeImage: {
-    width: 220,
-    height: 110,
   },
   cardSheet: {
     borderTopLeftRadius: 32,
@@ -484,6 +556,8 @@ const s = StyleSheet.create({
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
+    width: "100%",
+    minHeight: 54,
     borderRadius: 16,
     borderWidth: 1.5,
     paddingHorizontal: 8,
@@ -499,9 +573,14 @@ const s = StyleSheet.create({
   },
   inputField: {
     flex: 1,
+    minWidth: 0,
     fontSize: 15,
     fontWeight: "600",
     paddingVertical: 10,
+  },
+  googleLogo: {
+    width: 20,
+    height: 20,
   },
   eyeBtn: {
     padding: 8,

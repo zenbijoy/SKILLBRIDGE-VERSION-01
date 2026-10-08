@@ -243,35 +243,69 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
     onError: (err: Error) => Alert.alert("Voting Failed", err.message),
   });
 
-  // 6. Save/Bookmark mutation — toggles save/unsave (mirrors app/feed.tsx)
+  // 6. Save/Bookmark mutation — optimistic toggle save/unsave
   const toggleSaveMutation = useMutation({
     mutationFn: async (postId: string) => {
       const current = allPosts.find((p) => p.id === postId);
+      const willBeSaved = !current?.is_saved;
       const res = await api<{ success: boolean; is_saved: boolean; saves_count: number }>(
         `/feed/${postId}/save`,
         { method: current?.is_saved ? "DELETE" : "POST" },
       );
-      return { postId, isSaved: res.is_saved, count: res.saves_count };
+      return { postId, isSaved: res.is_saved ?? willBeSaved, count: res.saves_count };
     },
-    onSuccess: ({ postId, isSaved, count }) => {
+    onMutate: async (postId: string) => {
       triggerHaptic("selection");
-      qc.setQueryData<
-        InfiniteData<{ posts: SocialPost[]; next_cursor: string | null; has_more?: boolean }>
-      >(["campus-feed"], (old) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            posts: page.posts.map((p) =>
-              p.id !== postId ? p : { ...p, is_saved: isSaved, saves_count: count },
-            ),
-          })),
-        };
+      await qc.cancelQueries({ queryKey: ["campus-feed"] });
+      const previous = qc.getQueryData(["campus-feed"]);
+
+      qc.setQueriesData({ queryKey: ["campus-feed"] }, (old: any) => {
+        if (!old) return old;
+        if (old.pages) {
+          return {
+            ...old,
+            pages: old.pages.map((page: any) => ({
+              ...page,
+              posts: (page.posts || []).map((p: SocialPost) => {
+                if (p.id !== postId) return p;
+                const nextSaved = !p.is_saved;
+                return {
+                  ...p,
+                  is_saved: nextSaved,
+                  saves_count: Math.max(0, (p.saves_count || 0) + (nextSaved ? 1 : -1)),
+                };
+              }),
+            })),
+          };
+        }
+        if (old.posts) {
+          return {
+            ...old,
+            posts: old.posts.map((p: SocialPost) => {
+              if (p.id !== postId) return p;
+              const nextSaved = !p.is_saved;
+              return {
+                ...p,
+                is_saved: nextSaved,
+                saves_count: Math.max(0, (p.saves_count || 0) + (nextSaved ? 1 : -1)),
+              };
+            }),
+          };
+        }
+        return old;
       });
+
+      return { previous };
+    },
+    onError: (err: Error, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(["campus-feed"], context.previous);
+      }
+      Alert.alert("Save Failed", err.message);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["campus-feed"] });
     },
-    onError: (err: Error) => Alert.alert("Save Failed", err.message),
   });
 
   // 7. Delete post mutation
@@ -478,13 +512,17 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
       </View>
 
       {/* 2. SEGMENTED FEED TABS */}
-      <View style={styles.tabScrollWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabScrollWrap}
+      >
         {(
           [
-            { key: "for_you", label: t("feed.tabForYou"), icon: "creation" },
-            { key: "campus", label: t("feed.tabCampus"), icon: "domain" },
-            { key: "my_groups", label: t("feed.tabMyGroups"), icon: "shield-account" },
-            { key: "questions", label: t("feed.tabQuestions"), icon: "help-circle-outline" },
+            { key: "for_you", label: t("feed.tabForYou") || "For You", icon: "creation" },
+            { key: "campus", label: t("feed.tabCampus") || "Campus Feed", icon: "card-text-outline" },
+            { key: "my_groups", label: t("feed.tabMyGroups") || "My Rooms & Clubs", icon: "account-group-outline" },
+            { key: "questions", label: t("feed.tabQuestions") || "Questions & Doubts", icon: "help-circle-outline" },
           ] as const
         ).map((tab) => {
           const isSelected = activeTab === tab.key;
@@ -497,21 +535,20 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
               }}
               style={[
                 styles.feedTabBtn,
-                {
-                  backgroundColor: isSelected ? colors.primary : colors.surface,
-                  borderColor: isSelected ? colors.primary : colors.border,
-                },
+                isSelected
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: colors.surface2 || colors.surface, borderColor: colors.border },
               ]}
             >
               <MaterialCommunityIcons
                 name={tab.icon as any}
-                size={14}
-                color={isSelected ? "#FFFFFF" : colors.muted}
+                size={15}
+                color={isSelected ? colors.white || "#FFFFFF" : colors.muted}
               />
               <Text
                 style={[
                   styles.feedTabText,
-                  { color: isSelected ? "#FFFFFF" : colors.text, fontWeight: isSelected ? "800" : "600" },
+                  { color: isSelected ? colors.white || "#FFFFFF" : colors.text, fontWeight: isSelected ? "700" : "500" },
                 ]}
               >
                 {tab.label}
@@ -519,7 +556,7 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
       {/* 3. FEED CONTENT / LOADER / ERROR STATES */}
       {activeTab === "questions" ? (
@@ -607,6 +644,7 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
                 <PostCard
                   post={post}
                   currentUserId={currentUser?.id}
+                  currentUser={currentUser}
                   isAdmin={isAdmin}
                   onReact={(postId, type) => reactionMutation.mutate({ postId, type })}
                   onVotePoll={async (postId, optionId) => {
@@ -831,15 +869,15 @@ const styles = StyleSheet.create({
   },
   tabScrollWrap: {
     flexDirection: "row",
-    gap: 6,
-    flexWrap: "wrap",
+    gap: 8,
+    paddingVertical: 4,
   },
   feedTabBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
   },

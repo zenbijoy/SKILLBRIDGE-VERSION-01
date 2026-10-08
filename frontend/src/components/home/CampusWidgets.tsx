@@ -98,39 +98,41 @@ interface MomentumWidgetProps {
 
 export function MomentumWidget({ stats }: MomentumWidgetProps) {
   const { colors, isDark } = useTheme();
+  const { t, language } = useI18n();
+  const isBn = language === "bn";
 
   const metrics = [
     {
-      title: "Reputation",
+      title: t("home.reputation") || "Reputation",
       value: `${(stats?.reputation ?? 1250).toLocaleString()} XP`,
-      badge: "Top 5%",
+      badge: isBn ? "শীর্ষ ৫%" : "Top 5%",
       icon: "lightning-bolt",
       iconColor: "#F59E0B",
       bgGradient: isDark ? ["#251A0A", "#16130B"] : ["#FFFBEB", "#FEF3C7"],
       route: "/leaderboard",
     },
     {
-      title: "Connections",
-      value: `${stats?.connections ?? 14} Peers`,
-      badge: "3 Online",
+      title: t("home.connections") || "Connections",
+      value: isBn ? `${stats?.connections ?? 14} সহপাঠী` : `${stats?.connections ?? 14} Peers`,
+      badge: isBn ? "৩ অনলাইন" : "3 Online",
       icon: "account-multiple",
       iconColor: "#3B82F6",
       bgGradient: isDark ? ["#0D1C34", "#091424"] : ["#EFF6FF", "#DBEAFE"],
       route: "/connections",
     },
     {
-      title: "Taught",
-      value: `${stats?.sessionsTaught ?? 6} Sessions`,
-      badge: "Mentor",
+      title: t("home.taught") || "Taught",
+      value: isBn ? `${stats?.sessionsTaught ?? 6} সেশন` : `${stats?.sessionsTaught ?? 6} Sessions`,
+      badge: isBn ? "মেন্টর" : "Mentor",
       icon: "school",
       iconColor: "#10B981",
       bgGradient: isDark ? ["#062319", "#041610"] : ["#ECFDF5", "#D1FAE5"],
       route: "/schedule",
     },
     {
-      title: "Learned",
-      value: `${stats?.sessionsAttended ?? 18} Classes`,
-      badge: "Level 10",
+      title: t("home.learned") || "Learned",
+      value: isBn ? `${stats?.sessionsAttended ?? 18} ক্লাস` : `${stats?.sessionsAttended ?? 18} Classes`,
+      badge: isBn ? "লেভেল ১০" : "Level 10",
       icon: "book-open-page-variant",
       iconColor: "#8B5CF6",
       bgGradient: isDark ? ["#1F1338", "#140C24"] : ["#F5F3FF", "#EDE9FE"],
@@ -138,36 +140,45 @@ export function MomentumWidget({ stats }: MomentumWidgetProps) {
     },
   ];
 
-  return (
-    <View style={styles.metricsGrid}>
-      {metrics.map((item, idx) => (
-        <Pressable
-          key={idx}
-          onPress={() => {
-            triggerHaptic();
-            router.push(item.route as any);
-          }}
-          style={({ pressed }) => [
-            styles.metricCard,
-            {
-              backgroundColor: isDark ? "#131926" : "#FFFFFF",
-              borderColor: isDark ? "#1F293D" : "#E2E8F0",
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <View style={styles.metricTopRow}>
-            <View style={[styles.metricIconWrap, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#FFF" }]}>
-              <MaterialCommunityIcons name={item.icon as any} size={18} color={item.iconColor} />
-            </View>
-            <View style={[styles.metricBadge, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
-              <Text style={[styles.metricBadgeText, { color: item.iconColor }]}>{item.badge}</Text>
-            </View>
-          </View>
+  const rows = [
+    [metrics[0], metrics[1]],
+    [metrics[2], metrics[3]],
+  ];
 
-          <Text style={[styles.metricValue, { color: colors.text }]}>{item.value}</Text>
-          <Text style={[styles.metricTitle, { color: colors.muted }]}>{item.title}</Text>
-        </Pressable>
+  return (
+    <View style={styles.metricsContainer}>
+      {rows.map((row, rowIdx) => (
+        <View key={rowIdx} style={styles.metricsRow}>
+          {row.map((item) => (
+            <Pressable
+              key={item.title}
+              onPress={() => {
+                triggerHaptic();
+                router.push(item.route as any);
+              }}
+              style={({ pressed }) => [
+                styles.metricCard,
+                {
+                  backgroundColor: isDark ? "#131926" : "#FFFFFF",
+                  borderColor: isDark ? "#1F293D" : "#E2E8F0",
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <View style={styles.metricTopRow}>
+                <View style={[styles.metricIconWrap, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#FFF" }]}>
+                  <MaterialCommunityIcons name={item.icon as any} size={18} color={item.iconColor} />
+                </View>
+                <View style={[styles.metricBadge, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
+                  <Text style={[styles.metricBadgeText, { color: item.iconColor }]}>{item.badge}</Text>
+                </View>
+              </View>
+
+              <Text style={[styles.metricValue, { color: colors.text }]} numberOfLines={1}>{item.value}</Text>
+              <Text style={[styles.metricTitle, { color: colors.muted }]} numberOfLines={1}>{item.title}</Text>
+            </Pressable>
+          ))}
+        </View>
       ))}
     </View>
   );
@@ -374,14 +385,16 @@ const styles = StyleSheet.create({
   dayLabel: {
     fontSize: 11,
   },
-  metricsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  metricsContainer: {
     gap: 10,
     marginVertical: 6,
   },
+  metricsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
   metricCard: {
-    width: "48.5%",
+    flex: 1,
     borderRadius: 18,
     borderWidth: 1.5,
     padding: 14,

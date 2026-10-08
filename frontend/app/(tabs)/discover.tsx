@@ -210,7 +210,7 @@ export default function DiscoverScreen() {
             />
           ) : status === "pending_outgoing" ? (
             <Button
-              title="Pending"
+              title="Request Sent ⏳"
               compact
               variant="secondary"
               onPress={() => promptWithdrawRequest(p)}
@@ -230,7 +230,7 @@ export default function DiscoverScreen() {
               title="+ Connect"
               compact
               variant="primary"
-              onPress={() => sendRequest(p.id)}
+              onPress={() => sendRequest(p.id, p)}
             />
           )}
         </View>

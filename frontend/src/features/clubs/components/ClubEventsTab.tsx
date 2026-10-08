@@ -12,8 +12,13 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "../../../theme/ThemeProvider";
 import { ClubEvent, ClubRole } from "../types";
+import { isClubOfficer } from "../constants";
+import { clubErrorMessage } from "../lib/apiErrors";
+import { useI18n } from "../../../i18n";
+import { ClashDetectorModal } from "../ClashDetectorModal";
 import api from "../../../services/api";
 
 interface ClubEventsTabProps {
@@ -32,23 +37,31 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
   onRefresh,
 }) => {
   const { colors } = useTheme();
-  const isLeader =
-    myRole &&
-    [
-      "owner",
-      "admin",
-      "president",
-      "vice_president",
-      "secretary",
-      "executive",
-      "team_lead",
-    ].includes(myRole);
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const isLeader = isClubOfficer(myRole);
 
   const [registeringId, setRegisteringId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<"upcoming" | "past">("upcoming");
 
+  // Fetch full list of events for the club
+  const {
+    data: fetchedEvents = [],
+    isLoading: isEventsLoading,
+    refetch: refetchEvents,
+  } = useQuery<ClubEvent[]>({
+    queryKey: ["club-events", clubId],
+    queryFn: async () => {
+      const res = await api.get<{ events?: ClubEvent[] } | ClubEvent[]>(`/clubs/${clubId}/events`);
+      if (Array.isArray(res.data)) return res.data;
+      return res.data?.events || [];
+    },
+    initialData: events,
+  });
+
   // Create Event Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showClashModal, setShowClashModal] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
@@ -61,14 +74,17 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
   // QR / Attendance Checkin Modal state
   const [checkinEvent, setCheckinEvent] = useState<ClubEvent | null>(null);
   const [attendanceCodeInput, setAttendanceCodeInput] = useState("");
+  const [organizerCode, setOrganizerCode] = useState<string | null>(null);
+  const [loadingOrganizerCode, setLoadingOrganizerCode] = useState(false);
   const [checkingIn, setCheckingIn] = useState(false);
 
   // Filter events
   const now = new Date();
-  const upcomingEvents = events.filter(
+  const allEvents = fetchedEvents.length > 0 ? fetchedEvents : events;
+  const upcomingEvents = allEvents.filter(
     (e) => !e.starts_at || new Date(e.starts_at) >= now
   );
-  const pastEvents = events.filter(
+  const pastEvents = allEvents.filter(
     (e) => e.starts_at && new Date(e.starts_at) < now
   );
   const displayedEvents = activeFilter === "upcoming" ? upcomingEvents : pastEvents;
@@ -83,14 +99,35 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
           ? "You have successfully registered. This event has also been added to your Academic Calendar schedule!"
           : "You have cancelled your registration."
       );
+      queryClient.invalidateQueries({ queryKey: ["club-events", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["club", clubId] });
       onRefresh();
-    } catch (err: any) {
+      refetchEvents();
+    } catch (err: unknown) {
       Alert.alert(
         "Registration Failed",
-        err?.response?.data?.message || err.message || "Could not register for event."
+        clubErrorMessage(err, t)
       );
     } finally {
       setRegisteringId(null);
+    }
+  };
+
+  const handleOpenAttendanceModal = async (item: ClubEvent) => {
+    setCheckinEvent(item);
+    setAttendanceCodeInput("");
+    if (isLeader) {
+      setLoadingOrganizerCode(true);
+      try {
+        const res = await api.get<{ attendance_code: string }>(
+          `/clubs/${clubId}/events/${item.id}/attendance-code`
+        );
+        setOrganizerCode(res.data?.attendance_code || "AUTO-GEN");
+      } catch (err: unknown) {
+        setOrganizerCode(item.attendance_code || "UNAVAILABLE");
+      } finally {
+        setLoadingOrganizerCode(false);
+      }
     }
   };
 
@@ -104,15 +141,27 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
       Alert.alert("Verified! ✅", "Your attendance has been confirmed and recorded.");
       setCheckinEvent(null);
       setAttendanceCodeInput("");
+      queryClient.invalidateQueries({ queryKey: ["club-events", clubId] });
       onRefresh();
-    } catch (err: any) {
+      refetchEvents();
+    } catch (err: unknown) {
       Alert.alert(
         "Check-in Failed",
-        err?.response?.data?.message || "Invalid attendance code."
+        clubErrorMessage(err, t)
       );
     } finally {
       setCheckingIn(false);
     }
+  };
+
+  const normalizeDateInput = (val: string): string => {
+    const trimmed = val.trim();
+    if (!trimmed) return "";
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+    return trimmed;
   };
 
   const handleCreateEvent = async () => {
@@ -122,11 +171,14 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
     }
     try {
       setSubmitting(true);
+      const normalizedStart = normalizeDateInput(startsAt);
+      const normalizedEnd = endsAt.trim() ? normalizeDateInput(endsAt) : undefined;
+
       await api.post(`/clubs/${clubId}/events`, {
         title: title.trim(),
         description: description.trim(),
-        starts_at: startsAt.trim(),
-        ends_at: endsAt.trim() || undefined,
+        starts_at: normalizedStart,
+        ends_at: normalizedEnd,
         location: location.trim() || undefined,
         venue_type: venueType,
         capacity: capacity ? parseInt(capacity, 10) : undefined,
@@ -139,11 +191,14 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
       setStartsAt("");
       setEndsAt("");
       setCapacity("");
+      queryClient.invalidateQueries({ queryKey: ["club-events", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["club", clubId] });
       onRefresh();
-    } catch (err: any) {
+      refetchEvents();
+    } catch (err: unknown) {
       Alert.alert(
         "Failed to create",
-        err?.response?.data?.message || err.message || "Failed to create event."
+        clubErrorMessage(err, t)
       );
     } finally {
       setSubmitting(false);
@@ -151,18 +206,16 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
   };
 
   const formatDate = (dateStr: string) => {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return dateStr;
-    }
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   return (
@@ -401,12 +454,7 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
                       styles.checkinBtn,
                       { borderColor: colors.border, backgroundColor: colors.surface },
                     ]}
-                    onPress={() => {
-                      setCheckinEvent(item);
-                      if (isLeader && item.attendance_code) {
-                        setAttendanceCodeInput(item.attendance_code);
-                      }
-                    }}
+                    onPress={() => handleOpenAttendanceModal(item)}
                   >
                     <Ionicons
                       name="qr-code-outline"
@@ -462,9 +510,13 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
                     { backgroundColor: "rgba(59, 130, 246, 0.1)" },
                   ]}
                 >
-                  <Text style={[styles.codePillText, { color: colors.primary }]}>
-                    {checkinEvent?.attendance_code || "AUTO-GEN"}
-                  </Text>
+                  {loadingOrganizerCode ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Text style={[styles.codePillText, { color: colors.primary }]}>
+                      {organizerCode || "AUTO-GEN"}
+                    </Text>
+                  )}
                 </View>
                 <Text style={[styles.leaderNote, { color: colors.textSecondary }]}>
                   Attendees can enter this code in their SkillBridge app to earn verified
@@ -511,6 +563,20 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Clash Detector Modal */}
+      <ClashDetectorModal
+        clubId={clubId}
+        startsAt={startsAt.trim()}
+        endsAt={endsAt.trim() || startsAt.trim()}
+        location={location.trim()}
+        visible={showClashModal}
+        onClose={() => setShowClashModal(false)}
+        onProceedAnyway={() => {
+          setShowClashModal(false);
+          handleCreateEvent();
+        }}
+      />
 
       {/* Schedule / Create Event Modal */}
       <Modal
@@ -676,6 +742,22 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
                 onChangeText={setCapacity}
                 keyboardType="numeric"
               />
+
+              {/* Clash Detection Button */}
+              {startsAt.trim() ? (
+                <TouchableOpacity
+                  style={[
+                    styles.clashCheckBtn,
+                    { borderColor: colors.border, backgroundColor: colors.background },
+                  ]}
+                  onPress={() => setShowClashModal(true)}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.clashCheckBtnText, { color: colors.primary }]}>
+                    Check Calendar Clashes
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
 
               <TouchableOpacity
                 style={[
@@ -981,6 +1063,20 @@ const styles = StyleSheet.create({
   venueOptionText: {
     fontSize: 12,
     fontWeight: "700",
+  },
+  clashCheckBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  clashCheckBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   submitCreateBtn: {
     borderRadius: 12,

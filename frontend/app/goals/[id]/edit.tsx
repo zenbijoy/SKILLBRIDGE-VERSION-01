@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { fetchGoal, updateGoal } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function EditGoalScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,11 +30,14 @@ export default function EditGoalScreen() {
   const [visibility, setVisibility] = useState<"private" | "connections" | "public">("private");
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const loadGoal = useCallback(async () => {
     if (!id) return;
     try {
+      setLoading(true);
+      setLoadError(null);
       const g = await fetchGoal(id);
       setTitle(g.title);
       setDescription(g.description || "");
@@ -42,11 +46,11 @@ export default function EditGoalScreen() {
       setPriority(g.priority || "medium");
       setVisibility(g.visibility || "private");
     } catch (err: any) {
-      Alert.alert(t("common.error"), err.message || "Failed to load goal");
+      setLoadError(err.message || "Failed to load goal");
     } finally {
       setLoading(false);
     }
-  }, [id, t]);
+  }, [id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -81,7 +85,27 @@ export default function EditGoalScreen() {
     );
   }
 
+  if (loadError) {
+    return (
+      <View style={[styles.centerContainer, { backgroundColor: colors.bg, padding: 24, gap: 12 }]}>
+        <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text, textAlign: "center" }}>
+          {t("common.error")}
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.muted, textAlign: "center" }}>
+          {loadError}
+        </Text>
+        <TouchableOpacity
+          onPress={loadGoal}
+          style={{ backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 8 }}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>{t("common.retry")}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -156,6 +180,7 @@ export default function EditGoalScreen() {
         {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitBtnText}>{t("common.save")}</Text>}
       </TouchableOpacity>
     </ScrollView>
+    </Screen>
   );
 }
 

@@ -12,34 +12,53 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "../../../theme/ThemeProvider";
 import { ApplicationStatus, ClubRecruitment, ClubRole } from "../types";
-import { APPLICATION_STATUS_LABELS } from "../constants";
+import { APPLICATION_STATUS_LABELS, isClubOfficer } from "../constants";
+import { useI18n } from "../../../i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
 
 interface ClubRecruitmentTabProps {
   clubId: string;
   myRole?: ClubRole | null;
-  recruitments: ClubRecruitment[];
-  isLoading: boolean;
-  onRefresh: () => void;
+  recruitments?: ClubRecruitment[];
+  isLoading?: boolean;
+  onRefresh?: () => void;
   onOpenAdminKanban?: () => void;
 }
 
 export const ClubRecruitmentTab: React.FC<ClubRecruitmentTabProps> = ({
   clubId,
   myRole,
-  recruitments,
-  isLoading,
+  recruitments: initialRecruitments,
+  isLoading: initialLoading = false,
   onRefresh,
   onOpenAdminKanban,
 }) => {
   const { colors } = useTheme();
-  const isLeader =
-    myRole &&
-    ["owner", "admin", "president", "vice_president", "secretary"].includes(
-      myRole
-    );
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const isLeader = isClubOfficer(myRole);
+
+  const {
+    data: queryRecruitments,
+    isLoading: isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ["club-recruitments", clubId],
+    queryFn: async () => {
+      const res = await api.get<{ recruitments: ClubRecruitment[] }>(
+        `/clubs/${clubId}/recruitments`
+      );
+      return res.data?.recruitments ?? [];
+    },
+    initialData: initialRecruitments?.length ? initialRecruitments : undefined,
+  });
+
+  const recruitments = queryRecruitments ?? initialRecruitments ?? [];
+  const loading = isFetching || initialLoading;
 
   // Application Modal state
   const [applyingRecruitment, setApplyingRecruitment] =
@@ -85,12 +104,11 @@ export const ClubRecruitmentTab: React.FC<ClubRecruitmentTabProps> = ({
       setStatement("");
       setPortfolioUrl("");
       setResumeUrl("");
-      onRefresh();
-    } catch (err: any) {
-      Alert.alert(
-        "Submission Failed",
-        err?.response?.data?.message || err.message || "Failed to submit application."
-      );
+      queryClient.invalidateQueries({ queryKey: ["club-recruitments", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["club", clubId] });
+      onRefresh?.();
+    } catch (err: unknown) {
+      Alert.alert("Submission Failed", clubErrorMessage(err, t));
     } finally {
       setSubmittingApp(false);
     }
@@ -133,12 +151,11 @@ export const ClubRecruitmentTab: React.FC<ClubRecruitmentTabProps> = ({
       setSkillsInput("");
       setDeptsInput("");
       setDeadline("");
-      onRefresh();
-    } catch (err: any) {
-      Alert.alert(
-        "Failed",
-        err?.response?.data?.message || "Failed to create campaign."
-      );
+      queryClient.invalidateQueries({ queryKey: ["club-recruitments", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["club", clubId] });
+      onRefresh?.();
+    } catch (err: unknown) {
+      Alert.alert("Failed", clubErrorMessage(err, t));
     } finally {
       setCreatingCampaign(false);
     }
@@ -166,7 +183,7 @@ export const ClubRecruitmentTab: React.FC<ClubRecruitmentTabProps> = ({
       {/* Top action bar */}
       <View style={styles.topBar}>
         <Text style={[styles.heading, { color: colors.text }]}>
-          Recruitment & Open Roles
+          {t("clubs.tabs.recruitment", "Recruitment")}
         </Text>
         {isLeader && (
           <View style={styles.leaderActions}>
@@ -189,28 +206,32 @@ export const ClubRecruitmentTab: React.FC<ClubRecruitmentTabProps> = ({
               onPress={() => setShowCreateModal(true)}
             >
               <Ionicons name="add" size={18} color="#fff" />
-              <Text style={styles.createBtnText}>New Drive</Text>
+              <Text style={styles.createBtnText}>
+                {t("clubs.startRecruitment", "New Drive")}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
 
-      {isLoading ? (
+      {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={{ color: colors.textSecondary, marginTop: 10 }}>
-            Checking recruitment opportunities...
+            {t("common.loading", "Loading...")}
           </Text>
         </View>
       ) : recruitments.length === 0 ? (
         <View style={styles.centerBox}>
           <Ionicons name="briefcase-outline" size={48} color={colors.textSecondary} />
           <Text style={[styles.centerTitle, { color: colors.text }]}>
-            No Active Recruitment
+            {t("clubs.empty.recruitments", "No Active Recruitment")}
           </Text>
           <Text style={[styles.centerSub, { color: colors.textSecondary }]}>
-            This club is not currently running an open recruitment campaign. Follow the club
-            to be notified as soon as new positions open!
+            {t(
+              "clubs.empty.recruitmentsSub",
+              "This club is not currently running an open recruitment campaign. Follow the club to be notified as soon as new positions open!"
+            )}
           </Text>
           {isLeader && (
             <TouchableOpacity
@@ -218,7 +239,9 @@ export const ClubRecruitmentTab: React.FC<ClubRecruitmentTabProps> = ({
               onPress={() => setShowCreateModal(true)}
             >
               <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.emptyBtnText}>Start Recruitment Campaign</Text>
+              <Text style={styles.emptyBtnText}>
+                {t("clubs.startRecruitment", "Start Campaign")}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -227,6 +250,11 @@ export const ClubRecruitmentTab: React.FC<ClubRecruitmentTabProps> = ({
           data={recruitments}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingBottom: 60 }}
+          onRefresh={() => {
+            refetch();
+            onRefresh?.();
+          }}
+          refreshing={isFetching}
           renderItem={({ item }) => {
             const hasApplied = !!item.my_application;
             const appStatus = item.my_application?.status;

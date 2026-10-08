@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,12 +6,14 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen, triggerHaptic } from "@/components/ui";
 import { useTheme } from "@/theme";
+import { useI18n } from "@/i18n";
 import api from "@/services/api";
 import {
   ClubDetail,
@@ -25,6 +27,10 @@ import {
   ClubAchievementsTab,
   ClubAboutTab,
   ClubAdminModal,
+  useClubRealtime,
+  isClubAdmin,
+  isClubOfficer,
+  clubErrorMessage,
 } from "@/features/clubs";
 import { RoomChatTab } from "@/features/room/RoomChatTab";
 import type { Room } from "@/types";
@@ -41,12 +47,43 @@ type ProfileTab =
   | "about"
   | "chat";
 
-export default function ClubProfileScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors } = useTheme();
+const VALID_TABS: ProfileTab[] = [
+  "home",
+  "feed",
+  "events",
+  "projects",
+  "members",
+  "recruitment",
+  "resources",
+  "achievements",
+  "about",
+  "chat",
+];
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>("home");
+export default function ClubProfileScreen() {
+  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+  const { colors } = useTheme();
+  const { t } = useI18n();
+
+  const [activeTab, setActiveTab] = useState<ProfileTab>(() => {
+    return (tab && VALID_TABS.includes(tab as ProfileTab) ? tab : "home") as ProfileTab;
+  });
   const [showAdminModal, setShowAdminModal] = useState(false);
+
+  useEffect(() => {
+    if (tab && VALID_TABS.includes(tab as ProfileTab)) {
+      setActiveTab(tab as ProfileTab);
+    }
+  }, [tab]);
+
+  // Wire bidirectional real-time socket events
+  useClubRealtime({
+    clubId: id,
+    onEvent: () => {
+      clubQuery.refetch();
+      postsQuery.refetch();
+    },
+  });
 
   // Fetch full club details
   const clubQuery = useQuery({
@@ -105,16 +142,8 @@ export default function ClubProfileScreen() {
 
   const room = roomQuery.data;
   const isMember = Boolean(club?.is_member || club?.my_role);
-  const isLeader =
-    club?.my_role &&
-    [
-      "owner",
-      "admin",
-      "president",
-      "vice_president",
-      "secretary",
-      "executive",
-    ].includes(club.my_role);
+  const isLeader = isClubOfficer(club?.my_role);
+  const isAdmin = isClubAdmin(club?.my_role);
 
   const handleOpenWorkspace = () => {
     if (club?.room_id) {
@@ -179,19 +208,27 @@ export default function ClubProfileScreen() {
           club={club}
           onJoinToggle={async () => {
             try {
+              triggerHaptic();
               if (club.is_member) {
                 await api.post(`/clubs/${club.id}/leave`);
               } else {
                 await api.post(`/clubs/${club.id}/join`);
               }
               clubQuery.refetch();
-            } catch {}
+            } catch (err: unknown) {
+              Alert.alert("Membership Update Failed", clubErrorMessage(err, t));
+              clubQuery.refetch();
+            }
           }}
           onFollowToggle={async () => {
             try {
+              triggerHaptic();
               await api.post(`/clubs/${club.id}/follow`);
               clubQuery.refetch();
-            } catch {}
+            } catch (err: unknown) {
+              Alert.alert("Follow Update Failed", clubErrorMessage(err, t));
+              clubQuery.refetch();
+            }
           }}
           onOpenAdminModal={() => setShowAdminModal(true)}
         />
@@ -587,7 +624,7 @@ export default function ClubProfileScreen() {
         </View>
 
         {/* Club Leader Admin Dashboard Modal */}
-        {isLeader && (
+        {(isLeader || isAdmin) && (
           <ClubAdminModal
             visible={showAdminModal}
             club={club}

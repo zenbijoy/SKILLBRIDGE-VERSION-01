@@ -317,4 +317,119 @@ test("Adversarial Security & Authorization Test Matrix", async (t) => {
     assert.strictEqual(res.body.passed, true);
     assert.strictEqual(awardReputationRpcCalls, 1);
   });
+
+  await t.test("10. Room Question Non-Member Rejection", async () => {
+    const authHeader = authHeaderFor(USER_BOB, ["student"]);
+
+    mockAdmin.from = (table?: string) => {
+      if (table === "profiles") {
+        return createMockChain({ id: USER_BOB, roles: ["student"], account_status: "active" });
+      }
+      if (table === "rooms") {
+        return createMockChain({ id: ROOM_A, visibility: "public", status: "open" });
+      }
+      if (table === "room_members") {
+        // Not a member of the room
+        return createMockChain(null);
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/rooms/${ROOM_A}/questions`)
+      .set(authHeader)
+      .send({
+        title: "How does Dijkstra work?",
+        body: "I am having trouble with negative weights.",
+      });
+
+    assert.strictEqual(res.status, 403);
+    assert.match(res.body.error, /Join room before asking questions/i);
+  });
+
+  await t.test("11. Question Solution Acceptance Permission Guard", async () => {
+    const authHeader = authHeaderFor(USER_BOB, ["student"]);
+    const QUESTION_ID = "66666666-6666-4666-8666-666666666666";
+    const ANSWER_ID = "77777777-7777-4777-8777-777777777777";
+
+    mockAdmin.from = (table?: string) => {
+      if (table === "profiles") {
+        return createMockChain({ id: USER_BOB, roles: ["student"], account_status: "active" });
+      }
+      if (table === "room_questions") {
+        // Question was asked by Alice, not Bob!
+        return createMockChain({ id: QUESTION_ID, room_id: ROOM_A, author_id: USER_ALICE });
+      }
+      if (table === "room_members") {
+        // Bob is just a regular member, not host/mod
+        return createMockChain({ id: "rm-bob", user_id: USER_BOB, room_id: ROOM_A, role: "member" });
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .patch(`/api/v1/rooms/${ROOM_A}/questions/${QUESTION_ID}/answers/${ANSWER_ID}/accept`)
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 403);
+    assert.match(res.body.error, /Only the question author or room host can accept a solution/i);
+  });
+
+  await t.test("12. Pinned Item Cross-Room Security Verification", async () => {
+    const authHeader = authHeaderFor(USER_ALICE, ["student"]);
+    const FOREIGN_RESOURCE_ID = "88888888-8888-4888-8888-888888888888";
+
+    mockAdmin.from = (table?: string) => {
+      if (table === "profiles") {
+        return createMockChain({ id: USER_ALICE, roles: ["student"], account_status: "active" });
+      }
+      if (table === "room_members") {
+        // Alice is owner of ROOM_A
+        return createMockChain({ id: "rm-alice", user_id: USER_ALICE, room_id: ROOM_A, role: "owner" });
+      }
+      if (table === "room_resources") {
+        // Resource doesn't exist in ROOM_A
+        return createMockChain(null);
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/rooms/${ROOM_A}/pinned`)
+      .set(authHeader)
+      .send({
+        item_id: FOREIGN_RESOURCE_ID,
+        item_type: "resource",
+        title: "Pinned Foreign Resource",
+      });
+
+    assert.strictEqual(res.status, 404);
+    assert.match(res.body.error, /Item not found in this room/i);
+  });
+
+  await t.test("13. Room Channel Creation Member Privilege Guard", async () => {
+    const authHeader = authHeaderFor(USER_BOB, ["student"]);
+
+    mockAdmin.from = (table?: string) => {
+      if (table === "profiles") {
+        return createMockChain({ id: USER_BOB, roles: ["student"], account_status: "active" });
+      }
+      if (table === "room_members") {
+        // Bob is a regular member (not owner/teacher/moderator)
+        return createMockChain({ id: "rm-bob", user_id: USER_BOB, room_id: ROOM_A, role: "member" });
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/rooms/${ROOM_A}/channels`)
+      .set(authHeader)
+      .send({
+        name: "unauthorized-channel",
+        type: "text",
+      });
+
+    assert.strictEqual(res.status, 403);
+    assert.match(res.body.error, /Unauthorized to create channels/i);
+  });
 });

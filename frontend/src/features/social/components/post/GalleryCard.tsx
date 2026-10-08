@@ -123,7 +123,7 @@ export function GalleryCard({ images = [], attachments = [], youtube }: GalleryC
       {/* 4. Multi-Image Grid Layouts with Page Counter Badge */}
       {allImages.length > 0 && (
         <View style={styles.gridContainer}>
-          {allImages.length > 1 && (
+          {allImages.length > 0 && (
             <View style={styles.pageBadgeTopRight} pointerEvents="none">
               <Text style={styles.pageBadgeText}>1/{allImages.length}</Text>
             </View>
@@ -273,10 +273,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 10,
     right: 10,
-    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 12,
     zIndex: 10,
   },
   docBadgeTopLeft: {
@@ -294,18 +294,18 @@ const styles = StyleSheet.create({
   },
   pageBadgeText: {
     color: "#FFFFFF",
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "700",
     letterSpacing: 0.5,
   },
   imageWrapper: {
-    borderRadius: radius.md,
+    borderRadius: 14,
     overflow: "hidden",
   },
   singleImage: {
     width: "100%",
-    height: 240,
-    borderRadius: radius.md,
+    height: 300,
+    borderRadius: 14,
   },
   doubleImage: {
     width: "100%",

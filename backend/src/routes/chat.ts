@@ -1321,6 +1321,7 @@ export function chat(io: Server) {
       }
 
       io.to(`conversation:${id}`).emit("message:new", data);
+      io.to(`conversation:${id}`).emit("new_message", data);
 
       if (conv) {
         const otherMembers = conv.conversation_members.filter((cm: any) => cm.user_id !== req.userId!);

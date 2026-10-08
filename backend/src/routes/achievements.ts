@@ -3,6 +3,9 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { requireRole } from "../middleware/auth.js";
+import { assertUuid } from "../lib/query-helpers.js";
+import { AppError } from "../lib/errors.js";
+import { verifyCodeLimiter } from "../middleware/rateLimiters.js";
 
 export const achievements = Router();
 export const achievementsPublic = Router();
@@ -79,8 +82,8 @@ async function verifyAchievementHandler(req: any, res: any) {
 }
 
 // Mount handler on both public router and authenticated router
-achievementsPublic.get("/:code", wrap(verifyAchievementHandler));
-achievements.get("/verify/:code", wrap(verifyAchievementHandler));
+achievementsPublic.get("/:code", verifyCodeLimiter, wrap(verifyAchievementHandler));
+achievements.get("/verify/:code", verifyCodeLimiter, wrap(verifyAchievementHandler));
 
 // GET /api/v1/achievements - List achievements catalog and user's earned badges
 achievements.get(
@@ -161,7 +164,17 @@ achievements.put(
   "/user/:id/visibility",
   wrap(async (req, res) => {
     const userId = req.userId!;
-    const { id } = req.params; // user_achievement id or achievement_id
+    const id = req.params.id;
+    if (typeof id !== "string") {
+      throw new AppError("Invalid achievement ID", { statusCode: 400, code: "VALIDATION_ERROR" });
+    }
+    assertUuid(userId, "userId");
+    try {
+      assertUuid(id, "id");
+    } catch {
+      throw new AppError("Invalid achievement ID", { statusCode: 400, code: "VALIDATION_ERROR" });
+    }
+
     const { is_public } = z.object({ is_public: z.boolean() }).parse(req.body);
 
     const { data, error } = await admin
@@ -170,9 +183,12 @@ achievements.put(
       .or(`id.eq.${id},and(user_id.eq.${userId},achievement_id.eq.${id})`)
       .eq("user_id", userId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      throw new AppError("Achievement record not found", { statusCode: 404, code: "RESOURCE_NOT_FOUND" });
+    }
 
     res.json({ achievement: data });
   }),

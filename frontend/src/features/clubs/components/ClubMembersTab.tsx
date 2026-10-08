@@ -15,7 +15,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../../theme/ThemeProvider";
 import { ClubMember, ClubRole } from "../types";
-import { CLUB_ROLES } from "../constants";
+import { CLUB_ROLES, isClubAdmin } from "../constants";
+import { useI18n } from "../../../i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
 
 interface ClubMembersTabProps {
@@ -34,11 +36,10 @@ export const ClubMembersTab: React.FC<ClubMembersTabProps> = ({
   onRefresh,
 }) => {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const router = useRouter();
 
-  const isLeader =
-    myRole &&
-    ["owner", "admin", "president", "vice_president"].includes(myRole);
+  const isLeader = isClubAdmin(myRole);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRole] = useState<ClubRole | "all">("all");
@@ -84,10 +85,10 @@ export const ClubMembersTab: React.FC<ClubMembersTabProps> = ({
       Alert.alert("Success", "Member role updated.");
       setEditingMember(null);
       onRefresh();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         "Update Failed",
-        err?.response?.data?.message || "Could not update member role."
+        clubErrorMessage(err, t)
       );
     } finally {
       setUpdating(false);
@@ -108,8 +109,8 @@ export const ClubMembersTab: React.FC<ClubMembersTabProps> = ({
               await api.delete(`/clubs/${clubId}/members/${member.user_id}`);
               Alert.alert("Removed", "Member removed from the club.");
               onRefresh();
-            } catch {
-              Alert.alert("Error", "Could not remove member.");
+            } catch (err: unknown) {
+              Alert.alert("Error", clubErrorMessage(err, t));
             }
           },
         },

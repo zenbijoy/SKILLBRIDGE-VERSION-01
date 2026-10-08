@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { useI18n } from "@/i18n";
 import { useActiveRoomSession } from "./useActiveRoomSession";
 
 type RoomVoiceBannerProps = {
@@ -14,17 +15,19 @@ type RoomVoiceBannerProps = {
 
 export function RoomVoiceBanner({ roomId, roomTitle, memberCount = 0, onPress }: RoomVoiceBannerProps) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const session = useActiveRoomSession();
 
   // If session is active for this room or generally active
   const isActiveHere = session.isVoiceActive && session.activeRoomId === roomId;
+  const count = session.participants.length > 0 ? session.participants.length : Math.max(memberCount, 0);
 
   return (
     <Pressable
       onPress={() => {
         triggerHaptic();
         if (!session.isVoiceActive) {
-          session.joinVoiceSession(roomId, roomTitle);
+          void session.joinVoiceSession(roomId, roomTitle);
         }
         onPress();
       }}
@@ -41,15 +44,15 @@ export function RoomVoiceBanner({ roomId, roomTitle, memberCount = 0, onPress }:
           <View style={[s.pulseDot, { backgroundColor: colors.success }]} />
           <MaterialCommunityIcons name="volume-high" size={18} color={colors.success} />
           <Text style={[s.bannerText, { color: colors.text }]}>
-            {isActiveHere ? "Voice Connected" : "Study Voice Room"}
+            {isActiveHere ? t("rooms.voice.connected") : t("rooms.voice.studyRoom")}
           </Text>
           <Text style={[s.participantsText, { color: colors.muted }]}>
-            · {session.participants.length > 0 ? session.participants.length : Math.max(memberCount, 0)} people
+            · {count} {t("rooms.voice.peopleCount")}
           </Text>
         </Row>
 
         <View style={[s.joinChip, { backgroundColor: colors.success }]}>
-          <Text style={s.joinText}>{isActiveHere ? "Return" : "Join"}</Text>
+          <Text style={s.joinText}>{isActiveHere ? t("rooms.voice.return") : t("rooms.voice.join")}</Text>
         </View>
       </Row>
     </Pressable>

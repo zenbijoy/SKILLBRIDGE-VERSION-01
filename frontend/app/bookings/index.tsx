@@ -14,7 +14,7 @@ import { useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/theme";
 import { api } from "@/lib/api";
-import { Button, Card, Pill, Row, triggerHaptic } from "@/components/ui";
+import { Button, Card, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
 import { fetchMyBookings, type SessionBooking } from "@/features/growth/growthApi";
 
 type MainTab = "tutors" | "my_bookings";
@@ -73,6 +73,7 @@ export default function BookingsListScreen() {
   };
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
@@ -313,6 +314,7 @@ export default function BookingsListScreen() {
         </ScrollView>
       )}
     </View>
+    </Screen>
   );
 }
 

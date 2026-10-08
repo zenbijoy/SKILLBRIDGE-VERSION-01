@@ -4,59 +4,43 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
 export const events = Router();
+
+const isoDateTime = z.preprocess((arg) => {
+  if (typeof arg === "string" || arg instanceof Date) {
+    const d = new Date(arg);
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+  return arg;
+}, z.string().datetime());
+
 events.get(
   "/",
   wrap(async (_req, res) => {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("events")
-      .select("*")
+      .select("*, clubs(id, name, logo_url, verified)")
       .order("starts_at", { ascending: false })
       .limit(30);
 
-    if (data && data.length > 0) {
-      return res.json({ events: data });
-    }
+    if (error) throw error;
+    res.json({ events: data ?? [] });
+  }),
+);
 
-    const fallbackEvents = [
-      {
-        id: "70000000-0000-0000-0000-000000000001",
-        title: "Hands-on Deep Learning & LLM Fine-Tuning Workshop",
-        description: "Intensive 3-hour practical lab on fine-tuning open-weights models with LoRA and QLoRA for university research projects.",
-        category: "workshop",
-        starts_at: new Date(Date.now() + 2 * 86400000).toISOString(),
-        location: "Auditorium Lab 3 & Google Meet",
-        status: "published",
-        capacity: 80,
-        application_required: false,
-        location_type: "indoor",
-      },
-      {
-        id: "70000000-0000-0000-0000-000000000002",
-        title: "National Research Symposium: Quantum Computing Frontiers",
-        description: "Keynote lectures by visiting scholars and student poster presentations on quantum cryptography and fault-tolerant algorithms.",
-        category: "seminar",
-        starts_at: new Date(Date.now() + 5 * 86400000).toISOString(),
-        location: "Central Campus Amphitheater",
-        status: "published",
-        capacity: 250,
-        application_required: true,
-        location_type: "indoor",
-      },
-      {
-        id: "70000000-0000-0000-0000-000000000003",
-        title: "Robotics Club Annual Showcase & Drone Obstacle Race",
-        description: "Open demonstration of student autonomous rovers, quadcopters, and combat bot arena trials with live judging.",
-        category: "club_meetup",
-        starts_at: new Date(Date.now() + 7 * 86400000).toISOString(),
-        location: "University Sports Field (Outdoor)",
-        status: "published",
-        capacity: 400,
-        application_required: false,
-        location_type: "outdoor",
-      },
-    ];
+events.get(
+  "/:id",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: event, error } = await admin
+      .from("events")
+      .select("*, clubs(id, name, logo_url, verified)")
+      .eq("id", id)
+      .maybeSingle();
 
-    res.json({ events: fallbackEvents });
+    if (error) throw error;
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    res.json({ event });
   }),
 );
 events.post(
@@ -67,7 +51,7 @@ events.post(
         club_id: z.string().uuid(),
         title: z.string().min(4).max(140),
         description: z.string().max(3000),
-        starts_at: z.string().datetime(),
+        starts_at: isoDateTime,
         location: z.string().max(200).optional(),
         online_url: z.string().url().optional(),
         capacity: z.number().int().positive().max(5000).optional(),

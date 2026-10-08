@@ -13,37 +13,51 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "../../../theme/ThemeProvider";
 import { ClubResource, ClubRole } from "../types";
+import { isClubOfficer } from "../constants";
+import { useI18n } from "../../../i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
 
 interface ClubResourcesTabProps {
   clubId: string;
   myRole?: ClubRole | null;
-  resources: ClubResource[];
-  isLoading: boolean;
-  onRefresh: () => void;
+  resources?: ClubResource[];
+  isLoading?: boolean;
+  onRefresh?: () => void;
 }
 
 export const ClubResourcesTab: React.FC<ClubResourcesTabProps> = ({
   clubId,
   myRole,
-  resources,
-  isLoading,
+  resources: initialResources,
+  isLoading: initialLoading = false,
   onRefresh,
 }) => {
   const { colors } = useTheme();
-  const isLeader =
-    myRole &&
-    [
-      "owner",
-      "admin",
-      "president",
-      "vice_president",
-      "secretary",
-      "executive",
-      "team_lead",
-    ].includes(myRole);
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const isLeader = isClubOfficer(myRole);
+
+  const {
+    data: queryResources,
+    isLoading: isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ["club-resources", clubId],
+    queryFn: async () => {
+      const res = await api.get<{ resources: ClubResource[] }>(
+        `/clubs/${clubId}/resources`
+      );
+      return res.data?.resources ?? [];
+    },
+    initialData: initialResources?.length ? initialResources : undefined,
+  });
+
+  const resources = queryResources ?? initialResources ?? [];
+  const loading = isFetching || initialLoading;
 
   const [activeCategory, setActiveCategory] = useState<string>("all");
 
@@ -68,7 +82,7 @@ export const ClubResourcesTab: React.FC<ClubResourcesTabProps> = ({
   const handleOpenResource = (res: ClubResource) => {
     if (res.url) {
       Linking.openURL(res.url).catch(() => {
-        Alert.alert("Error", "Could not open resource link.");
+        Alert.alert("Error", t("common.error", "Could not open resource link."));
       });
     }
   };
@@ -93,12 +107,11 @@ export const ClubResourcesTab: React.FC<ClubResourcesTabProps> = ({
       setTitle("");
       setDescription("");
       setUrl("");
-      onRefresh();
-    } catch (err: any) {
-      Alert.alert(
-        "Failed",
-        err?.response?.data?.message || "Failed to add resource."
-      );
+      queryClient.invalidateQueries({ queryKey: ["club-resources", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["club", clubId] });
+      onRefresh?.();
+    } catch (err: unknown) {
+      Alert.alert("Failed", clubErrorMessage(err, t));
     } finally {
       setAdding(false);
     }
@@ -158,23 +171,23 @@ export const ClubResourcesTab: React.FC<ClubResourcesTabProps> = ({
             onPress={() => setShowAddModal(true)}
           >
             <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.addBtnText}>Add</Text>
+            <Text style={styles.addBtnText}>{t("clubs.addResource", "Add")}</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {isLoading ? (
+      {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={{ color: colors.textSecondary, marginTop: 10 }}>
-            Loading resource library...
+            {t("common.loading", "Loading...")}
           </Text>
         </View>
       ) : filteredResources.length === 0 ? (
         <View style={styles.centerBox}>
           <Ionicons name="folder-open-outline" size={48} color={colors.textSecondary} />
           <Text style={[styles.centerTitle, { color: colors.text }]}>
-            No Resources Found
+            {t("clubs.empty.resources", "No Resources Found")}
           </Text>
           <Text style={[styles.centerSub, { color: colors.textSecondary }]}>
             {activeCategory === "all"
@@ -187,7 +200,9 @@ export const ClubResourcesTab: React.FC<ClubResourcesTabProps> = ({
               onPress={() => setShowAddModal(true)}
             >
               <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
-              <Text style={styles.emptyBtnText}>Upload First Resource</Text>
+              <Text style={styles.emptyBtnText}>
+                {t("clubs.addResource", "Upload First Resource")}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -196,6 +211,11 @@ export const ClubResourcesTab: React.FC<ClubResourcesTabProps> = ({
           data={filteredResources}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingBottom: 60 }}
+          onRefresh={() => {
+            refetch();
+            onRefresh?.();
+          }}
+          refreshing={isFetching}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[

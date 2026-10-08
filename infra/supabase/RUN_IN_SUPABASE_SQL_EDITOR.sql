@@ -1979,3 +1979,145 @@ CREATE POLICY "Club admins can view audit logs" ON club_audit_logs FOR SELECT
 
 CREATE INDEX IF NOT EXISTS idx_club_audit_logs_club ON club_audit_logs(club_id, created_at DESC);
 
+-- =============================================================================
+-- MODULE: supabase/migrations/028_quiz_engine_schema.sql
+-- =============================================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'skill_id') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN skill_id uuid REFERENCES skills(id) ON DELETE SET NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'quiz_session_id') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN quiz_session_id text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'topic') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN topic text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'difficulty') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN difficulty text CHECK (difficulty IN ('easy', 'medium', 'hard'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'correct_count') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN correct_count integer DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'total_count') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN total_count integer DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'violation_count') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN violation_count integer DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'bloom_breakdown') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN bloom_breakdown jsonb;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'elapsed_seconds') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN elapsed_seconds integer;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quiz_attempts' AND column_name = 'answers_submitted') THEN
+    ALTER TABLE quiz_attempts ADD COLUMN answers_submitted integer DEFAULT 0;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_skill 
+  ON quiz_attempts(user_id, skill_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_passed
+  ON quiz_attempts(user_id, passed, created_at DESC);
+
+ALTER TABLE quiz_attempts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "quiz_attempts_select_own" ON quiz_attempts;
+CREATE POLICY "quiz_attempts_select_own"
+  ON quiz_attempts FOR SELECT
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "quiz_attempts_insert_own" ON quiz_attempts;
+CREATE POLICY "quiz_attempts_insert_own"
+  ON quiz_attempts FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+-- =============================================================================
+-- MODULE: infra/supabase/migrations/041_room_covers_and_teacher_mode.sql
+-- =============================================================================
+ALTER TABLE public.rooms 
+  ADD COLUMN IF NOT EXISTS cover_image_url TEXT,
+  ADD COLUMN IF NOT EXISTS is_teacher_mode BOOLEAN DEFAULT false;
+
+ALTER TABLE public.sessions
+  ADD COLUMN IF NOT EXISTS title TEXT,
+  ADD COLUMN IF NOT EXISTS description TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_teaching_requests_room ON public.teaching_requests(room_id, status);
+CREATE INDEX IF NOT EXISTS idx_teaching_requests_volunteer ON public.teaching_requests(volunteer_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_teacher_mode ON public.rooms(is_teacher_mode) WHERE is_teacher_mode = true;
+
+-- =============================================================================
+-- MODULE: infra/supabase/migrations/042_expand_saved_items_types.sql
+-- =============================================================================
+DO $$
+BEGIN
+  ALTER TABLE public.saved_items DROP CONSTRAINT IF EXISTS saved_items_entity_type_check;
+  ALTER TABLE public.saved_items ADD CONSTRAINT saved_items_entity_type_check
+    CHECK (entity_type IN ('room','event','resource','profile','post','person','skill','club','research','session','goal'));
+EXCEPTION
+  WHEN others THEN NULL;
+END $$;
+
+-- =============================================================================
+-- MODULE: infra/supabase/migrations/044_clubs_drift_fix.sql
+-- =============================================================================
+ALTER TABLE clubs 
+  ADD COLUMN IF NOT EXISTS tagline text,
+  ADD COLUMN IF NOT EXISTS banner_url text,
+  ADD COLUMN IF NOT EXISTS category text DEFAULT 'General',
+  ADD COLUMN IF NOT EXISTS department text,
+  ADD COLUMN IF NOT EXISTS founded_year integer,
+  ADD COLUMN IF NOT EXISTS social_links jsonb DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS contact_email text,
+  ADD COLUMN IF NOT EXISTS contact_phone text,
+  ADD COLUMN IF NOT EXISTS membership_type text DEFAULT 'open' CHECK (membership_type IN ('open', 'application', 'invite_only')),
+  ADD COLUMN IF NOT EXISTS is_archived boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS mission text,
+  ADD COLUMN IF NOT EXISTS vision text,
+  ADD COLUMN IF NOT EXISTS activities_summary text,
+  ADD COLUMN IF NOT EXISTS room_id uuid REFERENCES rooms(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_clubs_category ON clubs(category);
+CREATE INDEX IF NOT EXISTS idx_clubs_university ON clubs(university);
+CREATE INDEX IF NOT EXISTS idx_clubs_verified ON clubs(verified);
+
+ALTER TABLE club_members 
+  ADD COLUMN IF NOT EXISTS title text,
+  ADD COLUMN IF NOT EXISTS team_id uuid,
+  ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
+
+ALTER TABLE club_members DROP CONSTRAINT IF EXISTS club_members_role_check;
+ALTER TABLE club_members ADD CONSTRAINT club_members_role_check 
+  CHECK (role IN ('owner', 'admin', 'president', 'vice_president', 'secretary', 'treasurer', 'executive', 'team_lead', 'moderator', 'member'));
+
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS poster_url text,
+  ADD COLUMN IF NOT EXISTS venue_type text DEFAULT 'offline' CHECK (venue_type IN ('offline', 'online', 'hybrid')),
+  ADD COLUMN IF NOT EXISTS registration_link text,
+  ADD COLUMN IF NOT EXISTS is_featured boolean DEFAULT false;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.events'::regclass
+      AND conname = 'events_status_check'
+  ) THEN
+    ALTER TABLE public.events DROP CONSTRAINT events_status_check;
+  END IF;
+
+  ALTER TABLE public.events
+    ADD CONSTRAINT events_status_check
+    CHECK (status IN ('draft', 'published', 'ongoing', 'completed', 'cancelled'));
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_events_start_at ON events(start_at);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+CREATE INDEX IF NOT EXISTS idx_events_club_id ON events(club_id);
+
+

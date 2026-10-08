@@ -25,7 +25,7 @@ export function RoomMaterialsHub({
 }: {
   roomId: string;
   isMember: boolean;
-  resources?: { id: string; title: string; url: string }[];
+  resources?: { id: string; title: string; url: string; kind?: string }[];
 }) {
   const { colors } = useTheme();
   const qc = useQueryClient();
@@ -55,17 +55,37 @@ export function RoomMaterialsHub({
     onError: (err: Error) => Alert.alert("Could not add material", err.message),
   });
 
-  const getKindIcon = (k: string) => {
-    switch (k) {
-      case "slide":
-        return "file-powerpoint";
-      case "note":
-        return "notebook";
-      case "image":
-        return "file-image";
-      default:
-        return "file-document";
+  const getKindIcon = (k?: string, url?: string): keyof typeof MaterialCommunityIcons.glyphMap => {
+    const raw = (k || "").toLowerCase();
+    const ext = (url || "").split("?")[0].split(".").pop()?.toLowerCase() || "";
+    if (raw === "slide" || raw === "ppt" || ext === "ppt" || ext === "pptx") {
+      return "file-powerpoint";
     }
+    if (raw === "note" || raw === "notebook") {
+      return "notebook";
+    }
+    if (raw === "image" || ["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
+      return "file-image";
+    }
+    if (raw === "pdf" || ext === "pdf") {
+      return "file-pdf-box";
+    }
+    if (raw === "video" || ["mp4", "webm", "mkv", "mov"].includes(ext)) {
+      return "file-video";
+    }
+    if (raw === "link" || (url && (url.startsWith("http://") || url.startsWith("https://")) && !ext)) {
+      return "link-variant";
+    }
+    if (["doc", "docx"].includes(ext)) {
+      return "file-word";
+    }
+    if (["xls", "xlsx", "csv"].includes(ext)) {
+      return "file-excel";
+    }
+    if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) {
+      return "folder-zip";
+    }
+    return "file-document";
   };
 
   return (
@@ -171,7 +191,11 @@ export function RoomMaterialsHub({
             <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
               <Row style={{ alignItems: "center", gap: 10, flex: 1 }}>
                 <View style={[styles.iconCircle, { backgroundColor: colors.surface }]}>
-                  <MaterialCommunityIcons name={getKindIcon("file")} size={22} color={colors.primary} />
+                  <MaterialCommunityIcons
+                    name={getKindIcon((item as any).kind || (item as any).type, item.url)}
+                    size={22}
+                    color={colors.primary}
+                  />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.resourceTitle, { color: colors.text }]}>{item.title}</Text>

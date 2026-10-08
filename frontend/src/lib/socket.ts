@@ -50,7 +50,7 @@ export function connectSocket(accessToken: string): void {
 }
 
 /**
- * Disconnect and clean up the socket instance.
+ * Disconnect and clean up the socket instance (called on user logout).
  */
 export function disconnectSocket(): void {
   if (idleDisconnectTimeout) {
@@ -65,30 +65,48 @@ export function disconnectSocket(): void {
 }
 
 /**
- * Lazy Socket Lifecycle:
- * Acquire socket connection when entering real-time screens (Chat / Calling).
+ * Check if socket is currently connected.
  */
-export function acquireSocket(accessToken: string): void {
-  if (idleDisconnectTimeout) {
-    clearTimeout(idleDisconnectTimeout);
-    idleDisconnectTimeout = null;
-  }
-  activeScreenUsers++;
-  connectSocket(accessToken);
+export function isSocketConnected(): boolean {
+  return Boolean(socketInstance && socketInstance.connected);
 }
 
 /**
- * Release socket connection when navigating away from real-time screens.
- * Waits for grace period before disconnecting to prevent re-connect thrashing.
+ * Register a socket event listener safely across reconnects.
+ * Returns an unsubscribe function.
  */
-export function releaseSocket(gracePeriodMs = 45000): void {
-  activeScreenUsers = Math.max(0, activeScreenUsers - 1);
-  if (activeScreenUsers === 0 && !idleDisconnectTimeout) {
-    idleDisconnectTimeout = setTimeout(() => {
-      if (activeScreenUsers === 0) {
-        disconnectSocket();
-      }
-      idleDisconnectTimeout = null;
-    }, gracePeriodMs);
+export function onSocket<T = any>(event: string, listener: (data: T) => void): () => void {
+  const socket = getSocket();
+  if (!socket) return () => {};
+  socket.on(event, listener);
+  return () => {
+    socket.off(event, listener);
+  };
+}
+
+/**
+ * Emit a socket event safely.
+ */
+export function emitSocket(event: string, data?: any): void {
+  const socket = getSocket();
+  if (socket && socket.connected) {
+    socket.emit(event, data);
+  } else if (socket) {
+    socket.connect();
+    socket.once("connect", () => {
+      socket.emit(event, data);
+    });
   }
+}
+
+/**
+ * Backward compatibility: keep socket alive for real-time screens.
+ */
+export function acquireSocket(accessToken: string): void {
+  connectSocket(accessToken);
+}
+
+export function releaseSocket(_gracePeriodMs = 45000): void {
+  // Maintained for backward compatibility; do not disconnect background socket
+  // to ensure calls can be received at any time.
 }

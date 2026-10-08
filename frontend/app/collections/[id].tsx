@@ -20,6 +20,7 @@ import {
   removeSavedItem,
   type SavedItem,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -80,6 +81,7 @@ export default function CollectionDetailScreen() {
   };
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
@@ -144,6 +146,7 @@ export default function CollectionDetailScreen() {
         </ScrollView>
       )}
     </View>
+    </Screen>
   );
 }
 

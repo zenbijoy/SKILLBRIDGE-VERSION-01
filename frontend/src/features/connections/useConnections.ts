@@ -96,43 +96,60 @@ export function useConnections() {
    * 1. Send Connection Request (with instant optimistic UI transition)
    */
   const sendRequestMutation = useMutation({
-    mutationFn: (recipientId: string) =>
+    mutationFn: ({
+      recipientId,
+    }: {
+      recipientId: string;
+      recipientProfile?: Profile;
+    }) =>
       api<any>("/connections/requests", {
         method: "POST",
         body: JSON.stringify({ recipientId }),
       }),
-    onMutate: async (recipientId: string) => {
+    onMutate: async ({ recipientId, recipientProfile }) => {
       triggerHaptic("selection");
       await qc.cancelQueries({ queryKey: ["connections"] });
       const previous = qc.getQueryData<ConnectionsResponse>(["connections"]);
 
-      if (previous) {
-        qc.setQueryData<ConnectionsResponse>(["connections"], {
-          ...previous,
-          outgoing: [
-            ...(previous.outgoing ?? []),
-            {
-              id: `optimistic-${Date.now()}`,
-              recipient_id: recipientId,
-              status: "pending",
-              created_at: new Date().toISOString(),
-            },
-          ],
-        });
-      }
+      const updatedOutgoing: OutgoingConnectionRequest[] = [
+        ...(previous?.outgoing ?? []).filter((o) => o.recipient_id !== recipientId),
+        {
+          id: `optimistic-${Date.now()}`,
+          recipient_id: recipientId,
+          status: "pending",
+          created_at: new Date().toISOString(),
+          recipient: recipientProfile,
+        },
+      ];
+
+      qc.setQueryData<ConnectionsResponse>(["connections"], {
+        connections: previous?.connections ?? [],
+        incoming: previous?.incoming ?? [],
+        suggested: (previous?.suggested ?? []).filter((s) => s.id !== recipientId),
+        outgoing: updatedOutgoing,
+      });
 
       return { previous };
     },
-    onSuccess: (res, recipientId) => {
+    onSuccess: (res, { recipientId, recipientProfile }) => {
       triggerHaptic("notificationSuccess");
-      // If mutual auto-accept happened on the server, reload queries
-      if (res?.autoAccepted || res?.alreadyConnected) {
+      const peerName = recipientProfile?.full_name || recipientProfile?.username || "peer";
+
+      if (res?.alreadyConnected) {
+        Alert.alert("Already Connected", `You are already connected with ${peerName}.`);
         qc.invalidateQueries({ queryKey: ["connections"] });
+      } else if (res?.autoAccepted) {
+        Alert.alert("Connection Accepted!", `Mutual request accepted! You and ${peerName} are now connected.`);
+        qc.invalidateQueries({ queryKey: ["connections"] });
+      } else {
+        Alert.alert("Request Sent", `Connection invitation sent to ${peerName}! They will be notified.`);
       }
+
       qc.invalidateQueries({ queryKey: ["profile", recipientId] });
       qc.invalidateQueries({ queryKey: ["connections"] });
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
     },
-    onError: (err: any, recipientId, context) => {
+    onError: (err: any, vars, context) => {
       if (context?.previous) {
         qc.setQueryData(["connections"], context.previous);
       }
@@ -153,6 +170,7 @@ export function useConnections() {
     }: {
       recipientId: string;
       requestId?: string;
+      recipientName?: string;
     }) => {
       if (requestId && !requestId.startsWith("optimistic-")) {
         return api(`/connections/requests/${requestId}`, { method: "DELETE" });
@@ -176,8 +194,16 @@ export function useConnections() {
       return { previous };
     },
     onSuccess: (_, vars) => {
+      triggerHaptic("selection");
+      Alert.alert(
+        "Invitation Withdrawn",
+        vars.recipientName
+          ? `Your connection request to ${vars.recipientName} has been withdrawn.`
+          : "Your connection request has been withdrawn."
+      );
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["profile", vars.recipientId] });
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
     },
     onError: (err: any, vars, context) => {
       if (context?.previous) {
@@ -228,10 +254,18 @@ export function useConnections() {
       return { previous };
     },
     onSuccess: (_, vars) => {
+      triggerHaptic(vars.status === "accepted" ? "notificationSuccess" : "selection");
+      const peerName = vars.requester?.full_name || vars.requester?.username || "peer";
+      if (vars.status === "accepted") {
+        Alert.alert("Request Accepted", `You are now connected with ${peerName}!`);
+      } else {
+        Alert.alert("Request Declined", `Connection request from ${peerName} declined.`);
+      }
       qc.invalidateQueries({ queryKey: ["connections"] });
       if (vars.requester?.id) {
         qc.invalidateQueries({ queryKey: ["profile", vars.requester.id] });
       }
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
     },
     onError: (err: any, _, context) => {
       if (context?.previous) {
@@ -265,8 +299,11 @@ export function useConnections() {
       return { previous };
     },
     onSuccess: (_, userId) => {
+      triggerHaptic("selection");
+      Alert.alert("Connection Removed", "Peer has been removed from your connections.");
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["profile", userId] });
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
     },
     onError: (err: any, _, context) => {
       if (context?.previous) {
@@ -314,6 +351,7 @@ export function useConnections() {
             withdrawRequestMutation.mutate({
               recipientId: user.id,
               requestId: out?.id,
+              recipientName: user.full_name || user.username,
             }),
         },
       ]
@@ -330,9 +368,21 @@ export function useConnections() {
     getConnectionStatus,
     getIncomingRequest: (targetUserId: string) => incomingIdMap.get(targetUserId),
     getOutgoingRequest: (targetUserId: string) => outgoingIdMap.get(targetUserId),
-    sendRequest: (targetUserId: string) => sendRequestMutation.mutate(targetUserId),
-    withdrawRequest: (targetUserId: string, requestId?: string) =>
-      withdrawRequestMutation.mutate({ recipientId: targetUserId, requestId }),
+    sendRequest: (targetUserId: string, targetProfile?: Profile) =>
+      sendRequestMutation.mutate({
+        recipientId: targetUserId,
+        recipientProfile: targetProfile,
+      }),
+    withdrawRequest: (
+      targetUserId: string,
+      requestId?: string,
+      recipientName?: string
+    ) =>
+      withdrawRequestMutation.mutate({
+        recipientId: targetUserId,
+        requestId,
+        recipientName,
+      }),
     acceptRequest: (requestId: string, requester?: Profile) =>
       respondMutation.mutate({ id: requestId, status: "accepted", requester }),
     declineRequest: (requestId: string) =>

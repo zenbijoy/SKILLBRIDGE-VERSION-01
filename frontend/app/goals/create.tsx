@@ -16,6 +16,7 @@ import { useI18n } from "@/i18n";
 import { GrowthHero } from "@/components/GrowthHero";
 import { growthIllustrations512 } from "@/assets/illustrations";
 import { createGoal } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 interface MilestoneDraft {
   title: string;
@@ -118,6 +119,7 @@ export default function CreateGoalScreen() {
   };
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -356,6 +358,7 @@ export default function CreateGoalScreen() {
         )}
       </TouchableOpacity>
     </ScrollView>
+    </Screen>
   );
 }
 

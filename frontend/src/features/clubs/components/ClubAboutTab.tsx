@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Linking,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeProvider";
@@ -20,7 +21,9 @@ export const ClubAboutTab: React.FC<ClubAboutTabProps> = ({ club }) => {
 
   const handleOpenLink = (url?: string) => {
     if (url) {
-      Linking.openURL(url).catch(() => {});
+      Linking.openURL(url).catch((_err: unknown) => {
+        Alert.alert("Link Error", "Could not open link in browser.");
+      });
     }
   };
 

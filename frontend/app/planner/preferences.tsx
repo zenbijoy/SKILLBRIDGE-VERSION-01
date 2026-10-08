@@ -20,6 +20,7 @@ import {
   fetchPlannerPreferences,
   updatePlannerPreferences,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -100,6 +101,7 @@ export default function PlannerPreferencesScreen() {
   }
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -279,6 +281,7 @@ export default function PlannerPreferencesScreen() {
         )}
       </TouchableOpacity>
     </ScrollView>
+    </Screen>
   );
 }
 

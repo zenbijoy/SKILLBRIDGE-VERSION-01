@@ -5,11 +5,14 @@
  * Grading is 100% server-authoritative.
  */
 
+import { createHash } from "crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { AppError } from "../lib/errors.js";
+import { sanitizeIlike } from "../lib/query-helpers.js";
+import { quizStartLimiter } from "../middleware/rateLimiters.js";
 import {
   generateQuizSession,
   getQuizSession,
@@ -54,6 +57,7 @@ quiz.get(
 // ────────────────────────────────────────────────────────────────
 quiz.post(
   "/start",
+  quizStartLimiter,
   wrap(async (req, res) => {
     const body = z
       .object({
@@ -74,11 +78,16 @@ quiz.post(
     let skillName = "";
 
     if (body.custom_skill_name) {
-      const cleanName = body.custom_skill_name.trim();
+      const cleanName = sanitizeIlike(body.custom_skill_name);
+      if (!cleanName) {
+        throw new AppError("Invalid custom skill name", { statusCode: 400, code: "VALIDATION_ERROR" });
+      }
+
       const { data: existingSkill } = await admin
         .from("skills")
         .select("id, name")
         .ilike("name", cleanName)
+        .limit(1)
         .maybeSingle();
 
       if (existingSkill) {
@@ -88,15 +97,27 @@ quiz.post(
         const { data: newSkill, error: insErr } = await admin
           .from("skills")
           .insert({
-            name: cleanName,
+            name: body.custom_skill_name.trim(),
             category: "Custom Skill",
           })
           .select("id, name")
           .maybeSingle();
 
         if (insErr || !newSkill) {
-          skillId = crypto.randomUUID();
-          skillName = cleanName;
+          // If insert failed (e.g. concurrent race condition), retry lookup
+          const { data: retrySkill } = await admin
+            .from("skills")
+            .select("id, name")
+            .ilike("name", cleanName)
+            .limit(1)
+            .maybeSingle();
+
+          if (retrySkill) {
+            skillId = retrySkill.id;
+            skillName = retrySkill.name;
+          } else {
+            throw new AppError("Failed to register custom skill", { statusCode: 409, code: "RESOURCE_CONFLICT" });
+          }
         } else {
           skillId = newSkill.id;
           skillName = newSkill.name;
@@ -253,13 +274,18 @@ quiz.post(
       );
     }
 
-    // Check time limit
-    if (body.elapsed_seconds !== undefined) {
-      const overTime = body.elapsed_seconds > session.time_limit_seconds + 30; // 30s grace
-      if (overTime) {
-        invalidateSession(body.session_id!);
-        throw new AppError("Time limit exceeded.", { statusCode: 422, code: "VALIDATION_ERROR" });
-      }
+    // Check time limit server-side (started_at + time_limit_seconds + 30s grace) - H4 fix
+    const serverElapsedSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(session.started_at).getTime()) / 1000),
+    );
+    const clientElapsed = body.elapsed_seconds;
+    if (
+      serverElapsedSeconds > session.time_limit_seconds + 30 ||
+      (clientElapsed !== undefined && clientElapsed > session.time_limit_seconds + 30)
+    ) {
+      invalidateSession(body.session_id!);
+      throw new AppError("Time limit exceeded.", { statusCode: 422, code: "VALIDATION_ERROR" });
     }
 
     // Server-side grading (answer key never left server)
@@ -271,6 +297,9 @@ quiz.post(
     if (!result.integrity_ok) {
       throw new AppError("Session integrity check failed.", { statusCode: 422, code: "VALIDATION_ERROR" });
     }
+
+    const effectiveElapsed =
+      clientElapsed !== undefined ? Math.min(clientElapsed, serverElapsedSeconds) : serverElapsedSeconds;
 
     // Persist attempt
     const violationCount = session.violation_count;
@@ -288,7 +317,7 @@ quiz.post(
         total_count: result.total_count,
         violation_count: violationCount,
         bloom_breakdown: result.bloom_breakdown,
-        elapsed_seconds: body.elapsed_seconds ?? null,
+        elapsed_seconds: effectiveElapsed,
         answers_submitted: Object.keys(body.answers).length,
       })
       .select("id")
@@ -296,7 +325,8 @@ quiz.post(
 
     if (aErr) throw aErr;
 
-    // If passed: upsert user_skills + award reputation
+    // If passed: upsert user_skills + award reputation (deduplicated) - H3 fix
+    let rewardPoints = 0;
     if (result.passed) {
       await admin
         .from("user_skills")
@@ -311,16 +341,29 @@ quiz.post(
           { onConflict: "user_id,skill_id,kind" },
         );
 
-      const points = session.difficulty === "hard" ? 25 : session.difficulty === "medium" ? 15 : 10;
-      await admin
-        .rpc("award_reputation_atomic", {
-          p_user_id: req.userId!,
-          p_event_type: "skill_verified",
-          p_points: points,
-          p_reference_type: "quiz_attempt",
-          p_reference_id: attempt.id,
-        })
-        .then(() => null, () => null); // non-fatal
+      // Check if user already passed this skill prior to this attempt
+      const { data: previousPass } = await admin
+        .from("quiz_attempts")
+        .select("id")
+        .eq("user_id", req.userId!)
+        .eq("skill_id", session.skill_id)
+        .eq("passed", true)
+        .neq("id", attempt.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (!previousPass) {
+        rewardPoints = session.difficulty === "hard" ? 25 : session.difficulty === "medium" ? 15 : 10;
+        await admin
+          .rpc("award_reputation_atomic", {
+            p_user_id: req.userId!,
+            p_event_type: "skill_verified",
+            p_points: rewardPoints,
+            p_reference_type: "skill_verification",
+            p_reference_id: session.skill_id,
+          })
+          .then(() => null, () => null); // non-fatal
+      }
     }
 
     // Return full result (with explanations, bloom breakdown)
@@ -331,15 +374,13 @@ quiz.post(
       correct_count: result.correct_count,
       total_count: result.total_count,
       pass_threshold: result.pass_threshold,
-      question_results: result.question_results, // includes explanations now
+      question_results: result.question_results,
       bloom_breakdown: result.bloom_breakdown,
       skill_id: session.skill_id,
       skill_name: session.skill_name,
       difficulty: session.difficulty,
       violation_count: violationCount,
-      reward_points: result.passed
-        ? (session.difficulty === "hard" ? 25 : session.difficulty === "medium" ? 15 : 10)
-        : 0,
+      reward_points: rewardPoints,
     });
   }),
 );
@@ -404,7 +445,17 @@ quiz.get(
       ? Math.round(stats!.reduce((sum: number, s: any) => sum + (s.score ?? 0), 0) / total)
       : 0;
 
+    const passportId =
+      "SKB-PASS-" +
+      createHash("sha256")
+        .update(req.userId!)
+        .digest("hex")
+        .slice(0, 12)
+        .toUpperCase();
+
     res.json({
+      passport_id: passportId,
+      user_id: req.userId!,
       verified_skills: (skills ?? []).map((s: any) => ({
         skill_id: s.skill_id,
         skill_name: s.skills?.name ?? "Unknown",

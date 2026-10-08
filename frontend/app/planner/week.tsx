@@ -14,6 +14,7 @@ import { useI18n } from "@/i18n";
 import { GrowthHero } from "@/components/GrowthHero";
 import { growthIllustrations512 } from "@/assets/illustrations";
 import { fetchPlannerWeek, type StudyPlanBlock } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function PlannerWeekScreen() {
   const { colors } = useTheme();
@@ -69,6 +70,7 @@ export default function PlannerWeekScreen() {
   );
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -229,6 +231,7 @@ export default function PlannerWeekScreen() {
         </ScrollView>
       )}
     </View>
+    </Screen>
   );
 }
 

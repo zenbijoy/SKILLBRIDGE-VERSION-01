@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { useI18n } from "@/i18n";
 
 export type RoomPoll = {
   id: string;
@@ -13,6 +14,7 @@ export type RoomPoll = {
 
 export function RoomPollCard({ roomId, isLeader }: { roomId: string; isLeader?: boolean }) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const qc = useQueryClient();
   const activeQ = useQuery({
     queryKey: ["room-poll-active", roomId],
@@ -31,18 +33,26 @@ export function RoomPollCard({ roomId, isLeader }: { roomId: string; isLeader?: 
     <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Row style={{ alignItems: "center", gap: 6 }}>
         <MaterialCommunityIcons name="poll" size={18} color={colors.primary} />
-        <Text style={[s.title, { color: colors.text }]}>Live Poll</Text>
+        <Text style={[s.title, { color: colors.text }]}>{t("rooms.polls.livePoll")}</Text>
       </Row>
       {!poll ? (
-        <Text style={[s.sub, { color: colors.muted }]}>Ekhono poll nei.</Text>
+        <Text style={[s.sub, { color: colors.muted }]}>{t("rooms.polls.noPoll")}</Text>
       ) : (
         <View style={{ gap: 8, marginTop: 8 }}>
           <Text style={[s.question, { color: colors.text }]}>{poll.title}</Text>
           {meta?.options?.map((o) => {
             const pct = total > 0 ? Math.round(((o.votes ?? 0) / total) * 100) : 0;
             return (
-              <Pressable key={o.id} onPress={() => { triggerHaptic(); meta.is_open && voteM.mutate(o.id); }}
-                style={[s.opt, { borderColor: colors.border, backgroundColor: colors.surface2 }]}>
+              <Pressable
+                key={o.id}
+                accessibilityRole="button"
+                accessibilityLabel={o.text}
+                onPress={() => {
+                  triggerHaptic();
+                  meta.is_open && voteM.mutate(o.id);
+                }}
+                style={[s.opt, { borderColor: colors.border, backgroundColor: colors.surface2 }]}
+              >
                 <View style={[s.fill, { width: `${pct}%`, backgroundColor: colors.primary + "22" }]} />
                 <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
                   <Text style={[s.optTxt, { color: colors.text }]}>{o.text}</Text>
@@ -51,7 +61,7 @@ export function RoomPollCard({ roomId, isLeader }: { roomId: string; isLeader?: 
               </Pressable>
             );
           })}
-          <Text style={[s.sub, { color: colors.muted }]}>{total} votes · vote = +5 XP</Text>
+          <Text style={[s.sub, { color: colors.muted }]}>{total} {t("rooms.polls.votesCount")}</Text>
         </View>
       )}
     </View>

@@ -54,7 +54,7 @@ export function InstagramProfileCard({
     }
 
     if (status === "connected") {
-      promptRemoveConnection(profile);
+      router.push(`/user/${profile.id}` as any);
       return;
     }
 
@@ -71,8 +71,8 @@ export function InstagramProfileCard({
       return;
     }
 
-    // Status is 'none' -> Send real request
-    sendRequest(profile.id);
+    // Status is 'none' -> Send real request with profile context
+    sendRequest(profile.id, profile);
     if (onConnect) {
       onConnect(profile.id);
     }
@@ -96,7 +96,7 @@ export function InstagramProfileCard({
         };
       case "connected":
         return {
-          label: t("feed.connected", "Connected"),
+          label: t("feed.connected", "Connected ✓"),
           icon: "check" as const,
           bgColor: colors.surface2,
           borderColor: colors.border,
@@ -104,7 +104,7 @@ export function InstagramProfileCard({
         };
       case "pending_outgoing":
         return {
-          label: "Pending",
+          label: "Request Sent",
           icon: "clock-outline" as const,
           bgColor: colors.surface2,
           borderColor: colors.border,
@@ -120,7 +120,7 @@ export function InstagramProfileCard({
         };
       default:
         return {
-          label: t("feed.connect", "Connect"),
+          label: t("feed.connect", "+ Connect"),
           icon: "account-plus" as const,
           bgColor: colors.primary,
           borderColor: colors.primary,

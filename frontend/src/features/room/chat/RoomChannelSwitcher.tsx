@@ -102,7 +102,7 @@ export function RoomChannelSwitcher({
       <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
         <Pressable style={s.backdrop} onPress={onClose}>
           <Pressable style={[s.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-            <View style={s.handle} />
+            <View style={[s.handle, { backgroundColor: colors.muted }]} />
             <Row style={s.headerRow}>
               <Text style={[s.title, { color: colors.text }]}>ROOM CHANNELS</Text>
               {canManageChannels && (
@@ -113,8 +113,8 @@ export function RoomChannelSwitcher({
                   }}
                   style={[s.newChannelBtn, { backgroundColor: colors.primary }]}
                 >
-                  <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
-                  <Text style={s.newChannelText}>Channel</Text>
+                  <MaterialCommunityIcons name="plus" size={16} color={colors.white} />
+                  <Text style={[s.newChannelText, { color: colors.white }]}>Channel</Text>
                 </Pressable>
               )}
             </Row>
@@ -218,8 +218,8 @@ export function RoomChannelSwitcher({
                       },
                     ]}
                   >
-                    <MaterialCommunityIcons name={ct.icon} size={14} color={isTypeSelected ? "#FFF" : colors.text} />
-                    <Text style={{ fontSize: 12, fontWeight: isTypeSelected ? "700" : "500", color: isTypeSelected ? "#FFF" : colors.text }}>
+                    <MaterialCommunityIcons name={ct.icon} size={14} color={isTypeSelected ? colors.white : colors.text} />
+                    <Text style={{ fontSize: 12, fontWeight: isTypeSelected ? "700" : "500", color: isTypeSelected ? colors.white : colors.text }}>
                       {ct.label}
                     </Text>
                   </Pressable>
@@ -270,7 +270,6 @@ const s = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#D1D5DB",
     alignSelf: "center",
     marginTop: 8,
     marginBottom: 12,
@@ -294,7 +293,6 @@ const s = StyleSheet.create({
     borderRadius: radius.pill,
   },
   newChannelText: {
-    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "700",
   },

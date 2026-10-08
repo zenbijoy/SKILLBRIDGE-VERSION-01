@@ -65,6 +65,13 @@ function maskKey(key: string): string {
   return `${key.slice(0, 8)}...${key.slice(-4)}`;
 }
 
+export const GEMINI_FALLBACK_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3-flash-preview",
+  "gemini-3.5-flash",
+  "gemini-3.8-flash",
+] as const;
+
 class GeminiKeyManager {
   private keys: GeminiKeyHealth[] = [];
   private roundRobinIdx = 0;
@@ -141,7 +148,10 @@ class GeminiKeyManager {
     }
 
     const now = Date.now();
-    const available = this.keys.filter((k) => k.cooldownUntil <= now);
+    // Exclude permanently dead keys (401 invalid credentials or 403 project denied) if any healthy key exists
+    const validPool = this.keys.filter((k) => k.lastErrorStatus !== 401 && k.lastErrorStatus !== 403);
+    const pool = validPool.length > 0 ? validPool : this.keys;
+    const available = pool.filter((k) => k.cooldownUntil <= now);
 
     if (available.length > 0) {
       this.roundRobinIdx = (this.roundRobinIdx + 1) % available.length;
@@ -149,7 +159,7 @@ class GeminiKeyManager {
     }
 
     // All keys on cooldown - choose the one whose cooldown expires earliest
-    const sorted = [...this.keys].sort((a, b) => a.cooldownUntil - b.cooldownUntil);
+    const sorted = [...pool].sort((a, b) => a.cooldownUntil - b.cooldownUntil);
     const earliest = sorted[0]!;
     logger.warn(
       {
@@ -181,8 +191,8 @@ class GeminiKeyManager {
       // Model overloaded / High demand spike: wait 30 seconds
       cooldownMs = 30_000;
     } else if (status === 403 || status === 401) {
-      // Permission denied / Invalid / disabled project: isolate for 10 minutes
-      cooldownMs = 10 * 60_000;
+      // Permission denied / Invalid / disabled project: isolate for 24 hours
+      cooldownMs = 24 * 60 * 60_000;
     }
 
     keyState.cooldownUntil = Date.now() + cooldownMs;
@@ -200,20 +210,20 @@ class GeminiKeyManager {
 
   /**
    * Executes a Gemini generateContent request with automatic multi-account failover
-   * and automatic model resilience (e.g. falls back to gemini-flash-lite-latest on 503 spikes).
+   * and automatic model resilience across active Gemini 3.5 & 3 models.
    */
   public async generateContent(options: GeminiGenerateOptions): Promise<GeminiGenerateResult> {
     if (this.keys.length === 0) {
       this.reloadKeys();
     }
 
-    const maxRetries = Math.min(this.keys.length * 2, 6);
+    const maxRetries = Math.min(this.keys.length * 3, 9);
     let attempts = 0;
     const attemptedKeys = new Set<string>();
     let lastError: Error | null = null;
 
-    // Default primary model: gemini-flash-latest (or custom preferredModel)
-    const primaryModel = options.preferredModel || "gemini-flash-latest";
+    // Default primary model: gemini-3.5-flash-lite (fast, highest quota availability)
+    const primaryModel = options.preferredModel || "gemini-3.5-flash-lite";
     let activeModel = primaryModel;
 
     while (attempts < maxRetries) {
@@ -237,7 +247,7 @@ class GeminiKeyManager {
         requestBody.generationConfig = options.generationConfig;
       }
 
-      const timeoutMs = options.timeoutMs || 15_000;
+      const timeoutMs = options.timeoutMs || 25_000;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -255,17 +265,23 @@ class GeminiKeyManager {
           const errorBody = await response.text().catch(() => "");
           this.markFailure(keyState, response.status, errorBody);
 
-          // If gemini-flash-latest experiences high demand (503), switch model to gemini-flash-lite-latest
-          if (response.status === 503 && activeModel !== "gemini-flash-lite-latest") {
-            logger.info(
-              { fromModel: activeModel, toModel: "gemini-flash-lite-latest" },
-              "[GeminiKeyManager] Switching model to gemini-flash-lite-latest due to 503 high demand",
-            );
-            activeModel = "gemini-flash-lite-latest";
+          // On 404 (model deprecated), 503 (model spike/overloaded), or 429 (quota hit):
+          // Switch to the next model in the fallback chain to maximize resilience
+          if (response.status === 404 || response.status === 503 || response.status === 429) {
+            const currentIdx = GEMINI_FALLBACK_MODELS.indexOf(activeModel as any);
+            const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % GEMINI_FALLBACK_MODELS.length : 0;
+            const nextModel = GEMINI_FALLBACK_MODELS[nextIdx];
+            if (nextModel && nextModel !== activeModel) {
+              logger.info(
+                { fromModel: activeModel, toModel: nextModel, status: response.status },
+                `[GeminiKeyManager] Switching model from ${activeModel} to ${nextModel} due to status ${response.status}`,
+              );
+              activeModel = nextModel;
+            }
           }
 
           lastError = new Error(`Gemini HTTP ${response.status} on ${keyState.masked}: ${errorBody.slice(0, 200)}`);
-          continue; // Try next key
+          continue; // Try next key/model
         }
 
         const data = (await response.json()) as any;

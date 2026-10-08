@@ -14,6 +14,7 @@ import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { GrowthHero } from "@/components/GrowthHero";
 import { growthIllustrations512 } from "@/assets/illustrations";
+import { ErrorState, Screen } from "@/components/ui";
 import {
   fetchProgressSummary,
   type ProgressSummary,
@@ -27,13 +28,15 @@ export default function ProgressScreen() {
   const [summary, setSummary] = useState<ProgressSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
+      setError(null);
       const data = await fetchProgressSummary();
       setSummary(data);
-    } catch {
-      // Fallback
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load progress summary");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -53,6 +56,7 @@ export default function ProgressScreen() {
   const totalHours = summary ? Math.round((summary.stats.total_learning_minutes / 60) * 10) / 10 : 0;
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={{ flex: 1 }}>
@@ -74,6 +78,14 @@ export default function ProgressScreen() {
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : error && !summary ? (
+        <View style={styles.centerContainer}>
+          <ErrorState
+            title="Could not load progress"
+            detail={error}
+            onRetry={loadData}
+          />
         </View>
       ) : (
         <ScrollView
@@ -214,6 +226,7 @@ export default function ProgressScreen() {
         </ScrollView>
       )}
     </View>
+    </Screen>
   );
 }
 

@@ -785,11 +785,11 @@ export default function ConnectionsScreen() {
                           } else if (isPendingIn) {
                             const inReq = getIncomingRequest(peer.id);
                             if (inReq) acceptRequest(inReq.id, peer);
-                            else sendRequest(peer.id);
+                            else sendRequest(peer.id, peer);
                           } else if (isConn) {
                             router.push(`/user/${peer.id}` as any);
                           } else if (!isSelf) {
-                            sendRequest(peer.id);
+                            sendRequest(peer.id, peer);
                           }
                         }}
                         disabled={isSelf || isMutating}

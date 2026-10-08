@@ -16,7 +16,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
-import { Pill, Row, triggerHaptic } from "@/components/ui";
+import { Pill, Row, Screen, triggerHaptic } from "@/components/ui";
 import {
   fetchSavedCollections,
   fetchSavedItems,
@@ -148,6 +148,7 @@ export default function SavedLibraryScreen() {
   };
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
@@ -402,6 +403,7 @@ export default function SavedLibraryScreen() {
         )}
       </ScrollView>
     </View>
+    </Screen>
   );
 }
 

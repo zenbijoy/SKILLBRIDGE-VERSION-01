@@ -1,6 +1,7 @@
 import type { Server as SocketServer } from "socket.io";
 import { admin } from "./lib/db.js";
 import { logger } from "./lib/logger.js";
+import { redis } from "./lib/redis.js";
 
 /**
  * Lightweight real-time presence bus.
@@ -21,6 +22,23 @@ export function getSocketServer(): SocketServer | null {
 
 export const roomPresenceRoom = (roomId: string) => `room:${roomId}`;
 export const sessionPresenceRoom = (sessionId: string) => `session:${sessionId}`;
+export const clubRoom = (clubId: string) => `club:${clubId}`;
+
+export function emitClubEvent(
+  clubId: string,
+  event: string,
+  payload: Record<string, any>,
+): void {
+  if (!ioRef) return;
+  try {
+    ioRef.to(clubRoom(clubId)).emit(event, { ...payload, clubId });
+  } catch (err) {
+    logger.warn(
+      { event: "club_emit_failed", clubId, err: (err as Error).message },
+      "Club socket event broadcast failed",
+    );
+  }
+}
 
 /**
  * Broadcast the current live participant count to everyone watching the room.
@@ -202,6 +220,106 @@ export function setupSocket(io: SocketServer) {
     socket.on("room:presence:unsubscribe", handleRoomUnsubscribe);
     socket.on("room:unsubscribe", handleRoomUnsubscribe);
 
+    // ── Club real-time room subscribers ─────────────────────────────────────
+    socket.on("club:join", (payload: any) => {
+      const clubId = payload?.clubId || payload?.club_id;
+      if (typeof clubId === "string") {
+        socket.join(clubRoom(clubId));
+      }
+    });
+
+    socket.on("club:leave", (payload: any) => {
+      const clubId = payload?.clubId || payload?.club_id;
+      if (typeof clubId === "string") {
+        socket.leave(clubRoom(clubId));
+      }
+    });
+
+    socket.on("room:join", (payload: any) => {
+      const room = payload?.room;
+      if (typeof room === "string") {
+        socket.join(room);
+      }
+    });
+
+    socket.on("room:leave", (payload: any) => {
+      const room = payload?.room;
+      if (typeof room === "string") {
+        socket.leave(room);
+      }
+    });
+
+    // ── Voice lounge real-time room subscribers & state sync ──────────────
+    socket.on("room:voice:join", async (payload: any) => {
+      const roomId = payload?.roomId || payload?.room_id;
+      if (typeof roomId !== "string") return;
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", socket.data.userId)
+        .maybeSingle();
+      if (!member) return;
+
+      const voiceRoom = `room:${roomId}:voice`;
+      socket.join(voiceRoom);
+
+      if (redis) {
+        try {
+          await redis.sadd(`room:${roomId}:voice_users`, socket.data.userId);
+          await redis.expire(`room:${roomId}:voice_users`, 86400);
+          const count = await redis.scard(`room:${roomId}:voice_users`);
+          io.to(voiceRoom).emit("room:voice:updated", {
+            roomId,
+            userId: socket.data.userId,
+            action: "joined",
+            participantCount: count,
+          });
+          io.to(roomPresenceRoom(roomId)).emit("room:voice:status", {
+            roomId,
+            active: count > 0,
+            participantCount: count,
+          });
+        } catch {}
+      }
+    });
+
+    socket.on("room:voice:leave", async (payload: any) => {
+      const roomId = payload?.roomId || payload?.room_id;
+      if (typeof roomId !== "string") return;
+      const voiceRoom = `room:${roomId}:voice`;
+      socket.leave(voiceRoom);
+
+      if (redis) {
+        try {
+          await redis.srem(`room:${roomId}:voice_users`, socket.data.userId);
+          const count = await redis.scard(`room:${roomId}:voice_users`);
+          io.to(voiceRoom).emit("room:voice:updated", {
+            roomId,
+            userId: socket.data.userId,
+            action: "left",
+            participantCount: count,
+          });
+          io.to(roomPresenceRoom(roomId)).emit("room:voice:status", {
+            roomId,
+            active: count > 0,
+            participantCount: count,
+          });
+        } catch {}
+      }
+    });
+
+    socket.on("room:voice:state", (payload: any) => {
+      const roomId = payload?.roomId;
+      if (typeof roomId !== "string") return;
+      socket.to(`room:${roomId}:voice`).emit("room:voice:participant_state", {
+        roomId,
+        userId: socket.data.userId,
+        isMuted: Boolean(payload?.isMuted),
+        isSpeaking: Boolean(payload?.isSpeaking),
+      });
+    });
+
     socket.on("typing:start", ({ conversationId }) => {
       if (typeof conversationId !== "string") return;
       if (socket.rooms.has(`conversation:${conversationId}`)) {
@@ -305,6 +423,33 @@ export function setupSocket(io: SocketServer) {
         callId,
         durationSeconds: typeof durationSeconds === "number" ? Math.max(0, durationSeconds) : 0,
       });
+    });
+
+    // Call Ready signal (emitted by callee once CallScreen is mounted and media is initialized)
+    socket.on("call:ready", async (payload: { callId?: string }) => {
+      if (!checkSignalingRateLimit(socket.id)) return;
+      const { callId } = payload || {};
+      if (!callId) return;
+
+      const peerId = await getAuthorizedCallPeer(callId);
+      if (!peerId) return;
+      io.to(`user:${peerId}`).emit("call:ready", { callId });
+    });
+
+    // Real-time peer presence lookup
+    socket.on("presence:check", (payload: { userIds?: string[] }, callback?: (res: any) => void) => {
+      const ids = Array.isArray(payload?.userIds) ? payload.userIds : [];
+      const statusMap: Record<string, boolean> = {};
+      for (const id of ids) {
+        if (typeof id === "string") {
+          statusMap[id] = userConnections.has(id);
+        }
+      }
+      if (typeof callback === "function") {
+        callback({ status: statusMap });
+      } else {
+        socket.emit("presence:status", { status: statusMap });
+      }
     });
 
     // Call ICE Restart / Reconnect signal

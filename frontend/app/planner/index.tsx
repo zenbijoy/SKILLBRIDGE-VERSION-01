@@ -23,6 +23,7 @@ import {
   skipStudyBlock,
   type StudyPlanBlock,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function PlannerScreen() {
   const { colors } = useTheme();
@@ -105,6 +106,7 @@ export default function PlannerScreen() {
   const totalMinutes = blocks.reduce((acc, b) => acc + (b.is_completed ? b.duration_minutes : 0), 0);
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -321,6 +323,7 @@ export default function PlannerScreen() {
         </ScrollView>
       )}
     </View>
+    </Screen>
   );
 }
 

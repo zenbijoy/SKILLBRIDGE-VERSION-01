@@ -33,11 +33,10 @@ import { radius, useTheme } from "@/theme";
 import {
   ClubItem,
   CreateClubModal,
+  isClubLeader,
 } from "@/features/clubs";
 
 type TabMode = "created" | "joined";
-
-const LEADERSHIP_ROLES = ["owner", "admin", "president", "vice_president", "executive", "moderator", "team_lead"];
 
 export default function ClubManageScreen() {
   const { colors } = useTheme();
@@ -91,12 +90,8 @@ export default function ClubManageScreen() {
         })
         .filter(Boolean) as (ClubItem & { my_role?: string; my_title?: string; joined_at?: string })[];
 
-      const created = all.filter((c) =>
-        c.my_role ? LEADERSHIP_ROLES.includes(c.my_role.toLowerCase()) : false
-      );
-      const joined = all.filter((c) =>
-        c.my_role ? !LEADERSHIP_ROLES.includes(c.my_role.toLowerCase()) : true
-      );
+      const created = all.filter((c) => isClubLeader(c.my_role));
+      const joined = all.filter((c) => !isClubLeader(c.my_role));
 
       return { all, created, joined };
     },
@@ -873,8 +868,9 @@ export default function ClubManageScreen() {
                 desc: "Schedule workshops, bootcamps and conflict-free calendar events",
                 icon: "calendar-star",
                 action: () => {
+                  const id = activitiesClub?.id;
                   setActivitiesClub(null);
-                  router.push(`/events` as any);
+                  router.push(`/club/${id}?tab=events` as any);
                 },
               },
               {
@@ -884,7 +880,7 @@ export default function ClubManageScreen() {
                 action: () => {
                   const id = activitiesClub?.id;
                   setActivitiesClub(null);
-                  router.push(`/club/${id}` as any);
+                  router.push(`/club/${id}?tab=recruitment` as any);
                 },
               },
               {
@@ -894,7 +890,7 @@ export default function ClubManageScreen() {
                 action: () => {
                   const id = activitiesClub?.id;
                   setActivitiesClub(null);
-                  router.push(`/club/${id}` as any);
+                  router.push(`/club/${id}?tab=projects` as any);
                 },
               },
               {
@@ -904,7 +900,7 @@ export default function ClubManageScreen() {
                 action: () => {
                   const id = activitiesClub?.id;
                   setActivitiesClub(null);
-                  router.push(`/club/${id}` as any);
+                  router.push(`/club/${id}?tab=resources` as any);
                 },
               },
             ].map((item, idx) => (

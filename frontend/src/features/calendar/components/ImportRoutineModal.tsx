@@ -130,20 +130,43 @@ export function ImportRoutineModal({
     setIsProcessing(true);
     setProgressStep("Uploading routine file...");
 
+    let t1: any = null;
+    let t2: any = null;
+    let t3: any = null;
+
     try {
-      // Step simulation for honest feedback
-      setTimeout(() => setProgressStep("Analyzing document structure..."), 1200);
-      setTimeout(() => setProgressStep("AI extracting course timetable..."), 3000);
-      setTimeout(() => setProgressStep("Validating times & checking conflicts..."), 5000);
+      // Step feedback
+      t1 = setTimeout(() => setProgressStep("Analyzing document structure..."), 1200);
+      t2 = setTimeout(() => setProgressStep("AI extracting course timetable..."), 3000);
+      t3 = setTimeout(() => setProgressStep("Validating times & checking conflicts..."), 5000);
+
+      // Ensure base64 is populated
+      let base64ToSend = selectedFile.base64;
+      if (!base64ToSend && selectedFile.uri) {
+        try {
+          const response = await fetch(selectedFile.uri);
+          const blob = await response.blob();
+          const reader = new FileReader();
+          base64ToSend = await new Promise<string>((resolve) => {
+            reader.onloadend = () => {
+              const result = (reader.result as string) || "";
+              resolve(result.includes(",") ? result.split(",")[1] ?? "" : result);
+            };
+            reader.readAsDataURL(blob);
+          });
+        } catch (readErr) {
+          console.warn("Base64 re-read failed:", readErr);
+        }
+      }
 
       const resp = await api<{
-        success: boolean;
+        success?: boolean;
         routine: AcademicRoutine;
         extraction: any;
       }>("/calendar/routine/extract", {
         method: "POST",
         body: JSON.stringify({
-          fileBase64: selectedFile.base64,
+          fileBase64: base64ToSend,
           fileMimeType: selectedFile.mimeType,
           mimeType: selectedFile.mimeType,
           fileName: selectedFile.name,
@@ -165,7 +188,7 @@ export function ImportRoutineModal({
       });
 
       setIsProcessing(false);
-      if (resp.routine) {
+      if (resp?.routine) {
         onExtractionSuccess(resp.routine);
       } else {
         throw new Error("No routine returned from extraction");
@@ -175,8 +198,12 @@ export function ImportRoutineModal({
       Alert.alert(
         "Extraction Note",
         error.message ||
-          "Could not complete AI extraction. You can also create your routine manually."
+          "Could not complete AI extraction. You can review or create your routine manually."
       );
+    } finally {
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+      if (t3) clearTimeout(t3);
     }
   };
 

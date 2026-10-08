@@ -12,6 +12,7 @@ import { router } from "expo-router";
 import type { ClubDetail } from "../types";
 import { useTheme, radius } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
+import { isClubAdmin } from "../constants";
 
 interface ClubHeroProps {
   club: ClubDetail;
@@ -35,14 +36,12 @@ export function ClubHero({
         message: `Join ${club.name} on SkillBridge: Check out their projects, events, and community!`,
         title: club.name,
       });
-    } catch {}
+    } catch (err: unknown) {
+      // User cancelled share dialog or platform share failed
+    }
   };
 
-  const isLeader =
-    club.my_role &&
-    ["owner", "admin", "president", "vice_president", "secretary", "treasurer", "executive"].includes(
-      club.my_role
-    );
+  const isAdmin = isClubAdmin(club.my_role);
 
   const initial = (club.name?.trim()?.[0] ?? "C").toUpperCase();
 
@@ -322,7 +321,7 @@ export function ClubHero({
           </Pressable>
 
           {/* Leader Admin / Manage Button */}
-          {isLeader && onOpenAdminModal ? (
+          {isAdmin && onOpenAdminModal ? (
             <Pressable
               onPress={onOpenAdminModal}
               style={({ pressed }) => [

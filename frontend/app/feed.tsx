@@ -163,24 +163,38 @@ export default function CampusFeedScreen() {
       );
       return { postId, isSaved: res.is_saved, count: res.saves_count };
     },
-    onSuccess: ({ postId, isSaved, count }) => {
+    onMutate: async (postId: string) => {
       triggerHaptic("selection");
+      await qc.cancelQueries({ queryKey: ["campus-feed"] });
+      const previous = qc.getQueryData(feedQueryKey);
+
       qc.setQueriesData({ queryKey: ["campus-feed"] }, (old: any) => {
         if (!old?.posts) return old;
         return {
           ...old,
           posts: old.posts.map((p: SocialPost) => {
             if (p.id !== postId) return p;
+            const nextSaved = !p.is_saved;
             return {
               ...p,
-              is_saved: isSaved,
-              saves_count: count,
+              is_saved: nextSaved,
+              saves_count: Math.max(0, (p.saves_count || 0) + (nextSaved ? 1 : -1)),
             };
           }),
         };
       });
+
+      return { previous };
     },
-    onError: (err: Error) => Alert.alert("Save Failed", err.message),
+    onError: (err: Error, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(feedQueryKey, context.previous);
+      }
+      Alert.alert("Save Failed", err.message);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["campus-feed"] });
+    },
   });
 
   // Delete post mutation

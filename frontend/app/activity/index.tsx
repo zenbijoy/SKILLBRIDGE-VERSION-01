@@ -16,6 +16,7 @@ import { GrowthHero } from "@/components/GrowthHero";
 import { GrowthEmptyState } from "@/components/GrowthEmptyState";
 import { growthIllustrations512 } from "@/assets/illustrations";
 import { fetchActivityTimeline, type ActivityEvent } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function ActivityTimelineScreen() {
   const { colors } = useTheme();
@@ -87,6 +88,7 @@ export default function ActivityTimelineScreen() {
   };
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
@@ -173,6 +175,7 @@ export default function ActivityTimelineScreen() {
         )}
       </ScrollView>
     </View>
+    </Screen>
   );
 }
 

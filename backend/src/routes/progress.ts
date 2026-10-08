@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { assertUuid, eitherColumnFilter } from "../lib/query-helpers.js";
+import { AppError } from "../lib/errors.js";
 
 export const progress = Router();
 
@@ -49,11 +51,13 @@ progress.get(
 
     const studyMinutes = (studyBlocks || []).reduce((acc, b) => acc + (b.duration_minutes || 0), 0);
 
+    assertUuid(userId, "userId");
+
     // 5. Tutoring & Sessions
     const { data: completedBookings } = await admin
       .from("session_bookings")
       .select("learner_id, tutor_id, duration_minutes, status")
-      .or(`learner_id.eq.${userId},tutor_id.eq.${userId}`)
+      .or(eitherColumnFilter("learner_id", "tutor_id", userId))
       .eq("status", "completed");
 
     const sessionsTaught = (completedBookings || []).filter((b) => b.tutor_id === userId).length;
@@ -69,15 +73,15 @@ progress.get(
       .eq("user_id", userId)
       .eq("is_revoked", false);
 
-    // 7. Recent 28-day daily activity distribution
+    // 7. Recent 60-day daily activity distribution (L2 fix: align with 60-day streak calculation)
     const now = new Date();
-    const past28Days = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
+    const past60Days = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
 
     const { data: recentEvents } = await admin
       .from("user_activity_events")
       .select("created_at, event_type")
       .eq("user_id", userId)
-      .gte("created_at", past28Days.toISOString());
+      .gte("created_at", past60Days.toISOString());
 
     const dailyActivityCount: Record<string, number> = {};
     (recentEvents || []).forEach((ev) => {
@@ -135,15 +139,27 @@ progress.get(
   "/skill/:skillId",
   wrap(async (req, res) => {
     const userId = req.userId!;
-    const { skillId } = req.params;
+    const skillId = req.params.skillId;
+    if (typeof skillId !== "string") {
+      throw new AppError("Invalid skill ID", { statusCode: 400, code: "VALIDATION_ERROR" });
+    }
+    assertUuid(userId, "userId");
+    try {
+      assertUuid(skillId, "skillId");
+    } catch {
+      throw new AppError("Invalid skill ID", { statusCode: 400, code: "VALIDATION_ERROR" });
+    }
 
     const { data: skill, error: sErr } = await admin
       .from("skills")
       .select("*")
       .eq("id", skillId)
-      .single();
+      .maybeSingle();
 
     if (sErr) throw sErr;
+    if (!skill) {
+      throw new AppError("Skill not found", { statusCode: 404, code: "RESOURCE_NOT_FOUND" });
+    }
 
     // User goals on this skill
     const { data: goals } = await admin
@@ -158,7 +174,7 @@ progress.get(
       .from("session_bookings")
       .select("*, tutor:profiles!session_bookings_tutor_id_fkey(id, full_name), learner:profiles!session_bookings_learner_id_fkey(id, full_name)")
       .eq("skill_id", skillId)
-      .or(`learner_id.eq.${userId},tutor_id.eq.${userId}`);
+      .or(eitherColumnFilter("learner_id", "tutor_id", userId));
 
     // Study blocks on this skill
     const { data: blocks } = await admin

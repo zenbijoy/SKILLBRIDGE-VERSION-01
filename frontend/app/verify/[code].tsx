@@ -14,6 +14,7 @@ import { useI18n } from "@/i18n";
 import { GrowthHero } from "@/components/GrowthHero";
 import { growthIllustrations512 } from "@/assets/illustrations";
 import { verifyCertificate, type VerifiedCertificate } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function VerifyProofScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
@@ -47,6 +48,7 @@ export default function VerifyProofScreen() {
   }, [loadVerification]);
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -148,6 +150,7 @@ export default function VerifyProofScreen() {
         </View>
       )}
     </ScrollView>
+    </Screen>
   );
 }
 

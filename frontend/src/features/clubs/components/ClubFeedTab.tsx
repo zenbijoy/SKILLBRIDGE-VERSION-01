@@ -16,6 +16,8 @@ import type { ClubPost, ClubPostType } from "../types";
 import { useTheme, radius } from "@/theme";
 import { POST_TYPE_CONFIG } from "../constants";
 import { triggerHaptic } from "@/components/ui";
+import { useI18n } from "@/i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 
 interface ClubFeedTabProps {
   clubId: string;
@@ -33,6 +35,7 @@ export function ClubFeedTab({
   onRefresh,
 }: ClubFeedTabProps) {
   const { colors, isDark } = useTheme();
+  const { t } = useI18n();
 
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -57,7 +60,9 @@ export function ClubFeedTab({
     try {
       await api(`/clubs/posts/${post.id}/like`, { method: "POST" });
       onRefresh();
-    } catch {}
+    } catch (err: unknown) {
+      Alert.alert("Action Failed", clubErrorMessage(err, t));
+    }
   };
 
   const handleOpenComments = async (postId: string) => {
@@ -66,7 +71,10 @@ export function ClubFeedTab({
     try {
       const resp = await api<{ comments: any[] }>(`/clubs/posts/${postId}/comments`);
       setCommentsList(resp.comments || []);
-    } catch {}
+    } catch (err: unknown) {
+      setCommentsList([]);
+      Alert.alert("Error", clubErrorMessage(err, t));
+    }
   };
 
   const handleSendComment = async () => {
@@ -80,8 +88,8 @@ export function ClubFeedTab({
       setCommentsList((prev) => [...prev, resp.comment]);
       setNewCommentText("");
       onRefresh();
-    } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to post comment");
+    } catch (e: unknown) {
+      Alert.alert("Error", clubErrorMessage(e, t));
     }
   };
 
@@ -108,9 +116,9 @@ export function ClubFeedTab({
       setPostContent("");
       setIsPinned(false);
       onRefresh();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setIsSubmitting(false);
-      Alert.alert("Error", e.message || "Could not publish post.");
+      Alert.alert("Error", clubErrorMessage(e, t));
     }
   };
 

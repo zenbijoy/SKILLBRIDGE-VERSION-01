@@ -2,11 +2,11 @@ import { admin } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 
 export interface PushProvider {
-  sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }): Promise<void>;
+  sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any>; priority?: "normal" | "high" }): Promise<void>;
 }
 
 export class ExpoPushProvider implements PushProvider {
-  async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }) {
+  async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any>; priority?: "normal" | "high" }) {
     const { data: tokens } = await admin
       .from("device_tokens")
       .select("token")
@@ -17,13 +17,27 @@ export class ExpoPushProvider implements PushProvider {
     if (!tokens || tokens.length === 0) return;
 
     const expoTokens = tokens.map(t => t.token);
+    const isHighPriority = message.priority === "high";
 
     const payload = expoTokens.map(token => ({
       to: token,
       sound: "default",
       title: message.title,
       body: message.body,
-      data: message.data
+      data: message.data,
+      // High-priority messages wake the device (Android FCM) and are
+      // delivered immediately even in Do Not Disturb / quiet hours.
+      ...(isHighPriority
+        ? {
+            priority: "high" as const,
+            // Android notification channel for incoming calls (bypasses DND
+            // when the channel is configured with importance HIGH).
+            channelId: "incoming_calls",
+            // iOS: play sound & show even when the device is muted.
+            interruptionLevel: "active" as const,
+            _displayInForeground: true,
+          }
+        : { priority: "default" as const }),
     }));
 
     try {
@@ -184,8 +198,8 @@ export class ExpoPushProvider implements PushProvider {
 }
 
 export class MockPushProvider implements PushProvider {
-  async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any> }) {
-    logger.debug({ event: "mock_push_dispatched", userId, title: message.title }, `[MOCK PUSH] To: ${userId}`);
+  async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any>; priority?: "normal" | "high" }) {
+    logger.debug({ event: "mock_push_dispatched", userId, title: message.title, priority: message.priority }, `[MOCK PUSH] To: ${userId}`);
   }
   async checkPendingReceipts() {}
 }
@@ -199,7 +213,7 @@ export class PushService {
   
   static async sendNotification(
     userId: string,
-    message: { title: string; body: string; data?: Record<string, any> }
+    message: { title: string; body: string; data?: Record<string, any>; priority?: "normal" | "high" }
   ) {
     return this.provider.sendNotification(userId, message);
   }

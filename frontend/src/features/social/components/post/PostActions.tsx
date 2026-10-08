@@ -44,14 +44,12 @@ export function PostActions({
           <Row style={{ alignItems: "center", gap: 4 }}>
             {post.likes_count > 0 && (
               <Row style={styles.reactionIconsCluster}>
-                <View style={[styles.miniCircle, { backgroundColor: "#3B82F6" }]}>
-                  <Text style={styles.miniEmoji}>👍</Text>
+                <View style={[styles.miniCircle, { backgroundColor: "#EF4444", zIndex: 2, borderColor: colors.surface, borderWidth: 1.5 }]}>
+                  <MaterialCommunityIcons name="heart" size={10} color="#FFFFFF" />
                 </View>
-                {post.likes_count > 1 && (
-                  <View style={[styles.miniCircle, { backgroundColor: "#EF4444", marginLeft: -6 }]}>
-                    <Text style={styles.miniEmoji}>❤️</Text>
-                  </View>
-                )}
+                <View style={[styles.miniCircle, { backgroundColor: "#1D9BF0", marginLeft: -5, zIndex: 1, borderColor: colors.surface, borderWidth: 1.5 }]}>
+                  <MaterialCommunityIcons name="thumb-up" size={9} color="#FFFFFF" />
+                </View>
                 <Text style={[styles.statsText, { color: colors.muted, marginLeft: 6 }]}>
                   {post.likes_count}
                 </Text>
@@ -61,7 +59,8 @@ export function PostActions({
 
           <Row style={{ alignItems: "center", gap: 12 }}>
             {post.comments_count > 0 && (
-              <Pressable onPress={onCommentPress}>
+              <Pressable onPress={onCommentPress} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <MaterialCommunityIcons name="comment-outline" size={14} color={colors.muted} />
                 <Text style={[styles.statsText, { color: colors.muted }]}>
                   {post.comments_count} {post.comments_count === 1 ? "comment" : "comments"}
                 </Text>
@@ -106,19 +105,24 @@ export function PostActions({
             activeReaction ? `Remove ${activeReaction.label}` : "Like this post"
           }
         >
-          {activeReaction ? (
-            <Row style={{ alignItems: "center", gap: 6 }}>
-              <Text style={styles.activeEmoji}>{activeReaction.emoji}</Text>
-              <Text style={[styles.actionBtnText, { color: activeReaction.color, fontWeight: "700" }]}>
-                {activeReaction.label}
-              </Text>
-            </Row>
-          ) : (
-            <Row style={{ alignItems: "center", gap: 6 }}>
-              <MaterialCommunityIcons name="thumb-up-outline" size={18} color={colors.muted} />
-              <Text style={[styles.actionBtnText, { color: colors.muted }]}>Like</Text>
-            </Row>
-          )}
+          <Row style={{ alignItems: "center", gap: 5 }}>
+            <MaterialCommunityIcons
+              name={activeReaction ? "heart" : "heart-outline"}
+              size={18}
+              color={activeReaction ? "#EF4444" : colors.muted}
+            />
+            <Text
+              style={[
+                styles.actionBtnText,
+                {
+                  color: activeReaction ? "#EF4444" : colors.muted,
+                  fontWeight: activeReaction ? "700" : "500",
+                },
+              ]}
+            >
+              Like
+            </Text>
+          </Row>
         </Pressable>
 
         {/* Comment Button */}
@@ -128,8 +132,8 @@ export function PostActions({
           accessibilityRole="button"
           accessibilityLabel="Comment on this post"
         >
-          <MaterialCommunityIcons name="comment-outline" size={18} color={colors.muted} />
-          <Text style={[styles.actionBtnText, { color: colors.muted }]}>Comment</Text>
+          <MaterialCommunityIcons name="comment-outline" size={17} color={colors.muted} />
+          <Text style={[styles.actionBtnText, { color: colors.muted, fontWeight: "500" }]}>Comment</Text>
         </Pressable>
 
         {/* Repost Button */}
@@ -139,8 +143,8 @@ export function PostActions({
           accessibilityRole="button"
           accessibilityLabel="Repost this post to your profile"
         >
-          <MaterialCommunityIcons name="repeat-variant" size={19} color={colors.muted} />
-          <Text style={[styles.actionBtnText, { color: colors.muted }]}>Repost</Text>
+          <MaterialCommunityIcons name="repeat-variant" size={18} color={colors.muted} />
+          <Text style={[styles.actionBtnText, { color: colors.muted, fontWeight: "500" }]}>Repost</Text>
         </Pressable>
 
         {/* Send Button */}
@@ -150,8 +154,8 @@ export function PostActions({
           accessibilityRole="button"
           accessibilityLabel="Send post to a friend"
         >
-          <MaterialCommunityIcons name="send-outline" size={18} color={colors.muted} />
-          <Text style={[styles.actionBtnText, { color: colors.muted }]}>Send</Text>
+          <MaterialCommunityIcons name="send-outline" size={17} color={colors.muted} />
+          <Text style={[styles.actionBtnText, { color: colors.muted, fontWeight: "500" }]}>Send</Text>
         </Pressable>
 
         {/* Bookmark / Save Button */}
@@ -168,13 +172,13 @@ export function PostActions({
         >
           <MaterialCommunityIcons
             name={post.is_saved ? "bookmark" : "bookmark-outline"}
-            size={18}
+            size={17}
             color={post.is_saved ? colors.primary : colors.muted}
           />
           <Text
             style={[
               styles.actionBtnText,
-              { color: post.is_saved ? colors.primary : colors.muted, fontWeight: post.is_saved ? "700" : "600" },
+              { color: post.is_saved ? colors.primary : colors.muted, fontWeight: post.is_saved ? "700" : "500" },
             ]}
           >
             {post.is_saved ? "Saved" : "Save"}

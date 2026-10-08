@@ -20,6 +20,7 @@ import {
   toggleAchievementVisibility,
   type AchievementDefinition,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function AchievementDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -82,6 +83,7 @@ export default function AchievementDetailScreen() {
   const earnedDetails = achievement.earned_details;
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -188,6 +190,7 @@ export default function AchievementDetailScreen() {
         </View>
       )}
     </ScrollView>
+    </Screen>
   );
 }
 

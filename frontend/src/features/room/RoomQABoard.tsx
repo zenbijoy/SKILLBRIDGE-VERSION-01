@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Card, Pill, Row, ErrorState } from "@/components/ui";
 import { useTheme, radius } from "@/theme";
+import { useI18n } from "@/i18n";
 import { nextGenAnimationsV2 } from "@/assets/nextgen";
 import type { Profile } from "@/types";
 
@@ -29,6 +30,7 @@ export type Question = {
 
 export function RoomQABoard({ roomId, isMember }: { roomId: string; isMember: boolean }) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const qc = useQueryClient();
   const [showAskModal, setShowAskModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -49,9 +51,9 @@ export function RoomQABoard({ roomId, isMember }: { roomId: string; isMember: bo
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["room-questions", roomId] });
-      Alert.alert("Accepted Solution 🎉", "This answer has been marked as the accepted solution!");
+      Alert.alert(t("rooms.qa.solutionAcceptedTitle"), t("rooms.qa.solutionAcceptedMsg"));
     },
-    onError: (err: Error) => Alert.alert("Could not accept answer", err.message),
+    onError: (err: Error) => Alert.alert(t("rooms.qa.acceptError"), err.message),
   });
 
   const askMutation = useMutation({
@@ -66,7 +68,7 @@ export function RoomQABoard({ roomId, isMember }: { roomId: string; isMember: bo
       setNewTitle("");
       setNewBody("");
     },
-    onError: (err: Error) => Alert.alert("Could not post question", err.message),
+    onError: (err: Error) => Alert.alert(t("rooms.qa.postError"), err.message),
   });
 
   const answerMutation = useMutation({
@@ -80,7 +82,7 @@ export function RoomQABoard({ roomId, isMember }: { roomId: string; isMember: bo
       setAnsweringQuestionId(null);
       setAnswerText("");
     },
-    onError: (err: Error) => Alert.alert("Could not post answer", err.message),
+    onError: (err: Error) => Alert.alert(t("rooms.qa.answerError"), err.message),
   });
 
   const voteMutation = useMutation({
@@ -96,14 +98,14 @@ export function RoomQABoard({ roomId, isMember }: { roomId: string; isMember: bo
   return (
     <View style={styles.container}>
       <Row style={styles.headerRow}>
-        <Text style={[styles.title, { color: colors.text }]}>Discussion & Q&A</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t("rooms.qa.title")}</Text>
         {isMember && (
           <Pressable
             onPress={() => setShowAskModal(true)}
             style={[styles.askBtn, { backgroundColor: colors.primary }]}
           >
             <MaterialCommunityIcons name="help-circle-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.askBtnText}>Ask Question</Text>
+            <Text style={styles.askBtnText}>{t("rooms.qa.askBtn")}</Text>
           </Pressable>
         )}
       </Row>

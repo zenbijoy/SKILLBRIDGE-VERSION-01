@@ -10,6 +10,7 @@ import {
   ScrollView,
   TextInput,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LivePollOverlay } from "./LivePollOverlay";
 import { LiveQAOverlay } from "./LiveQAOverlay";
 import {
@@ -264,6 +265,7 @@ function Controls({
   lowDataMode: boolean;
   onToggleLowData: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const room = useRoomContext();
   const [cam, setCam] = useState(canPublish);
   const [mic, setMic] = useState(canPublish);
@@ -371,7 +373,16 @@ function Controls({
   }
 
   return (
-    <View style={s.controls}>
+    <View
+      style={[
+        s.controls,
+        {
+          paddingBottom: Math.max(insets.bottom, 12),
+          paddingLeft: Math.max(insets.left, 12),
+          paddingRight: Math.max(insets.right, 12),
+        },
+      ]}
+    >
       {/* Quick Reaction Bar */}
       <Row style={{ justifyContent: "center", gap: 12, marginBottom: 8 }}>
         {["👏", "❤️", "💡", "🔥"].map((emoji) => (

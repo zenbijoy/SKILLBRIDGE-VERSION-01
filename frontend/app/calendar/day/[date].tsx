@@ -14,6 +14,7 @@ import { useI18n } from "@/i18n";
 import { GrowthHero } from "@/components/GrowthHero";
 import { growthIllustrations512 } from "@/assets/illustrations";
 import { fetchDayView } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function DayScheduleScreen() {
   const { date } = useLocalSearchParams<{ date: string }>();
@@ -41,9 +42,14 @@ export default function DayScheduleScreen() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
+    const interval = setInterval(() => {
+      void loadData();
+    }, 30_000);
+    return () => clearInterval(interval);
   }, [loadData]);
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
@@ -118,6 +124,7 @@ export default function DayScheduleScreen() {
         </ScrollView>
       )}
     </View>
+    </Screen>
   );
 }
 

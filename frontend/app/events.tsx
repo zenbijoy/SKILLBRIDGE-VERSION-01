@@ -15,7 +15,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { api } from "@/lib/api";
 import { radius, spacing, useTheme } from "@/theme";
-import { triggerHaptic } from "@/components/ui";
+import { Screen, triggerHaptic } from "@/components/ui";
 
 interface EventItem {
   id: string;
@@ -184,6 +184,7 @@ export default function EventsScreen() {
   }, []);
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Lightweight App Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
@@ -756,6 +757,7 @@ export default function EventsScreen() {
         </View>
       </Modal>
     </View>
+    </Screen>
   );
 }
 

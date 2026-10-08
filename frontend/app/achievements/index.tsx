@@ -18,6 +18,7 @@ import {
   fetchAchievements,
   type AchievementDefinition,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function AchievementsScreen() {
   const { colors } = useTheme();
@@ -62,6 +63,7 @@ export default function AchievementsScreen() {
   });
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
@@ -177,6 +179,7 @@ export default function AchievementsScreen() {
         )}
       </ScrollView>
     </View>
+    </Screen>
   );
 }
 

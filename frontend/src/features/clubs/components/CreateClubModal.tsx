@@ -14,6 +14,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeProvider";
 import { ClubCategory, ClubMembershipType } from "../types";
 import { CLUB_CATEGORIES } from "../constants";
+import { useI18n } from "../../../i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
 
 interface CreateClubModalProps {
@@ -28,6 +30,7 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
   onCreated,
 }) => {
   const { colors } = useTheme();
+  const { t } = useI18n();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -109,7 +112,7 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
         social_links: Object.keys(social_links).length ? social_links : undefined,
       });
 
-      const newClub = res.data?.club;
+      const newClub = res.data?.club || res.data;
       Alert.alert(
         "Club Created! 🎉",
         "Your club has been founded! As the club owner, you have full leadership administrative controls."
@@ -119,10 +122,10 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
       if (newClub?.id) {
         onCreated(newClub.id);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         "Creation Failed",
-        err?.response?.data?.message || err.message || "Failed to create club."
+        clubErrorMessage(err, t)
       );
     } finally {
       setSubmitting(false);

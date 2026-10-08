@@ -253,3 +253,36 @@ export const CLUB_ROLES: { id: ClubRole; label: string }[] = [
   { id: "moderator", label: "Moderator" },
   { id: "member", label: "Member" },
 ];
+
+export const CLUB_LEADER_ROLES = [
+  "owner",
+  "admin",
+  "president",
+  "vice_president",
+  "secretary",
+  "treasurer",
+  "executive",
+  "team_lead",
+  "moderator",
+] as const;
+
+export const CLUB_ADMIN_ROLES = ["owner", "admin", "president"] as const;
+
+export const CLUB_OFFICER_ROLES = [
+  "owner",
+  "admin",
+  "president",
+  "vice_president",
+  "secretary",
+  "executive",
+] as const;
+
+export const isClubLeader = (role?: string | null): boolean =>
+  Boolean(role && (CLUB_LEADER_ROLES as readonly string[]).includes(role));
+
+export const isClubAdmin = (role?: string | null): boolean =>
+  Boolean(role && (CLUB_ADMIN_ROLES as readonly string[]).includes(role));
+
+export const isClubOfficer = (role?: string | null): boolean =>
+  Boolean(role && (CLUB_OFFICER_ROLES as readonly string[]).includes(role));
+

@@ -296,7 +296,9 @@ export function callsRouter(io?: Server) {
         });
       }
 
-      // 2. Send push notification to callee for background/offline alert
+      // 2. Send push notification to callee for background/offline alert.
+      // Calls are time-critical: send as HIGH priority and bypass quiet
+      // hours so the callee is paged even at night (WhatsApp/Phone style).
       try {
         await notifyUser(
           calleeId,
@@ -311,6 +313,7 @@ export function callsRouter(io?: Server) {
             callType: type,
             provider,
           },
+          { priority: "high", bypassQuietHours: true },
         );
       } catch (err) {
         logger.warn(

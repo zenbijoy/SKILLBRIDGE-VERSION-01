@@ -12,3 +12,6 @@ export * from "./components/ClubAchievementsTab";
 export * from "./components/ClubAboutTab";
 export * from "./components/ClubAdminModal";
 export * from "./components/CreateClubModal";
+export * from "./hooks/useClubRealtime";
+export * from "./lib/apiErrors";
+

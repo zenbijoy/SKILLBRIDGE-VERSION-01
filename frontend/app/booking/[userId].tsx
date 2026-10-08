@@ -20,6 +20,7 @@ import {
   requestBooking,
   type TutorSlot,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function BookTutorScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
@@ -94,6 +95,7 @@ export default function BookTutorScreen() {
   }
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -249,6 +251,7 @@ export default function BookTutorScreen() {
         )}
       </TouchableOpacity>
     </ScrollView>
+    </Screen>
   );
 }
 

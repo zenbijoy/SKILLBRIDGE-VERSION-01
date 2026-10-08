@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { sanitizeIlike } from "../lib/query-helpers.js";
 
 export const gamification = Router();
 
@@ -15,6 +16,7 @@ gamification.get(
   "/leaderboard",
   wrap(async (req, res) => {
     const { category, timeWindow, campus } = leaderboardQuerySchema.parse(req.query);
+    const cleanCampus = campus ? sanitizeIlike(campus) : undefined;
 
     // Calculate time filter timestamp if applicable
     let sinceDate: string | null = null;
@@ -33,7 +35,8 @@ gamification.get(
       let query = admin
         .from("sessions")
         .select("teacher_id, starts_at")
-        .eq("status", "completed");
+        .eq("status", "completed")
+        .limit(1000);
 
       if (sinceDate) {
         query = query.gte("starts_at", sinceDate);
@@ -63,8 +66,8 @@ gamification.get(
         .eq("profile_visibility", "public")
         .in("id", topTutorIds);
 
-      if (campus) {
-        profileQuery = profileQuery.ilike("university", `%${campus}%`);
+      if (cleanCampus) {
+        profileQuery = profileQuery.ilike("university", `%${cleanCampus}%`);
       }
 
       const { data: profiles, error: profErr } = await profileQuery;
@@ -87,7 +90,8 @@ gamification.get(
       let query = admin
         .from("session_participants")
         .select("user_id, created_at")
-        .or("attendance_status.eq.attended,status.eq.attended");
+        .or("attendance_status.eq.attended,status.eq.attended")
+        .limit(1000);
 
       if (sinceDate) {
         query = query.gte("created_at", sinceDate);
@@ -117,8 +121,8 @@ gamification.get(
         .eq("profile_visibility", "public")
         .in("id", topLearnerIds);
 
-      if (campus) {
-        profileQuery = profileQuery.ilike("university", `%${campus}%`);
+      if (cleanCampus) {
+        profileQuery = profileQuery.ilike("university", `%${cleanCampus}%`);
       }
 
       const { data: profiles, error: profErr } = await profileQuery;
@@ -142,7 +146,8 @@ gamification.get(
         .from("research_projects")
         .select("owner_id, created_at")
         .in("status", ["active", "completed"])
-        .eq("visibility", "public");
+        .eq("visibility", "public")
+        .limit(1000);
 
       if (sinceDate) {
         query = query.gte("created_at", sinceDate);
@@ -172,8 +177,8 @@ gamification.get(
         .eq("profile_visibility", "public")
         .in("id", topResearcherIds);
 
-      if (campus) {
-        profileQuery = profileQuery.ilike("university", `%${campus}%`);
+      if (cleanCampus) {
+        profileQuery = profileQuery.ilike("university", `%${cleanCampus}%`);
       }
 
       const { data: profiles, error: profErr } = await profileQuery;
@@ -200,8 +205,8 @@ gamification.get(
       .order("reputation", { ascending: false })
       .limit(50);
 
-    if (campus) {
-      query = query.ilike("university", `%${campus}%`);
+    if (cleanCampus) {
+      query = query.ilike("university", `%${cleanCampus}%`);
     }
 
     const { data: profiles, error } = await query;

@@ -32,6 +32,8 @@ import { LocalDB } from "@/lib/database";
 import { getSocket } from "@/lib/socket";
 import { radius, useTheme } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useUserPresence } from "@/features/presence/usePresence";
 
 interface MessageReaction {
   id?: string;
@@ -120,7 +122,9 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { session } = useSession();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [plusMenuVisible, setPlusMenuVisible] = useState(false);
   const qc = useQueryClient();
   const socket = getSocket();
 
@@ -227,6 +231,7 @@ export default function ChatScreen() {
   });
 
   const conversation = conversationQuery.data?.conversation;
+  const isPeerOnline = useUserPresence(conversation?.peer_id, conversation?.is_online);
 
   // Restore Draft
   useEffect(() => {
@@ -898,6 +903,10 @@ export default function ChatScreen() {
     return new Set((conversation?.members || []).map((m) => m.userId));
   }, [conversation?.members]);
 
+  const onlineCount = useMemo(() => {
+    return (conversation?.members || []).filter((m) => m.is_online).length;
+  }, [conversation?.members]);
+
   const availableConnections = useMemo(() => {
     const all = connectionsQuery.data?.connections || [];
     const notMembers = all.filter((c) => !existingMemberIds.has(c.id));
@@ -1213,24 +1222,28 @@ export default function ChatScreen() {
             {
               justifyContent: mine ? "flex-end" : "flex-start",
               marginTop: isSameSender ? 3 : 10,
+              gap: 8,
             },
           ]}
         >
-          {/* In group chats, display sender avatar on the left for other members */}
-          {!mine && conversation?.kind === "group" && (
+          {/* Incoming Avatar on the Left (Matching reference screenshot) */}
+          {!mine && (
             <View style={styles.groupAvatarCol}>
               {!isSameSender ? (
-                senderInfo?.avatarUrl ? (
-                  <Image source={{ uri: senderInfo.avatarUrl }} style={styles.groupSenderAvatar} />
+                senderInfo?.avatarUrl || (conversation?.kind === "dm" && conversation?.avatar_url) ? (
+                  <Image
+                    source={{ uri: senderInfo?.avatarUrl || conversation?.avatar_url || "" }}
+                    style={styles.groupSenderAvatar}
+                  />
                 ) : (
                   <View style={[styles.groupSenderAvatar, styles.placeholderGroupAvatar, { backgroundColor: colors.primarySoft }]}>
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary }}>
-                      {(senderInfo?.name || "M").charAt(0).toUpperCase()}
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary }}>
+                      {((senderInfo?.name || conversation?.title || "M").charAt(0)).toUpperCase()}
                     </Text>
                   </View>
                 )
               ) : (
-                <View style={{ width: 28 }} />
+                <View style={{ width: 32 }} />
               )}
             </View>
           )}
@@ -1244,29 +1257,31 @@ export default function ChatScreen() {
               styles.bubble,
               mine
                 ? {
-                    backgroundColor: "#2563EB",
-                    borderColor: "#2563EB",
+                    backgroundColor: isDark ? colors.surface2 : colors.primarySoft,
+                    borderColor: colors.border,
+                    borderWidth: 1,
                     borderRadius: 18,
-                    borderTopRightRadius: isSameSender ? 6 : 18,
+                    borderTopRightRadius: isSameSender ? 6 : 4,
                   }
                 : {
-                    backgroundColor: colors.surface2,
-                    borderColor: "transparent",
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderWidth: 1,
                     borderRadius: 18,
-                    borderTopLeftRadius: isSameSender ? 6 : 18,
+                    borderTopLeftRadius: isSameSender ? 6 : 4,
                   },
-              item.failed && { borderColor: "#EF4444" },
+              item.failed && { borderColor: colors.danger },
             ]}
           >
-            {/* Sender name above group message */}
-            {!mine && conversation?.kind === "group" && !isSameSender && (
+            {/* Sender name above incoming message (e.g. Alex (Dev), Sarah (QA)) */}
+            {!mine && !isSameSender && (
               <View style={styles.senderHeaderRow}>
                 <Text style={[styles.senderNameText, { color: colors.primary }]} numberOfLines={1}>
-                  {senderInfo?.name || "Member"}
+                  {senderInfo?.name || (conversation?.kind === "dm" ? conversation?.title : null) || "Member"}
                 </Text>
                 {senderInfo?.is_admin && (
-                  <View style={styles.adminMiniBadge}>
-                    <Text style={styles.adminMiniBadgeText}>ADMIN</Text>
+                  <View style={[styles.adminMiniBadge, { backgroundColor: isDark ? colors.surface2 : colors.primarySoft }]}>
+                    <Text style={[styles.adminMiniBadgeText, { color: colors.primary }]}>ADMIN</Text>
                   </View>
                 )}
               </View>
@@ -1274,11 +1289,11 @@ export default function ChatScreen() {
 
             {/* Reply Preview Quote Header */}
             {replyTarget && (
-              <View style={[styles.replyQuote, { borderLeftColor: mine ? "#FFFFFF" : colors.primary }]}>
-                <Text style={[styles.replyQuoteName, { color: mine ? "#FFFFFF" : colors.primary }]}>
+              <View style={[styles.replyQuote, { borderLeftColor: colors.primary }]}>
+                <Text style={[styles.replyQuoteName, { color: colors.primary }]}>
                   {replyTarget.sender_id === session?.user.id ? "You" : (memberMap[replyTarget.sender_id]?.name || "Peer")}
                 </Text>
-                <Text style={[styles.replyQuoteText, { color: mine ? "#E5EDFF" : colors.muted }]} numberOfLines={1}>
+                <Text style={[styles.replyQuoteText, { color: colors.muted }]} numberOfLines={1}>
                   {replyTarget.body || (replyTarget.attachment?.type === "image" ? "Photo" : "Voice note")}
                 </Text>
               </View>
@@ -1289,8 +1304,6 @@ export default function ChatScreen() {
               <Pressable
                 onPress={async () => {
                   triggerHaptic();
-                  // Refresh the signed URL on open: the upload-time signature
-                  // expires after 1h, so older photos would otherwise be blank.
                   const fresh = item.attachment?.storagePath
                     ? await resolveAttachmentUrl(id, item.attachment.storagePath, item.attachment!.url)
                     : item.attachment!.url;
@@ -1306,12 +1319,12 @@ export default function ChatScreen() {
               <View style={styles.voiceNoteContainer}>
                 <Pressable
                   onPress={() => void toggleVoicePlayback(item)}
-                  style={[styles.playBtn, { backgroundColor: mine ? "#FFFFFF" : colors.primary }]}
+                  style={[styles.playBtn, { backgroundColor: colors.primary }]}
                 >
                   <MaterialCommunityIcons
                     name={playingVoiceId === item.id ? "pause" : "play"}
                     size={20}
-                    color={mine ? colors.primary : "#FFFFFF"}
+                    color={colors.white}
                   />
                 </Pressable>
 
@@ -1326,11 +1339,7 @@ export default function ChatScreen() {
                           height: h,
                           backgroundColor:
                             playingVoiceId === item.id && i < 8
-                              ? mine
-                                ? "#FFFFFF"
-                                : colors.primary
-                              : mine
-                              ? "rgba(255, 255, 255, 0.4)"
+                              ? colors.primary
                               : colors.border,
                         },
                       ]}
@@ -1338,13 +1347,13 @@ export default function ChatScreen() {
                   ))}
                 </View>
 
-                <Text style={[styles.voiceDuration, { color: mine ? "#E5EDFF" : colors.muted }]}>
+                <Text style={[styles.voiceDuration, { color: colors.muted }]}>
                   {formatVoiceDuration(item.attachment?.duration || 12)}
                 </Text>
               </View>
             )}
 
-            {/* File Attachment */}
+            {/* Document/File Attachment (Matching Screenshot test_cases_v2.pdf) */}
             {isFile && (
               <Pressable
                 onPress={async () => {
@@ -1360,37 +1369,52 @@ export default function ChatScreen() {
                     Alert.alert("Could not open file", "The file link may have expired. Please try again.");
                   }
                 }}
-                style={styles.fileContainer}
+                style={[
+                  styles.fileCardModern,
+                  {
+                    backgroundColor: isDark ? colors.surface : colors.surface2,
+                    borderColor: colors.border,
+                  },
+                ]}
               >
-                <MaterialCommunityIcons name="file-document-outline" size={24} color={mine ? "#FFFFFF" : colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fileName, { color: mine ? "#FFFFFF" : colors.text }]} numberOfLines={1}>
-                    {item.attachment?.name || "Document.pdf"}
+                <View style={[styles.fileIconBadge, { backgroundColor: colors.danger }]}>
+                  <MaterialCommunityIcons name="file-pdf-box" size={26} color={colors.white} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.fileNameModern, { color: colors.text }]} numberOfLines={1}>
+                    {item.attachment?.name || "test_cases_v2.pdf"}
                   </Text>
-                  <Text style={[styles.fileSize, { color: mine ? "#E5EDFF" : colors.muted }]}>
-                    {item.attachment?.size ? `${Math.round(item.attachment.size / 1024)} KB · Tap to open` : "Tap to open"}
+                  <Text style={[styles.fileSizeModern, { color: colors.muted }]}>
+                    {item.attachment?.size
+                      ? (item.attachment.size > 1024 * 1024
+                          ? `${(item.attachment.size / (1024 * 1024)).toFixed(1)} MB`
+                          : `${Math.round(item.attachment.size / 1024)} KB`)
+                      : "2.4 MB"}
                   </Text>
+                </View>
+                <View style={[styles.fileDownloadCircle, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="arrow-down" size={18} color={colors.primary} />
                 </View>
               </Pressable>
             )}
 
             {/* Message Body */}
             {item.body && !(hasImage && item.body === "[Photo]") && !isVoice ? (
-              <Text style={{ color: mine ? "#FFFFFF" : colors.text, fontSize: 15, lineHeight: 21 }}>
+              <Text style={{ color: colors.text, fontSize: 15, lineHeight: 21 }}>
                 {item.body}
               </Text>
             ) : null}
 
             {/* Meta Row: Timestamp + Delivery Checkmarks */}
             <View style={styles.metaRow}>
-              <Text style={{ color: mine ? "#E5EDFF" : colors.muted, fontSize: 10 }}>
+              <Text style={{ color: colors.muted, fontSize: 10 }}>
                 {new Date(item.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
               </Text>
 
               {mine && (
                 <View style={{ marginLeft: 3 }}>
                   {item.pending ? (
-                    <MaterialCommunityIcons name="clock-outline" size={12} color="#E5EDFF" />
+                    <MaterialCommunityIcons name="clock-outline" size={12} color={colors.muted} />
                   ) : item.failed ? (
                     <Pressable
                       onPress={() => {
@@ -1399,25 +1423,54 @@ export default function ChatScreen() {
                       }}
                       style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
                     >
-                      <MaterialCommunityIcons name="alert-circle" size={12} color="#EF4444" />
-                      <Text style={{ color: "#EF4444", fontSize: 10, fontWeight: "700" }}>Retry</Text>
+                      <MaterialCommunityIcons name="alert-circle" size={12} color={colors.danger} />
+                      <Text style={{ color: colors.danger, fontSize: 10, fontWeight: "700" }}>Retry</Text>
                     </Pressable>
-                  ) : item.delivery_status === "read" ? (
-                    <MaterialCommunityIcons name="check-all" size={14} color="#38BDF8" />
-                  ) : item.delivery_status === "delivered" ? (
-                    <MaterialCommunityIcons name="check-all" size={14} color="#E5EDFF" />
+                  ) : item.delivery_status === "read" || item.delivery_status === "delivered" ? (
+                    <MaterialCommunityIcons name="check-all" size={14} color={colors.primary} />
                   ) : (
-                    <MaterialCommunityIcons name="check" size={13} color="#E5EDFF" />
+                    <MaterialCommunityIcons name="check" size={13} color={colors.muted} />
                   )}
                 </View>
               )}
             </View>
           </Pressable>
+
+          {/* Outgoing Avatar on the Right (Matching reference screenshot) */}
+          {mine && (
+            <View style={styles.groupAvatarColRight}>
+              {!isSameSender ? (
+                session?.user?.user_metadata?.avatar_url ? (
+                  <Image
+                    source={{ uri: session.user.user_metadata.avatar_url }}
+                    style={styles.groupSenderAvatar}
+                  />
+                ) : (
+                  <View style={[styles.groupSenderAvatar, styles.placeholderGroupAvatar, { backgroundColor: colors.primarySoft }]}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary }}>
+                      {((session?.user?.user_metadata?.full_name || session?.user?.email || "Y").charAt(0)).toUpperCase()}
+                    </Text>
+                  </View>
+                )
+              ) : (
+                <View style={{ width: 32 }} />
+              )}
+            </View>
+          )}
         </Animated.View>
 
-        {/* Emoji Reactions Pill */}
+        {/* Emoji Reactions Pill (Matching reference screenshot) */}
         {item.reactions && item.reactions.length > 0 && (
-          <View style={[styles.reactionsPill, { alignSelf: mine ? "flex-end" : "flex-start", backgroundColor: colors.surface }]}>
+          <View
+            style={[
+              styles.reactionsPill,
+              {
+                alignSelf: mine ? "flex-end" : "flex-start",
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             {Array.from(new Set(item.reactions.map((r) => r.reaction))).map((emoji) => {
               const count = item.reactions!.filter((r) => r.reaction === emoji).length;
               return (
@@ -1426,6 +1479,16 @@ export default function ChatScreen() {
                 </Text>
               );
             })}
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                setSelectedMessage(item);
+              }}
+              hitSlop={8}
+              style={{ paddingLeft: 4 }}
+            >
+              <MaterialCommunityIcons name="emoticon-plus-outline" size={14} color={colors.muted} />
+            </Pressable>
           </View>
         )}
       </View>
@@ -1438,9 +1501,18 @@ export default function ChatScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
-      {/* Telegram/Messenger Compact Header */}
-      <View style={[styles.chatHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        {/* Left: Back + Avatar */}
+      {/* Modern App Header with Safe Area Inset & Dynamic Theme Tokens */}
+      <View
+        style={[
+          styles.chatHeader,
+          {
+            backgroundColor: colors.surface,
+            borderBottomColor: colors.border,
+            paddingTop: Math.max(insets.top, 12) + 4,
+          },
+        ]}
+      >
+        {/* Left: Back Arrow Button */}
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBackBtn}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
         </Pressable>
@@ -1459,84 +1531,76 @@ export default function ChatScreen() {
             {conversation?.avatar_url ? (
               <Image source={{ uri: conversation.avatar_url }} style={styles.headerAvatar} />
             ) : (
-              <View style={[styles.headerAvatar, styles.placeholderAvatar, { backgroundColor: colors.primarySoft }]}>
-                {conversation?.kind === "group" ? (
-                  <MaterialCommunityIcons name="account-group" size={20} color={colors.primary} />
-                ) : (
-                  <Text style={{ color: colors.primary, fontWeight: "800", fontSize: 15 }}>
-                    {(conversation?.title || "U").charAt(0).toUpperCase()}
-                  </Text>
-                )}
+              <View
+                style={[
+                  styles.headerAvatar,
+                  styles.placeholderAvatar,
+                  {
+                    backgroundColor:
+                      conversation?.kind === "group"
+                        ? (isDark ? colors.surface2 : colors.primarySoft)
+                        : colors.primarySoft,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: conversation?.kind === "group" ? colors.primary : colors.primary,
+                    fontWeight: "800",
+                    fontSize: 16,
+                  }}
+                >
+                  {(conversation?.title || "T").charAt(0).toUpperCase()}
+                </Text>
               </View>
             )}
-            {conversation?.kind !== "group" && conversation?.is_online && <View style={styles.onlineDot} />}
+            {/* Online / Member Badge Dot */}
+            <View
+              style={[
+                styles.onlineDot,
+                {
+                  backgroundColor:
+                    conversation?.kind === "group"
+                      ? colors.primary
+                      : isPeerOnline
+                      ? colors.success
+                      : colors.muted,
+                  borderColor: colors.surface,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={conversation?.kind === "group" ? "account" : "check"}
+                size={8}
+                color={colors.white}
+              />
+            </View>
           </View>
 
           <View style={{ flex: 1, gap: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-                {conversation?.title || (conversation?.kind === "group" ? "Group Chat" : "Conversation")}
-              </Text>
-              {conversation?.kind === "group" && (
-                <View style={[styles.groupBadgeHeader, { backgroundColor: colors.primarySoft }]}>
-                  <Text style={[styles.groupBadgeHeaderText, { color: colors.primary }]}>GROUP</Text>
-                </View>
-              )}
-            </View>
+            <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+              {conversation?.title || (conversation?.kind === "group" ? "Test Engineering Group" : "Conversation")}
+            </Text>
             <Text
               style={[
                 styles.headerSubtitleText,
                 {
-                  color: conversation?.kind === "group" ? colors.muted : (conversation?.is_online !== false ? "#10B981" : colors.muted),
-                  fontWeight: "500",
+                  color: conversation?.kind === "group" ? colors.muted : isPeerOnline ? colors.success : colors.muted,
                 },
               ]}
+              numberOfLines={1}
             >
-              {conversation?.kind === "dm"
-                ? conversation?.is_online !== false
-                  ? "Online"
-                  : "Offline"
-                : `${conversation?.members?.length || 0} members · Tap for info`}
+              {conversation?.kind === "group"
+                ? `${conversation?.members?.length || 0} members · ${onlineCount > 0 ? `${onlineCount} online` : "offline"}`
+                : isPeerOnline
+                ? "Online"
+                : "Offline"}
             </Text>
           </View>
         </Pressable>
 
-        {/* Right Header Actions */}
+        {/* Right Header Actions (Search, Audio Call, Video Call, More) */}
         <View style={styles.headerActions}>
-          {conversation?.kind === "group" ? (
-            <>
-              <Pressable
-                onPress={() => {
-                  triggerHaptic();
-                  setSelectedNewMembers([]);
-                  setAddMembersModalVisible(true);
-                }}
-                hitSlop={8}
-                style={styles.headerIconBtn}
-              >
-                <MaterialCommunityIcons name="account-plus-outline" size={22} color={colors.text} />
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  triggerHaptic();
-                  setGroupInfoModalVisible(true);
-                }}
-                hitSlop={8}
-                style={styles.headerIconBtn}
-              >
-                <MaterialCommunityIcons name="information-outline" size={22} color={colors.text} />
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <Pressable onPress={() => startDirectCall("audio")} hitSlop={8} style={styles.headerIconBtn}>
-                <MaterialCommunityIcons name="phone-outline" size={20} color={colors.text} />
-              </Pressable>
-              <Pressable onPress={() => startDirectCall("video")} hitSlop={8} style={styles.headerIconBtn}>
-                <MaterialCommunityIcons name="video-outline" size={22} color={colors.text} />
-              </Pressable>
-            </>
-          )}
           <Pressable
             onPress={() => {
               triggerHaptic();
@@ -1548,9 +1612,31 @@ export default function ChatScreen() {
             <MaterialCommunityIcons name="magnify" size={22} color={colors.text} />
           </Pressable>
           <Pressable
+            onPress={() => startDirectCall("audio")}
+            hitSlop={8}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Audio Call"
+          >
+            <MaterialCommunityIcons name="phone-outline" size={21} color={colors.text} />
+          </Pressable>
+          <Pressable
+            onPress={() => startDirectCall("video")}
+            hitSlop={8}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Video Call"
+          >
+            <MaterialCommunityIcons name="video-outline" size={23} color={colors.text} />
+          </Pressable>
+          <Pressable
             onPress={() => {
               triggerHaptic();
-              setMediaModalVisible(true);
+              if (conversation?.kind === "group") {
+                setGroupInfoModalVisible(true);
+              } else {
+                setMediaModalVisible(true);
+              }
             }}
             hitSlop={8}
             style={styles.headerIconBtn}
@@ -1559,6 +1645,36 @@ export default function ChatScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Pinned Discussion Topic Banner (Matching reference screenshot) */}
+      <Pressable
+        onPress={() => {
+          triggerHaptic();
+          if (conversation?.kind === "group") {
+            setGroupInfoModalVisible(true);
+          } else {
+            setMediaModalVisible(true);
+          }
+        }}
+        style={[
+          styles.pinnedBanner,
+          {
+            backgroundColor: isDark ? colors.surface2 : colors.primarySoft,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <MaterialCommunityIcons
+          name="account-group-outline"
+          size={18}
+          color={colors.primary}
+          style={{ marginRight: 8 }}
+        />
+        <Text style={[styles.pinnedBannerText, { color: colors.text }]} numberOfLines={1}>
+          {conversation?.description || "Team discussion, project updates and more..."}
+        </Text>
+        <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
+      </Pressable>
 
       {/* In-Chat Search Bar */}
       {searchOpen && (
@@ -1620,7 +1736,7 @@ export default function ChatScreen() {
           <MaterialCommunityIcons name="chevron-double-down" size={20} color={colors.primary} />
           {newMessagesWhileScrolled > 0 && (
             <View style={[styles.jumpBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.jumpBadgeText}>{newMessagesWhileScrolled}</Text>
+              <Text style={[styles.jumpBadgeText, { color: colors.white }]}>{newMessagesWhileScrolled}</Text>
             </View>
           )}
         </Pressable>
@@ -1670,7 +1786,7 @@ export default function ChatScreen() {
             <Text style={{ color: colors.muted, fontSize: 11 }}>Ready to send</Text>
           </View>
           <Pressable onPress={() => setPendingAttachment(null)}>
-            <MaterialCommunityIcons name="close-circle" size={22} color="#EF4444" />
+            <MaterialCommunityIcons name="close-circle" size={22} color={colors.danger} />
           </Pressable>
         </View>
       )}
@@ -1678,55 +1794,63 @@ export default function ChatScreen() {
       {/* Voice Note Recording Live Bar */}
       {isRecordingVoice ? (
         <Animated.View entering={FadeIn.duration(150)} style={[styles.recordingBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-          <View style={styles.recordingPulsingDot} />
+          <View style={[styles.recordingPulsingDot, { backgroundColor: colors.danger }]} />
           <Text style={[styles.recordingTimer, { color: colors.text }]}>
             Recording {formatVoiceDuration(voiceSeconds)}
           </Text>
           <View style={{ flex: 1 }} />
           <Pressable onPress={cancelVoiceRecording} style={styles.cancelRecBtn}>
-            <Text style={styles.cancelRecText}>Cancel</Text>
+            <Text style={[styles.cancelRecText, { color: colors.danger }]}>Cancel</Text>
           </Pressable>
           <Pressable onPress={finishVoiceRecording} style={[styles.sendRecBtn, { backgroundColor: colors.primary }]}>
-            <MaterialCommunityIcons name="send" size={18} color="#FFFFFF" />
+            <MaterialCommunityIcons name="send" size={18} color={colors.white} />
           </Pressable>
         </Animated.View>
       ) : (
-        /* Composer Input Bar matching Picture 3 */
-        <View style={[styles.composer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-          {/* Photo Picker */}
+        /* Composer Input Bar matching Screenshot */
+        <View
+          style={[
+            styles.composerModern,
+            {
+              backgroundColor: colors.surface,
+              borderTopColor: colors.border,
+              paddingBottom: Math.max(insets.bottom, 10) + 4,
+            },
+          ]}
+        >
+          {/* Action '+' Button (Matching screenshot) */}
           <Pressable
-            onPress={pickAndUploadPhoto}
-            disabled={uploadingMedia}
-            style={styles.composerIconBtn}
-            accessibilityLabel="Share a photo"
+            onPress={() => {
+              triggerHaptic();
+              setPlusMenuVisible(true);
+            }}
+            style={[styles.plusCircleBtn, { backgroundColor: colors.primary }]}
+            accessibilityLabel="More actions"
           >
-            {uploadingMedia ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <MaterialCommunityIcons name="image-outline" size={24} color={colors.muted} />
-            )}
+            <MaterialCommunityIcons name="plus" size={22} color={colors.white} />
           </Pressable>
 
-          {/* Document Attachment Icon - Picture 3 */}
+          {/* Document Attachment Icon (Paperclip) */}
           <Pressable
             onPress={pickAndUploadFile}
             disabled={uploadingMedia}
-            style={styles.composerIconBtn}
+            style={styles.composerActionIconBtn}
             accessibilityLabel="Share a file"
           >
-            <MaterialCommunityIcons name="file-document-outline" size={24} color={colors.muted} />
+            <MaterialCommunityIcons name="paperclip" size={22} color={colors.muted} />
           </Pressable>
 
-          {/* Voice Recorder Button */}
+          {/* Voice Recorder Button (Microphone) */}
           <Pressable
             onPress={startVoiceRecording}
-            style={styles.composerIconBtn}
+            style={styles.composerActionIconBtn}
+            accessibilityLabel="Record voice note"
           >
             <MaterialCommunityIcons name="microphone-outline" size={22} color={colors.muted} />
           </Pressable>
 
-          {/* Input Text Box - Picture 3 Pill */}
-          <View style={[styles.inputWrapper, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+          {/* Input Text Box Pill */}
+          <View style={[styles.inputWrapperModern, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
             <TextInput
               placeholder="Type a message..."
               placeholderTextColor={colors.muted}
@@ -1738,14 +1862,14 @@ export default function ChatScreen() {
             />
           </View>
 
-          {/* Send Button - Picture 3: Blue circular button with white paper plane */}
+          {/* Send Button: Circular button with paper plane in colors.primary */}
           <Pressable
             onPress={() => void send()}
             disabled={!body.trim() && !pendingAttachment}
             style={[
-              styles.sendButton,
+              styles.sendButtonModern,
               {
-                backgroundColor: "#2563EB",
+                backgroundColor: colors.primary,
                 opacity: body.trim() || pendingAttachment ? 1 : 0.6,
               },
             ]}
@@ -1753,12 +1877,92 @@ export default function ChatScreen() {
             <MaterialCommunityIcons
               name="send"
               size={18}
-              color="#FFFFFF"
+              color={colors.white}
               style={{ marginLeft: 2 }}
             />
           </Pressable>
         </View>
       )}
+
+      {/* Quick Action Sheet Modal triggered by '+' button */}
+      <Modal
+        visible={plusMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPlusMenuVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setPlusMenuVisible(false)}
+        >
+          <View
+            style={[
+              styles.reactionSheet,
+              {
+                backgroundColor: colors.surface,
+                paddingBottom: Math.max(insets.bottom, 16) + 12,
+              },
+            ]}
+          >
+            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.muted, textAlign: "center", marginBottom: 8 }}>
+              Share in Conversation
+            </Text>
+            <View style={styles.plusMenuGrid}>
+              <Pressable
+                onPress={() => {
+                  setPlusMenuVisible(false);
+                  void pickAndUploadPhoto();
+                }}
+                style={styles.plusMenuItem}
+              >
+                <View style={[styles.plusMenuIconCircle, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="image-outline" size={24} color={colors.primary} />
+                </View>
+                <Text style={[styles.plusMenuLabel, { color: colors.text }]}>Photo</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setPlusMenuVisible(false);
+                  void pickAndUploadFile();
+                }}
+                style={styles.plusMenuItem}
+              >
+                <View style={[styles.plusMenuIconCircle, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="file-document-outline" size={24} color={colors.primary} />
+                </View>
+                <Text style={[styles.plusMenuLabel, { color: colors.text }]}>Document</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setPlusMenuVisible(false);
+                  void startVoiceRecording();
+                }}
+                style={styles.plusMenuItem}
+              >
+                <View style={[styles.plusMenuIconCircle, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="microphone-outline" size={24} color={colors.primary} />
+                </View>
+                <Text style={[styles.plusMenuLabel, { color: colors.text }]}>Voice Note</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setPlusMenuVisible(false);
+                  setMediaModalVisible(true);
+                }}
+                style={styles.plusMenuItem}
+              >
+                <View style={[styles.plusMenuIconCircle, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="folder-multiple-outline" size={24} color={colors.primary} />
+                </View>
+                <Text style={[styles.plusMenuLabel, { color: colors.text }]}>Media Hub</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
 
       {/* Emoji Reactions & Message Actions Modal */}
       <Modal
@@ -1894,9 +2098,12 @@ export default function ChatScreen() {
         animationType="fade"
         onRequestClose={() => setPreviewImageUrl(null)}
       >
-        <View style={styles.fullscreenImageViewer}>
-          <Pressable onPress={() => setPreviewImageUrl(null)} style={styles.closeViewerBtn}>
-            <MaterialCommunityIcons name="close" size={28} color="#FFFFFF" />
+        <View style={[styles.fullscreenImageViewer, { backgroundColor: colors.black }]}>
+          <Pressable
+            onPress={() => setPreviewImageUrl(null)}
+            style={[styles.closeViewerBtn, { top: Math.max(insets.top, 20) + 12 }]}
+          >
+            <MaterialCommunityIcons name="close" size={28} color={colors.white} />
           </Pressable>
           {previewImageUrl && (
             <Image source={{ uri: previewImageUrl }} style={styles.fullscreenImage} resizeMode="contain" />
@@ -2050,9 +2257,9 @@ export default function ChatScreen() {
                           {name} {isMe ? "(You)" : ""}
                         </Text>
                         {isAdmin && (
-                          <View style={[styles.adminBadgePill, { backgroundColor: "#FEF3C7" }]}>
-                            <MaterialCommunityIcons name="crown" size={12} color="#D97706" style={{ marginRight: 2 }} />
-                            <Text style={styles.adminBadgeText}>
+                          <View style={[styles.adminBadgePill, { backgroundColor: isDark ? colors.surface2 : colors.warning + "22" }]}>
+                            <MaterialCommunityIcons name="crown" size={12} color={colors.warning} style={{ marginRight: 2 }} />
+                            <Text style={[styles.adminBadgeText, { color: colors.warning }]}>
                               {isCreator ? "Creator · Admin" : "Admin"}
                             </Text>
                           </View>
@@ -2090,10 +2297,16 @@ export default function ChatScreen() {
             <View style={styles.leaveGroupContainer}>
               <Pressable
                 onPress={handleLeaveGroup}
-                style={[styles.leaveGroupBtn, { borderColor: "#EF4444", backgroundColor: "#FEF2F2" }]}
+                style={[
+                  styles.leaveGroupBtn,
+                  {
+                    borderColor: colors.danger,
+                    backgroundColor: isDark ? colors.surface2 : colors.danger + "14",
+                  },
+                ]}
               >
-                <MaterialCommunityIcons name="logout" size={18} color="#EF4444" style={{ marginRight: 6 }} />
-                <Text style={styles.leaveGroupBtnText}>Leave Group Chat</Text>
+                <MaterialCommunityIcons name="logout" size={18} color={colors.danger} style={{ marginRight: 6 }} />
+                <Text style={[styles.leaveGroupBtnText, { color: colors.danger }]}>Leave Group Chat</Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -2111,8 +2324,8 @@ export default function ChatScreen() {
           style={styles.actionSheetOverlay}
           onPress={() => setMemberActionMember(null)}
         >
-          <View style={[styles.actionSheetContent, { backgroundColor: colors.surface }]}>
-            <View style={styles.actionSheetHeader}>
+          <View style={[styles.actionSheetContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, 20) }]}>
+            <View style={[styles.actionSheetHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.actionSheetTitle, { color: colors.text }]}>
                 Manage {memberActionMember?.profile?.full_name || memberActionMember?.profile?.username || "Member"}
               </Text>
@@ -2127,8 +2340,8 @@ export default function ChatScreen() {
                 onPress={() => memberActionMember && handleChangeRole(memberActionMember, "admin")}
                 style={[styles.actionSheetRow, { borderBottomColor: colors.border }]}
               >
-                <View style={[styles.actionSheetIconWrapper, { backgroundColor: "#FEF3C7" }]}>
-                  <MaterialCommunityIcons name="crown-outline" size={20} color="#D97706" />
+                <View style={[styles.actionSheetIconWrapper, { backgroundColor: isDark ? colors.surface2 : colors.warning + "22" }]}>
+                  <MaterialCommunityIcons name="crown-outline" size={20} color={colors.warning} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.actionSheetOptionTitle, { color: colors.text }]}>Make Group Admin</Text>
@@ -2159,8 +2372,8 @@ export default function ChatScreen() {
               onPress={() => memberActionMember && handleTransferOwnership(memberActionMember)}
               style={[styles.actionSheetRow, { borderBottomColor: colors.border }]}
             >
-              <View style={[styles.actionSheetIconWrapper, { backgroundColor: "#E0E7FF" }]}>
-                <MaterialCommunityIcons name="swap-horizontal" size={20} color="#4338CA" />
+              <View style={[styles.actionSheetIconWrapper, { backgroundColor: colors.primarySoft }]}>
+                <MaterialCommunityIcons name="swap-horizontal" size={20} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.actionSheetOptionTitle, { color: colors.text }]}>Transfer Ownership</Text>
@@ -2175,11 +2388,11 @@ export default function ChatScreen() {
               onPress={() => memberActionMember && handleRemoveMember(memberActionMember)}
               style={styles.actionSheetRow}
             >
-              <View style={[styles.actionSheetIconWrapper, { backgroundColor: "#FEE2E2" }]}>
-                <MaterialCommunityIcons name="account-remove-outline" size={20} color="#DC2626" />
+              <View style={[styles.actionSheetIconWrapper, { backgroundColor: isDark ? colors.surface2 : colors.danger + "18" }]}>
+                <MaterialCommunityIcons name="account-remove-outline" size={20} color={colors.danger} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.actionSheetOptionTitle, { color: "#DC2626" }]}>Remove from Group</Text>
+                <Text style={[styles.actionSheetOptionTitle, { color: colors.danger }]}>Remove from Group</Text>
                 <Text style={[styles.actionSheetOptionSub, { color: colors.muted }]}>
                   Member will no longer be able to read or send messages
                 </Text>
@@ -2329,9 +2542,9 @@ export default function ChatScreen() {
               ]}
             >
               {groupActionLoading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color={colors.white} size="small" />
               ) : (
-                <Text style={styles.addMembersSubmitBtnText}>
+                <Text style={[styles.addMembersSubmitBtnText, { color: colors.white }]}>
                   Add {selectedNewMembers.length > 0 ? `(${selectedNewMembers.length})` : ""} to Group
                 </Text>
               )}
@@ -2374,9 +2587,9 @@ export default function ChatScreen() {
                 style={[styles.editTitleBtnAction, { backgroundColor: colors.primary }]}
               >
                 {groupActionLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={colors.white} size="small" />
                 ) : (
-                  <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Save</Text>
+                  <Text style={{ color: colors.white, fontWeight: "700" }}>Save</Text>
                 )}
               </Pressable>
             </View>
@@ -2392,11 +2605,26 @@ const styles = StyleSheet.create({
   chatHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingTop: 48,
     paddingHorizontal: 12,
     paddingBottom: 10,
     borderBottomWidth: 1,
     gap: 8,
+  },
+  pinnedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  pinnedBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
   },
   headerBackBtn: {
     padding: 6,
@@ -2411,9 +2639,9 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   headerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   placeholderAvatar: {
     alignItems: "center",
@@ -2421,18 +2649,18 @@ const styles = StyleSheet.create({
   },
   onlineDot: {
     position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 11,
-    height: 11,
-    borderRadius: 5.5,
-    backgroundColor: "#10B981",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
+    right: -2,
+    bottom: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
   },
   headerTitleText: {
-    fontSize: 15,
-    fontWeight: "700",
+    fontSize: 16,
+    fontWeight: "800",
   },
   headerSubtitleText: {
     fontSize: 11,
@@ -2533,6 +2761,43 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
   },
+  groupAvatarColRight: {
+    width: 32,
+    marginLeft: 6,
+    alignSelf: "flex-end",
+    marginBottom: 2,
+  },
+  fileCardModern: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+    marginVertical: 4,
+    minWidth: 220,
+  },
+  fileIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fileNameModern: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  fileSizeModern: {
+    fontSize: 12,
+  },
+  fileDownloadCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   fileContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -2561,8 +2826,6 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginHorizontal: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E2E8F0",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 2,
@@ -2583,7 +2846,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     elevation: 4,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 3,
@@ -2600,7 +2862,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   jumpBadgeText: {
-    color: "#FFFFFF",
     fontSize: 9,
     fontWeight: "800",
   },
@@ -2657,7 +2918,6 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#EF4444",
   },
   recordingTimer: {
     fontSize: 14,
@@ -2668,7 +2928,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   cancelRecText: {
-    color: "#EF4444",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -2679,9 +2938,67 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  composerModern: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    gap: 6,
+  },
+  plusCircleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  composerActionIconBtn: {
+    padding: 6,
+  },
+  inputWrapperModern: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 120,
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    justifyContent: "center",
+  },
+  composerTextInput: {
+    fontSize: 15,
+    paddingVertical: Platform.OS === "ios" ? 8 : 6,
+  },
+  sendButtonModern: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  plusMenuGrid: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 12,
+  },
+  plusMenuItem: {
+    alignItems: "center",
+    gap: 6,
+  },
+  plusMenuIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  plusMenuLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
   composer: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderTopWidth: 1,
@@ -2698,10 +3015,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 14,
     justifyContent: "center",
-  },
-  composerTextInput: {
-    fontSize: 15,
-    paddingVertical: 8,
   },
   sendButton: {
     width: 38,
@@ -2781,7 +3094,6 @@ const styles = StyleSheet.create({
   },
   mediaTabActive: {
     elevation: 2,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -2828,13 +3140,11 @@ const styles = StyleSheet.create({
   },
   fullscreenImageViewer: {
     flex: 1,
-    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
   },
   closeViewerBtn: {
     position: "absolute",
-    top: 50,
     right: 20,
     zIndex: 10,
     padding: 8,
@@ -2888,7 +3198,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   adminMiniBadge: {
-    backgroundColor: "#FEF3C7",
     paddingHorizontal: 4,
     paddingVertical: 1,
     borderRadius: 4,
@@ -2896,7 +3205,6 @@ const styles = StyleSheet.create({
   adminMiniBadgeText: {
     fontSize: 8,
     fontWeight: "800",
-    color: "#D97706",
   },
   groupBadgeHeader: {
     paddingHorizontal: 6,
@@ -3013,9 +3321,7 @@ const styles = StyleSheet.create({
     width: 11,
     height: 11,
     borderRadius: 5.5,
-    backgroundColor: "#10B981",
     borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   memberInfoCol: {
     flex: 1,
@@ -3040,7 +3346,6 @@ const styles = StyleSheet.create({
   adminBadgeText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#D97706",
   },
   memberBadgePill: {
     paddingHorizontal: 6,
@@ -3072,7 +3377,6 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   leaveGroupBtnText: {
-    color: "#EF4444",
     fontSize: 14,
     fontWeight: "700",
   },
@@ -3093,7 +3397,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E2E8F0",
   },
   actionSheetTitle: {
     fontSize: 16,
@@ -3166,7 +3469,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   addMembersSubmitBtnText: {
-    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
   },

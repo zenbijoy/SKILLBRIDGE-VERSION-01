@@ -9,12 +9,37 @@ export const recommendations = Router();
 recommendations.get(
   "/people",
   wrap(async (req, res) => {
-    const { data, error } = await admin.rpc("recommend_people", {
-      p_user_id: req.userId!,
-      p_limit: 20,
-    });
-    if (error) throw error;
-    res.json({ people: data ?? [] });
+    const uid = req.userId!;
+    const [recRes, connectionsRes, requestsRes] = await Promise.all([
+      admin.rpc("recommend_people", {
+        p_user_id: uid,
+        p_limit: 30,
+      }),
+      admin
+        .from("connections")
+        .select("user_a,user_b")
+        .or(eitherColumnFilter("user_a", "user_b", uid)),
+      admin
+        .from("connection_requests")
+        .select("requester_id,recipient_id")
+        .or(`requester_id.eq.${uid},recipient_id.eq.${uid}`)
+        .eq("status", "pending"),
+    ]);
+
+    if (recRes.error) throw recRes.error;
+
+    const excludedIds = new Set<string>([
+      uid,
+      ...(connectionsRes.data ?? []).map((x) =>
+        x.user_a === uid ? x.user_b : x.user_a,
+      ),
+      ...(requestsRes.data ?? []).map((x) =>
+        x.requester_id === uid ? x.recipient_id : x.requester_id,
+      ),
+    ]);
+
+    const people = (recRes.data ?? []).filter((p: any) => !excludedIds.has(p.id));
+    res.json({ people: people.slice(0, 20) });
   }),
 );
 
@@ -23,18 +48,45 @@ recommendations.get(
   wrap(async (req, res) => {
     const uid = req.userId!;
 
-    // 1. Fetch current user profile, skills, and blocked users
-    const [myProfileRes, mySkillsRes, blocksRes] = await Promise.all([
-      admin.from("profiles").select("id, university, department, study_mode_preference").eq("id", uid).single(),
-      admin.from("user_skills").select("skill_id, kind, skills(name)").eq("user_id", uid),
-      admin.from("blocks").select("blocker_id,blocked_id").or(eitherColumnFilter("blocker_id", "blocked_id", uid)),
-    ]);
+    // 1. Fetch current user profile, skills, blocked users, connections, and pending requests
+    const [myProfileRes, mySkillsRes, blocksRes, connectionsRes, requestsRes] =
+      await Promise.all([
+        admin
+          .from("profiles")
+          .select("id, university, department, study_mode_preference")
+          .eq("id", uid)
+          .single(),
+        admin
+          .from("user_skills")
+          .select("skill_id, kind, skills(name)")
+          .eq("user_id", uid),
+        admin
+          .from("blocks")
+          .select("blocker_id,blocked_id")
+          .or(eitherColumnFilter("blocker_id", "blocked_id", uid)),
+        admin
+          .from("connections")
+          .select("user_a,user_b")
+          .or(eitherColumnFilter("user_a", "user_b", uid)),
+        admin
+          .from("connection_requests")
+          .select("requester_id,recipient_id")
+          .or(`requester_id.eq.${uid},recipient_id.eq.${uid}`)
+          .eq("status", "pending"),
+      ]);
 
-    const blocked = new Set(
-      (blocksRes.data ?? []).map((x) =>
+    const excluded = new Set<string>([
+      uid,
+      ...(blocksRes.data ?? []).map((x) =>
         x.blocker_id === uid ? x.blocked_id : x.blocker_id,
       ),
-    );
+      ...(connectionsRes.data ?? []).map((x) =>
+        x.user_a === uid ? x.user_b : x.user_a,
+      ),
+      ...(requestsRes.data ?? []).map((x) =>
+        x.requester_id === uid ? x.recipient_id : x.requester_id,
+      ),
+    ]);
 
     const myKnown = new Set(
       (mySkillsRes.data ?? [])
@@ -53,7 +105,9 @@ recommendations.get(
     // 2. Fetch candidates with skills
     const { data: candidates, error } = await admin
       .from("profiles")
-      .select("id, full_name, username, avatar_url, bio, university, department, study_mode_preference, reputation, user_skills(kind, proficiency, verified, skills(name))")
+      .select(
+        "id, full_name, username, avatar_url, bio, university, department, study_mode_preference, reputation, user_skills(kind, proficiency, verified, skills(name))",
+      )
       .neq("id", uid)
       .eq("account_status", "active")
       .eq("profile_visibility", "public")
@@ -64,7 +118,7 @@ recommendations.get(
     const scoredMatches: any[] = [];
 
     for (const c of candidates ?? []) {
-      if (blocked.has(c.id)) continue;
+      if (excluded.has(c.id)) continue;
 
       const cKnown = new Set<string>();
       const cWanted = new Set<string>();

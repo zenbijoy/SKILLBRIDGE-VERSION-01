@@ -44,7 +44,11 @@ export async function notifyUser(
   body: string,
   kind = "general",
   data: Record<string, string> = {},
+  options: { priority?: "normal" | "high"; bypassQuietHours?: boolean } = {},
 ) {
+  const priority = options.priority ?? "normal";
+  const bypassQuietHours = options.bypassQuietHours ?? false;
+
   const { data: record, error } = await admin
     .from("notifications")
     .insert({ user_id: userId, title, body, kind, data })
@@ -62,7 +66,7 @@ export async function notifyUser(
       body,
       kind,
       data,
-      priority: "normal",
+      priority,
       read_at: null,
       created_at: new Date().toISOString(),
     });
@@ -84,11 +88,15 @@ export async function notifyUser(
     profileQ.data?.quiet_hours_end ?? "07:00",
     profileQ.data?.timezone ?? "Asia/Dhaka",
   );
-  if (!categoryEnabled || !pushOptIn || quiet) return;
+  // High-priority (e.g. incoming calls) always bypass quiet hours so the
+  // callee is paged even at night — matching WhatsApp/Phone behaviour.
+  if (!categoryEnabled || !pushOptIn) return;
+  if (quiet && !bypassQuietHours) return;
 
   await PushService.sendNotification(userId, {
     title,
     body,
     data,
+    priority,
   });
 }

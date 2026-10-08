@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { AccessToken } from "livekit-server-sdk";
 import { admin } from "../lib/db.js";
+import { logger } from "../lib/logger.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
 import { env } from "../config/env.js";
@@ -16,8 +17,66 @@ import {
   getYouTubeWatchUrl,
 } from "../services/youtubeService.js";
 import { enqueueJob } from "../services/jobQueue.js";
+import {
+  getStorageProvider,
+  resolveMediaObjectPublicUrl,
+  registerMediaObject,
+} from "../services/storage.js";
 
 export const rooms = Router();
+
+// Helper: verify room membership and optionally required roles
+async function requireRoomMembership(
+  roomId: string,
+  userId: string,
+  requiredRoles?: string[]
+): Promise<{ role: string } | null> {
+  const { data: member, error } = await admin
+    .from("room_members")
+    .select("role")
+    .eq("room_id", roomId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!member) return null;
+
+  if (requiredRoles && !requiredRoles.includes(member.role)) {
+    return null;
+  }
+
+  return member;
+}
+
+// Helper: verify room visibility (public/invite_only/private) for non-members
+async function checkRoomVisibility(roomId: string, userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  
+  const { data: room, error } = await admin
+    .from("rooms")
+    .select("visibility")
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!room) return false;
+
+  // Public rooms are visible to all authenticated users
+  if (room.visibility === "public") return true;
+
+  // For private/invite_only, require membership
+  if (userId) {
+    const { data: member } = await admin
+      .from("room_members")
+      .select("id")
+      .eq("room_id", roomId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    return !!member;
+  }
+
+  return false;
+}
 
 const createSchema = z
   .object({
@@ -115,7 +174,8 @@ rooms.get(
         mineQuery = mineQuery.ilike("topic", `%${topic}%`);
       }
       if (q) {
-        const safe = q.replace(/[,()%*\\]/g, " ").trim();
+        // Sanitize for PostgREST filter injection: escape , ( ) % * " & \
+        const safe = q.replace(/[,()%*"&\\]/g, "\\$&").trim();
         if (safe.length >= 2) {
           mineQuery = mineQuery.or(
             `title.ilike.%${safe}%,topic.ilike.%${safe}%,description.ilike.%${safe}%,campus_location.ilike.%${safe}%`,
@@ -153,7 +213,8 @@ rooms.get(
     }
     if (q) {
       // Strip characters that would break out of the PostgREST `or=` filter grammar.
-      const safe = q.replace(/[,()%*\\]/g, " ").trim();
+      // Escape , ( ) % * " & \ for PostgREST filter grammar.
+      const safe = q.replace(/[,()%*"&\\]/g, "\\$&").trim();
       if (safe.length >= 2) {
         query = query.or(
           `title.ilike.%${safe}%,topic.ilike.%${safe}%,description.ilike.%${safe}%,campus_location.ilike.%${safe}%`,
@@ -175,6 +236,104 @@ rooms.get(
     };
     await cacheSet(cacheKey, result, 30);
     res.json(result);
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /rooms/cover/upload - Upload Room Cover Photo to R2 Storage in Real-Time
+// ─────────────────────────────────────────────────────────────────────────────
+rooms.post(
+  "/cover/upload",
+  wrap(async (req, res) => {
+    if (!req.userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const { fileBase64, contentType, fileName } = z
+      .object({
+        fileBase64: z.string().min(10, "Invalid image data"),
+        contentType: z
+          .string()
+          .regex(/^image\/(jpeg|png|webp|gif|jpg)$/i, {
+            message: "Only image formats (JPEG, PNG, WebP) are supported",
+          })
+          .default("image/jpeg"),
+        fileName: z.string().max(160).optional().default("cover.jpg"),
+      })
+      .parse(req.body);
+
+    const extMap: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/jpg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+      "image/gif": "gif",
+    };
+
+    const ext = extMap[contentType.toLowerCase()] || "jpg";
+    const objectKey = `rooms/covers/${req.userId}/${Date.now()}_${crypto.randomUUID()}.${ext}`;
+    const bucket = "resources";
+
+    const buffer = Buffer.from(fileBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+    const maxBytes = 10 * 1024 * 1024;
+    if (buffer.byteLength > maxBytes) {
+      return res.status(413).json({ error: "Cover photo too large. Maximum size is 10MB." });
+    }
+
+    const storage = getStorageProvider();
+    let targetBucket = bucket;
+
+    try {
+      await storage.uploadBuffer(targetBucket, objectKey, buffer, contentType);
+    } catch (uploadError) {
+      try {
+        await storage.uploadBuffer("attachments", objectKey, buffer, contentType);
+        targetBucket = "attachments";
+      } catch {
+        throw uploadError;
+      }
+    }
+
+    let publicUrl: string;
+    if (storage.name === "r2") {
+      publicUrl = resolveMediaObjectPublicUrl({
+        bucket: targetBucket,
+        object_key: objectKey,
+        provider: "r2",
+      });
+    } else {
+      const { data: urlData } = admin.storage.from(targetBucket).getPublicUrl(objectKey);
+      publicUrl = urlData.publicUrl;
+    }
+
+    const mediaObj = await registerMediaObject({
+      bucket: targetBucket,
+      objectKey,
+      mimeType: contentType,
+      fileSizeBytes: buffer.byteLength,
+      uploaderId: req.userId,
+      entityType: "resource",
+      status: "ready",
+    });
+
+    logger.info(
+      {
+        event: "room_cover_uploaded",
+        userId: req.userId,
+        provider: storage.name,
+        targetBucket,
+        objectKey,
+        sizeBytes: buffer.byteLength,
+      },
+      "Room cover photo uploaded to storage",
+    );
+
+    res.status(201).json({
+      url: publicUrl,
+      mediaObjectId: mediaObj?.id || null,
+      provider: storage.name,
+      fileSizeBytes: buffer.byteLength,
+    });
   }),
 );
 
@@ -543,10 +702,23 @@ rooms.patch(
       if (error) throw error;
       res.json({ status: "accepted" });
     } else {
+      // Verify request belongs to this room
+      const { data: request } = await admin
+        .from("teaching_requests")
+        .select("id")
+        .eq("id", requestId)
+        .eq("room_id", roomId)
+        .maybeSingle();
+
+      if (!request) {
+        return res.status(404).json({ error: "Teaching request not found in this room" });
+      }
+
       const { error } = await admin
         .from("teaching_requests")
         .update({ status: "rejected", decided_at: new Date().toISOString() })
-        .eq("id", requestId);
+        .eq("id", requestId)
+        .eq("room_id", roomId);
       if (error) throw error;
       res.json({ status: "rejected" });
     }
@@ -971,6 +1143,13 @@ rooms.get(
   "/:id/questions",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+
+    // Check membership/visibility
+    const canAccess = await checkRoomVisibility(roomId, req.userId!);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Join room to view questions" });
+    }
+
     const { data, error } = await admin
       .from("room_questions")
       .select(`
@@ -1051,6 +1230,18 @@ rooms.post(
     const qId = z.string().uuid().parse(req.params.qId);
     const body = z.object({ body: z.string().min(2).max(4000) }).parse(req.body);
 
+    // Verify question belongs to this room
+    const { data: question } = await admin
+      .from("room_questions")
+      .select("id")
+      .eq("id", qId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!question) {
+      return res.status(404).json({ error: "Question not found in this room" });
+    }
+
     const { data: member } = await admin
       .from("room_members")
       .select("role")
@@ -1108,7 +1299,14 @@ rooms.post(
 rooms.post(
   "/:id/questions/:qId/vote",
   wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
     const qId = z.string().uuid().parse(req.params.qId);
+
+    // Check membership
+    const member = await requireRoomMembership(roomId, req.userId!);
+    if (!member) {
+      return res.status(403).json({ error: "Join room to vote on questions" });
+    }
 
     const { data: existing } = await admin
       .from("room_question_votes")
@@ -1256,6 +1454,13 @@ rooms.get(
   "/:id/recordings",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+
+    // Check membership/visibility
+    const canAccess = await checkRoomVisibility(roomId, req.userId!);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Join room to view recordings" });
+    }
+
     const { data, error } = await admin
       .from("room_recordings")
       .select(`
@@ -1596,6 +1801,31 @@ rooms.get(
       if (!member) return res.status(403).json({ error: "Join room to view posts" });
     }
 
+    // Parse composite cursor: "is_pinned,created_at,id"
+    // Format: "true,2024-01-15T10:30:00.000Z,uuid" or "false,2024-01-15T10:30:00.000Z,uuid"
+    let cursorPinned: boolean | undefined;
+    let cursorCreatedAt: string | undefined;
+    let cursorId: string | undefined;
+
+    if (cursor) {
+      const parts = cursor.split(",");
+      if (parts.length === 3) {
+        cursorPinned = parts[0] === "true";
+        cursorCreatedAt = parts[1];
+        cursorId = parts[2];
+        // Validate created_at is a valid ISO timestamp
+        if (isNaN(Date.parse(cursorCreatedAt!))) {
+          return res.status(400).json({ error: "Invalid cursor format" });
+        }
+        // Validate id is UUID
+        if (!z.string().uuid().safeParse(cursorId).success) {
+          return res.status(400).json({ error: "Invalid cursor format" });
+        }
+      } else {
+        return res.status(400).json({ error: "Invalid cursor format" });
+      }
+    }
+
     let query = admin
       .from("room_posts")
       .select(`
@@ -1606,10 +1836,18 @@ rooms.get(
       .neq("status", "deleted")
       .order("is_pinned", { ascending: false })
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(limit + 1);
 
-    if (cursor) {
-      query = query.lt("created_at", cursor);
+    if (cursorPinned !== undefined && cursorCreatedAt && cursorId) {
+      // Composite cursor: (is_pinned, created_at, id)
+      // We want posts that come AFTER the cursor in the sort order
+      // Sort order: is_pinned DESC, created_at DESC, id DESC
+      // So we want: (is_pinned < cursorPinned) OR (is_pinned = cursorPinned AND created_at < cursorCreatedAt) OR (is_pinned = cursorPinned AND created_at = cursorCreatedAt AND id < cursorId)
+      // This is complex in PostgREST, so we use a simpler approach with OR
+      query = query.or(
+        `is_pinned.lt.${cursorPinned ? "true" : "false"},and(is_pinned.eq.${cursorPinned ? "true" : "false"},created_at.lt.${cursorCreatedAt}),and(is_pinned.eq.${cursorPinned ? "true" : "false"},created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`
+      );
     }
     if (type) {
       query = query.eq("type", type);
@@ -1621,7 +1859,10 @@ rooms.get(
     const posts = rawPosts ?? [];
     const hasMore = posts.length > limit;
     const items = hasMore ? posts.slice(0, limit) : posts;
-    const nextCursor = hasMore ? items[items.length - 1]?.created_at : null;
+    const last = items[items.length - 1];
+    const nextCursor = hasMore && last
+      ? `${last.is_pinned},${last.created_at},${last.id}`
+      : null;
 
     // Fetch user reactions if signed in
     const postIds = items.map((p) => p.id);
@@ -1787,6 +2028,12 @@ rooms.get(
     const roomId = z.string().uuid().parse(req.params.id);
     const postId = z.string().uuid().parse(req.params.postId);
 
+    // Check membership/visibility
+    const canAccess = await checkRoomVisibility(roomId, req.userId!);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Join room to view comments" });
+    }
+
     const { data: comments, error } = await admin
       .from("room_post_comments")
       .select(`
@@ -1826,6 +2073,18 @@ rooms.post(
       return res.status(403).json({ error: "Join room to comment" });
     }
 
+    // Verify post belongs to this room
+    const { data: post } = await admin
+      .from("room_posts")
+      .select("id")
+      .eq("id", postId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found in this room" });
+    }
+
     const { data: comment, error } = await admin
       .from("room_post_comments")
       .insert({
@@ -1859,8 +2118,27 @@ rooms.post(
 rooms.post(
   "/:id/posts/:postId/reactions",
   wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
     const postId = z.string().uuid().parse(req.params.postId);
-    const body = z.object({ reaction_type: z.string().min(1).default("helpful") }).parse(req.body || {});
+    const body = z.object({ reaction_type: z.enum(["helpful", "like", "love", "insightful", "curious"]).default("helpful") }).parse(req.body || {});
+
+    // Check membership
+    const member = await requireRoomMembership(roomId, req.userId!);
+    if (!member) {
+      return res.status(403).json({ error: "Join room to react to posts" });
+    }
+
+    // Verify post belongs to room
+    const { data: post, error: postErr } = await admin
+      .from("room_posts")
+      .select("room_id")
+      .eq("id", postId)
+      .maybeSingle();
+
+    if (postErr) throw postErr;
+    if (!post || post.room_id !== roomId) {
+      return res.status(404).json({ error: "Post not found in this room" });
+    }
 
     const { data: existing } = await admin
       .from("room_post_reactions")
@@ -2006,6 +2284,13 @@ rooms.get(
   "/:id/channels",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+
+    // Check membership/visibility
+    const canAccess = await checkRoomVisibility(roomId, req.userId!);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Join room to view channels" });
+    }
+
     const { data: room } = await admin
       .from("rooms")
       .select("id, conversation_id, visibility, owner_id")
@@ -2219,7 +2504,9 @@ rooms.get(
   "/:id/search",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
-    const q = z.string().min(1).max(100).parse(req.query.q);
+    const rawQ = z.string().min(1).max(100).parse(req.query.q);
+    // Sanitize query for PostgREST filter injection: escape , ( ) % * " & 
+    const q = rawQ.replace(/[,()%*"&]/g, "\\$&");
     const category = z
       .enum(["all", "posts", "messages", "questions", "files", "videos", "members", "announcements"])
       .default("all")
@@ -2412,6 +2699,13 @@ rooms.get(
   "/:id/pinned",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+
+    // Check membership/visibility
+    const canAccess = await checkRoomVisibility(roomId, req.userId!);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Join room to view pinned items" });
+    }
+
     const { data, error } = await admin
       .from("room_pinned_items")
       .select("*, pinner:profiles!room_pinned_items_pinned_by_fkey(id, full_name, username)")
@@ -2447,6 +2741,54 @@ rooms.post(
 
     if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
       return res.status(403).json({ error: "Only room hosts or moderators can pin items" });
+    }
+
+    // Verify item belongs to this room
+    const itemTypeToTable: Record<string, string> = {
+      post: "room_posts",
+      announcement: "room_posts",
+      question: "room_questions",
+      resource: "room_resources",
+      event: "room_events",
+      message: "messages",
+      video: "room_recordings",
+    };
+
+    const table = itemTypeToTable[body.item_type];
+    if (!table) {
+      return res.status(400).json({ error: "Invalid item type" });
+    }
+
+    let itemFound = false;
+    if (body.item_type === "message") {
+      const { data: msg } = await admin
+        .from("messages")
+        .select("conversation_id")
+        .eq("id", body.item_id)
+        .maybeSingle();
+
+      if (msg?.conversation_id) {
+        const [{ data: roomMatch }, { data: channelMatch }] = await Promise.all([
+          admin.from("rooms").select("id").eq("id", roomId).eq("conversation_id", msg.conversation_id).maybeSingle(),
+          admin.from("room_channels").select("id").eq("room_id", roomId).eq("conversation_id", msg.conversation_id).maybeSingle(),
+        ]);
+        if (roomMatch || channelMatch) {
+          itemFound = true;
+        }
+      }
+    } else {
+      const { data: item } = await admin
+        .from(table)
+        .select("id")
+        .eq("id", body.item_id)
+        .eq("room_id", roomId)
+        .maybeSingle();
+
+      if (item) itemFound = true;
+    }
+
+    if (!itemFound) {
+      return res.status(404).json({ error: "Item not found in this room" });
     }
 
     const { data: pinned, error } = await admin
@@ -2508,7 +2850,17 @@ rooms.delete(
     if (error) throw error;
 
     if (target.item_type === "post" || target.item_type === "announcement") {
-      await admin.from("room_posts").update({ is_pinned: false }).eq("id", target.item_id);
+      // Verify post belongs to this room before unpinning
+      const { data: post } = await admin
+        .from("room_posts")
+        .select("id")
+        .eq("id", target.item_id)
+        .eq("room_id", roomId)
+        .maybeSingle();
+
+      if (post) {
+        await admin.from("room_posts").update({ is_pinned: false }).eq("id", target.item_id);
+      }
     }
 
     res.json({ success: true });
@@ -2584,9 +2936,17 @@ rooms.get(
   "/:id/voice/active",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+    let count = 0;
+    if (redis) {
+      try {
+        count = await redis.scard(`room:${roomId}:voice_users`);
+      } catch {
+        count = 0;
+      }
+    }
     res.json({
-      active: false,
-      participantCount: 0,
+      active: count > 0,
+      participantCount: count,
       roomName: `skillbridge-voice-${roomId}`,
     });
   }),
@@ -2597,6 +2957,13 @@ rooms.get(
   "/:id/videos/playlists",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+
+    // Check membership/visibility
+    const canAccess = await checkRoomVisibility(roomId, req.userId!);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Join room to view video playlists" });
+    }
+
     const { data: playlists, error } = await admin
       .from("room_video_playlists")
       .select(`
@@ -2670,6 +3037,30 @@ rooms.post(
 
     if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
       return res.status(403).json({ error: "Unauthorized to modify playlist items" });
+    }
+
+    // Verify playlist belongs to this room
+    const { data: playlist } = await admin
+      .from("room_video_playlists")
+      .select("id")
+      .eq("id", playlistId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!playlist) {
+      return res.status(404).json({ error: "Playlist not found in this room" });
+    }
+
+    // Verify recording belongs to this room
+    const { data: recording } = await admin
+      .from("room_recordings")
+      .select("id")
+      .eq("id", body.recordingId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+
+    if (!recording) {
+      return res.status(404).json({ error: "Recording not found in this room" });
     }
 
     const { error } = await admin
@@ -2747,15 +3138,30 @@ rooms.get(
       return res.status(403).json({ error: "Only owners and moderators can access room reports" });
     }
 
+    // Reports are scoped to room via the reported entity (post/comment in this room)
+    // We need to join through room_posts or room_post_comments to scope by room
     const { data: reports, error } = await admin
       .from("reports")
-      .select("*, reporter:profiles!reports_reporter_id_fkey(full_name, username)")
+      .select(`
+        *,
+        reporter:profiles!reports_reporter_id_fkey(full_name, username),
+        room_post:room_posts!reports_post_id_fkey(id, room_id, title),
+        room_comment:room_post_comments!reports_comment_id_fkey(id, post_id, room_post:room_posts!room_post_comments_post_id_fkey(room_id))
+      `)
       .eq("status", "open")
       .order("created_at", { ascending: false })
       .limit(30);
 
     if (error) throw error;
-    res.json({ reports: reports ?? [] });
+
+    // Filter reports to only those related to this room
+    const roomReports = (reports ?? []).filter((r) => {
+      if (r.room_post && r.room_post.room_id === roomId) return true;
+      if (r.room_comment && r.room_comment.room_post && r.room_comment.room_post.room_id === roomId) return true;
+      return false;
+    });
+
+    res.json({ reports: roomReports });
   }),
 );
 
@@ -2787,16 +3193,96 @@ rooms.post(
 
     if (body.action === "remove_content") {
       if (body.targetType === "post" || body.targetType === "announcement") {
-        await admin.from("room_posts").delete().eq("id", body.targetId).eq("room_id", roomId);
+        // Verify post belongs to this room
+        const { data: post } = await admin
+          .from("room_posts")
+          .select("id")
+          .eq("id", body.targetId)
+          .eq("room_id", roomId)
+          .maybeSingle();
+
+        if (!post) {
+          return res.status(404).json({ error: "Post not found in this room" });
+        }
+        await admin.from("room_posts").update({ status: "deleted" }).eq("id", body.targetId);
       } else if (body.targetType === "comment") {
-        await admin.from("room_post_comments").delete().eq("id", body.targetId);
+        // Verify comment belongs to a post in this room
+        const { data: comment } = await admin
+          .from("room_post_comments")
+          .select("post_id, post:room_posts!room_post_comments_post_id_fkey(room_id)")
+          .eq("id", body.targetId)
+          .maybeSingle();
+
+        interface CommentWithPost {
+          post?: { room_id: string } | null;
+        }
+        const typedComment = comment as CommentWithPost | null;
+
+        if (!typedComment || typedComment.post?.room_id !== roomId) {
+          return res.status(404).json({ error: "Comment not found in this room" });
+        }
+        await admin.from("room_post_comments").update({ status: "deleted" }).eq("id", body.targetId);
       }
     } else if (body.action === "remove_user" || body.action === "ban_user") {
+      // Check target is not the room owner
+      const { data: targetMember } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", body.targetId)
+        .maybeSingle();
+
+      if (!targetMember) {
+        return res.status(404).json({ error: "User not a member of this room" });
+      }
+
+      if (targetMember.role === "owner") {
+        return res.status(403).json({ error: "Cannot remove or ban the room owner" });
+      }
+
       await admin.from("room_members").delete().eq("room_id", roomId).eq("user_id", body.targetId);
+
+      // For ban, we could also add to a banned_users table - TODO
+    } else if (body.action === "warn_user" || body.action === "mute_user") {
+      // TODO: Implement warning/mute system
+      console.warn(`${body.action} not fully implemented yet`);
     }
 
     if (body.reportId) {
-      await admin.from("reports").update({ status: "resolved" }).eq("id", body.reportId);
+      // Verify report belongs to this room before resolving
+      const { data: report } = await admin
+        .from("reports")
+        .select("id, post_id, comment_id")
+        .eq("id", body.reportId)
+        .maybeSingle();
+
+      if (report) {
+        let reportBelongsToRoom = false;
+        if (report.post_id) {
+          const { data: post } = await admin
+            .from("room_posts")
+            .select("id")
+            .eq("id", report.post_id)
+            .eq("room_id", roomId)
+            .maybeSingle();
+          reportBelongsToRoom = !!post;
+        } else if (report.comment_id) {
+          interface CommentWithPost {
+            post?: { room_id: string } | null;
+          }
+          const { data: comment } = await admin
+            .from("room_post_comments")
+            .select("post_id, post:room_posts!room_post_comments_post_id_fkey(room_id)")
+            .eq("id", report.comment_id)
+            .maybeSingle();
+          const typedComment = comment as CommentWithPost | null;
+          reportBelongsToRoom = !!(typedComment && typedComment.post?.room_id === roomId);
+        }
+
+        if (reportBelongsToRoom) {
+          await admin.from("reports").update({ status: "resolved" }).eq("id", body.reportId);
+        }
+      }
     }
 
     const { data: log, error } = await admin
@@ -3055,6 +3541,13 @@ rooms.get(
   "/:id/invites",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+
+    // Check membership - only room members can view invite codes
+    const member = await requireRoomMembership(roomId, req.userId!);
+    if (!member) {
+      return res.status(403).json({ error: "Join room to view invite codes" });
+    }
+
     const { data: invites, error } = await admin
       .from("room_invites")
       .select("*")

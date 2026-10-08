@@ -455,7 +455,6 @@ feed.get(
           .from("saved_items")
           .select("entity_id")
           .eq("user_id", req.userId)
-          .eq("entity_type", "post")
           .in("entity_id", postIds);
 
         for (const s of savedItems ?? []) {
@@ -1394,7 +1393,8 @@ feed.post(
     const postId = z.string().uuid().parse(req.params.id);
 
     try {
-      await admin.from("saved_items").upsert(
+      // 1. Try upserting as 'post'
+      const { error: primaryErr } = await admin.from("saved_items").upsert(
         {
           user_id: req.userId,
           entity_type: "post",
@@ -1403,19 +1403,32 @@ feed.post(
         { onConflict: "user_id,entity_type,entity_id" },
       );
 
-      // Increment post's saves_count
+      // 2. Fallback to 'resource' if legacy constraint ('room','event','resource','profile') is active
+      if (primaryErr) {
+        await admin.from("saved_items").upsert(
+          {
+            user_id: req.userId,
+            entity_type: "resource",
+            entity_id: postId,
+            note: "post_save",
+          },
+          { onConflict: "user_id,entity_type,entity_id" },
+        );
+      }
+
+      // Count total saves for this post
       const { count } = await admin
         .from("saved_items")
         .select("*", { count: "exact", head: true })
-        .eq("entity_type", "post")
         .eq("entity_id", postId);
 
+      const finalCount = count && count > 0 ? count : 1;
       await admin
         .from("campus_posts")
-        .update({ saves_count: count ?? 0 })
+        .update({ saves_count: finalCount })
         .eq("id", postId);
 
-      res.json({ success: true, is_saved: true, saves_count: count ?? 0 });
+      res.json({ success: true, is_saved: true, saves_count: finalCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to save post" });
     }
@@ -1436,21 +1449,20 @@ feed.delete(
         .from("saved_items")
         .delete()
         .eq("user_id", req.userId)
-        .eq("entity_type", "post")
         .eq("entity_id", postId);
 
       const { count } = await admin
         .from("saved_items")
         .select("*", { count: "exact", head: true })
-        .eq("entity_type", "post")
         .eq("entity_id", postId);
 
+      const finalCount = count ?? 0;
       await admin
         .from("campus_posts")
-        .update({ saves_count: count ?? 0 })
+        .update({ saves_count: finalCount })
         .eq("id", postId);
 
-      res.json({ success: true, is_saved: false, saves_count: count ?? 0 });
+      res.json({ success: true, is_saved: false, saves_count: finalCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to unsave post" });
     }

@@ -22,6 +22,8 @@ import {
   ClubMembershipType,
 } from "../types";
 import { APPLICATION_STATUS_LABELS } from "../constants";
+import { useI18n } from "../../../i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
 
 interface ClubAdminModalProps {
@@ -31,7 +33,16 @@ interface ClubAdminModalProps {
   onRefreshClub: () => void;
 }
 
-type AdminTab = "analytics" | "applications" | "settings";
+interface ClubTeam {
+  id: string;
+  club_id: string;
+  name: string;
+  description?: string | null;
+  team_lead_id?: string | null;
+  created_at: string;
+}
+
+type AdminTab = "analytics" | "applications" | "teams" | "settings";
 
 export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
   visible,
@@ -40,6 +51,7 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
   onRefreshClub,
 }) => {
   const { colors } = useTheme();
+  const { t } = useI18n();
 
   const [activeTab, setActiveTab] = useState<AdminTab>("analytics");
 
@@ -54,6 +66,13 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
     "all"
   );
   const [updatingAppId, setUpdatingAppId] = useState<string | null>(null);
+
+  // Teams State
+  const [teams, setTeams] = useState<ClubTeam[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newTeamDesc, setNewTeamDesc] = useState("");
+  const [creatingTeam, setCreatingTeam] = useState(false);
 
   // Settings State
   const [tagline, setTagline] = useState(club.tagline || "");
@@ -71,6 +90,7 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
     if (visible) {
       fetchAnalytics();
       fetchApplications();
+      fetchTeams();
       // Sync settings fields
       setTagline(club.tagline || "");
       setDescription(club.description || "");
@@ -88,7 +108,7 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
       setLoadingAnalytics(true);
       const res = await api.get(`/clubs/${club.id}/analytics`);
       setAnalytics(res.data?.analytics || null);
-    } catch {
+    } catch (_err: unknown) {
       setAnalytics(null);
     } finally {
       setLoadingAnalytics(false);
@@ -100,10 +120,44 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
       setLoadingApps(true);
       const res = await api.get(`/clubs/${club.id}/applications`);
       setApplications(res.data?.applications || []);
-    } catch {
+    } catch (_err: unknown) {
       setApplications([]);
     } finally {
       setLoadingApps(false);
+    }
+  };
+
+  const fetchTeams = async () => {
+    try {
+      setLoadingTeams(true);
+      const res = await api.get<{ teams: ClubTeam[] }>(`/clubs/${club.id}/teams`);
+      setTeams(res.data?.teams || []);
+    } catch (_err: unknown) {
+      setTeams([]);
+    } finally {
+      setLoadingTeams(false);
+    }
+  };
+
+  const handleCreateTeam = async () => {
+    if (!newTeamName.trim()) {
+      Alert.alert("Team Name Required", "Please enter a team name.");
+      return;
+    }
+    try {
+      setCreatingTeam(true);
+      await api.post(`/clubs/${club.id}/teams`, {
+        name: newTeamName.trim(),
+        description: newTeamDesc.trim() || undefined,
+      });
+      Alert.alert("Success", "Club sub-team created successfully!");
+      setNewTeamName("");
+      setNewTeamDesc("");
+      fetchTeams();
+    } catch (err: unknown) {
+      Alert.alert("Error", clubErrorMessage(err, t));
+    } finally {
+      setCreatingTeam(false);
     }
   };
 
@@ -123,10 +177,10 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
         "Candidate Updated",
         `Application moved to ${APPLICATION_STATUS_LABELS[newStatus] || newStatus}. Candidate has been notified.`
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         "Error",
-        err?.response?.data?.message || "Failed to update application."
+        clubErrorMessage(err, t)
       );
     } finally {
       setUpdatingAppId(null);
@@ -147,10 +201,10 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
       });
       Alert.alert("Success", "Club settings updated.");
       onRefreshClub();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         "Save Failed",
-        err?.response?.data?.message || "Could not save club settings."
+        clubErrorMessage(err, t)
       );
     } finally {
       setSavingSettings(false);
@@ -172,10 +226,10 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
               Alert.alert("Archived", "This club has been archived.");
               onRefreshClub();
               onClose();
-            } catch (err: any) {
+            } catch (err: unknown) {
               Alert.alert(
                 "Error",
-                err?.response?.data?.message || "Could not archive club."
+                clubErrorMessage(err, t)
               );
             }
           },
@@ -301,6 +355,39 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
                 ]}
               >
                 Recruitment ({applications.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.tabItem,
+                activeTab === "teams" && {
+                  borderBottomColor: colors.primary,
+                },
+              ]}
+              onPress={() => setActiveTab("teams")}
+            >
+              <Ionicons
+                name="people-circle-outline"
+                size={16}
+                color={
+                  activeTab === "teams"
+                    ? colors.primary
+                    : colors.textSecondary
+                }
+              />
+              <Text
+                style={[
+                  styles.tabItemText,
+                  {
+                    color:
+                      activeTab === "teams"
+                        ? colors.primary
+                        : colors.textSecondary,
+                  },
+                ]}
+              >
+                Teams ({teams.length})
               </Text>
             </TouchableOpacity>
 
@@ -693,7 +780,130 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
             </View>
           )}
 
-          {/* Tab 3: Settings & Branding */}
+          {/* Tab 3: Sub-Teams & Committees */}
+          {activeTab === "teams" && (
+            <ScrollView
+              contentContainerStyle={styles.tabContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={[styles.inputLabel, { color: colors.text, fontSize: 16, fontWeight: "700" }]}>
+                Club Sub-Teams & Working Committees
+              </Text>
+              <Text style={[{ color: colors.textSecondary, fontSize: 13, marginBottom: 14 }]}>
+                Structure your club into specialized teams (e.g. Core Tech, Design, PR & Outreach).
+              </Text>
+
+              {/* Create Team Form Card */}
+              <View
+                style={[
+                  styles.dangerZone,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.background,
+                    marginTop: 0,
+                    marginBottom: 16,
+                  },
+                ]}
+              >
+                <Text style={[styles.inputLabel, { color: colors.text, marginTop: 0 }]}>
+                  New Team Name *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.formInput,
+                    {
+                      borderColor: colors.border,
+                      color: colors.text,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                  placeholder="e.g. Media & Communications"
+                  placeholderTextColor={colors.textSecondary}
+                  value={newTeamName}
+                  onChangeText={setNewTeamName}
+                />
+
+                <Text style={[styles.inputLabel, { color: colors.text, marginTop: 8 }]}>
+                  Description (optional)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.formInput,
+                    styles.formTextArea,
+                    {
+                      borderColor: colors.border,
+                      color: colors.text,
+                      backgroundColor: colors.surface,
+                      height: 60,
+                    },
+                  ]}
+                  placeholder="Scope, duties, or requirements..."
+                  placeholderTextColor={colors.textSecondary}
+                  value={newTeamDesc}
+                  onChangeText={setNewTeamDesc}
+                  multiline
+                />
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, { backgroundColor: colors.primary, marginTop: 10 }]}
+                  onPress={handleCreateTeam}
+                  disabled={creatingTeam}
+                >
+                  {creatingTeam ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Create Sub-Team</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* Teams List */}
+              <Text style={[styles.inputLabel, { color: colors.text, fontSize: 15, fontWeight: "700", marginBottom: 10 }]}>
+                Active Sub-Teams ({teams.length})
+              </Text>
+
+              {loadingTeams ? (
+                <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 20 }} />
+              ) : teams.length === 0 ? (
+                <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                  <Ionicons name="people-outline" size={40} color={colors.textSecondary} />
+                  <Text style={{ color: colors.text, fontWeight: "600", marginTop: 8 }}>
+                    No sub-teams yet
+                  </Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                    Use the form above to establish your first working team.
+                  </Text>
+                </View>
+              ) : (
+                teams.map((t) => (
+                  <View
+                    key={t.id}
+                    style={[
+                      styles.kanbanCard,
+                      { backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 10 },
+                    ]}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+                      <Text style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>
+                        {t.name}
+                      </Text>
+                    </View>
+                    {t.description ? (
+                      <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>
+                        {t.description}
+                      </Text>
+                    ) : null}
+                    <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 6 }}>
+                      Established {new Date(t.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          )}
+
+          {/* Tab 4: Settings & Branding */}
           {activeTab === "settings" && (
             <ScrollView contentContainerStyle={styles.tabContent}>
               <Text style={[styles.inputLabel, { color: colors.text }]}>
@@ -975,6 +1185,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   appCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 12,
+  },
+  kanbanCard: {
     borderRadius: 14,
     borderWidth: 1,
     padding: 14,

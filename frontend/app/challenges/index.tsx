@@ -21,6 +21,7 @@ import {
   claimChallengeReward,
   type Challenge,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function ChallengesScreen() {
   const { colors } = useTheme();
@@ -70,6 +71,7 @@ export default function ChallengesScreen() {
   const [nowMs] = useState(() => Date.now());
 
   return (
+    <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={{ flex: 1 }}>
@@ -229,6 +231,7 @@ export default function ChallengesScreen() {
         )}
       </ScrollView>
     </View>
+    </Screen>
   );
 }
 

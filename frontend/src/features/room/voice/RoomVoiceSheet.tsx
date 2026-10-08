@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import type { Profile } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { useI18n } from "@/i18n";
 import { useActiveRoomSession } from "./useActiveRoomSession";
 
 type RoomVoiceSheetProps = {
@@ -31,12 +32,13 @@ export function RoomVoiceSheet({
   onClose,
 }: RoomVoiceSheetProps) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const session = useActiveRoomSession();
 
   // Real participant roster: room members are the voice lounge roster.
   // (LiveKit audio-track presence lands here once voice joins LiveKit too —
   // until then members list is the source of truth, no more mock names.)
-  const membersQuery = useQuery({
+const membersQuery = useQuery({
     queryKey: ["room-voice-members", roomId],
     queryFn: () =>
       api<{ members: (Profile & { role?: string })[] }>(`/rooms/${roomId}/members`),
@@ -44,7 +46,8 @@ export function RoomVoiceSheet({
     staleTime: 15_000,
     retry: false,
   });
-  const roster = (membersQuery.data?.members ?? []).slice(0, 24);
+  const members = membersQuery.data?.members ?? [];
+  const roster = members.slice(0, 24);
   const hasRealRoster = roster.length > 0;
   const displayCount = hasRealRoster ? roster.length : session.participants.length;
 
@@ -75,45 +78,30 @@ export function RoomVoiceSheet({
 
           {/* Participant Avatars Grid — real roster, no mocks */}
           <Text style={[s.countText, { color: colors.muted }]}>
-            {displayCount} {displayCount === 1 ? "person" : "people"} in voice
+            {displayCount} {t("rooms.voice.peopleCount")}
           </Text>
           <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
-            {hasRealRoster ? (
-              roster.map((m) => {
-                const live = session.participants.find((sp) => sp.id === m.id);
-                const speaking = live?.isSpeaking ?? false;
-                const muted = live?.isMuted ?? false;
-                return (
-                  <View key={m.id} style={s.participantItem}>
-                    <View
-                      style={[
-                        s.avatarRing,
-                        {
-                          borderColor: speaking ? colors.success : "transparent",
-                          backgroundColor: speaking ? colors.success + "18" : "transparent",
-                        },
-                      ]}
-                    >
-                      <View style={[s.avatar, { backgroundColor: colors.primary + "20" }]}>
-                        <Text style={[s.avatarText, { color: colors.primary }]}>
-                          {(m.full_name?.[0] ?? m.username?.[0] ?? "?").toUpperCase()}
-                        </Text>
-                      </View>
-                      {muted && (
-                        <View style={[s.mutedBadge, { backgroundColor: colors.danger }]}>
-                          <MaterialCommunityIcons name="microphone-off" size={10} color="#FFFFFF" />
-                        </View>
-                      )}
-                    </View>
-                    <Text style={[s.pName, { color: colors.text }]} numberOfLines={1}>
-                      {m.full_name || `@${m.username}`}
-                    </Text>
-                    <Text style={[s.pRole, { color: colors.muted }]}>
-                      {speaking ? "Speaking" : muted ? "Muted" : (m as any).role || "Member"}
-                    </Text>
-                  </View>
-                );
-              })
+             {hasRealRoster ? (
+               roster.map((m) => {
+                 const role = (m as any).role || t("rooms.voice.member");
+                 return (
+                   <View key={m.id} style={s.participantItem}>
+                     <View style={[s.avatarRing, { borderColor: "transparent" }]}>
+                       <View style={[s.avatar, { backgroundColor: colors.primary + "20" }]}>
+                         <Text style={[s.avatarText, { color: colors.primary }]}>
+                           {(m.full_name?.[0] ?? m.username?.[0] ?? "?").toUpperCase()}
+                         </Text>
+                       </View>
+                     </View>
+                     <Text style={[s.pName, { color: colors.text }]} numberOfLines={1}>
+                       {m.full_name || `@${m.username}`}
+                     </Text>
+                     <Text style={[s.pRole, { color: colors.muted }]}>
+                       {role}
+                     </Text>
+                   </View>
+                 );
+               })
             ) : session.participants.length > 0 ? (
               session.participants.map((p) => {
                 return (
@@ -140,7 +128,7 @@ export function RoomVoiceSheet({
                       {p.name}
                     </Text>
                     <Text style={[s.pRole, { color: colors.muted }]}>
-                      {p.isSpeaking ? "Speaking" : p.isMuted ? "Muted" : p.role || "Member"}
+                      {p.isSpeaking ? t("rooms.voice.speaking") : p.isMuted ? t("rooms.voice.muted") : p.role || t("rooms.voice.member")}
                     </Text>
                   </View>
                 );
@@ -148,9 +136,9 @@ export function RoomVoiceSheet({
             ) : (
               <View style={s.emptyVoice}>
                 <MaterialCommunityIcons name="account-voice" size={36} color={colors.muted} />
-                <Text style={[s.emptyTitle, { color: colors.text }]}>Voice lounge khali</Text>
+                <Text style={[s.emptyTitle, { color: colors.text }]}>{t("rooms.voice.emptyTitle")}</Text>
                 <Text style={[s.emptySub, { color: colors.muted }]}>
-                  Prothom join koro — member-ra ekhane porashona niye kotha bolbe.
+                  {t("rooms.voice.emptySub")}
                 </Text>
               </View>
             )}
@@ -178,7 +166,7 @@ export function RoomVoiceSheet({
                 color={session.isMuted ? colors.danger : colors.text}
               />
               <Text style={[s.controlLabel, { color: session.isMuted ? colors.danger : colors.text }]}>
-                {session.isMuted ? "Unmute" : "Mute"}
+                {session.isMuted ? t("rooms.voice.unmute") : t("rooms.voice.mute")}
               </Text>
             </Pressable>
 
@@ -202,7 +190,7 @@ export function RoomVoiceSheet({
                 color={session.isSpeakerOn ? colors.primary : colors.text}
               />
               <Text style={[s.controlLabel, { color: session.isSpeakerOn ? colors.primary : colors.text }]}>
-                {session.isSpeakerOn ? "Speaker" : "Earpiece"}
+                {session.isSpeakerOn ? t("rooms.voice.speaker") : t("rooms.voice.earpiece")}
               </Text>
             </Pressable>
 
@@ -216,7 +204,7 @@ export function RoomVoiceSheet({
               style={[s.controlBtn, { backgroundColor: colors.danger, borderColor: colors.danger }]}
             >
               <MaterialCommunityIcons name="phone-hangup" size={22} color="#FFFFFF" />
-              <Text style={[s.controlLabel, { color: "#FFFFFF", fontWeight: "700" }]}>Leave</Text>
+              <Text style={[s.controlLabel, { color: "#FFFFFF", fontWeight: "700" }]}>{t("rooms.voice.leave")}</Text>
             </Pressable>
           </Row>
         </Pressable>

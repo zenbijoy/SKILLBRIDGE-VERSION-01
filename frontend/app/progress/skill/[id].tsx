@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/theme";
 import { GrowthHero } from "@/components/GrowthHero";
 import { growthIllustrations512 } from "@/assets/illustrations";
+import { ErrorState, Screen } from "@/components/ui";
 import { fetchSkillProgress } from "@/features/growth/growthApi";
 
 export default function SkillProgressScreen() {
@@ -21,14 +22,16 @@ export default function SkillProgressScreen() {
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!id) return;
     try {
+      setError(null);
       const res = await fetchSkillProgress(id);
       setData(res);
-    } catch {
-      // Fallback
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load skill progress");
     } finally {
       setLoading(false);
     }
@@ -47,11 +50,24 @@ export default function SkillProgressScreen() {
     );
   }
 
+  if (error && !data) {
+    return (
+      <View style={[styles.centerContainer, { backgroundColor: colors.bg }]}>
+        <ErrorState
+          title="Could not load skill progress"
+          detail={error}
+          onRetry={loadData}
+        />
+      </View>
+    );
+  }
+
   const skill = data?.skill;
   const goals = data?.goals || [];
   const bookings = data?.bookings || [];
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -118,6 +134,7 @@ export default function SkillProgressScreen() {
         ))}
       </View>
     </ScrollView>
+    </Screen>
   );
 }
 

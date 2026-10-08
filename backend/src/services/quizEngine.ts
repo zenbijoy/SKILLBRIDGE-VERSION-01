@@ -112,7 +112,7 @@ if (sessionCleanupTimer && typeof sessionCleanupTimer.unref === "function") {
 // HMAC session signing
 // ────────────────────────────────────────────────────────────────
 
-const SESSION_SECRET = (env as any).QUIZ_SESSION_SECRET ?? env.SUPABASE_SERVICE_ROLE_KEY.slice(0, 32);
+const SESSION_SECRET = env.QUIZ_SESSION_SECRET || env.SUPABASE_SERVICE_ROLE_KEY.slice(0, 32);
 
 function signSession(sessionId: string, userId: string, expiresAt: string): string {
   return createHmac("sha256", SESSION_SECRET)

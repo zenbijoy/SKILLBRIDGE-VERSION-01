@@ -1,6 +1,7 @@
 import { Link, Stack } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { useTheme } from "@/theme";
+import { Screen } from "@/components/ui";
 
 export default function NotFoundScreen() {
   const { colors } = useTheme();
@@ -8,6 +9,7 @@ export default function NotFoundScreen() {
   return (
     <>
       <Stack.Screen options={{ title: "Page Not Found", headerShown: false }} />
+      <Screen scroll={false}>
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
         <Text style={[styles.code, { color: colors.primary }]}>404</Text>
         <Text style={[styles.title, { color: colors.text }]}>Page Not Found</Text>
@@ -19,6 +21,7 @@ export default function NotFoundScreen() {
           <Text style={styles.linkText}>Go to SkillBridge Home</Text>
         </Link>
       </View>
+      </Screen>
     </>
   );
 }

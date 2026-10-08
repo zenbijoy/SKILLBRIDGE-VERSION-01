@@ -15,7 +15,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeProvider";
 import { ClubProject, ClubProjectTask, ClubRole, ProjectStatus } from "../types";
-import { PROJECT_STATUS_LABELS } from "../constants";
+import { PROJECT_STATUS_LABELS, isClubOfficer } from "../constants";
+import { useI18n } from "../../../i18n";
+import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
 
 interface ClubProjectsTabProps {
@@ -34,17 +36,8 @@ export const ClubProjectsTab: React.FC<ClubProjectsTabProps> = ({
   onRefresh,
 }) => {
   const { colors } = useTheme();
-  const isLeader =
-    myRole &&
-    [
-      "owner",
-      "admin",
-      "president",
-      "vice_president",
-      "secretary",
-      "executive",
-      "team_lead",
-    ].includes(myRole);
+  const { t } = useI18n();
+  const isLeader = isClubOfficer(myRole);
 
   const [activeStatus, setActiveStatus] = useState<ProjectStatus | "all">("all");
 
@@ -75,8 +68,9 @@ export const ClubProjectsTab: React.FC<ClubProjectsTabProps> = ({
       setLoadingTasks(true);
       const res = await api.get(`/clubs/projects/${projectId}/tasks`);
       setProjectTasks(res.data?.tasks || []);
-    } catch {
+    } catch (err: unknown) {
       setProjectTasks([]);
+      Alert.alert("Error", clubErrorMessage(err, t));
     } finally {
       setLoadingTasks(false);
     }
@@ -99,8 +93,8 @@ export const ClubProjectsTab: React.FC<ClubProjectsTabProps> = ({
       setProjectTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: updated } : t))
       );
-    } catch {
-      Alert.alert("Error", "Could not update task status.");
+    } catch (err: unknown) {
+      Alert.alert("Error", clubErrorMessage(err, t));
     }
   };
 
@@ -117,8 +111,8 @@ export const ClubProjectsTab: React.FC<ClubProjectsTabProps> = ({
         setProjectTasks((prev) => [res.data.task, ...prev]);
         setNewTaskTitle("");
       }
-    } catch (err: any) {
-      Alert.alert("Error", err?.response?.data?.message || "Failed to add task.");
+    } catch (err: unknown) {
+      Alert.alert("Error", clubErrorMessage(err, t));
     } finally {
       setAddingTask(false);
     }
@@ -145,8 +139,8 @@ export const ClubProjectsTab: React.FC<ClubProjectsTabProps> = ({
       setRepoUrl("");
       setDemoUrl("");
       onRefresh();
-    } catch (err: any) {
-      Alert.alert("Error", err?.response?.data?.message || "Failed to create project.");
+    } catch (err: unknown) {
+      Alert.alert("Error", clubErrorMessage(err, t));
     } finally {
       setCreating(false);
     }

@@ -21,6 +21,7 @@ import {
   deleteGoal,
   type LearningGoal,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function GoalDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -47,6 +48,10 @@ export default function GoalDetailScreen() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadGoal();
+    const interval = setInterval(() => {
+      void loadGoal();
+    }, 20_000);
+    return () => clearInterval(interval);
   }, [loadGoal]);
 
   const handleActivate = async () => {
@@ -118,6 +123,7 @@ export default function GoalDetailScreen() {
   }
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -289,6 +295,7 @@ export default function GoalDetailScreen() {
         </View>
       ))}
     </ScrollView>
+    </Screen>
   );
 }
 

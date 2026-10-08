@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, Pressable, Platform, LogBox } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
@@ -162,15 +163,14 @@ function Gate() {
     }
   }, [loading, session?.user.id, pushEnabled]);
 
-  // Connect/disconnect socket based on session state
+  // Maintain persistent socket connection whenever user is authenticated
   useEffect(() => {
     if (!loading && session?.access_token) {
       connectSocket(session.access_token);
     } else if (!loading && !session) {
       disconnectSocket();
     }
-    return () => disconnectSocket();
-  }, [loading, session]);
+  }, [loading, session?.access_token]);
 
   // Hide native splash screen once initial session resolution completes
   useEffect(() => {
@@ -266,14 +266,16 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 
 export default function Layout() {
   return (
-    <QueryClientProvider client={client}>
-      <AuthProvider>
-        <AutoHideNavigationProvider>
-          <ThemedStatusBar />
-          <Gate />
-        </AutoHideNavigationProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <AutoHideNavigationProvider>
+            <ThemedStatusBar />
+            <Gate />
+          </AutoHideNavigationProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 

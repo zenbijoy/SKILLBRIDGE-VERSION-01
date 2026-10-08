@@ -248,10 +248,10 @@ const s = StyleSheet.create({
     padding: 10,
   },
   coverImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   scrimGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   coverTopBar: {
     flexDirection: "row",
@@ -271,7 +271,7 @@ const s = StyleSheet.create({
     backgroundColor: "#EF4444",
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
   },
   liveBadgeText: {
     color: "#FFFFFF",
@@ -282,7 +282,7 @@ const s = StyleSheet.create({
   statusBadge: {
     paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
   },
   statusBadgeText: {
     color: "#FFFFFF",
@@ -297,7 +297,7 @@ const s = StyleSheet.create({
     backgroundColor: "#10B981",
     paddingHorizontal: 8,
     paddingVertical: 3.5,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.4)",
   },
@@ -314,7 +314,7 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.2)",
   },
@@ -330,7 +330,7 @@ const s = StyleSheet.create({
   modePill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
   },
   modePillText: {
     color: "#FFFFFF",
@@ -340,7 +340,7 @@ const s = StyleSheet.create({
   topicPill: {
     paddingHorizontal: 8,
     paddingVertical: 2.5,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
     borderWidth: 1,
   },
   topicPillText: {

@@ -19,6 +19,7 @@ import {
   claimChallengeReward,
   type Challenge,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function ChallengeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -85,6 +86,7 @@ export default function ChallengeDetailScreen() {
   const isClaimed = challenge.progress?.status === "claimed";
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -170,6 +172,7 @@ export default function ChallengeDetailScreen() {
         )}
       </View>
     </ScrollView>
+    </Screen>
   );
 }
 

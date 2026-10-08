@@ -71,3 +71,8 @@ export async function getCallHistoryApi(limit = 30): Promise<CallRecord[]> {
   const res = await api<{ calls: CallRecord[] }>(`/calls/history?limit=${limit}`);
   return res.calls || [];
 }
+
+export async function getCallApi(callId: string): Promise<CallRecord> {
+  const res = await api<{ call: CallRecord }>(`/calls/${callId}`);
+  return res.call;
+}

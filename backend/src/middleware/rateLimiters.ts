@@ -113,3 +113,35 @@ export const eventCreationLimiter = createLimiter(
   15,
   "Event scheduling limit reached. Please wait before creating more club events.",
 );
+
+// 11. AI Quiz Session Generation: 10 starts per 10 minutes (protects paid LLM quota)
+export const quizStartLimiter = createLimiter(
+  "quiz_start",
+  10 * 60 * 1000,
+  10,
+  "Assessment generation limit reached. Please wait a few minutes before starting another assessment.",
+);
+
+// 12. Public Credential Verification: 30 lookups per 10 minutes (prevents enumeration)
+export const verifyCodeLimiter = createLimiter(
+  "verify_code",
+  10 * 60 * 1000,
+  30,
+  "Verification rate limit reached. Please try again later.",
+);
+
+// 13. Club Write Operations: 30 requests per minute
+export const clubWriteLimiter = createLimiter(
+  "club_write",
+  60 * 1000,
+  30,
+  "Club action rate limit reached. Please wait a moment before trying again.",
+);
+
+// 14. Club Membership & Auth Operations: 10 requests per minute
+export const clubAuthLimiter = createLimiter(
+  "club_auth",
+  60 * 1000,
+  10,
+  "Club membership action rate limit reached. Please wait a moment before trying again.",
+);

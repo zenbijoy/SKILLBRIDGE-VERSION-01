@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Pressable,
@@ -12,23 +13,28 @@ import {
 import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import type { Profile, Room } from "@/types";
 import { Button, Card, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import MapPicker from "@/components/MapPicker";
+import { optimizeImageForUpload } from "@/lib/imageOptimizer";
+import { ROOM_COVER_PRESETS } from "@/features/room/roomCovers";
 
 // Mirrors backend env MAX_ROOM_CAPACITY (default 250) so validation never mismatches.
 const MAX_ROOM_CAPACITY = 250;
 const CAPACITY_PRESETS = [10, 30, 50, 100];
 
-// Discord Activities / Telegram Channel style presets
+// Discord Activities / Telegram Channel style presets (Theme-driven color keys)
 const ACTIVITY_PRESETS = [
   {
     id: "voice_lounge",
     name: "Voice Lounge",
     icon: "headset",
-    color: "#6366F1",
+    colorKey: "primary",
     defaultTopic: "Open Audio Discussion & Study",
     tags: ["voice", "casual", "study"],
     desc: "Discord-style open voice room for relaxed studying and group discussions.",
@@ -37,7 +43,7 @@ const ACTIVITY_PRESETS = [
     id: "coding_lab",
     name: "Coding Lab",
     icon: "code-tags",
-    color: "#10B981",
+    colorKey: "success",
     defaultTopic: "Software Dev & Algorithms",
     tags: ["programming", "projects", "leetcode"],
     desc: "Collaborative programming, pair debugging, and project building.",
@@ -46,7 +52,7 @@ const ACTIVITY_PRESETS = [
     id: "pomodoro",
     name: "Silent Focus",
     icon: "timer-sand",
-    color: "#F59E0B",
+    colorKey: "warning",
     defaultTopic: "Deep Work & Pomodoro",
     tags: ["focus", "pomodoro", "silent"],
     desc: "Quiet study session with synchronized 25/5 min focus intervals.",
@@ -55,7 +61,7 @@ const ACTIVITY_PRESETS = [
     id: "channel",
     name: "Telegram Channel",
     icon: "bullhorn-outline",
-    color: "#0EA5E9",
+    colorKey: "info",
     defaultTopic: "Campus Notes & Announcements",
     tags: ["channel", "resources", "broadcast"],
     desc: "Broadcast-style space to share lecture summaries, PDFs and announcements.",
@@ -64,7 +70,7 @@ const ACTIVITY_PRESETS = [
     id: "exam_prep",
     name: "Exam Arena",
     icon: "trophy-outline",
-    color: "#EC4899",
+    colorKey: "accent",
     defaultTopic: "Final Exam Problem Solving",
     tags: ["exam", "revision", "practice"],
     desc: "High-intensity past papers, quick questions, and peer problem-solving.",
@@ -88,10 +94,15 @@ const ROOM_ICONS = [
 
 export default function CreateRoomScreen() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const qc = useQueryClient();
 
   const [selectedPreset, setSelectedPreset] = useState<string>("voice_lounge");
   const [selectedIcon, setSelectedIcon] = useState<string>("headset");
+  const [coverImageUrl, setCoverImageUrl] = useState<string>("");
+  const [storageProvider, setStorageProvider] = useState<string>("");
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState("");
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("Open Audio Discussion & Study");
   const [description, setDescription] = useState("");
@@ -104,6 +115,129 @@ export default function CreateRoomScreen() {
   const [campusLocation, setCampusLocation] = useState("");
   const [selectedInviteUsernames, setSelectedInviteUsernames] = useState<string[]>([]);
   const [customUsername, setCustomUsername] = useState("");
+
+  const getPresetColor = (colorKey: string) => {
+    return (colors as any)[colorKey] || colors.primary;
+  };
+
+  // Real-time Cloudflare R2 Cover Photo Upload
+  const handlePickCover = async (source: "gallery" | "camera") => {
+    try {
+      if (source === "camera") {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert("Permission Required", "Camera access is needed to capture a room cover photo.");
+          return;
+        }
+      } else {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert("Permission Required", "Photo library access is needed to upload a room cover photo.");
+          return;
+        }
+      }
+
+      const pickerFn =
+        source === "camera"
+          ? ImagePicker.launchCameraAsync
+          : ImagePicker.launchImageLibraryAsync;
+
+      const result = await pickerFn({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.85,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      setIsUploadingCover(true);
+      setUploadProgressMsg("Optimizing cover photo...");
+
+      const originalName = asset.fileName || `cover_${Date.now()}.jpg`;
+      const optimized = await optimizeImageForUpload(
+        asset.uri,
+        {
+          maxWidth: 1280,
+          maxHeight: 720,
+          quality: 0.82,
+          format: "jpeg",
+          base64: true,
+        },
+        originalName,
+      );
+
+      let fileBase64 = optimized.base64 || asset.base64;
+
+      // Resilient fallback for base64
+      if (!fileBase64 && asset.uri) {
+        try {
+          const resp = await fetch(asset.uri);
+          const blob = await resp.blob();
+          fileBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const res = reader.result as string;
+              resolve(res.replace(/^data:[^;]+;base64,/, ""));
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch (readErr) {
+          console.warn("[createRoom] Base64 fallback failed", readErr);
+        }
+      }
+
+      if (!fileBase64) {
+        throw new Error("Could not process image file data.");
+      }
+
+      setUploadProgressMsg("Uploading to Cloudflare R2...");
+
+      const uploadRes = await api<{
+        url: string;
+        mediaObjectId?: string | null;
+        provider?: string;
+        fileSizeBytes?: number;
+      }>("/rooms/cover/upload", {
+        method: "POST",
+        body: JSON.stringify({
+          fileBase64,
+          contentType: optimized.mimeType || "image/jpeg",
+          fileName: optimized.fileName || originalName,
+        }),
+      });
+
+      if (!uploadRes?.url) {
+        throw new Error("No URL returned from Cloudflare R2 storage.");
+      }
+
+      setCoverImageUrl(uploadRes.url);
+      setStorageProvider(uploadRes.provider || "r2");
+      triggerHaptic("notificationSuccess");
+    } catch (err: any) {
+      Alert.alert("Cover Upload Failed", err.message || "Failed to upload to Cloudflare R2 storage.");
+    } finally {
+      setIsUploadingCover(false);
+      setUploadProgressMsg("");
+    }
+  };
+
+  const handleSelectPresetCover = (url: string) => {
+    triggerHaptic("selection");
+    setCoverImageUrl(url);
+    setStorageProvider("preset");
+  };
+
+  const handleRemoveCover = () => {
+    triggerHaptic("selection");
+    setCoverImageUrl("");
+    setStorageProvider("");
+  };
 
   // Fetch connections for interactive invite system
   const { data: connectionsData } = useQuery<{
@@ -177,6 +311,7 @@ export default function CreateRoomScreen() {
         capacity: capNumber,
         mode,
         campus_location: mode !== "online" ? campusLocation.trim() : undefined,
+        cover_image_url: coverImageUrl.trim() ? coverImageUrl.trim() : undefined,
       };
 
       const res = await api<Room>("/rooms", {
@@ -233,7 +368,16 @@ export default function CreateRoomScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[
+          s.scrollContent,
+          {
+            paddingTop: Math.max(insets.top, 12),
+            paddingBottom: Math.max(insets.bottom + 20, 36),
+          },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Header */}
         <Row style={s.headerRow}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={s.backBtn}>
@@ -251,6 +395,7 @@ export default function CreateRoomScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.presetsScroll}>
             {ACTIVITY_PRESETS.map((preset) => {
               const isSel = selectedPreset === preset.id;
+              const presetColor = getPresetColor(preset.colorKey);
               return (
                 <Pressable
                   key={preset.id}
@@ -263,8 +408,8 @@ export default function CreateRoomScreen() {
                     },
                   ]}
                 >
-                  <View style={[s.presetIconBox, { backgroundColor: preset.color + "22" }]}>
-                    <MaterialCommunityIcons name={preset.icon as any} size={24} color={preset.color} />
+                  <View style={[s.presetIconBox, { backgroundColor: isSel ? colors.primarySoft : colors.surface2 }]}>
+                    <MaterialCommunityIcons name={preset.icon as any} size={24} color={presetColor} />
                   </View>
                   <Text style={[s.presetName, { color: isSel ? colors.primary : colors.text }]}>
                     {preset.name}
@@ -277,6 +422,163 @@ export default function CreateRoomScreen() {
             })}
           </ScrollView>
         </View>
+
+        {/* 2. Room Cover Photo Card (Cloudflare R2 Direct Upload & Presets) */}
+        <Card style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <Row style={{ alignItems: "center", gap: 6 }}>
+              <MaterialCommunityIcons name="image-outline" size={18} color={colors.primary} />
+              <Text style={[s.cardHeading, { color: colors.text, marginBottom: 0 }]}>
+                Room Cover Photo
+              </Text>
+            </Row>
+            {coverImageUrl ? (
+              <Pill tone={storageProvider === "r2" ? "success" : "primary"}>
+                {storageProvider === "r2" ? "Cloudflare R2" : storageProvider === "preset" ? "Theme Preset" : "Selected"}
+              </Pill>
+            ) : null}
+          </Row>
+          <Muted style={{ fontSize: 11, marginBottom: 12 }}>
+            16:9 banner stored in Cloudflare R2 in real time, displayed on campus cards.
+          </Muted>
+
+          {isUploadingCover ? (
+            <View style={[s.uploadingBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[s.uploadingText, { color: colors.text }]}>{uploadProgressMsg}</Text>
+              <Muted style={{ fontSize: 11 }}>Synchronizing with Cloudflare R2 storage bucket...</Muted>
+            </View>
+          ) : coverImageUrl ? (
+            <View style={s.coverPreviewContainer}>
+              {/* 16:9 Live Preview Banner (mimics live feed card) */}
+              <View style={[s.coverPreviewCard, { borderColor: colors.border }]}>
+                <Image source={{ uri: coverImageUrl }} style={s.coverPreviewImage} resizeMode="cover" />
+                <LinearGradient
+                  colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.85)"]}
+                  style={s.coverGradient}
+                />
+                {/* Top overlay badges */}
+                <View style={s.previewTopBar}>
+                  <View style={[s.previewBadge, { backgroundColor: "rgba(0,0,0,0.55)" }]}>
+                    <Text style={[s.previewBadgeText, { color: colors.white }]}>
+                      {mode === "online" ? "🌐 Online" : mode === "offline" ? "📍 Campus" : "⚡ Hybrid"}
+                    </Text>
+                  </View>
+                  <View style={[s.previewBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={[s.previewBadgeText, { color: colors.white }]}>
+                      {storageProvider === "r2" ? "☁️ R2 Synced" : "Live Preview"}
+                    </Text>
+                  </View>
+                </View>
+                {/* Bottom title & topic overlay */}
+                <View style={s.previewBottomBar}>
+                  <Text style={[s.previewTitle, { color: colors.white }]} numberOfLines={1}>
+                    {title.trim() || "Your Space Name"}
+                  </Text>
+                  <Text style={[s.previewTopic, { color: colors.white }]} numberOfLines={1}>
+                    #{topic.trim() || "Study Focus"}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Action buttons below preview */}
+              <Row style={{ gap: 8, marginTop: 10 }}>
+                <Pressable
+                  onPress={() => handlePickCover("gallery")}
+                  style={[s.coverActionBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                >
+                  <MaterialCommunityIcons name="image-edit-outline" size={16} color={colors.text} />
+                  <Text style={[s.coverActionText, { color: colors.text }]}>Change (Gallery)</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handlePickCover("camera")}
+                  style={[s.coverActionBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                >
+                  <MaterialCommunityIcons name="camera-outline" size={16} color={colors.text} />
+                  <Text style={[s.coverActionText, { color: colors.text }]}>Take Photo</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleRemoveCover}
+                  style={[s.coverActionBtn, { backgroundColor: colors.background, borderColor: colors.danger }]}
+                >
+                  <MaterialCommunityIcons name="delete-outline" size={16} color={colors.danger} />
+                  <Text style={[s.coverActionText, { color: colors.danger }]}>Remove</Text>
+                </Pressable>
+              </Row>
+            </View>
+          ) : (
+            <View>
+              {/* Upload Drop Zone */}
+              <View style={[s.uploadDropBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <View style={[s.uploadIconCircle, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="cloud-upload-outline" size={26} color={colors.primary} />
+                </View>
+                <Text style={[s.uploadDropTitle, { color: colors.text }]}>
+                  Upload Custom Cover Photo
+                </Text>
+                <Muted style={{ fontSize: 11, textAlign: "center", marginBottom: 12 }}>
+                  PNG, JPG, or WebP up to 10MB • Automatically optimized for 16:9
+                </Muted>
+
+                <Row style={{ gap: 10, width: "100%" }}>
+                  <Pressable
+                    onPress={() => handlePickCover("gallery")}
+                    style={[s.uploadChoiceBtn, { flex: 1, backgroundColor: colors.primarySoft, borderColor: colors.primary }]}
+                  >
+                    <MaterialCommunityIcons name="image-outline" size={18} color={colors.primary} />
+                    <Text style={[s.uploadChoiceText, { color: colors.primary }]}>From Gallery</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handlePickCover("camera")}
+                    style={[s.uploadChoiceBtn, { flex: 1, backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <MaterialCommunityIcons name="camera-outline" size={18} color={colors.text} />
+                    <Text style={[s.uploadChoiceText, { color: colors.text }]}>Take Photo</Text>
+                  </Pressable>
+                </Row>
+              </View>
+
+              {/* Or Select from Study Cover Presets */}
+              <View style={{ marginTop: 12 }}>
+                <Text style={[s.presetSectionLabel, { color: colors.muted }]}>
+                  Or select a curated study theme:
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+                >
+                  {ROOM_COVER_PRESETS.map((preset) => {
+                    const isSelected = coverImageUrl === preset.url;
+                    return (
+                      <Pressable
+                        key={preset.id}
+                        onPress={() => handleSelectPresetCover(preset.url)}
+                        style={[
+                          s.coverPresetThumbCard,
+                          {
+                            borderColor: isSelected ? colors.primary : colors.border,
+                            borderWidth: isSelected ? 2 : 1,
+                          },
+                        ]}
+                      >
+                        <Image source={{ uri: preset.url }} style={s.coverPresetThumbImg} resizeMode="cover" />
+                        <View style={[s.coverPresetOverlay, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+                          <Text style={[s.coverPresetName, { color: colors.white }]} numberOfLines={1}>
+                            {preset.name}
+                          </Text>
+                          {isSelected && (
+                            <MaterialCommunityIcons name="check-circle" size={16} color={colors.primary} />
+                          )}
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+          )}
+        </Card>
 
         {/* 2. Custom Icon Picker */}
         <View style={s.section}>
@@ -302,7 +604,7 @@ export default function CreateRoomScreen() {
                   <MaterialCommunityIcons
                     name={iconName as any}
                     size={20}
-                    color={isSel ? "#FFFFFF" : colors.text}
+                    color={isSel ? colors.white : colors.text}
                   />
                 </Pressable>
               );
@@ -504,7 +806,7 @@ export default function CreateRoomScreen() {
                       style={{
                         fontSize: 12,
                         fontWeight: "700",
-                        color: active ? "#FFFFFF" : colors.textSecondary,
+                        color: active ? colors.white : colors.textSecondary,
                       }}
                     >
                       {n}
@@ -779,5 +1081,150 @@ const s = StyleSheet.create({
   submitContainer: {
     marginTop: 8,
     marginBottom: 20,
+  },
+  uploadingBox: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  uploadingText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  coverPreviewContainer: {
+    gap: 8,
+  },
+  coverPreviewCard: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    position: "relative",
+  },
+  coverPreviewImage: {
+    width: "100%",
+    height: "100%",
+  },
+  coverGradient: {
+    ...StyleSheet.absoluteFill,
+  },
+  previewTopBar: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    right: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  previewBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  previewBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  previewBottomBar: {
+    position: "absolute",
+    bottom: 10,
+    left: 12,
+    right: 12,
+    gap: 2,
+  },
+  previewTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewTopic: {
+    fontSize: 12,
+    fontWeight: "600",
+    opacity: 0.9,
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  coverActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  coverActionText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  uploadDropBox: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  uploadIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  uploadDropTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  uploadChoiceBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  uploadChoiceText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  presetSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  coverPresetThumbCard: {
+    width: 100,
+    height: 60,
+    borderRadius: 10,
+    overflow: "hidden",
+    position: "relative",
+  },
+  coverPresetThumbImg: {
+    width: "100%",
+    height: "100%",
+  },
+  coverPresetOverlay: {
+    ...StyleSheet.absoluteFill,
+    padding: 4,
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+  },
+  coverPresetName: {
+    fontSize: 9,
+    fontWeight: "700",
+    alignSelf: "flex-start",
   },
 });

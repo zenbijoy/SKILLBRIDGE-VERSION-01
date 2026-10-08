@@ -3,11 +3,42 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { NotificationService } from "../services/notificationService.js";
-import { negotiationLimiter } from "../middleware/rateLimiters.js";
+import { negotiationLimiter, clubWriteLimiter, clubAuthLimiter } from "../middleware/rateLimiters.js";
 import { logDomainEvent } from "../lib/domainLogger.js";
 import { ensureClubWorkspace } from "../services/spaceWorkspaceService.js";
+import { emitClubEvent } from "../socket.js";
 
 export const clubs = Router();
+
+export const CLUB_LEADER_ROLES = [
+  "owner",
+  "admin",
+  "president",
+  "vice_president",
+  "secretary",
+  "treasurer",
+  "executive",
+  "team_lead",
+  "moderator",
+];
+export const CLUB_ADMIN_ROLES = ["owner", "admin", "president"];
+export const CLUB_OFFICER_ROLES = [
+  "owner",
+  "admin",
+  "president",
+  "vice_president",
+  "secretary",
+  "executive",
+];
+
+const flexibleDatetime = z.preprocess((arg) => {
+  if (typeof arg === "string" || arg instanceof Date) {
+    const d = new Date(arg);
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+  return arg;
+}, z.string().datetime());
+
 
 // =============================================================================
 // 1. CLUB DISCOVERY, SEARCH & RECOMMENDATIONS
@@ -196,39 +227,62 @@ clubs.get(
       isFollowing = Boolean(follow);
     }
 
-    // Get upcoming events
-    const { data: events } = await admin
-      .from("events")
-      .select("*")
-      .eq("club_id", clubId)
-      .gte("starts_at", new Date().toISOString())
-      .order("starts_at", { ascending: true })
-      .limit(5);
-
-    // Get active projects
-    const { data: projects } = await admin
-      .from("club_projects")
-      .select("id, title, description, status, cover_url, deadline")
-      .eq("club_id", clubId)
-      .neq("status", "archived")
-      .limit(6);
-
-    // Get latest announcement
-    const { data: latestAnnouncement } = await admin
-      .from("club_posts")
-      .select("id, title, content, created_at, is_pinned")
-      .eq("club_id", clubId)
-      .eq("type", "announcement")
-      .order("is_pinned", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // Check follower count
-    const { count: followerCount } = await admin
-      .from("club_follows")
-      .select("*", { count: "exact", head: true })
-      .eq("club_id", clubId);
+    // Parallel fetch for overview data without leaking attendance_code
+    const [
+      { data: eventsData },
+      { data: projectsData },
+      { data: recruitmentsData },
+      { data: resourcesData },
+      { data: achievementsData },
+      { data: latestAnnouncement },
+      { count: followerCount },
+    ] = await Promise.all([
+      admin
+        .from("events")
+        .select("id, club_id, title, description, starts_at, ends_at, location, online_url, venue_type, capacity, poster_url, speakers, agenda, tags, status, created_at")
+        .eq("club_id", clubId)
+        .gte("starts_at", new Date().toISOString())
+        .order("starts_at", { ascending: true })
+        .limit(5),
+      admin
+        .from("club_projects")
+        .select("id, title, description, status, cover_url, deadline, team_id, lead_id, repository_url, demo_url")
+        .eq("club_id", clubId)
+        .neq("status", "archived")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      admin
+        .from("club_recruitments")
+        .select("*")
+        .eq("club_id", clubId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      admin
+        .from("club_resources")
+        .select("*")
+        .eq("club_id", clubId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      admin
+        .from("club_achievements")
+        .select("*")
+        .eq("club_id", clubId)
+        .order("date", { ascending: false })
+        .limit(50),
+      admin
+        .from("club_posts")
+        .select("id, title, content, created_at, is_pinned")
+        .eq("club_id", clubId)
+        .eq("type", "announcement")
+        .order("is_pinned", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin
+        .from("club_follows")
+        .select("*", { count: "exact", head: true })
+        .eq("club_id", clubId),
+    ]);
 
     res.json({
       club: {
@@ -242,8 +296,12 @@ clubs.get(
         follower_count: followerCount ?? 0,
         latest_announcement: latestAnnouncement,
       },
-      events: events ?? [],
-      projects: projects ?? [],
+      events: eventsData ?? [],
+      projects: projectsData ?? [],
+      recruitments: recruitmentsData ?? [],
+      resources: resourcesData ?? [],
+      achievements: achievementsData ?? [],
+      members: club.members ?? [],
     });
   }),
 );
@@ -251,6 +309,7 @@ clubs.get(
 // POST /api/v1/clubs - Create a new club (atomic RPC with owner assignment)
 clubs.post(
   "/",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const b = z
       .object({
@@ -300,7 +359,7 @@ clubs.post(
       .eq("id", clubId)
       .single();
 
-    res.status(201).json(createdClub);
+    res.status(201).json({ club: createdClub, ...createdClub });
   }),
 );
 
@@ -336,7 +395,7 @@ clubs.patch(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin", "president"].includes(member.role)) {
+    if (!member || !CLUB_ADMIN_ROLES.includes(member.role)) {
       return res.status(403).json({ error: "Club admin role required" });
     }
 
@@ -359,6 +418,7 @@ clubs.patch(
 // POST /api/v1/clubs/:id/follow - Toggle follow status
 clubs.post(
   "/:id/follow",
+  clubAuthLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const { data: existing } = await admin
@@ -387,6 +447,7 @@ clubs.post(
 // POST /api/v1/clubs/:id/join - Join club or handle membership requirements
 clubs.post(
   "/:id/join",
+  clubAuthLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const { data: club } = await admin
@@ -435,6 +496,9 @@ clubs.post(
       .single();
 
     if (error) throw error;
+
+    emitClubEvent(clubId, "club:member_joined", { member: newMember });
+
     res.status(201).json({ success: true, member: newMember });
   }),
 );
@@ -442,6 +506,7 @@ clubs.post(
 // POST /api/v1/clubs/:id/leave - Leave club
 clubs.post(
   "/:id/leave",
+  clubAuthLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const { data: member } = await admin
@@ -466,6 +531,8 @@ clubs.post(
       .delete()
       .eq("club_id", clubId)
       .eq("user_id", req.userId!);
+
+    emitClubEvent(clubId, "club:member_left", { userId: req.userId! });
 
     res.json({ success: true, message: "Left club successfully" });
   }),
@@ -529,7 +596,7 @@ clubs.patch(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!me || !["owner", "admin", "president"].includes(me.role)) {
+    if (!me || !CLUB_ADMIN_ROLES.includes(me.role)) {
       return res.status(403).json({ error: "Club admin role required" });
     }
 
@@ -542,6 +609,9 @@ clubs.patch(
       .single();
 
     if (error) throw error;
+
+    emitClubEvent(clubId, "club:member_role_updated", { member: updated });
+
     res.json({ member: updated });
   }),
 );
@@ -560,7 +630,7 @@ clubs.delete(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!me || !["owner", "admin", "president"].includes(me.role)) {
+    if (!me || !CLUB_ADMIN_ROLES.includes(me.role)) {
       return res.status(403).json({ error: "Club admin role required" });
     }
 
@@ -570,6 +640,8 @@ clubs.delete(
       .eq("club_id", clubId)
       .eq("user_id", targetUserId);
 
+    emitClubEvent(clubId, "club:member_left", { userId: targetUserId });
+
     res.json({ success: true, message: "Member removed" });
   }),
 );
@@ -577,6 +649,7 @@ clubs.delete(
 // POST /api/v1/clubs/:id/members/invite - Invite a user to the club
 clubs.post(
   "/:id/members/invite",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -606,7 +679,7 @@ clubs.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!me || !["owner", "admin", "president", "vice_president", "executive"].includes(me.role)) {
+    if (!me || !CLUB_OFFICER_ROLES.includes(me.role)) {
       return res.status(403).json({ error: "Club leadership role required to invite members" });
     }
 
@@ -638,6 +711,8 @@ clubs.post(
 
     if (error) throw error;
 
+    emitClubEvent(clubId, "club:member_joined", { member: newMember });
+
     // Send notification to the invited user
     try {
       const { data: clubData } = await admin
@@ -666,12 +741,14 @@ clubs.post(
 // 4. COMMUNITY FEED & ANNOUNCEMENTS
 // =============================================================================
 
-// GET /api/v1/clubs/:id/posts - Feed posts with likes & comments count
+// GET /api/v1/clubs/:id/posts - Feed posts with likes & comments count (with cursor pagination)
 clubs.get(
   "/:id/posts",
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const type = req.query.type as string | undefined;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+    const before = req.query.before as string | undefined;
 
     let q = admin
       .from("club_posts")
@@ -684,10 +761,14 @@ clubs.get(
     if (type && type !== "all") {
       q = q.eq("type", type);
     }
+    if (before) {
+      q = q.lt("created_at", before);
+    }
 
     const { data: posts, error } = await q
       .order("is_pinned", { ascending: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(limit);
 
     if (error) throw error;
 
@@ -708,13 +789,16 @@ clubs.get(
       is_liked: likedPostIds.has(p.id),
     }));
 
-    res.json({ posts: formatted });
+    const nextCursor = formatted.length === limit ? formatted[formatted.length - 1]?.created_at : null;
+
+    res.json({ posts: formatted, next_cursor: nextCursor });
   }),
 );
 
 // POST /api/v1/clubs/:id/posts - Create post / announcement
 clubs.post(
   "/:id/posts",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -750,10 +834,7 @@ clubs.post(
     }
 
     // Only leaders can pin or post official announcements
-    let canPin = false;
-    if (["owner", "admin", "president", "vice_president", "executive", "moderator"].includes(member.role)) {
-      canPin = true;
-    }
+    const canPin = CLUB_OFFICER_ROLES.includes(member.role);
     const isPinned = canPin ? body.is_pinned : false;
 
     const { data: post, error } = await admin
@@ -775,6 +856,12 @@ clubs.post(
 
     if (error) throw error;
 
+    emitClubEvent(clubId, "club:post_created", { post });
+    emitClubEvent(clubId, "club:post:new", { post, clubId });
+    if (body.type === "announcement") {
+      emitClubEvent(clubId, "club:announcement_created", { post });
+    }
+
     // Dispatch notification to members if it's an official announcement
     if (body.type === "announcement") {
       void (async () => {
@@ -791,17 +878,24 @@ clubs.post(
             .eq("id", clubId)
             .single();
 
-          for (const m of members ?? []) {
-            void NotificationService.dispatch({
-              userId: m.user_id,
-              type: "CLUB_ANNOUNCEMENT",
-              title: `${clubData?.name ?? "Club"} Announcement`,
-              body: body.title || body.content.slice(0, 100),
-              priority: "high",
-              entityType: "club",
-              entityId: clubId,
-              data: { clubId, postId: post.id, route: "club" },
-            });
+          const memberList = members ?? [];
+          const chunkSize = 50;
+          for (let i = 0; i < memberList.length; i += chunkSize) {
+            const chunk = memberList.slice(i, i + chunkSize);
+            await Promise.allSettled(
+              chunk.map((m) =>
+                NotificationService.dispatch({
+                  userId: m.user_id,
+                  type: "CLUB_ANNOUNCEMENT",
+                  title: `${clubData?.name ?? "Club"} Announcement`,
+                  body: body.title || body.content.slice(0, 100),
+                  priority: "high",
+                  entityType: "club",
+                  entityId: clubId,
+                  data: { clubId, postId: post.id, route: "club" },
+                }),
+              ),
+            );
           }
         } catch {}
       })();
@@ -814,6 +908,7 @@ clubs.post(
 // POST /api/v1/clubs/posts/:postId/like - Toggle like on post
 clubs.post(
   "/posts/:postId/like",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const postId = z.string().uuid().parse(req.params.postId);
     const { data: existing } = await admin
@@ -823,6 +918,12 @@ clubs.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
+    const { data: postRecord } = await admin
+      .from("club_posts")
+      .select("club_id, likes_count")
+      .eq("id", postId)
+      .single();
+
     if (existing) {
       await admin
         .from("club_post_likes")
@@ -830,15 +931,18 @@ clubs.post(
         .eq("post_id", postId)
         .eq("user_id", req.userId!);
 
-      const { data: pDec } = await admin
-        .from("club_posts")
-        .select("likes_count")
-        .eq("id", postId)
-        .single();
       await admin
         .from("club_posts")
-        .update({ likes_count: Math.max(0, (pDec?.likes_count ?? 1) - 1) })
+        .update({ likes_count: Math.max(0, (postRecord?.likes_count ?? 1) - 1) })
         .eq("id", postId);
+
+      if (postRecord?.club_id) {
+        emitClubEvent(postRecord.club_id, "club:post_liked", {
+          postId,
+          liked: false,
+          userId: req.userId!,
+        });
+      }
 
       return res.json({ liked: false });
     } else {
@@ -846,15 +950,18 @@ clubs.post(
         .from("club_post_likes")
         .insert({ post_id: postId, user_id: req.userId! });
 
-      const { data: pInc } = await admin
-        .from("club_posts")
-        .select("likes_count")
-        .eq("id", postId)
-        .single();
       await admin
         .from("club_posts")
-        .update({ likes_count: (pInc?.likes_count ?? 0) + 1 })
+        .update({ likes_count: (postRecord?.likes_count ?? 0) + 1 })
         .eq("id", postId);
+
+      if (postRecord?.club_id) {
+        emitClubEvent(postRecord.club_id, "club:post_liked", {
+          postId,
+          liked: true,
+          userId: req.userId!,
+        });
+      }
 
       return res.json({ liked: true });
     }
@@ -883,6 +990,7 @@ clubs.get(
 // POST /api/v1/clubs/posts/:postId/comments - Post comment
 clubs.post(
   "/posts/:postId/comments",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const postId = z.string().uuid().parse(req.params.postId);
     const { content } = z.object({ content: z.string().min(1).max(2000) }).parse(req.body);
@@ -902,9 +1010,21 @@ clubs.post(
 
     if (error) throw error;
 
-    // Increment comments count
-    const { data: post } = await admin.from("club_posts").select("comments_count").eq("id", postId).single();
-    await admin.from("club_posts").update({ comments_count: (post?.comments_count ?? 0) + 1 }).eq("id", postId);
+    // Increment comments count & retrieve club_id
+    const { data: post } = await admin
+      .from("club_posts")
+      .select("comments_count, club_id")
+      .eq("id", postId)
+      .single();
+
+    await admin
+      .from("club_posts")
+      .update({ comments_count: (post?.comments_count ?? 0) + 1 })
+      .eq("id", postId);
+
+    if (post?.club_id) {
+      emitClubEvent(post.club_id, "club:comment_created", { postId, comment });
+    }
 
     res.status(201).json({ comment });
   }),
@@ -931,7 +1051,7 @@ clubs.delete(
         .eq("club_id", post.club_id)
         .eq("user_id", req.userId!)
         .maybeSingle();
-      if (member && ["owner", "admin", "president", "moderator"].includes(member.role)) {
+      if (member && CLUB_LEADER_ROLES.includes(member.role)) {
         isAuthorized = true;
       }
     }
@@ -956,7 +1076,7 @@ clubs.get(
     const clubId = z.string().uuid().parse(req.params.id);
     const { data: events, error } = await admin
       .from("events")
-      .select("*")
+      .select("id, club_id, title, description, starts_at, ends_at, location, online_url, venue_type, capacity, poster_url, speakers, agenda, tags, status, created_at, created_by")
       .eq("club_id", clubId)
       .order("starts_at", { ascending: true });
 
@@ -974,26 +1094,60 @@ clubs.get(
       registeredEventIds = new Set((apps ?? []).map((a) => a.event_id));
     }
 
+    const now = new Date();
     const formatted = (events ?? []).map((e: any) => ({
       ...e,
       is_registered: registeredEventIds.has(e.id),
+      past: e.starts_at ? new Date(e.starts_at) < now : false,
     }));
 
     res.json({ events: formatted });
   }),
 );
 
+// GET /api/v1/clubs/:id/events/:eventId/attendance-code - Organizer only attendance code (A5)
+clubs.get(
+  "/:id/events/:eventId/attendance-code",
+  wrap(async (req, res) => {
+    const clubId = z.string().uuid().parse(req.params.id);
+    const eventId = z.string().uuid().parse(req.params.eventId);
+
+    const { data: member } = await admin
+      .from("club_members")
+      .select("role")
+      .eq("club_id", clubId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !CLUB_LEADER_ROLES.includes(member.role)) {
+      return res.status(403).json({ error: "Club leadership role required to view attendance code" });
+    }
+
+    const { data: event, error } = await admin
+      .from("events")
+      .select("id, attendance_code")
+      .eq("id", eventId)
+      .eq("club_id", clubId)
+      .single();
+
+    if (error || !event) return res.status(404).json({ error: "Event not found" });
+
+    res.json({ attendance_code: event.attendance_code });
+  }),
+);
+
 // POST /api/v1/clubs/:id/events - Create new club event
 clubs.post(
   "/:id/events",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
       .object({
         title: z.string().min(3).max(200),
         description: z.string().max(4000).optional().default(""),
-        starts_at: z.string().datetime(),
-        ends_at: z.string().datetime().optional().nullable(),
+        starts_at: flexibleDatetime,
+        ends_at: flexibleDatetime.optional().nullable(),
         location: z.string().optional().default("Campus Auditorium"),
         online_url: z.string().optional().nullable(),
         venue_type: z.enum(["offline", "online", "hybrid"]).default("offline"),
@@ -1013,8 +1167,8 @@ clubs.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin", "president", "vice_president", "executive"].includes(member.role)) {
-      return res.status(403).json({ error: "Club admin role required to publish events" });
+    if (!member || !CLUB_OFFICER_ROLES.includes(member.role)) {
+      return res.status(403).json({ error: "Club officer role required to publish events" });
     }
 
     // Generate unique attendance check-in code
@@ -1045,7 +1199,7 @@ clubs.post(
 
     if (error) throw error;
 
-    // Notify club followers & members
+    // Notify club followers & members in chunks of 50
     void (async () => {
       try {
         const { data: members } = await admin
@@ -1053,20 +1207,29 @@ clubs.post(
           .select("user_id")
           .eq("club_id", clubId);
 
-        for (const m of members ?? []) {
-          void NotificationService.dispatch({
-            userId: m.user_id,
-            type: "CLUB_EVENT_CREATED",
-            title: `New Event: ${body.title}`,
-            body: `Starts at ${new Date(body.starts_at).toLocaleDateString()}`,
-            priority: "normal",
-            entityType: "event",
-            entityId: event.id,
-            data: { clubId, eventId: event.id, route: "club" },
-          });
+        const memberList = members ?? [];
+        const chunkSize = 50;
+        for (let i = 0; i < memberList.length; i += chunkSize) {
+          const chunk = memberList.slice(i, i + chunkSize);
+          await Promise.allSettled(
+            chunk.map((m) =>
+              NotificationService.dispatch({
+                userId: m.user_id,
+                type: "CLUB_EVENT_CREATED",
+                title: `New Event: ${body.title}`,
+                body: `Starts at ${new Date(body.starts_at).toLocaleDateString()}`,
+                priority: "normal",
+                entityType: "event",
+                entityId: event.id,
+                data: { clubId, eventId: event.id, route: "club" },
+              }),
+            ),
+          );
         }
       } catch {}
     })();
+
+    emitClubEvent(clubId, "club:event_created", { event });
 
     res.status(201).json({ event });
   }),
@@ -1132,13 +1295,34 @@ clubs.post(
       }
     }
 
-    res.status(201).json({ success: true, registration: reg });
+    const { count: regCount } = await admin
+      .from("event_applications")
+      .select("*", { count: "exact", head: true })
+      .eq("event_id", eventId)
+      .eq("status", "approved");
+
+    if (event.club_id) {
+      emitClubEvent(event.club_id, "club:event_registered", {
+        eventId,
+        clubId: event.club_id,
+        registered: true,
+        registrationCount: regCount ?? 1,
+      });
+      emitClubEvent(event.club_id, "club:event:registration_updated", {
+        eventId,
+        clubId: event.club_id,
+        registrationCount: regCount ?? 1,
+      });
+    }
+
+    res.status(201).json({ success: true, registered: true, registration: reg, count: regCount ?? 1 });
   }),
 );
 
 // POST /api/v1/clubs/events/:eventId/checkin - Verify attendance via QR code or attendance code
 clubs.post(
   "/events/:eventId/checkin",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const eventId = z.string().uuid().parse(req.params.eventId);
     const { code } = z.object({ code: z.string().min(3).max(20) }).parse(req.body);
@@ -1225,6 +1409,7 @@ clubs.get(
 // POST /api/v1/clubs/:id/recruitments - Create recruitment campaign (Admin only)
 clubs.post(
   "/:id/recruitments",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -1234,7 +1419,7 @@ clubs.post(
         open_positions: z.array(z.string()).min(1),
         required_skills: z.array(z.string()).optional().default([]),
         eligible_departments: z.array(z.string()).optional().default([]),
-        deadline: z.string().datetime(),
+        deadline: flexibleDatetime,
         form_schema: z.array(z.any()).optional().default([]),
       })
       .parse(req.body);
@@ -1246,7 +1431,7 @@ clubs.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin", "president", "vice_president"].includes(member.role)) {
+    if (!member || !CLUB_OFFICER_ROLES.includes(member.role)) {
       return res.status(403).json({ error: "Club admin role required" });
     }
 
@@ -1267,6 +1452,9 @@ clubs.post(
       .single();
 
     if (error) throw error;
+
+    emitClubEvent(clubId, "club:recruitment_created", { recruitment });
+
     res.status(201).json({ recruitment });
   }),
 );
@@ -1274,6 +1462,7 @@ clubs.post(
 // POST /api/v1/clubs/:id/recruitments/:recId/apply - Submit application
 clubs.post(
   "/:id/recruitments/:recId/apply",
+  clubAuthLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const recId = z.string().uuid().parse(req.params.recId);
@@ -1307,6 +1496,12 @@ clubs.post(
       .single();
 
     if (error) throw error;
+
+    emitClubEvent(clubId, "club:application_submitted", {
+      recruitmentId: recId,
+      applicationId: application.id,
+    });
+
     res.status(201).json({ application });
   }),
 );
@@ -1325,7 +1520,7 @@ clubs.get(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin", "president", "vice_president", "moderator"].includes(member.role)) {
+    if (!member || !CLUB_OFFICER_ROLES.includes(member.role)) {
       return res.status(403).json({ error: "Club admin role required" });
     }
 
@@ -1376,7 +1571,7 @@ clubs.patch(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin", "president", "vice_president"].includes(member.role)) {
+    if (!member || !CLUB_OFFICER_ROLES.includes(member.role)) {
       return res.status(403).json({ error: "Club admin role required" });
     }
 
@@ -1395,9 +1590,22 @@ clubs.patch(
 
     if (error) throw error;
 
+    emitClubEvent(app.club_id, "club:application_status_changed", {
+      applicationId: appId,
+      status: body.status,
+      candidateId: app.user_id,
+      clubId: app.club_id,
+    });
+    emitClubEvent(app.club_id, "club:application:updated", {
+      applicationId: appId,
+      status: body.status,
+      candidateId: app.user_id,
+      clubId: app.club_id,
+    });
+
     // If 'selected', automatically add as club member!
     if (body.status === "selected") {
-      await admin.from("club_members").upsert(
+      const { data: newMem } = await admin.from("club_members").upsert(
         {
           club_id: app.club_id,
           user_id: app.user_id,
@@ -1405,7 +1613,9 @@ clubs.patch(
           title: app.applied_position || "Member",
         },
         { onConflict: "club_id,user_id" },
-      );
+      ).select().single();
+
+      emitClubEvent(app.club_id, "club:member_joined", { member: newMem });
     }
 
     // Dispatch notification to candidate
@@ -1464,6 +1674,7 @@ clubs.get(
 // POST /api/v1/clubs/:id/teams - Create sub-team
 clubs.post(
   "/:id/teams",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -1473,6 +1684,17 @@ clubs.post(
         lead_id: z.string().uuid().optional().nullable(),
       })
       .parse(req.body);
+
+    const { data: member } = await admin
+      .from("club_members")
+      .select("role")
+      .eq("club_id", clubId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !CLUB_OFFICER_ROLES.includes(member.role)) {
+      return res.status(403).json({ error: "Club officer role required" });
+    }
 
     const { data: team, error } = await admin
       .from("club_teams")
@@ -1513,6 +1735,7 @@ clubs.get(
 // POST /api/v1/clubs/:id/projects - Create club project
 clubs.post(
   "/:id/projects",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -1529,6 +1752,17 @@ clubs.post(
         demo_url: z.string().optional().nullable(),
       })
       .parse(req.body);
+
+    const { data: member } = await admin
+      .from("club_members")
+      .select("role")
+      .eq("club_id", clubId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !CLUB_OFFICER_ROLES.includes(member.role)) {
+      return res.status(403).json({ error: "Club officer role required" });
+    }
 
     const { data: project, error } = await admin
       .from("club_projects")
@@ -1575,6 +1809,7 @@ clubs.get(
 // POST /api/v1/clubs/projects/:projectId/tasks - Add project task
 clubs.post(
   "/projects/:projectId/tasks",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const projectId = z.string().uuid().parse(req.params.projectId);
     const body = z
@@ -1666,6 +1901,7 @@ clubs.get(
 // POST /api/v1/clubs/:id/resources - Upload/share resource
 clubs.post(
   "/:id/resources",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -1699,6 +1935,9 @@ clubs.post(
       .single();
 
     if (error) throw error;
+
+    emitClubEvent(clubId, "club:resource_added", { resource });
+
     res.status(201).json({ resource });
   }),
 );
@@ -1722,6 +1961,7 @@ clubs.get(
 // POST /api/v1/clubs/:id/achievements - Add achievement (Admin only)
 clubs.post(
   "/:id/achievements",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -1733,6 +1973,17 @@ clubs.post(
         link_url: z.string().optional().nullable(),
       })
       .parse(req.body);
+
+    const { data: member } = await admin
+      .from("club_members")
+      .select("role")
+      .eq("club_id", clubId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    if (!member || !CLUB_OFFICER_ROLES.includes(member.role)) {
+      return res.status(403).json({ error: "Club admin role required" });
+    }
 
     const { data: ach, error } = await admin
       .from("club_achievements")
@@ -1748,6 +1999,9 @@ clubs.post(
       .single();
 
     if (error) throw error;
+
+    emitClubEvent(clubId, "club:achievement_added", { achievement: ach });
+
     res.status(201).json({ achievement: ach });
   }),
 );
@@ -1825,7 +2079,7 @@ clubs.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin"].includes(member.role)) {
+    if (!member || !CLUB_ADMIN_ROLES.includes(member.role)) {
       return res.status(403).json({ error: "Club admin role required" });
     }
 
@@ -1879,7 +2133,7 @@ clubs.get(
         clubId: b.club_id,
         title: b.title,
         description: b.description,
-        youtubeVideoId: (b.metadata as any)?.youtube_video_id || "dQw4w9WgXcQ",
+        youtubeVideoId: (b.metadata as any)?.youtube_video_id || null,
         scheduledStart: b.starts_at,
         status: b.status,
       })),
@@ -1890,6 +2144,7 @@ clubs.get(
 // POST /api/v1/clubs/:id/broadcasts
 clubs.post(
   "/:id/broadcasts",
+  clubWriteLimiter,
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
     const body = z
@@ -1897,7 +2152,7 @@ clubs.post(
         title: z.string().min(3).max(200),
         description: z.string().max(2000).optional(),
         youtubeVideoId: z.string().min(5).max(100),
-        scheduledStart: z.string().datetime(),
+        scheduledStart: flexibleDatetime,
       })
       .parse(req.body);
 
@@ -1908,7 +2163,7 @@ clubs.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!me || !["owner", "admin"].includes(me.role)) {
+    if (!me || !CLUB_OFFICER_ROLES.includes(me.role)) {
       return res.status(403).json({ error: "Club admin required to schedule broadcasts" });
     }
 
@@ -1948,8 +2203,8 @@ clubs.get(
   "/:id/clashes",
   wrap(async (req, res) => {
     const clubId = z.string().uuid().parse(req.params.id);
-    const startsAt = z.string().datetime().parse(req.query.startsAt);
-    const endsAt = z.string().datetime().parse(req.query.endsAt);
+    const startsAt = flexibleDatetime.parse(req.query.startsAt);
+    const endsAt = flexibleDatetime.parse(req.query.endsAt);
     const location = (req.query.location as string | undefined)?.trim();
 
     const { data: myMembers, count: totalMyMembers } = await admin
@@ -2038,7 +2293,7 @@ clubs.post(
         initiatorEventId: z.string().uuid(),
         targetClubId: z.string().uuid(),
         targetEventId: z.string().uuid(),
-        proposedNewTime: z.string().datetime(),
+        proposedNewTime: flexibleDatetime,
         note: z.string().max(500).optional().default(""),
         overlapCount: z.number().int().nonnegative().default(0),
         overlapPercentage: z.number().nonnegative().default(0),
@@ -2052,7 +2307,7 @@ clubs.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin"].includes(member.role)) {
+    if (!member || !CLUB_ADMIN_ROLES.includes(member.role)) {
       return res.status(403).json({ error: "Club admin role required to initiate negotiations" });
     }
 
@@ -2117,7 +2372,7 @@ clubs.patch(
     const body = z
       .object({
         action: z.enum(["accept", "reject", "counter"]),
-        counterTime: z.string().datetime().optional(),
+        counterTime: flexibleDatetime.optional(),
       })
       .parse(req.body);
 
@@ -2128,7 +2383,7 @@ clubs.patch(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "admin"].includes(member.role)) {
+    if (!member || !CLUB_ADMIN_ROLES.includes(member.role)) {
       return res.status(403).json({ error: "Club admin role required to respond to negotiations" });
     }
 

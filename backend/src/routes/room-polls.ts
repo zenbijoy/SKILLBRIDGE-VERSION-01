@@ -51,6 +51,8 @@ roomPolls.get(
   "/active",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+    const m = await needMember(roomId, req.userId!);
+    if (!m) return res.status(403).json({ error: "Join room to view polls" });
     const { data } = await admin
       .from("room_posts")
       .select("id, title, body, metadata, created_at")

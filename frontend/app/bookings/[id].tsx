@@ -21,6 +21,7 @@ import {
   type SessionBooking,
 } from "@/features/growth/growthApi";
 import { supabase } from "@/lib/supabase";
+import { Screen } from "@/components/ui";
 
 export default function BookingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -113,6 +114,7 @@ export default function BookingDetailScreen() {
   });
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -222,6 +224,7 @@ export default function BookingDetailScreen() {
           )}
       </View>
     </ScrollView>
+    </Screen>
   );
 }
 

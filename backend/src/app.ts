@@ -10,6 +10,7 @@ import { httpLogger } from "./middleware/httpLogger.js";
 import { auth, requireRole } from "./middleware/auth.js";
 import { errors, notFound } from "./middleware/error.js";
 import { getOpenApiSpec, renderSwaggerHtml } from "./lib/openapi.js";
+import { userOrIpKey, verifyCodeLimiter } from "./middleware/rateLimiters.js";
 import { dashboard } from "./routes/dashboard.js";
 import { profiles } from "./routes/profiles.js";
 import { connections } from "./routes/connections.js";
@@ -120,15 +121,19 @@ export function createApp(io?: SocketServer) {
     rateLimit({
       windowMs: 60_000,
       limit: env.GLOBAL_RATE_LIMIT_PER_MINUTE,
+      keyGenerator: userOrIpKey("global"),
+      validate: { keyGeneratorIpFallback: false, xForwardedForHeader: false, default: false },
       standardHeaders: "draft-8",
       legacyHeaders: false,
     }),
   );
 
-  // Stricter rate limit for sensitive/write-heavy endpoints (10 req/min per IP)
+  // Stricter rate limit for sensitive/write-heavy endpoints (10 req/min per user/IP)
   const sensitiveLimit = rateLimit({
     windowMs: 60_000,
     limit: 10,
+    keyGenerator: userOrIpKey("sensitive"),
+    validate: { keyGeneratorIpFallback: false, xForwardedForHeader: false, default: false },
     standardHeaders: "draft-8",
     legacyHeaders: false,
     message: { error: "Too many requests. Please try again later." },
@@ -146,7 +151,7 @@ export function createApp(io?: SocketServer) {
   app.use("/api/v1/health", health);
   app.use("/webhooks/live", liveWebhooks);
   app.use("/api/v1/experience", experience);
-  app.use("/api/v1/achievements/verify", achievementsPublic);
+  app.use("/api/v1/achievements/verify", verifyCodeLimiter, achievementsPublic);
   app.use("/api/v1/integrations/youtube/callback", handleYouTubeCallback);
 
   const api = express.Router();

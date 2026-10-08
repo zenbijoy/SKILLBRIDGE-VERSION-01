@@ -17,6 +17,7 @@ import {
   fetchAchievement,
   type AchievementDefinition,
 } from "@/features/growth/growthApi";
+import { Screen } from "@/components/ui";
 
 export default function ShareAchievementScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -60,6 +61,7 @@ export default function ShareAchievementScreen() {
   }
 
   return (
+    <Screen scroll={false}>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -119,6 +121,7 @@ export default function ShareAchievementScreen() {
         <Text style={styles.copyBtnText}>Copy Verification Link</Text>
       </TouchableOpacity>
     </ScrollView>
+    </Screen>
   );
 }
 

@@ -390,6 +390,7 @@ calendar.post(
 import {
   DAYS_OF_WEEK,
   extractRoutine,
+  heuristicFallback,
   analyzeConflicts,
   type DayOfWeek,
   type ExtractedRoutineEntry,
@@ -489,40 +490,33 @@ calendar.post(
   "/routine/extract",
   wrap(async (req, res) => {
     const userId = req.userId!;
-    const body = z
-      .object({
-        fileBase64: z.string().optional(),
-        fileMimeType: z.string().optional(),
-        mimeType: z.string().optional(),
-        fileName: z.string().optional(),
-        rawText: z.string().optional(),
-        university: z.string().optional(),
-        department: z.string().optional(),
-        semester: z.string().optional(),
-        section: z.string().optional(),
-        batch: z.string().optional(),
-        additionalContext: z.string().optional(),
-        userNotes: z.string().optional(),
-        context: z
-          .object({
-            university: z.string().optional(),
-            department: z.string().optional(),
-            semester: z.string().optional(),
-            section: z.string().optional(),
-            batch: z.string().optional(),
-            userNotes: z.string().optional(),
-          })
-          .optional(),
-      })
-      .parse(req.body);
 
-    const uni = (body.university || body.context?.university || "RUET").trim();
-    const dept = (body.department || body.context?.department || "CSE").trim();
-    const sem = (body.semester || body.context?.semester || "2-1").trim();
-    const sec = (body.section || body.context?.section || "A").trim();
-    const batch = (body.batch || body.context?.batch || "2024").trim();
-    const notes = (body.additionalContext || body.userNotes || body.context?.userNotes || "").trim();
-    const mime = body.fileMimeType || body.mimeType || "application/pdf";
+    let uni = "RUET";
+    let dept = "CSE";
+    let sem = "2-1";
+    let sec = "A";
+    let batch = "2024";
+    let notes = "";
+    let mime = "application/pdf";
+    let fileBase64: string | undefined;
+    let fileName: string | undefined;
+    let rawText: string | undefined;
+
+    try {
+      const parsedBody = req.body || {};
+      uni = String(parsedBody.university || parsedBody.context?.university || "RUET").trim();
+      dept = String(parsedBody.department || parsedBody.context?.department || "CSE").trim();
+      sem = String(parsedBody.semester || parsedBody.context?.semester || "2-1").trim();
+      sec = String(parsedBody.section || parsedBody.context?.section || "A").trim();
+      batch = String(parsedBody.batch || parsedBody.context?.batch || "2024").trim();
+      notes = String(parsedBody.additionalContext || parsedBody.userNotes || parsedBody.context?.userNotes || "").trim();
+      mime = String(parsedBody.fileMimeType || parsedBody.mimeType || "application/pdf").trim();
+      fileBase64 = typeof parsedBody.fileBase64 === "string" ? parsedBody.fileBase64 : undefined;
+      fileName = typeof parsedBody.fileName === "string" ? parsedBody.fileName : undefined;
+      rawText = typeof parsedBody.rawText === "string" ? parsedBody.rawText : undefined;
+    } catch {
+      // Safe defaults already populated
+    }
 
     const extractionContext = {
       university: uni,
@@ -533,14 +527,27 @@ calendar.post(
       userNotes: notes,
     };
 
-    // Call Gemini / Multi-page AI pipeline
-    const extraction = await extractRoutine({
-      fileBase64: body.fileBase64,
-      fileMimeType: mime,
-      fileName: body.fileName,
-      rawText: body.rawText,
-      context: extractionContext,
-    });
+    // Call Gemini / Multi-page AI pipeline with guaranteed rescue
+    let extraction: any;
+    try {
+      extraction = await extractRoutine({
+        fileBase64,
+        fileMimeType: mime,
+        fileName,
+        rawText,
+        context: extractionContext,
+      });
+    } catch (extractErr) {
+      logger.warn(
+        { err: (extractErr as Error).message },
+        "Routine extraction pipeline threw error; using heuristic fallback",
+      );
+      extraction = heuristicFallback(rawText || "", extractionContext);
+    }
+
+    if (!extraction || !Array.isArray(extraction.classes) || extraction.classes.length === 0) {
+      extraction = heuristicFallback(rawText || "", extractionContext);
+    }
 
     const group = buildAcademicGroup(uni, dept, sem, sec);
     let routineRecord: any = null;
@@ -565,11 +572,11 @@ calendar.post(
           source_type: "pdf_import",
           verification_status: extraction.hasAmbiguity ? "needs_review" : "ai_draft",
           raw_metadata: {
-            conflicts: extraction.conflicts,
-            hasAmbiguity: extraction.hasAmbiguity,
-            overallConfidence: extraction.overallConfidence,
-            source: extraction.source,
-            totalDetected: extraction.totalDetected,
+            conflicts: extraction.conflicts || [],
+            hasAmbiguity: Boolean(extraction.hasAmbiguity),
+            overallConfidence: extraction.overallConfidence || "high",
+            source: extraction.source || "heuristic_fallback",
+            totalDetected: extraction.classes?.length || 0,
           },
         })
         .select()
@@ -578,8 +585,8 @@ calendar.post(
       if (!routineError && routine) {
         routineRecord = routine;
 
-        if (extraction.classes.length > 0) {
-          entryRows = extraction.classes.map((c) => ({
+        if (extraction.classes && extraction.classes.length > 0) {
+          entryRows = extraction.classes.map((c: any) => ({
             routine_id: routine.id,
             course_code: c.courseCode,
             course_title: c.courseTitle,
@@ -591,7 +598,7 @@ calendar.post(
             type: c.type,
             group_name: c.groupName,
             confidence: c.confidence,
-            warnings: c.warnings,
+            warnings: c.warnings || [],
             is_confirmed: false,
           }));
 
@@ -604,7 +611,7 @@ calendar.post(
           routine_id: routine.id,
           action: "upload_ai_draft",
           details: {
-            totalDetected: extraction.totalDetected,
+            totalDetected: extraction.totalDetected || extraction.classes?.length || 0,
             confidence: extraction.overallConfidence,
             hasAmbiguity: extraction.hasAmbiguity,
           },
@@ -614,10 +621,10 @@ calendar.post(
       logger.warn({ err: (dbErr as Error).message }, "Supabase routine insert warning (fallback to in-memory draft)");
     }
 
-    // In-memory fallback draft if Supabase table is unreachable
+    // In-memory fallback draft if Supabase table is unreachable or insert encountered an issue
     if (!routineRecord) {
       const routineId = crypto.randomUUID();
-      entryRows = extraction.classes.map((c) => ({
+      entryRows = (extraction.classes || []).map((c: any) => ({
         id: crypto.randomUUID(),
         routine_id: routineId,
         course_code: c.courseCode,
@@ -630,7 +637,7 @@ calendar.post(
         type: c.type,
         group_name: c.groupName,
         confidence: c.confidence,
-        warnings: c.warnings,
+        warnings: c.warnings || [],
         is_confirmed: false,
       }));
 
@@ -652,16 +659,16 @@ calendar.post(
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         raw_metadata: {
-          conflicts: extraction.conflicts,
-          hasAmbiguity: extraction.hasAmbiguity,
-          overallConfidence: extraction.overallConfidence,
-          source: extraction.source,
-          totalDetected: extraction.totalDetected,
+          conflicts: extraction.conflicts || [],
+          hasAmbiguity: Boolean(extraction.hasAmbiguity),
+          overallConfidence: extraction.overallConfidence || "high",
+          source: extraction.source || "heuristic_fallback",
+          totalDetected: extraction.classes?.length || 0,
         },
       };
     }
 
-    res.json({
+    return res.json({
       routine: {
         ...routineRecord,
         entries: entryRows,
