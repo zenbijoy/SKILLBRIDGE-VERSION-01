@@ -312,11 +312,59 @@ quiz.post(
     const effectiveElapsed =
       clientElapsed !== undefined ? Math.min(clientElapsed, serverElapsedSeconds) : serverElapsedSeconds;
 
+    // Ensure a matching or fallback quiz row exists so quiz_attempts foreign key is satisfied
+    let quizId: string | null = null;
+    try {
+      if (session.skill_id) {
+        const { data: existingQ } = await admin
+          .from("quizzes")
+          .select("id")
+          .eq("skill_id", session.skill_id)
+          .limit(1)
+          .maybeSingle();
+        if (existingQ?.id) {
+          quizId = existingQ.id;
+        } else {
+          const { data: newQ } = await admin
+            .from("quizzes")
+            .insert({
+              skill_id: session.skill_id,
+              title: session.skill_name || session.topic || "Skill Assessment",
+              active: true,
+            })
+            .select("id")
+            .maybeSingle();
+          if (newQ?.id) quizId = newQ.id;
+        }
+      }
+      if (!quizId) {
+        const { data: defaultQ } = await admin
+          .from("quizzes")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        if (defaultQ?.id) {
+          quizId = defaultQ.id;
+        } else {
+          const { data: createdQ } = await admin
+            .from("quizzes")
+            .insert({ title: "General Assessment", active: true })
+            .select("id")
+            .maybeSingle();
+          quizId = createdQ?.id ?? null;
+        }
+      }
+    } catch (qLookupErr) {
+      logger.warn({ event: "quiz_id_lookup_failed", err: qLookupErr }, "Could not resolve quiz row for attempt");
+    }
+
     // Persist attempt — tolerate partially-migrated DBs (missing optional
     // columns) and never fail grading because history failed to save.
     const violationCount = session.violation_count;
     const fullAttemptPayload: Record<string, unknown> = {
       user_id: req.userId!,
+      ...(quizId ? { quiz_id: quizId } : {}),
+      answers: body.answers ?? {},
       skill_id: session.skill_id,
       quiz_session_id: body.session_id,
       topic: session.topic,
