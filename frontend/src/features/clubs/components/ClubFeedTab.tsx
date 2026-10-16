@@ -18,6 +18,7 @@ import { POST_TYPE_CONFIG } from "../constants";
 import { triggerHaptic } from "@/components/ui";
 import { useI18n } from "@/i18n";
 import { clubErrorMessage } from "../lib/apiErrors";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface ClubFeedTabProps {
   clubId: string;
@@ -36,6 +37,7 @@ export function ClubFeedTab({
 }: ClubFeedTabProps) {
   const { colors, isDark } = useTheme();
   const { t } = useI18n();
+  const keyboardHeight = useKeyboardHeight();
 
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -419,13 +421,14 @@ export function ClubFeedTab({
 
       {/* Post Composer Modal */}
       <Modal visible={composerOpen} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { transform: [{ translateY: -keyboardHeight }] }]}>
           <View
             style={[
               styles.modalSheet,
               {
                 backgroundColor: isDark ? colors.surface : "#FFFFFF",
                 borderColor: isDark ? colors.border : "#E2E8F0",
+                paddingBottom: keyboardHeight,
               },
             ]}
           >
@@ -445,7 +448,7 @@ export function ClubFeedTab({
               </Pressable>
             </View>
 
-            <ScrollView style={{ padding: 16 }}>
+            <ScrollView style={{ padding: 16, paddingBottom: 16 + keyboardHeight }}>
               {/* Type Selector */}
               <Text style={[styles.inputLabel, { color: colors.muted }]}>
                 Post Category
@@ -574,7 +577,7 @@ export function ClubFeedTab({
 
       {/* Comments Drawer Modal */}
       <Modal visible={Boolean(commentingPostId)} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { transform: [{ translateY: -keyboardHeight }] }]}>
           <View
             style={[
               styles.modalSheet,
@@ -582,6 +585,7 @@ export function ClubFeedTab({
                 backgroundColor: isDark ? colors.surface : "#FFFFFF",
                 borderColor: isDark ? colors.border : "#E2E8F0",
                 maxHeight: "75%",
+                paddingBottom: keyboardHeight,
               },
             ]}
           >
@@ -601,7 +605,7 @@ export function ClubFeedTab({
               </Pressable>
             </View>
 
-            <ScrollView style={{ padding: 16 }}>
+            <ScrollView style={{ padding: 16, paddingBottom: 16 + keyboardHeight }}>
               {commentsList.length === 0 ? (
                 <Text
                   style={{

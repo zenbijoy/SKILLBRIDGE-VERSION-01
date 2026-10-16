@@ -48,12 +48,37 @@ bookings.get(
 
     if (error) throw error;
 
-    const tutors = (profiles ?? []).map((p) => ({
-      ...p,
-      is_tutor: (p.roles || []).includes("tutor") || (p.roles || []).includes("peer_tutor") || (p.roles || []).includes("student"),
-      rating: 4.9,
-      reviewsCount: 14,
-    }));
+    const tutorProfiles = profiles ?? [];
+    const tutorIds = tutorProfiles.map((p) => p.id);
+    const reviewsByReviewee: Record<string, { total: number; count: number }> = {};
+
+    if (tutorIds.length > 0) {
+      const { data: reviewsData } = await admin
+        .from("reviews")
+        .select("reviewee_id, rating")
+        .in("reviewee_id", tutorIds);
+
+      if (reviewsData) {
+        for (const rev of reviewsData) {
+          const existing = reviewsByReviewee[rev.reviewee_id] ?? { total: 0, count: 0 };
+          existing.total += rev.rating;
+          existing.count += 1;
+          reviewsByReviewee[rev.reviewee_id] = existing;
+        }
+      }
+    }
+
+    const tutors = tutorProfiles.map((p) => {
+      const stats = reviewsByReviewee[p.id];
+      const reviewsCount = stats ? stats.count : 0;
+      const rating = stats && stats.count > 0 ? Number((stats.total / stats.count).toFixed(1)) : null;
+      return {
+        ...p,
+        is_tutor: (p.roles || []).includes("tutor") || (p.roles || []).includes("peer_tutor") || (p.roles || []).includes("student"),
+        rating,
+        reviewsCount,
+      };
+    });
 
     res.json({ tutors });
   }),

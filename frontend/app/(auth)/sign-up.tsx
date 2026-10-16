@@ -8,10 +8,9 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { router } from "expo-router";
-import Animated, { FadeIn, SlideInDown } from "react-native-reanimated";
+import Animated, { SlideInDown } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer, triggerHaptic } from "@/components/ui";
@@ -28,16 +27,6 @@ export default function SignUp() {
   const { language } = useI18n();
   const isBn = language === "bn";
 
-  // ---------------------------------------------------------------------------
-  // Responsive hero sizing: the banner and bridge artwork scale with the device
-  // screen (portrait) instead of using fixed pixel sizes. Bounds keep the hero
-  // from becoming too tall on small phones or too large on tablets.
-  // ---------------------------------------------------------------------------
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const heroHeight = Math.round(Math.min(Math.max(windowHeight * 0.24, 180), 300));
-  const heroContentWidth = Math.min(windowWidth, 520); // matches scrollContent maxWidth
-  const bridgeImageWidth = Math.round(Math.min(heroContentWidth * 0.62, 300));
-  const bridgeImageHeight = Math.round(bridgeImageWidth / 2); // source artwork is 2:1
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -187,11 +176,11 @@ export default function SignUp() {
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
-        {/* TOP HERO BANNER: Features user's authentic bridge illustration */}
+        {/* TOP HEADER: Clean navigation and encryption badge */}
         <View
           style={[
             s.heroBannerContainer,
-            { height: heroHeight, backgroundColor: isDark ? "#0A0F1D" : "#F1F5F9" },
+            { backgroundColor: isDark ? "#0A0F1D" : "#F1F5F9" },
           ]}
         >
           <LinearGradient
@@ -218,14 +207,6 @@ export default function SignUp() {
               </Text>
             </View>
           </View>
-
-          <Animated.View entering={FadeIn.duration(600)} style={s.bridgeImageWrap}>
-            <Image
-              source={require("@/../assets/branding/skillbridge-bridge-logo.png")}
-              style={{ width: bridgeImageWidth, height: bridgeImageHeight }}
-              resizeMode="contain"
-            />
-          </Animated.View>
         </View>
 
         {/* OVERLAPPING REGISTRATION SHEET */}
@@ -242,6 +223,21 @@ export default function SignUp() {
             },
           ]}
         >
+          {/* Authentic App Original Logo Mark & Title */}
+          <View style={s.brandLogoRow}>
+            <Image
+              source={require("@/../assets/branding/skillbridge-mark.png")}
+              style={s.brandLogoMark}
+              resizeMode="contain"
+            />
+            <View>
+              <Text style={[s.brandName, { color: colors.text }]}>SkillBridge</Text>
+              <Text style={[s.brandSubtitle, { color: colors.muted }]}>
+                {isBn ? "ক্যাম্পাস পাসপোর্ট" : "Campus Passport"}
+              </Text>
+            </View>
+          </View>
+
           <Text style={[s.sheetTitle, { color: colors.text }]}>
             {isBn ? "নতুন অ্যাকাউন্ট তৈরি করুন" : "Create your identity"}
           </Text>
@@ -458,8 +454,8 @@ const s = StyleSheet.create({
   heroBannerContainer: {
     width: "100%",
     paddingTop: 12,
+    paddingBottom: 24,
     paddingHorizontal: 16,
-    justifyContent: "space-between",
   },
   topNavRow: {
     flexDirection: "row",
@@ -498,15 +494,10 @@ const s = StyleSheet.create({
     fontWeight: "700",
     color: "#059669",
   },
-  bridgeImageWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 26,
-  },
   cardSheet: {
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    marginTop: -24,
+    marginTop: -16,
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 40,
@@ -516,6 +507,26 @@ const s = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 4,
+  },
+  brandLogoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  brandLogoMark: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+  },
+  brandName: {
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: -0.4,
+  },
+  brandSubtitle: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   sheetTitle: {
     fontSize: 20,

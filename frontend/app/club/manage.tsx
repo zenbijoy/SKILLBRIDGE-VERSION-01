@@ -35,12 +35,14 @@ import {
   CreateClubModal,
   isClubLeader,
 } from "@/features/clubs";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 type TabMode = "created" | "joined";
 
 export default function ClubManageScreen() {
   const { colors } = useTheme();
   const qc = useQueryClient();
+  const keyboardHeight = useKeyboardHeight();
 
   const [activeTab, setActiveTab] = useState<TabMode>("created");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -513,7 +515,7 @@ export default function ClubManageScreen() {
         animationType="slide"
         onRequestClose={() => setInviteModalClub(null)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, paddingBottom: keyboardHeight }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <View>
               <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Invite Member</Text>
@@ -700,7 +702,7 @@ export default function ClubManageScreen() {
         animationType="slide"
         onRequestClose={() => setSettingsModalClub(null)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, paddingBottom: keyboardHeight }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <View>
               <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Club Advanced Settings</Text>
@@ -811,7 +813,7 @@ export default function ClubManageScreen() {
         animationType="slide"
         onRequestClose={() => setActivitiesClub(null)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, paddingBottom: keyboardHeight }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <View>
               <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Club Activities & Hub</Text>
@@ -822,7 +824,7 @@ export default function ClubManageScreen() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 16 + keyboardHeight }}>
             {/* Quick Post Announcement */}
             <View style={[styles.activitySection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Row style={{ alignItems: "center", gap: 6, marginBottom: 8 }}>

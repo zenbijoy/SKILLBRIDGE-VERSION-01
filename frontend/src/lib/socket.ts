@@ -8,7 +8,8 @@ let activeScreenUsers = 0;
 let idleDisconnectTimeout: NodeJS.Timeout | null = null;
 
 export function getSocket(): Socket | null {
-  if (typeof window === "undefined" && Platform.OS === "web") {
+  // Guard against server-side rendering (SSR) where window is undefined in web runtime
+  if (Platform.OS === "web" && typeof window === "undefined") {
     return null;
   }
 

@@ -31,7 +31,9 @@ export default function Login() {
     <div className="login-shell">
       <section className="login-brand-pane">
         <div className="flex items-center gap-3">
-          <div className="brand-mark">SB</div>
+          <div className="brand-mark overflow-hidden p-1 bg-white/10 backdrop-blur">
+            <img src="/skillbridge-mark.png" alt="SkillBridge Logo" className="w-full h-full object-contain" />
+          </div>
           <div>
             <strong>SkillBridge</strong>
             <div className="text-[11px] text-blue-200">Secure control plane</div>

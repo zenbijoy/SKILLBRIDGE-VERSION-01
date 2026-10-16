@@ -20,6 +20,9 @@ type RoomPostComposerProps = {
   roomTitle: string;
   userAvatarLetter?: string;
   canAnnounce?: boolean;
+  initialType?: RoomPostType;
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
   onSubmit: (data: { title?: string; body: string; type: RoomPostType }) => Promise<void>;
 };
 
@@ -36,11 +39,25 @@ export function RoomPostComposer({
   roomTitle,
   userAvatarLetter = "U",
   canAnnounce,
+  initialType,
+  isOpen: controlledIsOpen,
+  onOpenChange,
   onSubmit,
 }: RoomPostComposerProps) {
   const { colors } = useTheme();
-  const [isOpen, setIsOpen] = useState(false);
-  const [postType, setPostType] = useState<RoomPostType>("discussion");
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
+  const setIsOpen = (next: boolean) => {
+    setInternalIsOpen(next);
+    onOpenChange?.(next);
+  };
+  const [postType, setPostType] = useState<RoomPostType>(initialType || "discussion");
+
+  React.useEffect(() => {
+    if (initialType) {
+      setPostType(initialType);
+    }
+  }, [initialType]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);

@@ -93,56 +93,6 @@ export default function PlannerWeekScreen() {
         illustrationSize={120}
       />
 
-      {/* Week Day Strip */}
-      <View style={styles.dayStrip}>
-        {weekDays.map((d, idx) => {
-          const isSelected = selectedDay === idx;
-          const hasItems =
-            blocks.some((b) => b.start_time.slice(0, 10) === d.dateStr) ||
-            bookings.some((b) => b.start_time.slice(0, 10) === d.dateStr);
-
-          return (
-            <TouchableOpacity
-              key={d.dateStr}
-              style={[
-                styles.dayCell,
-                { borderColor: colors.border },
-                isSelected && {
-                  backgroundColor: colors.primary,
-                  borderColor: colors.primary,
-                },
-              ]}
-              onPress={() => setSelectedDay(idx)}
-            >
-              <Text
-                style={[
-                  styles.dayName,
-                  { color: isSelected ? "#FFFFFF" : colors.textSecondary },
-                ]}
-              >
-                {d.dayName}
-              </Text>
-              <Text
-                style={[
-                  styles.dayNum,
-                  { color: isSelected ? "#FFFFFF" : colors.text },
-                ]}
-              >
-                {d.dayNum}
-              </Text>
-              {hasItems && (
-                <View
-                  style={[
-                    styles.dot,
-                    { backgroundColor: isSelected ? "#FFFFFF" : colors.primary },
-                  ]}
-                />
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
       {/* Day Content */}
       {loading ? (
         <View style={styles.centerContainer}>

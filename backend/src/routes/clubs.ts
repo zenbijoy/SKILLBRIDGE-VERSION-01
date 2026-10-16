@@ -5,6 +5,7 @@ import { wrap } from "../middleware/error.js";
 import { NotificationService } from "../services/notificationService.js";
 import { negotiationLimiter, clubWriteLimiter, clubAuthLimiter } from "../middleware/rateLimiters.js";
 import { logDomainEvent } from "../lib/domainLogger.js";
+import { logger } from "../lib/logger.js";
 import { ensureClubWorkspace } from "../services/spaceWorkspaceService.js";
 import { emitClubEvent } from "../socket.js";
 
@@ -1291,7 +1292,7 @@ clubs.post(
           priority: "medium",
         });
       } catch (calErr) {
-        console.warn("Could not auto-sync event to calendar", calErr);
+        logger.warn({ err: calErr }, "Could not auto-sync event to calendar");
       }
     }
 

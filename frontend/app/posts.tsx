@@ -42,11 +42,6 @@ export default function MyPostsScreen() {
   // Edit Post Modal State
   const [editingPost, setEditingPost] = useState<any | null>(null);
   const [editBody, setEditBody] = useState("");
-  const [, setEditTitle] = useState("");
-
-  // Re-upload / Repost State
-  const [repostingPost, setRepostingPost] = useState<any | null>(null);
-  const [repostBody, setRepostBody] = useState("");
 
   // 1. Fetch all user's previous posts
   const myPostsQuery = useQuery({
@@ -115,40 +110,10 @@ export default function MyPostsScreen() {
     },
   });
 
-  // Mutation: Re-upload / Repost
-  const repostMutation = useMutation({
-    mutationFn: (payload: { body: string; post_type: string }) =>
-      api(`/feed`, {
-        method: "POST",
-        body: JSON.stringify({
-          body: payload.body,
-          post_type: payload.post_type || "standard",
-        }),
-      }),
-    onSuccess: () => {
-      triggerHaptic();
-      Alert.alert("Re-uploaded! 🚀", "A fresh copy of this post was published to the feed.");
-      setRepostingPost(null);
-      setRepostBody("");
-      qc.invalidateQueries({ queryKey: ["my-published-posts"] });
-      qc.invalidateQueries({ queryKey: ["feed"] });
-    },
-    onError: (err: any) => {
-      Alert.alert("Repost Failed", err.message || "Could not re-upload post");
-    },
-  });
-
   const handleOpenEdit = (post: any) => {
     triggerHaptic();
     setEditingPost(post);
     setEditBody(post.body || "");
-    setEditTitle(post.title || "");
-  };
-
-  const handleOpenRepost = (post: any) => {
-    triggerHaptic();
-    setRepostingPost(post);
-    setRepostBody(post.body || "");
   };
 
   const handleDeletePrompt = (post: any) => {
@@ -343,15 +308,6 @@ export default function MyPostsScreen() {
                       <Text style={[styles.actionBtnText, { color: colors.primary }]}>Edit</Text>
                     </Pressable>
 
-                    {/* 2. Re-upload / Repost */}
-                    <Pressable
-                      onPress={() => handleOpenRepost(post)}
-                      style={[styles.actionBtn, { backgroundColor: colors.surface2 }]}
-                    >
-                      <MaterialCommunityIcons name="repeat-variant" size={15} color={colors.text} />
-                      <Text style={[styles.actionBtnText, { color: colors.text }]}>Re-upload</Text>
-                    </Pressable>
-
                     {/* 3. Delete */}
                     <Pressable
                       onPress={() => handleDeletePrompt(post)}
@@ -420,55 +376,6 @@ export default function MyPostsScreen() {
               onPress={() => {
                 if (!editingPost) return;
                 editMutation.mutate({ id: editingPost.id, body: editBody });
-              }}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* ────────────────────────────────────────────────────────────── */}
-      {/* MODAL 2: RE-UPLOAD / REPOST MODAL                              */}
-      {/* ────────────────────────────────────────────────────────────── */}
-      <Modal
-        visible={Boolean(repostingPost)}
-        animationType="slide"
-        onRequestClose={() => setRepostingPost(null)}
-      >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <View>
-              <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Re-upload to Campus Feed</Text>
-              <Muted style={{ fontSize: 12 }}>Publish a fresh copy to the top of feed</Muted>
-            </View>
-            <Pressable onPress={() => setRepostingPost(null)} hitSlop={12}>
-              <MaterialCommunityIcons name="close" size={24} color={colors.text} />
-            </Pressable>
-          </View>
-
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14 }}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>REVIEW & TWEAK TEXT BEFORE RE-UPLOADING</Text>
-            <TextInput
-              value={repostBody}
-              onChangeText={setRepostBody}
-              multiline
-              numberOfLines={8}
-              style={[
-                styles.editInputBox,
-                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-              ]}
-            />
-          </ScrollView>
-
-          <View style={[styles.footerBar, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
-            <Button
-              title={repostMutation.isPending ? "Re-uploading..." : "Publish Fresh Copy"}
-              disabled={!repostBody.trim() || repostMutation.isPending}
-              onPress={() => {
-                if (!repostingPost) return;
-                repostMutation.mutate({
-                  body: repostBody,
-                  post_type: repostingPost.post_type || "standard",
-                });
               }}
             />
           </View>

@@ -182,6 +182,7 @@ Write-Host "    gradlew assembleRelease -PreactNativeArchitectures=$archList" -F
 Write-Host ""
 
 $env:CMAKE_BUILD_PARALLEL_LEVEL = "2"
+$env:NODE_OPTIONS = "--max-old-space-size=3072"
 # Production bundling: Expo CLI loads .env from the frontend project.
 $env:NODE_ENV = "production"
 $buildExit = 1
@@ -189,6 +190,9 @@ $buildStart = Get-Date
 
 Push-Location $androidDir
 try {
+    # Stop stale daemons and lingering Java processes to reclaim committed memory
+    & .\gradlew.bat --stop | Out-Null
+    Get-Process -Name java -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     if ($Clean) {
         Write-Host "[*] Cleaning previous build output..." -ForegroundColor Yellow
         & .\gradlew.bat clean
@@ -288,7 +292,7 @@ finally { $zip.Dispose() }
 Write-Host ""
 Write-Banner "Production Release APK Ready!" "Green"
 Write-Host "  APK      : $($apk.FullName)"
-Write-Host "  Version  : v$pkgVersion (versionCode 2)"
+Write-Host "  Version  : v$pkgVersion"
 Write-Host "  Size     : $apkSizeMb MB"
 Write-Host "  ABIs     : $($abis -join ', ')"
 Write-Host "  JS bundle: $([math]::Round($bundleRaw/1MB,2)) MB raw -> $([math]::Round($bundleComp/1MB,2)) MB in APK (Hermes, compressed)"
@@ -319,17 +323,23 @@ if ($Install) {
     Write-Host "[*] Looking for a connected Android device..." -ForegroundColor Yellow
     $adb = Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"
     if (-not (Test-Path $adb)) { $adb = "adb" }
-    $devices = (& $adb devices | Where-Object { $_ -match "`tdevice$" })
-    if ($devices) {
-        Write-Host "[*] Installing release APK..." -ForegroundColor Yellow
-        & $adb install -r $exported
+    $devices = @(& $adb devices | Where-Object { $_ -match "\tdevice$" })
+    if ($devices.Count -gt 0) {
+        $serial = ($devices[0] -split "\t")[0]
+        Write-Host "[*] Installing release APK to device ($serial)..." -ForegroundColor Yellow
+        & $adb -s $serial install -r -d $exported
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[!] Direct install failed (likely certificate mismatch from prior debug build). Performing clean reinstall..." -ForegroundColor Yellow
+            & $adb -s $serial uninstall com.skillbridge.app
+            & $adb -s $serial install -r $exported
+        }
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "[+] Installed! Launch SkillBridge from the app drawer (no USB/Metro needed)." -ForegroundColor Green
+            Write-Host "[+] Installed! Launching SkillBridge on your phone..." -ForegroundColor Green
+            & $adb -s $serial shell monkey -p com.skillbridge.app -c android.intent.category.LAUNCHER 1 | Out-Null
+            Write-Host "[+] Done! App launched on phone." -ForegroundColor Green
         }
         else {
-            Write-Host "[!] Install failed. If the old debug build is installed, run:" -ForegroundColor Yellow
-            Write-Host "    $adb uninstall com.skillbridge.app" -ForegroundColor Yellow
-            Write-Host "    then retry: $adb install -r `"$exported`"" -ForegroundColor Yellow
+            Write-Host "[-] Install failed with exit code $LASTEXITCODE." -ForegroundColor Red
         }
     }
     else {

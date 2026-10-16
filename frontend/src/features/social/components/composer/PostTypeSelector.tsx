@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
@@ -16,11 +16,7 @@ export function PostTypeSelector({ selectedType, onSelectType }: PostTypeSelecto
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
+      <View style={styles.chipWrap}>
         {POST_TYPE_OPTIONS.map((item: PostTypeOption) => {
           const isSelected = selectedType === item.type;
           return (
@@ -33,20 +29,20 @@ export function PostTypeSelector({ selectedType, onSelectType }: PostTypeSelecto
               style={[
                 styles.typePill,
                 {
-                  borderColor: isSelected ? item.color : colors.border,
-                  backgroundColor: isSelected ? `${item.color}20` : colors.surface,
+                  borderColor: isSelected ? colors.primary : colors.border,
+                  backgroundColor: isSelected ? colors.primary : colors.surface,
                 },
               ]}
             >
               <MaterialCommunityIcons
                 name={item.icon as any}
                 size={16}
-                color={isSelected ? item.color : colors.text}
+                color={isSelected ? "#FFFFFF" : colors.text}
               />
               <Text
                 style={[
                   styles.pillText,
-                  { color: isSelected ? item.color : colors.text, fontWeight: isSelected ? "800" : "600" },
+                  { color: isSelected ? "#FFFFFF" : colors.text, fontWeight: isSelected ? "800" : "600" },
                 ]}
               >
                 {item.label}
@@ -54,7 +50,7 @@ export function PostTypeSelector({ selectedType, onSelectType }: PostTypeSelecto
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -63,10 +59,10 @@ const styles = StyleSheet.create({
   container: {
     paddingVertical: 6,
   },
-  scrollContent: {
+  chipWrap: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
-    paddingHorizontal: 16,
   },
   typePill: {
     flexDirection: "row",
@@ -75,7 +71,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.pill,
-    borderWidth: 1.5,
+    borderWidth: 1,
   },
   pillText: {
     fontSize: 12.5,

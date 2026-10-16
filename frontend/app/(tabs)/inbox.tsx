@@ -20,6 +20,7 @@ import { Empty, ErrorState, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 type TabType = "chats" | "calls";
 type ChatFilter = "all" | "unread" | "groups" | "archived";
@@ -90,6 +91,7 @@ function formatCallDuration(seconds: number): string {
 export default function Inbox() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const { t } = useI18n();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -897,7 +899,7 @@ export default function Inbox() {
         animationType="slide"
         onRequestClose={() => setComposeModalVisible(false)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, paddingBottom: keyboardHeight }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
               {groupMode ? "New Group Chat" : "New Conversation"}
@@ -1097,7 +1099,7 @@ export default function Inbox() {
           </View>
 
           {/* Peer List */}
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 + keyboardHeight }}>
             <Text style={[styles.sectionHeaderText, { color: colors.muted, marginBottom: 8 }]}>
               {composeSearch.trim()
                 ? "SEARCH RESULTS"
@@ -1278,7 +1280,7 @@ export default function Inbox() {
         animationType="slide"
         onRequestClose={() => setNewCallModalVisible(false)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, paddingBottom: keyboardHeight }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Start a Call</Text>
             <Pressable onPress={() => setNewCallModalVisible(false)} hitSlop={12}>
@@ -1286,7 +1288,7 @@ export default function Inbox() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 24 + keyboardHeight }}>
             <Text style={[styles.sectionHeaderText, { color: colors.muted, marginBottom: 8 }]}>
               DIRECT CONTACTS
             </Text>

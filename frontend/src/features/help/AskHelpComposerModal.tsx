@@ -12,6 +12,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import { Button, H2, Muted, Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import type { Room } from "@/types";
@@ -35,6 +36,7 @@ export function AskHelpComposerModal({
 }: AskHelpComposerModalProps) {
   const { colors } = useTheme();
   const qc = useQueryClient();
+  const keyboardHeight = useKeyboardHeight();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [title, setTitle] = useState("");
@@ -113,7 +115,7 @@ export function AskHelpComposerModal({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={s.overlay}>
-        <View style={[s.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[s.container, { maxHeight: `85%`, paddingBottom: keyboardHeight }]}>
           {/* Header */}
           <Row style={s.header}>
             <View>

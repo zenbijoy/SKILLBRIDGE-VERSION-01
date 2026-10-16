@@ -83,7 +83,8 @@ interface QuestionResult {
 }
 
 interface GradingResult {
-  attempt_id: string;
+  attempt_id: string | null;
+  history_saved?: boolean;
   score: number;
   passed: boolean;
   correct_count: number;
@@ -97,7 +98,21 @@ interface GradingResult {
   reward_points: number;
 }
 
-type Mode = "catalog" | "configure" | "generating" | "quiz" | "review";
+interface QuizHistoryAttempt {
+  id: string;
+  skill_id: string | null;
+  skill_name: string;
+  topic: string | null;
+  difficulty: Difficulty | string | null;
+  score: number;
+  passed: boolean;
+  correct_count: number | null;
+  total_count: number | null;
+  elapsed_seconds: number | null;
+  created_at: string;
+}
+
+type Mode = "catalog" | "configure" | "generating" | "quiz" | "review" | "history";
 
 const BLOOM_ICON: Record<BloomLevel, string> = {
   remember: "brain",
@@ -175,6 +190,7 @@ export default function QuizScreen() {
   const [customSkillInput, setCustomSkillInput] = useState("");
   const [customConditionInput, setCustomConditionInput] = useState("");
   const [customDifficulty, setCustomDifficulty] = useState<Difficulty>("medium");
+  const [historyRequested, setHistoryRequested] = useState(false);
 
   const catalogQuery = useQuery({
     queryKey: ["quiz-catalog-v2"],
@@ -185,6 +201,14 @@ export default function QuizScreen() {
     queryKey: ["quiz-passport"],
     queryFn: () => api<{ verified_skills: any[]; stats: any }>("/quiz/passport"),
   });
+  // Quiz history — attempts + marks (so users can see how many they took)
+  const historyQuery = useQuery<{ attempts: QuizHistoryAttempt[] }>({
+    queryKey: ["quiz-history"],
+    queryFn: () => api("/quiz/history"),
+    enabled: historyRequested || mode === "history",
+    staleTime: 30_000,
+  });
+
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -193,9 +217,30 @@ export default function QuizScreen() {
     }
   }, []);
 
-  const handleSubmit = useCallback((autoSubmit = false) => {
+  const handleSubmit = useCallback((autoSubmit = false, opts?: { confirmedEarly?: boolean }) => {
     const activeSession = sessionRef.current || session;
     if (!activeSession || isSubmittingRef.current || submitMutation.isPending) return;
+    // Early-submit guard: fast submit before completing all questions needs
+    // an explicit confirmation (except auto-submit on timeout).
+    if (!autoSubmit && !opts?.confirmedEarly) {
+      const total = activeSession.questions.length;
+      const answered = Object.keys(answersRef.current).length;
+      if (answered < total) {
+        Alert.alert(
+          "Submit early?",
+          `You answered ${answered}/${total}. Unanswered questions will be marked wrong. Submit anyway?`,
+          [
+            { text: "Keep Answering", style: "cancel" },
+            {
+              text: "Submit Now",
+              style: "destructive",
+              onPress: () => handleSubmit(false, { confirmedEarly: true }),
+            },
+          ],
+        );
+        return;
+      }
+    }
     isSubmittingRef.current = true;
     if (!autoSubmit) triggerHaptic();
     submitMutation.mutate({
@@ -258,6 +303,14 @@ export default function QuizScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- resetToMenu is declared below; listener is keyed on session/violation state
   }, [mode, session, violationCount, stopTimer]);
 
+  const openHistory = useCallback(() => {
+    setHistoryRequested(true);
+    setMode("history");
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises -- fire-and-forget prefetch; screen also auto-fetches via `enabled`
+    historyQuery.refetch?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch identity changes per render; depend on flag only
+  }, [historyRequested]);
+
   const startMutation = useMutation({
     mutationFn: (vars: {
       skill_id?: string;
@@ -308,11 +361,23 @@ export default function QuizScreen() {
       setReviewIdx(0);
       qc.invalidateQueries({ queryKey: ["me"] });
       qc.invalidateQueries({ queryKey: ["quiz-passport"] });
+      qc.invalidateQueries({ queryKey: ["quiz-history"] });
       qc.invalidateQueries({ queryKey: ["leaderboard"] });
+      if (data.history_saved === false) {
+        Alert.alert(
+          "Score saved",
+          "Your score was graded, but history could not be saved (server storage issue). Your badge/points are unaffected.",
+        );
+      }
     },
     onError: (e: any) => {
       isSubmittingRef.current = false;
-      Alert.alert("Submission failed", e.message ?? "Please try again.");
+      const msg = String(e?.message ?? "Please try again.");
+      // Friendly mapping for known server errors (was: raw "Internal server error")
+      const friendly = /internal server error/i.test(msg)
+        ? "The server hit an unexpected error while grading. Your answers are kept — please tap Submit again."
+        : msg;
+      Alert.alert("Submission failed", friendly);
     },
   });
 
@@ -538,11 +603,14 @@ export default function QuizScreen() {
           <Button title="Prev" variant="ghost" compact disabled={currentIdx === 0} onPress={() => { triggerHaptic(); setCurrentIdx((p) => Math.max(0, p - 1)); }} />
           {isLastQ ? (
             <Button
-              title={submitMutation.isPending ? "Grading..." : allAnswered ? "Submit Assessment" : "Answer all (" + answeredCount + "/" + questions.length + ")"}
-              variant="primary" disabled={!allAnswered || submitMutation.isPending} loading={submitMutation.isPending}
+              title={submitMutation.isPending ? "Grading..." : allAnswered ? "Submit Assessment" : `Submit Early (${answeredCount}/${questions.length})`}
+              variant="primary" disabled={submitMutation.isPending || answeredCount === 0} loading={submitMutation.isPending}
               onPress={() => handleSubmit(false)} />
           ) : (
-            <Button title="Next" variant="primary" compact onPress={() => { triggerHaptic(); setCurrentIdx((p) => Math.min(questions.length - 1, p + 1)); }} />
+            <Row style={{ gap: 8 }}>
+              <Button title={`Submit (${answeredCount}/${questions.length})`} variant="secondary" compact disabled={submitMutation.isPending || answeredCount === 0} onPress={() => handleSubmit(false)} />
+              <Button title="Next" variant="primary" compact onPress={() => { triggerHaptic(); setCurrentIdx((p) => Math.min(questions.length - 1, p + 1)); }} />
+            </Row>
           )}
         </Row>
 
@@ -657,17 +725,91 @@ export default function QuizScreen() {
         </Row>
         <Row style={{ gap: 10, marginTop: 16 }}>
           <Button title="Back to Skills" variant="secondary" onPress={resetToMenu} />
+          <Button title="View History" variant="secondary" onPress={openHistory} />
           {!isPassed && selectedSkill && <Button title="Retry" variant="primary" onPress={() => setMode("configure")} />}
         </Row>
       </Screen>
     );
   }
 
+  const stats = passportQuery.data?.stats as
+    | { total_attempts?: number; total_passed?: number; pass_rate?: number; average_score?: number }
+    | undefined;
+
+  if (mode === "history") {
+    const attempts = historyQuery.data?.attempts ?? [];
+    const passed = attempts.filter((a) => a.passed).length;
+    const avg = attempts.length > 0
+      ? Math.round(attempts.reduce((sum, a) => sum + (a.score ?? 0), 0) / attempts.length)
+      : 0;
+    return (
+      <Screen scroll>
+        <Row style={{ alignItems: "center", gap: 8 }}>
+          <Pressable onPress={() => setMode("catalog")} style={s.backBtn}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
+          </Pressable>
+          <View>
+            <H1>Quiz History</H1>
+            <Muted>{attempts.length} attempts · {passed} passed · avg {avg}%</Muted>
+          </View>
+        </Row>
+        {historyQuery.isLoading ? (
+          <Skeleton height={120} />
+        ) : historyQuery.isError ? (
+          <ErrorState detail="Could not load quiz history." onRetry={() => { historyQuery.refetch(); }} />
+        ) : attempts.length === 0 ? (
+          <Empty
+            title="No attempts yet"
+            detail="Take your first quiz to see your marks and history here."
+            actionTitle="Browse Skills"
+            onAction={() => setMode("catalog")}
+          />
+        ) : (
+          attempts.map((a) => (
+            <Card key={a.id} style={{ marginBottom: 10, padding: 14, gap: 6 }}>
+              <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: "800", color: colors.text }}>{a.skill_name ?? "Quiz"}</Text>
+                  <Muted style={{ fontSize: 12 }}>
+                    {a.topic ? `${a.topic} · ` : ""}
+                    {a.difficulty ? `${a.difficulty} · ` : ""}
+                    {a.created_at ? new Date(a.created_at).toLocaleString() : ""}
+                  </Muted>
+                </View>
+                <Pill tone={a.passed ? "success" : "danger"}>{a.passed ? "Passed" : "Failed"}</Pill>
+              </Row>
+              <Row style={{ alignItems: "center", gap: 10 }}>
+                <Text style={{ fontSize: 22, fontWeight: "900", color: colors.text }}>{a.score}%</Text>
+                <Muted style={{ fontSize: 12 }}>
+                  {a.correct_count !== null && a.total_count !== null
+                    ? `${a.correct_count}/${a.total_count} correct`
+                    : "Score only"}
+                  {typeof a.elapsed_seconds === "number" ? ` · ${formatTime(a.elapsed_seconds)}` : ""}
+                </Muted>
+              </Row>
+            </Card>
+          ))
+        )}
+      </Screen>
+    );
+  }
+
   // Catalog
+  const historyCount = historyQuery.data?.attempts?.length ?? stats?.total_attempts ?? 0;
   return (
     <Screen>
-      <H1>Skill Passport</H1>
-      <Muted style={{ marginBottom: 16 }}>Take AI-generated assessments to earn verified skill badges for your campus profile.</Muted>
+      <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ flex: 1 }}>
+          <H1>Skill Passport</H1>
+          <Muted style={{ marginBottom: 16 }}>Take AI-generated assessments to earn verified skill badges for your campus profile.</Muted>
+        </View>
+        <Pressable onPress={openHistory} style={[s.historyBtn, { borderColor: colors.border }]}>
+          <MaterialCommunityIcons name="history" size={18} color={colors.primary} />
+          <Text style={[s.historyBtnText, { color: colors.primary }]}>
+            History{historyCount > 0 ? ` (${historyCount})` : ""}
+          </Text>
+        </Pressable>
+      </Row>
 
       {passportQuery.data && passportQuery.data.stats.total_attempts > 0 && (
         <Animated.View entering={FadeInDown.springify()}>
@@ -807,6 +949,8 @@ const s = StyleSheet.create({
   genIcon: { width: 96, height: 96, borderRadius: 48, alignItems: "center", justifyContent: "center" },
   genDot: { width: 10, height: 10, borderRadius: 5 },
   backBtn: { padding: 8, marginRight: 4 },
+  historyBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md, borderWidth: 1.5 },
+  historyBtnText: { fontSize: 13, fontWeight: "800" },
   sectionLabel: { fontWeight: "700", fontSize: 14 },
   diffPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 10, borderRadius: radius.md, borderWidth: 1.5, flex: 1, justifyContent: "center" },
   topicInput: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: radius.md, borderWidth: 1.5, marginBottom: 8 },

@@ -35,8 +35,10 @@ react {
     // debuggableVariants = ["liteDebug", "prodDebug"]
 
     /* Bundling */
-    //   A list containing the node command and its flags. Default is just 'node'.
-    // nodeExecutableAndArgs = ["node"]
+    // Ensure Node.js has sufficient memory and limits worker concurrency to 2
+    // to prevent Windows commit limit exhaustion on 16-core CPUs.
+    nodeExecutableAndArgs = ["node", "--max-old-space-size=3072"]
+    extraPackagerArgs = ["--max-workers", "2"]
 
     //
     //   The path to the CLI configuration file. Default is empty.
@@ -105,8 +107,8 @@ android {
         applicationId 'com.skillbridge.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
-        versionName "2.0.6"
+        versionCode 8
+        versionName "2.0.7"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
 
@@ -114,6 +116,15 @@ android {
         // property in gradle.properties / key.properties). Empty = as before.
         manifestPlaceholders["mapsApiKey"] =
                 (findProperty('MAPS_API_KEY') ?: keystoreProperties.getProperty('mapsApiKey', '')).toString()
+
+        // Restrict Ninja/CMake concurrency to prevent Windows ReadFile GetLastError 1450 (system resource exhaustion)
+        externalNativeBuild {
+            cmake {
+                arguments "-DCMAKE_JOB_POOL_COMPILE:STRING=compile",
+                          "-DCMAKE_JOB_POOL_LINK:STRING=link",
+                          "-DCMAKE_JOB_POOLS:STRING=compile=2;link=1"
+            }
+        }
     }
     signingConfigs {
         debug {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   Alert,
+  Image,
   StyleSheet,
   Text,
   View,
@@ -60,6 +61,18 @@ export default function ForgotPassword() {
           >
             <Text style={[s.backText, { color: colors.muted }]}>← Back</Text>
           </TouchableOpacity>
+
+          <View style={s.brandLogoRow}>
+            <Image
+              source={require("@/../assets/branding/skillbridge-mark.png")}
+              style={s.brandLogoMark}
+              resizeMode="contain"
+            />
+            <View>
+              <Text style={[s.brandName, { color: colors.text }]}>SkillBridge</Text>
+              <Text style={[s.brandSubtitle, { color: colors.muted }]}>Account Recovery</Text>
+            </View>
+          </View>
 
           <View style={s.header}>
             <H1>Reset Password</H1>
@@ -123,6 +136,26 @@ const s = StyleSheet.create({
   },
   backText: { fontSize: 15, fontWeight: "700" },
   header: { gap: 8, marginBottom: 32 },
+  brandLogoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 20,
+  },
+  brandLogoMark: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+  },
+  brandName: {
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: -0.4,
+  },
+  brandSubtitle: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
   form: { gap: 0 },
   spacer: { height: 16 },
 });

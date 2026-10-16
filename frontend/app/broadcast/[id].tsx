@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { YouTubePlayer } from "@/components/live/YouTubePlayer";
 import { Button, Card, H2, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
 import { useTheme } from "@/theme";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface Question {
   id: string;
@@ -51,6 +52,7 @@ export default function BroadcastScreen() {
   }>();
 
   const { colors } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
   const [questions, setQuestions] = useState<Question[]>(SAMPLE_QUESTIONS);
   const [newQuestion, setNewQuestion] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -173,7 +175,7 @@ export default function BroadcastScreen() {
         />
 
         {/* Question Composer */}
-        <View style={[styles.composer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+        <View style={[styles.composer, { backgroundColor: colors.surface, borderTopColor: colors.border, bottom: keyboardHeight }]}>
           <TextInput
             placeholder="Ask a question for the live speaker…"
             placeholderTextColor={colors.muted}

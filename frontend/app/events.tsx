@@ -16,6 +16,7 @@ import { router } from "expo-router";
 import { api } from "@/lib/api";
 import { radius, spacing, useTheme } from "@/theme";
 import { Screen, triggerHaptic } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface EventItem {
   id: string;
@@ -52,6 +53,7 @@ interface DateAnalysisResult {
 export default function EventsScreen() {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
+  const keyboardHeight = useKeyboardHeight();
 
   const [activeTab, setActiveTab] = useState<"all" | "workshop" | "seminar" | "club_meetup">("all");
   const [showOptimizer, setShowOptimizer] = useState(false);
@@ -553,8 +555,8 @@ export default function EventsScreen() {
         animationType="fade"
         onRequestClose={() => setEnquiryModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.modalOverlay, { transform: [{ translateY: -keyboardHeight }] }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border, paddingBottom: keyboardHeight }]}>
             <View style={styles.modalTitleRow}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Ask Event Managers</Text>
               <Pressable onPress={() => setEnquiryModalVisible(false)} hitSlop={8}>
@@ -641,8 +643,8 @@ export default function EventsScreen() {
         animationType="fade"
         onRequestClose={() => setReportModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.modalOverlay, { transform: [{ translateY: -keyboardHeight }] }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border, paddingBottom: keyboardHeight }]}>
             <View style={styles.modalTitleRow}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.danger || "#EF4444"} />

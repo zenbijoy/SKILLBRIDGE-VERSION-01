@@ -17,6 +17,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import { useSession } from "@/hooks/useSession";
 import { useTheme, spacing } from "@/theme";
 import { Empty, Muted, triggerHaptic } from "@/components/ui";
@@ -32,6 +33,7 @@ interface Props {
 export function RoomChatTab({ conversationId, isMember }: Props) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const { session } = useSession();
   const qc = useQueryClient();
   const [body, setBody] = useState("");
@@ -125,11 +127,7 @@ export function RoomChatTab({ conversationId, isMember }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={[s.container, { backgroundColor: colors.bg }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 110 : 0}
-    >
+    <View style={[s.container, { backgroundColor: colors.bg }]}>
       {isLoading ? (
         <View style={s.centered}>
           <ActivityIndicator color={colors.primary} size="large" />
@@ -148,7 +146,7 @@ export function RoomChatTab({ conversationId, isMember }: Props) {
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.client_message_id ?? m.id}
-          contentContainerStyle={s.listContent}
+          contentContainerStyle={[s.listContent, { paddingBottom: 80 + keyboardHeight }]}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           renderItem={({ item }) => {
@@ -280,6 +278,7 @@ export function RoomChatTab({ conversationId, isMember }: Props) {
             backgroundColor: colors.surface,
             borderTopColor: colors.border,
             paddingBottom: Math.max(insets.bottom, 10) + 4,
+            bottom: keyboardHeight,
           },
         ]}
       >
@@ -350,7 +349,7 @@ export function RoomChatTab({ conversationId, isMember }: Props) {
           )}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

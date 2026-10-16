@@ -55,6 +55,8 @@ services:
         EXPO_PUBLIC_SUPABASE_URL: https://wyqsoxkwmulhpcoslnoj.supabase.co
         EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5cXNveGt3bXVsaHBjb3Nsbm9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyODAxMzUsImV4cCI6MjEwMTg1NjEzNX0.KFiTn-UCZoL_TWHMjOTums4Fs_DoMK_iGF3v-mdv6_o
         EXPO_PUBLIC_API_URL: https://ruetskillbridge.duckdns.org/api/v1
+        EXPO_PUBLIC_WEB_URL: https://ruetskillbridgeweb.duckdns.org
+        EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 939253168628-57q343ic7iep2sgpo0e9786553mi6n0e.apps.googleusercontent.com
     restart: unless-stopped
     ports:
       - "127.0.0.1:3001:80"

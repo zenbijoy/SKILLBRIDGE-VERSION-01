@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
-import type { Profile, Room, Session } from "@/types";
+import type { Profile, Room, RoomPostType, Session } from "@/types";
 import { ErrorState, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
@@ -58,6 +58,9 @@ export default function RoomDetailScreen() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
   const [hasInitializedLandingTab, setHasInitializedLandingTab] = useState(false);
+  const [externalComposerOpen, setExternalComposerOpen] = useState(false);
+  const [composerInitialType, setComposerInitialType] = useState<RoomPostType>("discussion");
+  const [rolePreviewOverride, setRolePreviewOverride] = useState<"educator" | "learner" | null>(null);
 
   // 1. Fetch Room Core Details
   const roomQuery = useQuery({
@@ -206,10 +209,37 @@ export default function RoomDetailScreen() {
   const isMember = permissions.isMember || Boolean(data.membership);
   const isPreview = Boolean(data.preview?.isPreview) && !isMember;
 
+  const baseIsEducator = Boolean(
+    permissions.isOwner ||
+    permissions.role === "host" ||
+    permissions.role === "teacher" ||
+    permissions.role === "moderator" ||
+    permissions.canModerate ||
+    data.membership?.role === "host" ||
+    data.membership?.role === "teacher" ||
+    data.membership?.role === "moderator"
+  );
+  const isEducator = rolePreviewOverride !== null ? rolePreviewOverride === "educator" : baseIsEducator;
+
+  const handleToggleRolePreview = () => {
+    Alert.alert(
+      "Room View Preview",
+      `Currently viewing as: ${isEducator ? "Educator Dashboard" : "Learning Room (Learner UI)"}\nSwitch mode to test both UI views:`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "View as Learner", onPress: () => setRolePreviewOverride("learner") },
+        { text: "View as Educator", onPress: () => setRolePreviewOverride("educator") },
+        { text: "Reset to Actual Role", onPress: () => setRolePreviewOverride(null) },
+      ],
+    );
+  };
+
   const liveParticipantCount = presence.liveParticipantCount;
   const hasLiveSession = presence.isLive;
   const liveSessionId = presence.sessionId;
   const unreadCount = data.unreadCount ?? 0;
+  const userAvatarUrl = session?.user?.user_metadata?.avatar_url || (session?.user as any)?.avatar_url;
+  const userFullName = session?.user?.user_metadata?.full_name || (session?.user as any)?.full_name;
 
   if (isPreview) {
     return (
@@ -218,13 +248,18 @@ export default function RoomDetailScreen() {
           room={room}
           isMember={false}
           memberRole={null}
+          isEducator={isEducator}
+          userAvatarUrl={userAvatarUrl}
+          userFullName={userFullName}
           hasActiveLiveSession={hasLiveSession}
           liveParticipantsCount={liveParticipantCount}
           onJoin={() => joinMutation.mutate()}
           onLeave={() => leaveMutation.mutate()}
           onOpenMore={() => setActiveTab("more")}
           onJoinLiveSession={() => router.push(`/live/${room.id}` as any)}
+          onOpenVoice={() => setVoiceSheetVisible(true)}
           onSearch={undefined}
+          onToggleRolePreview={handleToggleRolePreview}
         />
         <View style={[s.previewCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[s.previewTitle, { color: colors.text }]}>Vit relevant preview</Text>
@@ -260,8 +295,12 @@ export default function RoomDetailScreen() {
         room={room}
         isMember={isMember}
         memberRole={permissions.role}
+        isEducator={isEducator}
+        userAvatarUrl={userAvatarUrl}
+        userFullName={userFullName}
         hasActiveLiveSession={hasLiveSession}
         liveParticipantsCount={liveParticipantCount}
+        attendancePercent={80}
         onJoin={() => joinMutation.mutate()}
         onLeave={() => leaveMutation.mutate()}
         onOpenMore={() => setActiveTab("more")}
@@ -273,7 +312,16 @@ export default function RoomDetailScreen() {
               : (`/live/${room.id}` as any),
           );
         }}
+        onOpenVoice={() => setVoiceSheetVisible(true)}
         onSearch={() => setSearchModalVisible(true)}
+        onPostAnnouncement={() => {
+          setActiveTab("posts");
+          setComposerInitialType("announcement");
+          setExternalComposerOpen(true);
+        }}
+        onOpenAnalytics={() => setAnalyticsVisible(true)}
+        onAttendance={() => setActiveTab("learn")}
+        onToggleRolePreview={handleToggleRolePreview}
       />
 
       {/* Voice Presence Banner (persistent when room voice lounge active) */}
@@ -292,6 +340,7 @@ export default function RoomDetailScreen() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         chatUnreadCount={unreadCount}
+        isEducator={isEducator}
       />
 
       {/* 3. ACTIVE DESTINATION VIEW (With state preservation) */}
@@ -304,6 +353,12 @@ export default function RoomDetailScreen() {
             canAnnounce={permissions.canAnnounce}
             canPin={permissions.canPin}
             canModerate={permissions.canModerate}
+            isEducator={isEducator}
+            onOpenAnalytics={() => setAnalyticsVisible(true)}
+            onOpenPinnedHub={() => setPinnedHubVisible(true)}
+            externalComposerOpen={externalComposerOpen}
+            onCloseExternalComposer={() => setExternalComposerOpen(false)}
+            composerInitialType={composerInitialType}
           />
         )}
 

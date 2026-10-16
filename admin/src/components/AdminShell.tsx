@@ -156,7 +156,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
       <aside className={`admin-sidebar ${open ? 'sidebar-open' : ''}`}>
         <div className="brand-row">
-          <div className="brand-mark">SB</div>
+          <div className="brand-mark overflow-hidden p-1 bg-white/10 backdrop-blur">
+            <img src="/skillbridge-mark.png" alt="SkillBridge Logo" className="w-full h-full object-contain" />
+          </div>
           <div>
             <div className="brand-name">SkillBridge</div>
             <div className="brand-subtitle">Control Plane V4</div>

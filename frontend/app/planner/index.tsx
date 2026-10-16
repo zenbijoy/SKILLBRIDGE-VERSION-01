@@ -126,34 +126,6 @@ export default function PlannerScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Action Row & Stats */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.generateBtn, { backgroundColor: colors.primary }]}
-          onPress={handleGenerate}
-          disabled={generating}
-        >
-          {generating ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <>
-              <Ionicons name="sparkles" size={16} color="#FFFFFF" />
-              <Text style={styles.generateBtnText}>{t("planner.generate")}</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.weekBtn, { borderColor: colors.border }]}
-          onPress={() => router.push("/planner/week" as any)}
-        >
-          <Ionicons name="calendar-outline" size={16} color={colors.text} />
-          <Text style={[styles.weekBtnText, { color: colors.text }]}>
-            {t("planner.weekView")}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       {/* Summary KPI Cards */}
       <View style={styles.kpiContainer}>
         <View

@@ -2,12 +2,12 @@ import * as Linking from "expo-linking";
 import { Platform } from "react-native";
 
 export const WEB_APP_URL =
-  process.env.EXPO_PUBLIC_WEB_URL || "https://skillbridge-kappa.vercel.app";
+  process.env.EXPO_PUBLIC_WEB_URL || "https://ruetskillbridgeweb.duckdns.org";
 
 /**
  * Generates the in-app deep link or web URL for a given path.
  * For native platforms, returns custom scheme (e.g. skillbridge://auth/callback).
- * For web, returns origin URL (e.g. https://skillbridge-kappa.vercel.app/auth/callback).
+ * For web, returns origin URL (e.g. https://ruetskillbridgeweb.duckdns.org/auth/callback).
  */
 export function getAuthCallbackUrl(path: string = "/auth/callback"): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;

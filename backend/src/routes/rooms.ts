@@ -65,17 +65,13 @@ async function checkRoomVisibility(roomId: string, userId: string | null): Promi
   if (room.visibility === "public") return true;
 
   // For private/invite_only, require membership
-  if (userId) {
-    const { data: member } = await admin
-      .from("room_members")
-      .select("id")
-      .eq("room_id", roomId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    return !!member;
-  }
-
-  return false;
+  const { data: member } = await admin
+    .from("room_members")
+    .select("id")
+    .eq("room_id", roomId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !!member;
 }
 
 const createSchema = z
@@ -383,7 +379,7 @@ rooms.post(
           .update({ appearance })
           .eq("id", v_room_id);
         if (fallbackErr) {
-          console.warn("[rooms] failed to persist cover/teacher mode", fallbackErr.message);
+          logger.warn({ err: fallbackErr }, "[rooms] failed to persist cover/teacher mode");
         }
       }
     }
@@ -3244,8 +3240,18 @@ rooms.post(
 
       // For ban, we could also add to a banned_users table - TODO
     } else if (body.action === "warn_user" || body.action === "mute_user") {
-      // TODO: Implement warning/mute system
-      console.warn(`${body.action} not fully implemented yet`);
+      if (body.action === "warn_user" && body.targetId) {
+        await NotificationService.dispatch({
+          userId: body.targetId,
+          type: "SYSTEM_ANNOUNCEMENT",
+          title: "Room Moderation Warning",
+          body: body.reason ? `You received a warning in a room: ${body.reason}` : "You received a warning from a room moderator.",
+          entityType: "room",
+          entityId: roomId,
+          data: { roomId, action: "warn_user" },
+        }).catch((err: unknown) => logger.warn({ err }, "Failed to send room warning notification"));
+      }
+      logger.info({ action: body.action, roomId, targetId: body.targetId, reason: body.reason }, "Room moderation action executed");
     }
 
     if (body.reportId) {

@@ -27,6 +27,7 @@ import { v4 as uuidv4 } from "uuid";
 import { api } from "@/lib/api";
 import { optimizeImageForUpload, OPTIMIZATION_PRESETS } from "@/lib/imageOptimizer";
 import { supabase } from "@/lib/supabase";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import { useSession } from "@/hooks/useSession";
 import { LocalDB } from "@/lib/database";
 import { getSocket } from "@/lib/socket";
@@ -124,6 +125,7 @@ export default function ChatScreen() {
   const { session } = useSession();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const [plusMenuVisible, setPlusMenuVisible] = useState(false);
   const qc = useQueryClient();
   const socket = getSocket();
@@ -1700,7 +1702,7 @@ export default function ChatScreen() {
       <FlatList
         ref={flatListRef}
         style={{ flex: 1 }}
-        contentContainerStyle={styles.messagesList}
+        contentContainerStyle={[styles.messagesList, { paddingBottom: 140 + keyboardHeight }]}
         data={displayMessages}
         keyboardShouldPersistTaps="handled"
         keyExtractor={(item) => item.client_message_id || item.id}
@@ -1815,6 +1817,10 @@ export default function ChatScreen() {
               backgroundColor: colors.surface,
               borderTopColor: colors.border,
               paddingBottom: Math.max(insets.bottom, 10) + 4,
+              position: "absolute",
+              bottom: keyboardHeight,
+              left: 0,
+              right: 0,
             },
           ]}
         >
