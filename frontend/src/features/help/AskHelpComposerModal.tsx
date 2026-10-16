@@ -95,6 +95,7 @@ export function AskHelpComposerModal({
     setTopic("");
     setUrgency("normal");
     setTargetType(defaultRoomId ? "room" : "campus");
+    setSelectedRoomId(defaultRoomId);
   };
 
   const handleNext = () => {

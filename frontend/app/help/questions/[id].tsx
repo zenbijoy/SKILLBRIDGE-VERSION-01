@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  type ListRenderItemInfo,
   Platform,
   Pressable,
   RefreshControl,
@@ -16,6 +17,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import { useSession } from "@/hooks/useSession";
 import {
@@ -30,6 +32,7 @@ import {
   triggerHaptic,
 } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { formatRelativeTime, getUrgencyMeta, roomLabel } from "@/features/help/helpUtils";
 
 type Answer = {
   id: string;
@@ -77,10 +80,13 @@ type QuestionDetail = {
 export default function QuestionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { session } = useSession();
   const qc = useQueryClient();
 
   const [answerText, setAnswerText] = useState("");
+  // Local flag only disables the button after a tap. The displayed count always
+  // comes from the server, because POST /upvote persists the increment.
   const [upvoted, setUpvoted] = useState(false);
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery<{
@@ -94,9 +100,8 @@ export default function QuestionDetailScreen() {
   const question = data?.question;
   const isAuthor = session?.user?.id === question?.author?.id;
 
-  // Upvote question mutation
   const upvoteMutation = useMutation({
-    mutationFn: () => api(`/help/questions/${id}/upvote`, { method: "POST" }),
+    mutationFn: () => api<{ upvotesCount: number }>(`/help/questions/${id}/upvote`, { method: "POST" }),
     onSuccess: () => {
       triggerHaptic("selection");
       setUpvoted(true);
@@ -107,7 +112,6 @@ export default function QuestionDetailScreen() {
     },
   });
 
-  // Post answer mutation
   const answerMutation = useMutation({
     mutationFn: (body: string) =>
       api(`/help/questions/${id}/answers`, {
@@ -125,7 +129,6 @@ export default function QuestionDetailScreen() {
     },
   });
 
-  // Mark answer as accepted
   const acceptMutation = useMutation({
     mutationFn: (answerId: string) =>
       api(`/help/questions/${id}/answers/${answerId}/accept`, {
@@ -146,28 +149,179 @@ export default function QuestionDetailScreen() {
     answerMutation.mutate(answerText.trim());
   };
 
-  const formatUrgency = (urgency?: string) => {
-    if (urgency === "exam_soon") return { text: "Exam Soon", tone: "danger" as const };
-    if (urgency === "today") return { text: "Due Today", tone: "warning" as const };
-    return { text: "Academic Question", tone: "default" as const };
+  const renderAnswer = ({ item }: ListRenderItemInfo<Answer>) => {
+    const isAccepted = item.is_accepted;
+    return (
+      <View
+        style={[
+          s.answerCard,
+          {
+            backgroundColor: colors.surface,
+            borderColor: isAccepted ? colors.success : colors.border,
+            borderWidth: isAccepted ? 2 : 1,
+          },
+        ]}
+      >
+        {isAccepted && (
+          <Row style={[s.acceptedBanner, { backgroundColor: `${colors.success}18` }]}>
+            <MaterialCommunityIcons name="check-decagram" size={16} color={colors.success} />
+            <Text style={[s.acceptedText, { color: colors.success }]}>ACCEPTED SOLUTION</Text>
+          </Row>
+        )}
+
+        <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <Pressable
+            onPress={() => router.push(`/user/${item.author.id}` as any)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}
+          >
+            <View style={[s.answerAvatar, { backgroundColor: colors.primarySoft }]}>
+              {item.author.avatar_url ? (
+                <Image source={{ uri: item.author.avatar_url }} style={s.avatarImg} />
+              ) : (
+                <Text style={{ fontWeight: "800", color: colors.primary, fontSize: 12 }}>
+                  {item.author.full_name?.[0] || "U"}
+                </Text>
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text }} numberOfLines={1}>
+                {item.author.full_name}
+              </Text>
+              <Text style={{ fontSize: 10, color: colors.muted }} numberOfLines={1}>
+                {formatRelativeTime(item.created_at)}
+              </Text>
+            </View>
+          </Pressable>
+
+          {isAuthor && !isAccepted && (
+            <Pressable
+              onPress={() => acceptMutation.mutate(item.id)}
+              disabled={acceptMutation.isPending}
+              style={[s.markAcceptBtn, { backgroundColor: colors.primarySoft, borderColor: colors.primary }]}
+            >
+              <MaterialCommunityIcons name="check" size={14} color={colors.primary} />
+              <Text style={[s.markAcceptText, { color: colors.primary }]}>Accept</Text>
+            </Pressable>
+          )}
+        </Row>
+
+        <Text style={[s.answerBody, { color: colors.text }]}>{item.body}</Text>
+      </View>
+    );
   };
 
+
+  const questionHeader = question ? (
+    <View style={{ marginBottom: 4 }}>
+      <Card style={[s.questionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Row style={{ gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+          {question.subject ? <Pill tone="primary">#{question.subject}</Pill> : null}
+          {question.topic ? <Pill tone="info">#{question.topic}</Pill> : null}
+          {question.urgency !== "normal" ? (
+            <Pill tone={getUrgencyMeta(question.urgency).tone}>{getUrgencyMeta(question.urgency).label}</Pill>
+          ) : null}
+          <Pill tone={question.isResolved ? "success" : "default"}>
+            {question.isResolved ? "RESOLVED" : "OPEN"}
+          </Pill>
+        </Row>
+
+        <Text style={[s.mainTitle, { color: colors.text }]}>{question.title}</Text>
+        <Text style={[s.mainBody, { color: colors.text }]}>{question.body}</Text>
+
+        <Pressable
+          onPress={() => router.push(`/user/${question.author.id}` as any)}
+          style={[s.authorRow, { borderTopColor: colors.divider }]}
+        >
+          <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
+            {question.author.avatar_url ? (
+              <Image source={{ uri: question.author.avatar_url }} style={s.avatarImg} />
+            ) : (
+              <Text style={{ fontWeight: "800", color: colors.primary }}>
+                {question.author.full_name?.[0] || "U"}
+              </Text>
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.authorName, { color: colors.text }]} numberOfLines={1}>
+              {question.author.full_name}
+            </Text>
+            <Text style={[s.authorSub, { color: colors.muted }]} numberOfLines={1}>
+              {[question.author.department, question.author.university].filter(Boolean).join(" • ") ||
+                `@${question.author.username}`}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 11, color: colors.muted }}>{formatRelativeTime(question.createdAt)}</Text>
+        </Pressable>
+
+        <Row style={s.questionActions}>
+          <Pressable
+            onPress={() => upvoteMutation.mutate()}
+            disabled={upvoteMutation.isPending || upvoted}
+            style={[
+              s.actionPill,
+              {
+                backgroundColor: upvoted ? colors.primarySoft : colors.background,
+                borderColor: upvoted ? colors.primary : colors.border,
+              },
+            ]}
+          >
+            <Row style={{ alignItems: "center", gap: 5 }}>
+              <MaterialCommunityIcons
+                name={upvoted ? "thumb-up" : "thumb-up-outline"}
+                size={16}
+                color={upvoted ? colors.primary : colors.muted}
+              />
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: "700",
+                  color: upvoted ? colors.primary : colors.text,
+                }}
+              >
+                {question.upvotesCount}
+              </Text>
+            </Row>
+          </Pressable>
+
+          <Row style={{ alignItems: "center", gap: 4 }}>
+            <MaterialCommunityIcons name="comment-text-outline" size={16} color={colors.primary} />
+            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>
+              {question.answersCount} {question.answersCount === 1 ? "Answer" : "Answers"}
+            </Text>
+          </Row>
+
+          <Row style={{ alignItems: "center", gap: 4, flexShrink: 1 }}>
+            <MaterialCommunityIcons name="door-open" size={14} color={colors.muted} />
+            <Text style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>
+              {roomLabel(question.roomTitle)}
+            </Text>
+          </Row>
+        </Row>
+      </Card>
+
+      <Text style={[s.answersSectionTitle, { color: colors.text, marginTop: 16, marginBottom: 8 }]}>
+        Answers &amp; Solutions ({question.answers.length})
+      </Text>
+    </View>
+  ) : null;
+
+
   return (
-    <Screen>
+    <Screen scroll={false} keyboardAvoiding={false} contentStyle={{ padding: 0, gap: 0 }}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* Navigation Bar */}
-        <Row style={s.navBar}>
+        {/* Nav bar */}
+        <Row style={[s.navBar, { paddingTop: insets.top + 8 }]}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={s.backBtn}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
           </Pressable>
-          <View style={{ flex: 1, marginHorizontal: 8 }}>
+          <View style={{ flex: 1, marginHorizontal: 10 }}>
             <Text style={[s.navTitle, { color: colors.text }]} numberOfLines={1}>
               {question?.roomTitle || "Help Thread"}
             </Text>
-            <Muted style={{ fontSize: 11 }}>Q&A Discussion</Muted>
+            <Muted style={{ fontSize: 11 }}>Q&amp;A Discussion</Muted>
           </View>
           <Pressable
             onPress={() => refetch()}
@@ -182,212 +336,50 @@ export default function QuestionDetailScreen() {
           </Pressable>
         </Row>
 
-        {isLoading ? (
-          <View style={{ gap: 12, paddingVertical: 16 }}>
-            <Skeleton height={140} />
-            <Skeleton height={80} />
-            <Skeleton height={80} />
-          </View>
-        ) : isError || !question ? (
-          <ErrorState
-            detail={(error as Error)?.message || "Question thread not found."}
-            onRetry={() => refetch()}
-          />
-        ) : (
-          <FlatList
-            data={question.answers}
-            keyExtractor={(item) => item.id}
-            refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-            contentContainerStyle={s.scrollContent}
-            ListHeaderComponent={
-              <View style={s.questionSection}>
-                {/* Question Card */}
-                <Card style={[s.questionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  {/* Badges */}
-                  <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <Row style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                      {question.subject && <Pill tone="primary">#{question.subject}</Pill>}
-                      {question.urgency !== "normal" && (
-                        <Pill tone={formatUrgency(question.urgency).tone}>
-                          {formatUrgency(question.urgency).text}
-                        </Pill>
-                      )}
-                      {question.isResolved ? (
-                        <Pill tone="accent">SOLVED ✓</Pill>
-                      ) : (
-                        <Pill tone="default">OPEN</Pill>
-                      )}
-                    </Row>
-                    <Muted style={{ fontSize: 11 }}>
-                      {new Date(question.createdAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </Muted>
-                  </Row>
-
-                  {/* Question Title */}
-                  <Text style={[s.mainTitle, { color: colors.text }]}>{question.title}</Text>
-
-                  {/* Question Body */}
-                  <Text style={[s.mainBody, { color: colors.text }]}>{question.body}</Text>
-
-                  {/* Author Meta */}
-                  <Pressable
-                    onPress={() => router.push(`/user/${question.author.id}` as any)}
-                    style={s.authorRow}
-                  >
-                    <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
-                      {question.author.avatar_url ? (
-                        <Image source={{ uri: question.author.avatar_url }} style={s.avatarImg} />
-                      ) : (
-                        <Text style={{ fontWeight: "800", color: colors.primary }}>
-                          {question.author.full_name?.[0] || "U"}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.authorName, { color: colors.text }]} numberOfLines={1}>
-                        {question.author.full_name}
-                      </Text>
-                      <Text style={[s.authorSub, { color: colors.muted }]} numberOfLines={1}>
-                        {[question.author.department, question.author.university].filter(Boolean).join(" • ") ||
-                          `@${question.author.username}`}
-                      </Text>
-                    </View>
-                  </Pressable>
-
-                  {/* Actions Bar */}
-                  <Row style={s.questionActions}>
-                    <Pressable
-                      onPress={() => upvoteMutation.mutate()}
-                      disabled={upvoteMutation.isPending || upvoted}
-                      style={[
-                        s.actionPill,
-                        {
-                          backgroundColor: upvoted ? colors.primarySoft : colors.background,
-                          borderColor: upvoted ? colors.primary : colors.border,
-                        },
-                      ]}
-                    >
-                      <Row style={{ alignItems: "center", gap: 5 }}>
-                        <MaterialCommunityIcons
-                          name={upvoted ? "thumb-up" : "thumb-up-outline"}
-                          size={16}
-                          color={upvoted ? colors.primary : colors.muted}
-                        />
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: "700",
-                            color: upvoted ? colors.primary : colors.text,
-                          }}
-                        >
-                          Upvote ({question.upvotesCount + (upvoted ? 1 : 0)})
-                        </Text>
-                      </Row>
-                    </Pressable>
-
-                    <Row style={{ alignItems: "center", gap: 4 }}>
-                      <MaterialCommunityIcons name="comment-text-outline" size={16} color={colors.primary} />
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>
-                        {question.answersCount} {question.answersCount === 1 ? "Answer" : "Answers"}
-                      </Text>
-                    </Row>
-                  </Row>
+        <View style={{ flex: 1, paddingHorizontal: 16 }}>
+          {isLoading ? (
+            <View style={{ gap: 12, paddingVertical: 16 }}>
+              <Skeleton height={160} />
+              <Skeleton height={80} />
+              <Skeleton height={80} />
+            </View>
+          ) : isError || !question ? (
+            <ErrorState
+              detail={(error as Error)?.message || "Question thread not found."}
+              onRetry={() => refetch()}
+            />
+          ) : (
+            <FlatList
+              data={question.answers}
+              keyExtractor={(item) => item.id}
+              renderItem={renderAnswer}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isRefetching}
+                  onRefresh={() => refetch()}
+                  tintColor={colors.primary}
+                  colors={[colors.primary]}
+                  progressBackgroundColor={colors.surface}
+                />
+              }
+              contentContainerStyle={{ paddingBottom: 24 }}
+              ListHeaderComponent={questionHeader}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <Card style={[s.emptyAnswersCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <MaterialCommunityIcons name="lightbulb-on-outline" size={36} color={colors.primary} />
+                  <Text style={[s.emptyAnswersTitle, { color: colors.text }]}>No Answers Yet</Text>
+                  <Muted style={{ fontSize: 12, textAlign: "center", marginTop: 4 }}>
+                    Know the solution? Type below to help out your classmate!
+                  </Muted>
                 </Card>
+              }
+            />
+          )}
+        </View>
 
-                {/* Section Title */}
-                <Row style={{ justifyContent: "space-between", alignItems: "center", marginTop: 18, marginBottom: 8 }}>
-                  <Text style={[s.answersSectionTitle, { color: colors.text }]}>
-                    Answers & Solutions ({question.answers.length})
-                  </Text>
-                </Row>
-              </View>
-            }
-            ListEmptyComponent={
-              <Card style={[s.emptyAnswersCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <MaterialCommunityIcons name="lightbulb-on-outline" size={36} color={colors.primary} />
-                <Text style={[s.emptyAnswersTitle, { color: colors.text }]}>No Answers Yet</Text>
-                <Muted style={{ fontSize: 12, textAlign: "center", marginTop: 4 }}>
-                  Know the solution? Type below to help out your classmate!
-                </Muted>
-              </Card>
-            }
-            renderItem={({ item }) => {
-              const isAccepted = item.is_accepted;
-              return (
-                <View
-                  style={[
-                    s.answerCard,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: isAccepted ? colors.success : colors.border,
-                      borderWidth: isAccepted ? 2 : 1,
-                    },
-                  ]}
-                >
-                  {isAccepted && (
-                    <Row style={[s.acceptedBanner, { backgroundColor: `${colors.success}18` }]}>
-                      <MaterialCommunityIcons name="check-decagram" size={16} color={colors.success} />
-                      <Text style={[s.acceptedText, { color: colors.success }]}>
-                        ACCEPTED SOLUTION
-                      </Text>
-                    </Row>
-                  )}
-
-                  {/* Answer Author */}
-                  <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <Pressable
-                      onPress={() => router.push(`/user/${item.author.id}` as any)}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}
-                    >
-                      <View style={[s.answerAvatar, { backgroundColor: colors.primarySoft }]}>
-                        {item.author.avatar_url ? (
-                          <Image source={{ uri: item.author.avatar_url }} style={s.avatarImg} />
-                        ) : (
-                          <Text style={{ fontWeight: "800", color: colors.primary, fontSize: 12 }}>
-                            {item.author.full_name?.[0] || "U"}
-                          </Text>
-                        )}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text }} numberOfLines={1}>
-                          {item.author.full_name}
-                        </Text>
-                        <Text style={{ fontSize: 10, color: colors.muted }} numberOfLines={1}>
-                          {new Date(item.created_at).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </Text>
-                      </View>
-                    </Pressable>
-
-                    {/* Question Author Accept Button */}
-                    {isAuthor && !isAccepted && (
-                      <Pressable
-                        onPress={() => acceptMutation.mutate(item.id)}
-                        disabled={acceptMutation.isPending}
-                        style={[s.markAcceptBtn, { backgroundColor: colors.primarySoft, borderColor: colors.primary }]}
-                      >
-                        <MaterialCommunityIcons name="check" size={14} color={colors.primary} />
-                        <Text style={[s.markAcceptText, { color: colors.primary }]}>Accept</Text>
-                      </Pressable>
-                    )}
-                  </Row>
-
-                  {/* Answer Text */}
-                  <Text style={[s.answerBody, { color: colors.text }]}>{item.body}</Text>
-                </View>
-              );
-            }}
-          />
-        )}
-
-        {/* Floating Answer Composer Bar at bottom */}
+        {/* Answer composer */}
         {question && (
           <View style={[s.composerBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
             <TextInput
@@ -399,11 +391,7 @@ export default function QuestionDetailScreen() {
               maxLength={2000}
               style={[
                 s.composerInput,
-                {
-                  backgroundColor: colors.background,
-                  borderColor: colors.border,
-                  color: colors.text,
-                },
+                { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
               ]}
             />
             <View style={{ minWidth: 64 }}>
@@ -421,12 +409,13 @@ export default function QuestionDetailScreen() {
   );
 }
 
+
 const s = StyleSheet.create({
   navBar: {
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 10,
-    paddingHorizontal: 2,
+    paddingHorizontal: 16,
   },
   backBtn: {
     padding: 4,
@@ -443,16 +432,11 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  scrollContent: {
-    paddingBottom: 24,
-  },
-  questionSection: {
-    marginBottom: 10,
-  },
   questionCard: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     borderWidth: 1,
+    gap: 0,
   },
   mainTitle: {
     fontSize: 18,
@@ -471,7 +455,6 @@ const s = StyleSheet.create({
     gap: 10,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(150,150,150,0.2)",
     marginBottom: 12,
   },
   avatar: {
@@ -500,7 +483,7 @@ const s = StyleSheet.create({
   actionPill: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: radius.pill,
     borderWidth: 1,
   },
   answersSectionTitle: {
@@ -511,9 +494,10 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 28,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     borderWidth: 1,
     marginTop: 8,
+    gap: 6,
   },
   emptyAnswersTitle: {
     fontSize: 15,
@@ -522,7 +506,7 @@ const s = StyleSheet.create({
   },
   answerCard: {
     padding: 14,
-    borderRadius: 14,
+    borderRadius: radius.md,
     marginBottom: 10,
     overflow: "hidden",
   },
@@ -554,7 +538,7 @@ const s = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 14,
+    borderRadius: radius.pill,
     borderWidth: 1,
   },
   markAcceptText: {
@@ -576,10 +560,11 @@ const s = StyleSheet.create({
     flex: 1,
     minHeight: 40,
     maxHeight: 100,
-    borderRadius: 20,
+    borderRadius: radius.pill,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 8,
     fontSize: 13.5,
   },
 });
+
