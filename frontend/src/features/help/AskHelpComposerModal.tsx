@@ -116,14 +116,25 @@ export function AskHelpComposerModal({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={s.overlay}>
-        <View style={[s.container, { maxHeight: `85%`, paddingBottom: keyboardHeight }]}>
+        <View style={[s.container, { maxHeight: `85%`, paddingBottom: keyboardHeight, backgroundColor: colors.surface }]}>
+          {/* Drag handle */}
+          <View style={[s.grabber, { backgroundColor: colors.borderStrong }]} />
+
           {/* Header */}
           <Row style={s.header}>
-            <View>
-              <H2 style={s.modalTitle}>Ask for Academic Help</H2>
-              <Muted style={s.modalSubtitle}>
-                Step {step} of 3 · {step === 1 ? "Question details" : step === 2 ? "Academic topic" : "Urgency & target"}
-              </Muted>
+            <View style={{ flex: 1 }}>
+              <Row style={{ alignItems: "center", gap: 8 }}>
+                <View style={[s.headerIcon, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="help-circle-outline" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <H2 style={s.modalTitle}>Ask for Help</H2>
+                  <Muted style={s.modalSubtitle}>
+                    Step {step} of 3 ·{" "}
+                    {step === 1 ? "Question details" : step === 2 ? "Academic topic" : "Urgency & target"}
+                  </Muted>
+                </View>
+              </Row>
             </View>
             <Pressable
               onPress={() => {
@@ -131,25 +142,44 @@ export function AskHelpComposerModal({
                 resetForm();
               }}
               hitSlop={12}
+              style={[s.closeBtn, { backgroundColor: colors.surface2 }]}
             >
-              <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
+              <MaterialCommunityIcons name="close" size={20} color={colors.muted} />
             </Pressable>
           </Row>
 
-          {/* Step Indicator */}
-          <Row style={s.progressRow}>
-            {[1, 2, 3].map((sNum) => (
-              <View
-                key={sNum}
-                style={[
-                  s.progressBar,
-                  {
-                    backgroundColor: sNum <= step ? colors.primary : colors.divider,
-                  },
-                ]}
-              />
-            ))}
-          </Row>
+          {/* Step Indicator with labels */}
+          <View style={{ gap: 6, marginBottom: 16, marginTop: 4 }}>
+            <Row style={s.progressRow}>
+              {[1, 2, 3].map((sNum) => (
+                <View
+                  key={sNum}
+                  style={[
+                    s.progressBar,
+                    {
+                      backgroundColor: sNum <= step ? colors.primary : colors.divider,
+                    },
+                  ]}
+                />
+              ))}
+            </Row>
+            <Row style={{ justifyContent: "space-between" }}>
+              {["Question", "Context", "Post"].map((lbl, i) => (
+                <Text
+                  key={lbl}
+                  style={{
+                    fontSize: 10,
+                    fontWeight: step === i + 1 ? "700" : "500",
+                    color: step >= i + 1 ? colors.primary : colors.muted,
+                    flex: 1,
+                    textAlign: i === 0 ? "left" : i === 1 ? "center" : "right",
+                  }}
+                >
+                  {lbl}
+                </Text>
+              ))}
+            </Row>
+          </View>
 
           <ScrollView style={s.bodyScroll} contentContainerStyle={s.scrollContent}>
             {/* STEP 1: QUESTION */}
@@ -396,9 +426,30 @@ const s = StyleSheet.create({
     padding: 20,
     maxHeight: "85%",
   },
+  grabber: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 14,
+  },
+  headerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   header: {
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 8,
   },
   modalTitle: {

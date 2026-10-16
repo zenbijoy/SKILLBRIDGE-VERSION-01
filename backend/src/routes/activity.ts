@@ -2,8 +2,19 @@ import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { getStreakAnalytics } from "../services/streakService.js";
 
 export const activity = Router();
+
+// GET /api/v1/activity/streak - Real-time streak, usage breakdown & calendar tracking
+activity.get(
+  "/streak",
+  wrap(async (req, res) => {
+    const userId = req.userId!;
+    const analytics = await getStreakAnalytics(userId);
+    res.json(analytics);
+  }),
+);
 
 // GET /api/v1/activity - Paginated activity timeline
 activity.get(

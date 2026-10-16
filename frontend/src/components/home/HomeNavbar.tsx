@@ -11,7 +11,7 @@ import { useAppStore } from "@/state/useAppStore";
 type NotificationItem = { id: string; read_at?: string | null };
 
 export function HomeNavbar() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { t } = useI18n();
   const { cachedProfile } = useAppStore();
 
@@ -31,6 +31,13 @@ export function HomeNavbar() {
     refetchInterval: 60_000,
   });
   const pendingRequestsCount = connectionsQuery.data?.incoming?.length ?? 0;
+
+  const streakQuery = useQuery({
+    queryKey: ["activity-streak"],
+    queryFn: () => api<{ current_streak_days: number }>("/activity/streak"),
+    staleTime: 30_000,
+  });
+  const streakDays = streakQuery.data?.current_streak_days ?? 5;
 
   const initial = (cachedProfile?.full_name?.trim()?.[0] ?? "U").toUpperCase();
   const avatarUrl = cachedProfile?.avatar_url;
@@ -65,6 +72,29 @@ export function HomeNavbar() {
             <Text style={[s.avatarInitial, { color: colors.primary }]}>{initial}</Text>
           </View>
         )}
+      </Pressable>
+
+      {/* Top Fire Streak Badge Pill */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View Learning Streak & Usage"
+        onPress={() => {
+          triggerHaptic();
+          router.push("/streak" as any);
+        }}
+        style={({ pressed }) => [
+          s.streakPill,
+          {
+            backgroundColor: isDark ? "rgba(249, 115, 22, 0.16)" : "#FFF7ED",
+            borderColor: isDark ? "rgba(249, 115, 22, 0.35)" : "#FDBA74",
+            opacity: pressed ? 0.8 : 1,
+          },
+        ]}
+      >
+        <Text style={s.fireIcon}>🔥</Text>
+        <Text style={[s.streakText, { color: isDark ? "#FB923C" : "#EA580C" }]}>
+          {streakDays}d
+        </Text>
       </Pressable>
 
       {/* Center Left: Calendar Hub Icon Button */}
@@ -158,5 +188,21 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+  },
+  streakPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  fireIcon: {
+    fontSize: 13,
+  },
+  streakText: {
+    fontSize: 11.5,
+    fontWeight: "800",
   },
 });

@@ -26,12 +26,17 @@ export function StreakActivityWidget({ streakDays = 5 }: { streakDays?: number }
   const activeDayIndex = (new Date().getDay() + 6) % 7;
 
   return (
-    <View
-      style={[
+    <Pressable
+      onPress={() => {
+        triggerHaptic();
+        router.push("/streak" as any);
+      }}
+      style={({ pressed }) => [
         styles.widgetCard,
         {
           backgroundColor: isDark ? "#131926" : "#FFFFFF",
           borderColor: isDark ? "#1F293D" : "#E2E8F0",
+          opacity: pressed ? 0.9 : 1,
         },
       ]}
     >
@@ -85,7 +90,13 @@ export function StreakActivityWidget({ streakDays = 5 }: { streakDays?: number }
           );
         })}
       </View>
-    </View>
+
+      {/* Footer hint */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 8, borderTopWidth: 0.5, borderTopColor: isDark ? "#1F293D" : "#E2E8F0" }}>
+        <Text style={{ fontSize: 11, fontWeight: "600", color: "#F97316" }}>View full activity & time breakdown</Text>
+        <MaterialCommunityIcons name="chevron-right" size={16} color="#F97316" />
+      </View>
+    </Pressable>
   );
 }
 

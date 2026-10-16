@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { triggerHaptic } from "@/components/ui";
@@ -124,9 +125,18 @@ export function AnimatedGreeting({ name, mode, onDismiss }: AnimatedGreetingProp
 
           {/* Visual Interactive Status Chips instead of long text */}
           <View style={s.chipsRow}>
-            <View style={[s.statusChip, { backgroundColor: "rgba(249, 115, 22, 0.12)" }]}>
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#EA580C" }}>🔥 5-Day Streak</Text>
-            </View>
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                router.push("/streak" as any);
+              }}
+              style={({ pressed }) => [
+                s.statusChip,
+                { backgroundColor: "rgba(249, 115, 22, 0.12)", opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#EA580C" }}>🔥 Learning Streak</Text>
+            </Pressable>
             <View style={[s.statusChip, { backgroundColor: "rgba(59, 130, 246, 0.12)" }]}>
               <Text style={{ fontSize: 11, fontWeight: "700", color: "#2563EB" }}>⚡ Level 10</Text>
             </View>

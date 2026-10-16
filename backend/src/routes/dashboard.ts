@@ -5,6 +5,7 @@ import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { cacheDelPattern, cacheGet, cacheSet } from "../lib/redis.js";
 import { eitherColumnFilter } from "../lib/query-helpers.js";
+import { computeStreaksFromDates } from "../services/streakService.js";
 
 export const dashboard = Router();
 
@@ -150,6 +151,7 @@ dashboard.get(
       layoutQ,
       configsQ,
       flagsQ,
+      activityQ,
     ] = await Promise.all([
       admin.from("rooms").select("*").eq("visibility", "public").in("status", ["open", "scheduled", "live"]).order("created_at", { ascending: false }).limit(8),
       admin.rpc("recommend_people", { p_user_id: uid, p_limit: 6 }),
@@ -165,12 +167,15 @@ dashboard.get(
       admin.from("user_dashboard_layouts").select("preset, density, widgets").eq("user_id", uid).maybeSingle(),
       admin.from("dashboard_configs").select("widget_key,title_en,title_bn,default_order,is_required,is_enabled,target_roles,target_campus,min_app_version").order("default_order"),
       admin.from("feature_flags").select("key,is_enabled,rollout_percentage,target_roles").order("key"),
+      admin.from("user_activity_events").select("created_at").eq("user_id", uid).gte("created_at", new Date(Date.now() - 60 * 86400000).toISOString()).limit(60),
     ]);
 
     const firstError = [roomsQ, peopleQ, sessionsQ, eventsQ, researchQ, connectionsQ, taughtQ, attendedQ, profileQ, announcementsQ, dismissalsQ, layoutQ, configsQ, flagsQ]
       .map((query) => query.error)
       .find(Boolean);
     if (firstError) throw firstError;
+
+    const streakData = computeStreaksFromDates((activityQ.data || []).map((r: { created_at?: string }) => r.created_at || ""));
 
     const configs = ((configsQ.data?.length ? configsQ.data : DEFAULT_WIDGET_CONFIGS) ?? []) as DashboardConfigRow[];
     const widgets = resolveDashboardWidgets(
@@ -219,6 +224,7 @@ dashboard.get(
         connections: connectionsQ.count ?? 0,
         sessionsTaught: taughtQ.count ?? 0,
         sessionsAttended: attendedQ.count ?? 0,
+        streakDays: streakData.currentStreak,
       },
     };
 
