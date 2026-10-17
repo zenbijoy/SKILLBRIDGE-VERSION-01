@@ -36,6 +36,7 @@ type RoomMoreViewProps = {
   onOpenSettings?: () => void;
   onOpenMonitoringCenter?: () => void;
   onOpenKnockRequests?: () => void;
+  onOpenStudyPermissions?: () => void;
 };
 
 export function RoomMoreView({
@@ -54,6 +55,7 @@ export function RoomMoreView({
   onOpenSettings,
   onOpenMonitoringCenter,
   onOpenKnockRequests,
+  onOpenStudyPermissions,
 }: RoomMoreViewProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -450,6 +452,27 @@ export function RoomMoreView({
                 <Text style={[s.toolTitle, { color: colors.text }]}>Room Insights & Health</Text>
                 <Text style={[s.toolSub, { color: colors.muted }]}>
                   Active member metrics, engagement & contributors
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
+            </Pressable>
+          )}
+
+          {isOwner && onOpenStudyPermissions && (
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                onOpenStudyPermissions();
+              }}
+              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
+            >
+              <View style={[s.toolIcon, { backgroundColor: colors.primarySoft }]}>
+                <MaterialCommunityIcons name="shield-account-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[s.toolTitle, { color: colors.text }]}>{t("live.studyPermissionsTitle")}</Text>
+                <Text style={[s.toolSub, { color: colors.muted }]}>
+                  {t("live.studyPermissionsSub")}
                 </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />

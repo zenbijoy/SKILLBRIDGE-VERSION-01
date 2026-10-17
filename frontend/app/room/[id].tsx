@@ -24,12 +24,14 @@ import { RoomModerationCenter } from "@/features/room/more/RoomModerationCenter"
 import { RoomAnalyticsView } from "@/features/room/more/RoomAnalyticsView";
 import { RoomSettingsModal } from "@/features/room/more/RoomSettingsModal";
 import { RoomVoiceSheet } from "@/features/room/voice/RoomVoiceSheet";
-import { RoomVoiceBanner } from "@/features/room/voice/RoomVoiceBanner";
 import { useActiveRoomSession } from "@/features/room/voice/useActiveRoomSession";
+import { RoomLiveStrip } from "@/features/room/live/RoomLiveStrip";
+import { RoomStudyPermissionsModal } from "@/features/room/live/RoomStudyPermissionsModal";
 import { RoomKnockLobbyScreen } from "@/features/room/knock/RoomKnockLobbyScreen";
 import { RoomKnockRequestsModal } from "@/features/room/knock/RoomKnockRequestsModal";
 import { RoomMonitoringCenterModal } from "@/features/room/monitoring/RoomMonitoringCenterModal";
 import { getSocket } from "@/lib/socket";
+import { useI18n } from "@/i18n";
 
 type RoomDetailData = {
   room: Room;
@@ -53,6 +55,7 @@ type RoomDetailData = {
 export default function RoomDetailScreen() {
   const { id, openKnock } = useLocalSearchParams<{ id: string; openKnock?: string }>();
   const { colors } = useTheme();
+  const { t } = useI18n();
   const qc = useQueryClient();
   const { session } = useSession();
 
@@ -62,6 +65,7 @@ export default function RoomDetailScreen() {
   const [moderationCenterVisible, setModerationCenterVisible] = useState(false);
   const [analyticsVisible, setAnalyticsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [studyPermissionsVisible, setStudyPermissionsVisible] = useState(false);
   const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
   const voiceSession = useActiveRoomSession();
   const [knockRequestsVisible, setKnockRequestsVisible] = useState(false);
@@ -332,10 +336,9 @@ export default function RoomDetailScreen() {
           onToggleRolePreview={handleToggleRolePreview}
         />
         <View style={[s.previewCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[s.previewTitle, { color: colors.text }]}>Vit relevant preview</Text>
+          <Text style={[s.previewTitle, { color: colors.text }]}>{t("room.previewTitle")}</Text>
           <Text style={[s.previewSub, { color: colors.muted }]}>
-            Join korle full posts, chat, live class pabe. Ekhon top {data.preview?.topPosts?.length ?? 0} ta
-            popular post + {data.preview?.questionsCount ?? 0} ta Q&A dekhte parcho.
+            {t("room.previewSubtitle")}
           </Text>
           {(data.preview?.topPosts ?? []).map((p) => (
             <View key={p.id} style={[s.previewPost, { backgroundColor: colors.surface2 }]}>
@@ -350,8 +353,10 @@ export default function RoomDetailScreen() {
           <Pressable
             onPress={() => joinMutation.mutate()}
             style={[s.previewJoin, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel={t("room.joinToParticipate")}
           >
-            <Text style={s.previewJoinTxt}>Join Room — full access pao</Text>
+            <Text style={s.previewJoinTxt}>{t("room.joinToParticipate")}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -400,15 +405,14 @@ export default function RoomDetailScreen() {
         onToggleRolePreview={handleToggleRolePreview}
       />
 
-      {/* Voice Presence Banner (persistent when room voice room active) */}
-      <RoomVoiceBanner
+      {/* 2. ONE LIVE STRIP (Replacing RoomVoiceBanner & duplicate audio/video buttons) */}
+      <RoomLiveStrip
         roomId={room.id}
         roomTitle={room.title}
-        memberCount={room.member_count}
-        onPress={() => {
-          triggerHaptic();
-          setVoiceSheetVisible(true);
-        }}
+        isMember={isMember}
+        isOwner={permissions.isOwner}
+        onOpenStudyPermissions={() => setStudyPermissionsVisible(true)}
+        onOpenScheduleStudy={() => setActiveTab("learn")}
       />
 
       {/* Real-time Knock Waiting Banner for Room Admins & Educators */}
@@ -523,6 +527,7 @@ export default function RoomDetailScreen() {
             onOpenSettings={() => setSettingsVisible(true)}
             onOpenKnockRequests={() => setKnockRequestsVisible(true)}
             onOpenMonitoringCenter={() => setMonitoringVisible(true)}
+            onOpenStudyPermissions={() => setStudyPermissionsVisible(true)}
           />
         )}
       </View>
@@ -609,6 +614,13 @@ export default function RoomDetailScreen() {
         roomId={room.id}
         isHost={isEducator}
         onClose={() => setMonitoringVisible(false)}
+      />
+
+      {/* Study Session Permissions Manager */}
+      <RoomStudyPermissionsModal
+        visible={studyPermissionsVisible}
+        roomId={room.id}
+        onClose={() => setStudyPermissionsVisible(false)}
       />
     </SafeAreaView>
   );

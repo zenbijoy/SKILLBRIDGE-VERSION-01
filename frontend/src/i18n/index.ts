@@ -556,6 +556,15 @@ const en: Dictionary = {
   "room.previewQuestions": "Active Questions & Answers",
   "room.joinToParticipate": "Join Space to Participate",
 
+  // Study Session Permissions Manager
+  "live.studyPermissionsTitle": "Study Session Permissions",
+  "live.studyPermissionsSub": "Allow specific members to create and schedule study sessions in this room.",
+  "live.searchMembers": "Search room members...",
+  "live.grantPermission": "Grant Permission",
+  "live.revokePermission": "Revoke Permission",
+  "live.permissionGrantedSuccess": "Permission updated successfully",
+  "live.noMembersFound": "No matching room members found",
+
   // Tools screen
   "tools.searchPlaceholder": "Search tools, hubs & directories...",
   "tools.viewProfile": "Profile →",
@@ -1440,6 +1449,15 @@ const bn: Dictionary = {
   "room.previewTopPosts": "জনপ্রিয় পোস্ট ও আলোচনা",
   "room.previewQuestions": "সক্রিয় প্রশ্নোত্তর",
   "room.joinToParticipate": "অংশ নিতে রুমে যোগ দিন",
+
+  // Study Session Permissions Manager
+  "live.studyPermissionsTitle": "স্টাডি সেশন পারমিশন",
+  "live.studyPermissionsSub": "এই রুমে সদস্যদের স্টাডি সেশন তৈরি ও শিডিউল করার অনুমতি দিন।",
+  "live.searchMembers": "রুমের সদস্য খুঁজুন...",
+  "live.grantPermission": "অনুমতি প্রদান",
+  "live.revokePermission": "অনুমতি প্রত্যাহার",
+  "live.permissionGrantedSuccess": "পারমিশন সফলভাবে আপডেট হয়েছে",
+  "live.noMembersFound": "কোনো সদস্য পাওয়া যায়নি",
 
   // Tools screen
   "tools.searchPlaceholder": "টুলস, হাব এবং ডিরেক্টরি খুঁজুন...",
