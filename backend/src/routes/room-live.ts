@@ -135,98 +135,129 @@ export async function checkStudySessionPermission(
   return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. GET /api/v1/rooms/:id/live/status
-// Comprehensive status of live open and study sessions in this room.
-// ─────────────────────────────────────────────────────────────────────────────
-roomLive.get(
-  "/:id/live/status",
-  wrap(async (req: Request, res: Response) => {
-    const roomId = z.string().uuid().parse(req.params.id);
-    const userId = req.userId!;
+export async function getAllRoomMemberIds(
+  roomId: string,
+  excludeUserId?: string,
+): Promise<string[]> {
+  const memberIds: string[] = [];
+  const pageSize = 1000;
+  let from = 0;
+  let hasMore = true;
 
-    const { isMember, role, isOwner } = await getRoomMembership(roomId, userId);
-
-    // 1. Fetch active open session
-    const { data: openSession } = await admin
-      .from("room_open_sessions")
-      .select("id, room_id, media, status, started_by, host_id, livekit_room, started_at, last_empty_at")
+  while (hasMore) {
+    let query = admin
+      .from("room_members")
+      .select("user_id")
       .eq("room_id", roomId)
-      .eq("status", "live")
-      .maybeSingle();
+      .range(from, from + pageSize - 1);
 
-    let openSessionPayload = null;
-    if (openSession) {
-      // Fetch active participants up to 12
-      const { data: activeParticipants } = await admin
-        .from("room_open_participants")
-        .select("user_id, joined_at, is_host")
-        .eq("session_id", openSession.id)
-        .is("left_at", null)
-        .order("joined_at", { ascending: true })
-        .limit(12);
-
-      const userIds = (activeParticipants || []).map((p) => p.user_id);
-      let profilesMap = new Map<string, { full_name: string | null; username: string | null; avatar_url: string | null }>();
-
-      if (userIds.length > 0) {
-        const { data: profiles } = await admin
-          .from("profiles")
-          .select("id, full_name, username, avatar_url")
-          .in("id", userIds);
-
-        for (const pr of profiles || []) {
-          profilesMap.set(pr.id, pr);
-        }
-      }
-
-      const { count: totalParticipants } = await admin
-        .from("room_open_participants")
-        .select("user_id", { count: "exact", head: true })
-        .eq("session_id", openSession.id)
-        .is("left_at", null);
-
-      openSessionPayload = {
-        id: openSession.id,
-        roomId: openSession.room_id,
-        media: openSession.media as "audio" | "video",
-        status: openSession.status,
-        hostId: openSession.host_id,
-        startedBy: openSession.started_by,
-        startedAt: openSession.started_at,
-        participantCount: totalParticipants ?? activeParticipants?.length ?? 0,
-        participants: (activeParticipants || []).map((p) => {
-          const profile = profilesMap.get(p.user_id);
-          return {
-            userId: p.user_id,
-            fullName: profile?.full_name || null,
-            username: profile?.username || null,
-            avatarUrl: profile?.avatar_url || null,
-            isHost: p.is_host,
-          };
-        }),
-      };
+    if (excludeUserId) {
+      query = query.neq("user_id", excludeUserId);
     }
 
-    // 2. Fetch live or next scheduled study session
-    const { data: studySessions } = await admin
-      .from("sessions")
-      .select("id, room_id, title, media, status, teacher_id, starts_at, ends_at")
-      .eq("room_id", roomId)
-      .in("status", ["live", "scheduled"])
-      .order("starts_at", { ascending: true })
-      .limit(1);
+    const { data, error } = await query;
+    if (error || !data || data.length === 0) {
+      break;
+    }
 
-    const studySession = studySessions?.[0] || null;
+    for (const row of data) {
+      memberIds.push(row.user_id);
+    }
 
-    // Study window is active if study session is live or scheduled within next 2 minutes
-    const twoMinutesFromNow = new Date(Date.now() + 2 * 60 * 1000);
-    const studyWindowActive = Boolean(
-      studySession &&
-        (studySession.status === "live" ||
-          (studySession.status === "scheduled" && new Date(studySession.starts_at) <= twoMinutesFromNow)),
-    );
+    if (data.length < pageSize) {
+      hasMore = false;
+    } else {
+      from += pageSize;
+    }
+  }
 
+  return memberIds;
+}
+
+export async function getRoomLiveStatusPayload(roomId: string, userId?: string) {
+  // 1. Fetch active open session
+  const { data: openSession } = await admin
+    .from("room_open_sessions")
+    .select("id, room_id, media, status, started_by, host_id, livekit_room, started_at, last_empty_at")
+    .eq("room_id", roomId)
+    .eq("status", "live")
+    .maybeSingle();
+
+  let openSessionPayload = null;
+  if (openSession) {
+    // Fetch active participants up to 12
+    const { data: activeParticipants } = await admin
+      .from("room_open_participants")
+      .select("user_id, joined_at, is_host")
+      .eq("session_id", openSession.id)
+      .is("left_at", null)
+      .order("joined_at", { ascending: true })
+      .limit(12);
+
+    const userIds = (activeParticipants || []).map((p) => p.user_id);
+    let profilesMap = new Map<string, { full_name: string | null; username: string | null; avatar_url: string | null }>();
+
+    if (userIds.length > 0) {
+      const { data: profiles } = await admin
+        .from("profiles")
+        .select("id, full_name, username, avatar_url")
+        .in("id", userIds);
+
+      for (const pr of profiles || []) {
+        profilesMap.set(pr.id, pr);
+      }
+    }
+
+    const { count: totalParticipants } = await admin
+      .from("room_open_participants")
+      .select("user_id", { count: "exact", head: true })
+      .eq("session_id", openSession.id)
+      .is("left_at", null);
+
+    openSessionPayload = {
+      id: openSession.id,
+      roomId: openSession.room_id,
+      media: openSession.media as "audio" | "video",
+      status: openSession.status,
+      hostId: openSession.host_id,
+      startedBy: openSession.started_by,
+      startedAt: openSession.started_at,
+      participantCount: totalParticipants ?? activeParticipants?.length ?? 0,
+      participants: (activeParticipants || []).map((p) => {
+        const profile = profilesMap.get(p.user_id);
+        return {
+          userId: p.user_id,
+          fullName: profile?.full_name || null,
+          username: profile?.username || null,
+          avatarUrl: profile?.avatar_url || null,
+          isHost: p.is_host,
+        };
+      }),
+    };
+  }
+
+  // 2. Fetch live or next scheduled study session
+  const { data: studySessions } = await admin
+    .from("sessions")
+    .select("id, room_id, title, media, status, teacher_id, starts_at, ends_at")
+    .eq("room_id", roomId)
+    .in("status", ["live", "scheduled"])
+    .order("starts_at", { ascending: true })
+    .limit(1);
+
+  const studySession = studySessions?.[0] || null;
+
+  // Study window is active if study session is live or scheduled within next 2 minutes
+  const twoMinutesFromNow = new Date(Date.now() + 2 * 60 * 1000);
+  const studyWindowActive = Boolean(
+    studySession &&
+      (studySession.status === "live" ||
+        (studySession.status === "scheduled" && new Date(studySession.starts_at) <= twoMinutesFromNow)),
+  );
+
+  let mePayload = null;
+  if (userId) {
+    const { isMember, role, isOwner } = await getRoomMembership(roomId, userId);
     const canStartStudy = await checkStudySessionPermission(roomId, userId);
 
     let canStartOpen = false;
@@ -246,34 +277,73 @@ roomLive.get(
       isMember && (openSessionPayload || (studySession && (studySession.status === "live" || canStartStudy))),
     );
 
-    res.json({
-      openSession: openSessionPayload,
-      studySession: studySession
-        ? {
-            id: studySession.id,
-            title: studySession.title,
-            media: studySession.media as "audio" | "video",
-            status: studySession.status,
-            teacherId: studySession.teacher_id,
-            startsAt: studySession.starts_at,
-            endsAt: studySession.ends_at,
-          }
-        : null,
-      studyWindow: {
-        active: studyWindowActive,
-        startsAt: studySession?.starts_at || null,
-        endsAt: studySession?.ends_at || null,
-      },
-      me: {
-        canStartOpen,
-        canStartStudy,
-        canJoin,
-        isMember,
-        isOwner,
-        role,
-        reason,
-      },
+    mePayload = {
+      canStartOpen,
+      canStartStudy,
+      canJoin,
+      isMember,
+      isOwner,
+      role,
+      reason,
+    };
+  }
+
+  return {
+    openSession: openSessionPayload,
+    studySession: studySession
+      ? {
+          id: studySession.id,
+          title: studySession.title,
+          media: studySession.media as "audio" | "video",
+          status: studySession.status,
+          teacherId: studySession.teacher_id,
+          startsAt: studySession.starts_at,
+          endsAt: studySession.ends_at,
+        }
+      : null,
+    studyWindow: {
+      active: studyWindowActive,
+      startsAt: studySession?.starts_at || null,
+      endsAt: studySession?.ends_at || null,
+    },
+    participantCount: openSessionPayload?.participantCount || 0,
+    participants: openSessionPayload?.participants || [],
+    hostId: openSessionPayload?.hostId || null,
+    media: openSessionPayload?.media || (studySession?.status === "live" ? (studySession.media as "audio" | "video") : null),
+    me: mePayload,
+  };
+}
+
+export async function broadcastRoomLiveStatus(roomId: string): Promise<void> {
+  const io = getSocketServer();
+  if (!io) return;
+  try {
+    const payload = await getRoomLiveStatusPayload(roomId);
+    io.to(roomPresenceRoom(roomId)).emit("room:live:status", payload);
+    io.emit("room:live:feed", {
+      roomId,
+      isLive: Boolean(payload.openSession || payload.studySession?.status === "live"),
+      media: payload.media,
+      kind: payload.studySession?.status === "live" ? "study" : (payload.openSession ? "open" : null),
+      participantCount: payload.participantCount,
     });
+  } catch (err) {
+    logger.warn({ err: (err as Error).message, roomId }, "Failed to broadcast room:live:status");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. GET /api/v1/rooms/:id/live/status
+// Comprehensive status of live open and study sessions in this room.
+// ─────────────────────────────────────────────────────────────────────────────
+roomLive.get(
+  "/:id/live/status",
+  wrap(async (req: Request, res: Response) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const userId = req.userId!;
+
+    const payload = await getRoomLiveStatusPayload(roomId, userId);
+    res.json(payload);
   }),
 );
 
@@ -410,22 +480,21 @@ roomLive.post(
           const canSend = await canDispatchRoomNotification(roomId);
           if (!canSend) return;
 
-          const [{ data: roomData }, { data: members }] = await Promise.all([
+          const [{ data: roomData }, memberIds] = await Promise.all([
             admin.from("rooms").select("title").eq("id", roomId).maybeSingle(),
-            // Paginate through ALL room members (no 50 cap)
-            admin.from("room_members").select("user_id").eq("room_id", roomId).neq("user_id", userId),
+            getAllRoomMemberIds(roomId, userId),
           ]);
 
           const roomTitle = roomData?.title || "Learning Space";
           const mediaLabel = result.media === "audio" ? "Audio Room" : "Video Session";
 
-          const memberList = Array.isArray(members) ? members : [];
-          for (const member of memberList) {
+          for (const memberId of memberIds) {
             void NotificationService.dispatch({
-              userId: member.user_id,
+              userId: memberId,
               type: "ROOM_LIVE_OPEN_STARTED",
               title: `Live ${mediaLabel} Started 🎙️`,
               body: `${participantName} started an open ${result.media} session in "${roomTitle}". Tap to join!`,
+              priority: "high",
               entityType: "room",
               entityId: roomId,
               data: {
@@ -446,6 +515,8 @@ roomLive.post(
         media: result.media,
       });
     }
+
+    void broadcastRoomLiveStatus(roomId);
 
     res.json({
       session: {
@@ -512,6 +583,17 @@ roomLive.post(
         p_session_id: openSession.id,
         p_user_id: userId,
       });
+
+      const io = getSocketServer();
+      if (io) {
+        io.to(roomPresenceRoom(roomId)).emit("room:live:participants", {
+          roomId,
+          sessionId: openSession.id,
+          action: "joined",
+          userId,
+        });
+      }
+      void broadcastRoomLiveStatus(roomId);
 
       const { data: profile } = await admin
         .from("profiles")
@@ -687,6 +769,8 @@ roomLive.post(
       });
     }
 
+    void broadcastRoomLiveStatus(roomId);
+
     res.json({ success: true, ...result });
   }),
 );
@@ -749,6 +833,7 @@ roomLive.post(
         });
       }
 
+      void broadcastRoomLiveStatus(roomId);
       void audit(userId, "room:open_session_ended", "room_open_session", sessionId, { roomId });
       return res.json({ success: true, endedSessionId: sessionId });
     }
@@ -790,6 +875,7 @@ roomLive.post(
         });
       }
 
+      void broadcastRoomLiveStatus(roomId);
       void audit(userId, "room:study_session_ended", "session", sessionId, { roomId });
       return res.json({ success: true, endedSessionId: sessionId });
     }
@@ -914,18 +1000,18 @@ roomLive.post(
       // Notify room members
       void (async () => {
         try {
-          const [{ data: roomData }, { data: members }] = await Promise.all([
+          const [{ data: roomData }, memberIds] = await Promise.all([
             admin.from("rooms").select("title").eq("id", roomId).maybeSingle(),
-            admin.from("room_members").select("user_id").eq("room_id", roomId).neq("user_id", userId),
+            getAllRoomMemberIds(roomId, userId),
           ]);
           const roomTitle = roomData?.title || "Study Room";
-          const memberList = Array.isArray(members) ? members : [];
-          for (const m of memberList) {
+          for (const memberId of memberIds) {
             void NotificationService.dispatch({
-              userId: m.user_id,
+              userId: memberId,
               type: "ROOM_STUDY_STARTED",
               title: "Study Session Live 🎓",
               body: `"${result.title}" has started in ${roomTitle}. Tap to join!`,
+              priority: "high",
               entityType: "room",
               entityId: roomId,
               data: {
@@ -938,6 +1024,7 @@ roomLive.post(
         } catch {}
       })();
 
+      void broadcastRoomLiveStatus(roomId);
       void audit(userId, "room:study_session_started_now", "session", result.session_id, { roomId, title: result.title });
       return res.status(201).json({ session: result });
     }
@@ -962,6 +1049,7 @@ roomLive.post(
 
     if (insertErr) throw insertErr;
 
+    void broadcastRoomLiveStatus(roomId);
     void audit(userId, "room:study_session_scheduled", "session", newSession.id, { roomId, title: body.title, startsAt });
     res.status(201).json({ session: newSession });
   }),
@@ -1012,6 +1100,7 @@ roomLive.patch(
       .single();
 
     if (error) throw error;
+    void broadcastRoomLiveStatus(roomId);
     res.json({ session: updated });
   }),
 );
@@ -1044,6 +1133,7 @@ roomLive.delete(
       await client.deleteRoom(`skillbridge-session-${sessionId}`).catch(() => {});
     }
 
+    void broadcastRoomLiveStatus(roomId);
     res.json({ success: true, cancelledSessionId: sessionId });
   }),
 );
@@ -1125,6 +1215,7 @@ roomLive.put(
       } catch {}
     })();
 
+    void broadcastRoomLiveStatus(roomId);
     void audit(userId, "room:study_permission_granted", "room_study_permission", targetUserId, { roomId });
     res.json({ success: true, permission: perm });
   }),
@@ -1150,6 +1241,7 @@ roomLive.delete(
 
     if (error) throw error;
 
+    void broadcastRoomLiveStatus(roomId);
     void audit(userId, "room:study_permission_revoked", "room_study_permission", targetUserId, { roomId });
     res.json({ success: true });
   }),

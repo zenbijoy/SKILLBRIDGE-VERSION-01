@@ -175,6 +175,7 @@ export class NotificationService {
         title: event.title,
         body: event.body,
         data: payloadData,
+        priority: (event.priority === "urgent" || event.priority === "high") ? "high" : "normal",
       });
 
       logDomainEvent({

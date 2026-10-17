@@ -1,7 +1,11 @@
 import { admin } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { getSocketServer, roomPresenceRoom } from "../socket.js";
-import { getRoomServiceClient } from "../routes/room-live.js";
+import {
+  getRoomServiceClient,
+  getAllRoomMemberIds,
+  broadcastRoomLiveStatus,
+} from "../routes/room-live.js";
 import { NotificationService } from "../services/notificationService.js";
 
 const WORKER_INTERVAL_MS = 15_000;
@@ -91,17 +95,18 @@ export function startRoomLiveWorker(): { stop: () => void } | null {
           // Push notifications to room members
           void (async () => {
             try {
-              const [{ data: roomData }, { data: members }] = await Promise.all([
+              const [{ data: roomData }, memberIds] = await Promise.all([
                 admin.from("rooms").select("title").eq("id", session.room_id).maybeSingle(),
-                admin.from("room_members").select("user_id").eq("room_id", session.room_id).neq("user_id", session.teacher_id),
+                getAllRoomMemberIds(session.room_id, session.teacher_id),
               ]);
               const roomTitle = roomData?.title || "Study Space";
-              for (const m of members || []) {
+              for (const memberId of memberIds) {
                 void NotificationService.dispatch({
-                  userId: m.user_id,
+                  userId: memberId,
                   type: "ROOM_STUDY_STARTED",
                   title: "Study Session Started 🎓",
                   body: `"${session.title}" has started in ${roomTitle}. Tap to join!`,
+                  priority: "high",
                   entityType: "room",
                   entityId: session.room_id,
                   data: {
@@ -113,6 +118,8 @@ export function startRoomLiveWorker(): { stop: () => void } | null {
               }
             } catch {}
           })();
+
+          void broadcastRoomLiveStatus(session.room_id);
 
           logger.info(
             { event: "scheduled_study_session_started", sessionId: session.id, roomId: session.room_id },
@@ -155,6 +162,8 @@ export function startRoomLiveWorker(): { stop: () => void } | null {
               isLive: false,
             });
           }
+
+          void broadcastRoomLiveStatus(session.room_id);
 
           logger.info({ event: "study_session_ended_at_cutoff", sessionId: session.id }, "Completed study session at ends_at");
         }
@@ -203,6 +212,8 @@ export function startRoomLiveWorker(): { stop: () => void } | null {
                 isLive: false,
               });
             }
+
+            void broadcastRoomLiveStatus(eos.room_id);
 
             logger.info(
               { event: "empty_open_session_ended_grace", sessionId: eos.id, roomId: eos.room_id },
@@ -268,6 +279,7 @@ export function startRoomLiveWorker(): { stop: () => void } | null {
                     newHostId: leaveRes.new_host_id,
                   });
                 }
+                void broadcastRoomLiveStatus(session.room_id);
               }
             }
           } catch (lkErr) {

@@ -7,6 +7,7 @@ import {
   filterVisiblePresence,
   updateUserPrivacySettings,
 } from "./services/privacyService.js";
+import { getRoomLiveStatusPayload } from "./routes/room-live.js";
 
 /**
  * Lightweight real-time presence bus.
@@ -228,7 +229,15 @@ export function setupSocket(io: SocketServer) {
         return;
       }
 
-      // Send the authoritative snapshot immediately so the client never renders "0".
+      // Send the authoritative room:live:status snapshot immediately
+      try {
+        const liveStatus = await getRoomLiveStatusPayload(roomId, socket.data.userId);
+        socket.emit("room:live:status", liveStatus);
+      } catch (e) {
+        logger.warn({ err: (e as Error).message, roomId }, "Failed to compute room:live:status snapshot");
+      }
+
+      // Send the legacy room:presence snapshot so existing clients never break
       const { data: liveSession } = await admin
         .from("sessions")
         .select("id")
@@ -293,7 +302,7 @@ export function setupSocket(io: SocketServer) {
       }
     });
 
-    // ── Voice lounge real-time room subscribers & state sync ──────────────
+    // ── Voice lounge real-time room subscribers & state sync (Shimmed for legacy clients) ──
     socket.on("room:voice:join", async (payload: any) => {
       const roomId = payload?.roomId || payload?.room_id;
       if (typeof roomId !== "string") return;
@@ -308,24 +317,43 @@ export function setupSocket(io: SocketServer) {
       const voiceRoom = `room:${roomId}:voice`;
       socket.join(voiceRoom);
 
+      // Query active open session participant count authoritatively from DB (no Redis requirement)
+      let count = 0;
+      const { data: openSession } = await admin
+        .from("room_open_sessions")
+        .select("id")
+        .eq("room_id", roomId)
+        .eq("status", "live")
+        .maybeSingle();
+
+      if (openSession) {
+        const { count: c } = await admin
+          .from("room_open_participants")
+          .select("user_id", { count: "exact", head: true })
+          .eq("session_id", openSession.id)
+          .is("left_at", null);
+        count = c ?? 0;
+      }
+
+      // Best effort Redis cache update if available
       if (redis) {
         try {
           await redis.sadd(`room:${roomId}:voice_users`, socket.data.userId);
-          await redis.expire(`room:${roomId}:voice_users`, 86400);
-          const count = await redis.scard(`room:${roomId}:voice_users`);
-          io.to(voiceRoom).emit("room:voice:updated", {
-            roomId,
-            userId: socket.data.userId,
-            action: "joined",
-            participantCount: count,
-          });
-          io.to(roomPresenceRoom(roomId)).emit("room:voice:status", {
-            roomId,
-            active: count > 0,
-            participantCount: count,
-          });
+          await redis.expire(`room:${roomId}:voice_users`, 3600);
         } catch {}
       }
+
+      io.to(voiceRoom).emit("room:voice:updated", {
+        roomId,
+        userId: socket.data.userId,
+        action: "joined",
+        participantCount: Math.max(1, count),
+      });
+      io.to(roomPresenceRoom(roomId)).emit("room:voice:status", {
+        roomId,
+        active: true,
+        participantCount: Math.max(1, count),
+      });
     });
 
     socket.on("room:voice:leave", async (payload: any) => {
@@ -334,23 +362,40 @@ export function setupSocket(io: SocketServer) {
       const voiceRoom = `room:${roomId}:voice`;
       socket.leave(voiceRoom);
 
+      let count = 0;
+      const { data: openSession } = await admin
+        .from("room_open_sessions")
+        .select("id")
+        .eq("room_id", roomId)
+        .eq("status", "live")
+        .maybeSingle();
+
+      if (openSession) {
+        const { count: c } = await admin
+          .from("room_open_participants")
+          .select("user_id", { count: "exact", head: true })
+          .eq("session_id", openSession.id)
+          .is("left_at", null);
+        count = c ?? 0;
+      }
+
       if (redis) {
         try {
           await redis.srem(`room:${roomId}:voice_users`, socket.data.userId);
-          const count = await redis.scard(`room:${roomId}:voice_users`);
-          io.to(voiceRoom).emit("room:voice:updated", {
-            roomId,
-            userId: socket.data.userId,
-            action: "left",
-            participantCount: count,
-          });
-          io.to(roomPresenceRoom(roomId)).emit("room:voice:status", {
-            roomId,
-            active: count > 0,
-            participantCount: count,
-          });
         } catch {}
       }
+
+      io.to(voiceRoom).emit("room:voice:updated", {
+        roomId,
+        userId: socket.data.userId,
+        action: "left",
+        participantCount: count,
+      });
+      io.to(roomPresenceRoom(roomId)).emit("room:voice:status", {
+        roomId,
+        active: count > 0,
+        participantCount: count,
+      });
     });
 
     socket.on("room:voice:state", (payload: any) => {

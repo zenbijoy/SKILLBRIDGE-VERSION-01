@@ -7,6 +7,7 @@ import { wrap } from "../middleware/error.js";
 import { logger } from "../lib/logger.js";
 import { broadcastRoomPresence, getSocketServer, roomPresenceRoom } from "../socket.js";
 import { NotificationService } from "../services/notificationService.js";
+import { broadcastRoomLiveStatus } from "./room-live.js";
 
 export const live = Router();
 export const liveWebhooks = Router();
@@ -106,6 +107,7 @@ liveWebhooks.post("/", wrap(async (req, res) => {
               userId: event.participant.identity,
             });
           }
+          void broadcastRoomLiveStatus(meta.roomId);
         }
       }
     } else if (meta.sessionId && event.participant?.identity) {
@@ -159,6 +161,7 @@ liveWebhooks.post("/", wrap(async (req, res) => {
               remainingParticipants: leaveRes?.remaining_participants ?? 0,
             });
           }
+          void broadcastRoomLiveStatus(meta.roomId);
         }
       }
     } else if (meta.sessionId && event.participant?.identity) {
@@ -214,6 +217,7 @@ liveWebhooks.post("/", wrap(async (req, res) => {
               isLive: false,
             });
           }
+          void broadcastRoomLiveStatus(updated.room_id);
         }
       }
     } else if (roomName.startsWith(sessionPrefix)) {

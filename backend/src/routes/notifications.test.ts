@@ -124,9 +124,54 @@ test("Next-Gen Notification System Verification Suite", async (t) => {
       entityId: "club-xyz",
     });
 
+    // Dispatch ROOM_LIVE_OPEN_STARTED notification
+    await NotificationService.dispatch({
+      userId: "user-member-789",
+      type: "ROOM_LIVE_OPEN_STARTED",
+      title: "Live Audio Room Started 🎙️",
+      body: "An open audio session started.",
+      priority: "high",
+      entityType: "room",
+      entityId: "room-abc",
+      data: { roomId: "room-abc", openSessionId: "open-123", media: "audio" },
+    });
+
     assert.ok(socketDispatched);
-    assert.strictEqual(socketDispatched.payload.kind, "system");
-    assert.strictEqual(socketDispatched.payload.data.url, "/club/club-xyz");
+    assert.strictEqual(socketDispatched.payload.kind, "rooms");
+    assert.strictEqual(socketDispatched.payload.priority, "high");
+    assert.strictEqual(socketDispatched.payload.data.url, "/room/room-abc");
+
+    // Dispatch ROOM_STUDY_STARTED notification
+    await NotificationService.dispatch({
+      userId: "user-member-789",
+      type: "ROOM_STUDY_STARTED",
+      title: "Study Session Started 🎓",
+      body: "Exam prep has started.",
+      priority: "high",
+      entityType: "room",
+      entityId: "room-abc",
+      data: { roomId: "room-abc", studySessionId: "study-123" },
+    });
+
+    assert.ok(socketDispatched);
+    assert.strictEqual(socketDispatched.payload.kind, "sessions");
+    assert.strictEqual(socketDispatched.payload.priority, "high");
+    assert.strictEqual(socketDispatched.payload.data.url, "/room/room-abc");
+
+    // Dispatch ROOM_STUDY_PERMISSION_GRANTED notification
+    await NotificationService.dispatch({
+      userId: "user-member-789",
+      type: "ROOM_STUDY_PERMISSION_GRANTED",
+      title: "Study Permission Granted 🎓",
+      body: "You can now host study sessions.",
+      entityType: "room",
+      entityId: "room-abc",
+      data: { roomId: "room-abc" },
+    });
+
+    assert.ok(socketDispatched);
+    assert.strictEqual(socketDispatched.payload.kind, "rooms");
+    assert.strictEqual(socketDispatched.payload.data.url, "/room/room-abc");
 
     globalThis.fetch = origFetch;
   });
