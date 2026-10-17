@@ -1,3 +1,4 @@
+import "@/lib/livekit-init";
 import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +18,7 @@ import { TourOverlay } from "@/features/tour/TourOverlay";
 import { IncomingCallModal } from "@/features/calls/components/IncomingCallModal";
 import { ActiveCallBanner } from "@/features/calls/components/ActiveCallBanner";
 import { AppPermissionsModal } from "@/features/permissions/AppPermissionsModal";
+import { LiveSessionHost } from "@/features/room/live/LiveSessionHost";
 import { useI18n } from "@/i18n";
 import { SkillBridgeLoader } from "@/components/ui";
 import { AutoHideNavigationProvider } from "@/navigation/AutoHideNavigationContext";
@@ -240,6 +242,7 @@ function Gate() {
       <TourOverlay />
       <IncomingCallModal />
       <ActiveCallBanner />
+      <LiveSessionHost />
       <AppPermissionsModal />
     </TourProvider>
   );

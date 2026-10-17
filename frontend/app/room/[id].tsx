@@ -589,8 +589,6 @@ export default function RoomDetailScreen() {
         isHostOrMod={permissions.isOwner || permissions.canModerate}
         onClose={() => {
           setVoiceSheetVisible(false);
-          // Stop LiveKit audio bridge when user dismisses without clicking Leave
-          voiceSession.leaveVoiceSession();
         }}
       />
 

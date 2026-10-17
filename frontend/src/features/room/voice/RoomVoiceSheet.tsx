@@ -15,7 +15,6 @@ import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useActiveRoomSession } from "./useActiveRoomSession";
-import { VoiceAudioBridge } from "./VoiceAudioBridge";
 
 type RoomVoiceSheetProps = {
   visible: boolean;
@@ -52,13 +51,6 @@ export function RoomVoiceSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      {session.isVoiceActive && session.livekitUrl && session.livekitToken ? (
-        <VoiceAudioBridge
-          url={session.livekitUrl}
-          token={session.livekitToken}
-          isMuted={session.isMuted}
-        />
-      ) : null}
       <Pressable style={s.backdrop} onPress={onClose}>
         <Pressable style={[s.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
           <View style={s.handle} />
@@ -204,7 +196,7 @@ export function RoomVoiceSheet({
             <Pressable
               onPress={() => {
                 triggerHaptic();
-                // leaveVoiceSession is called by onClose in the parent
+                session.leaveVoiceSession();
                 onClose();
               }}
               style={[s.controlBtn, { backgroundColor: colors.danger, borderColor: colors.danger }]}

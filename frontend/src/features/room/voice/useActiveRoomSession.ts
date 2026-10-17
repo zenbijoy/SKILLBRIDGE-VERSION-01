@@ -11,15 +11,26 @@ export type VoiceParticipant = {
   role?: string;
 };
 
-interface ActiveRoomSessionState {
+export type VoiceSessionStatus =
+  | "idle"
+  | "requesting"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "ended"
+  | "failed";
+
+export interface ActiveRoomSessionState {
   activeRoomId: string | null;
   activeRoomTitle: string | null;
+  status: VoiceSessionStatus;
   isVoiceActive: boolean;
   isMuted: boolean;
   isSpeakerOn: boolean;
   livekitToken: string | null;
   livekitUrl: string | null;
   participants: VoiceParticipant[];
+  error: string | null;
   
   // Actions
   joinVoiceSession: (roomId: string, roomTitle: string) => Promise<void>;
@@ -27,42 +38,77 @@ interface ActiveRoomSessionState {
   toggleMute: () => void;
   toggleSpeaker: () => void;
   setParticipants: (participants: VoiceParticipant[]) => void;
+  onConnected: () => void;
+  onDisconnected: (reason?: string) => void;
 }
 
 export const useActiveRoomSession = create<ActiveRoomSessionState>((set, get) => ({
   activeRoomId: null,
   activeRoomTitle: null,
+  status: "idle",
   isVoiceActive: false,
   isMuted: false,
   isSpeakerOn: true,
   livekitToken: null,
   livekitUrl: null,
   participants: [],
+  error: null,
 
   joinVoiceSession: async (roomId: string, roomTitle: string) => {
+    set({
+      activeRoomId: roomId,
+      activeRoomTitle: roomTitle,
+      status: "requesting",
+      isVoiceActive: false,
+      error: null,
+      isMuted: false,
+      isSpeakerOn: true,
+    });
+
     const socket = getSocket();
     if (socket) {
       socket.emit("room:voice:join", { roomId });
     }
 
-    set({
-      activeRoomId: roomId,
-      activeRoomTitle: roomTitle,
-      isVoiceActive: true,
-      isMuted: false,
-      isSpeakerOn: true,
-    });
-
     try {
       const res = await api<{ token: string; url: string }>(`/rooms/${roomId}/voice/token`, {
         method: "POST",
       });
-      if (res?.token) {
-        set({ livekitToken: res.token, livekitUrl: res.url });
+      if (res?.token && res?.url) {
+        set({
+          livekitToken: res.token,
+          livekitUrl: res.url,
+          status: "connecting",
+        });
+      } else {
+        throw new Error("Invalid voice token response from server");
       }
-    } catch {
-      // Best effort LiveKit token fetch; fallback to socket-coordinated presence
+    } catch (err: any) {
+      set({
+        status: "failed",
+        isVoiceActive: false,
+        livekitToken: null,
+        livekitUrl: null,
+        error: err?.message || "Failed to join voice room",
+      });
     }
+  },
+
+  onConnected: () => {
+    set({
+      status: "connected",
+      isVoiceActive: true,
+      error: null,
+    });
+  },
+
+  onDisconnected: (_reason?: string) => {
+    set({
+      status: "ended",
+      isVoiceActive: false,
+      livekitToken: null,
+      livekitUrl: null,
+    });
   },
 
   leaveVoiceSession: () => {
@@ -75,10 +121,12 @@ export const useActiveRoomSession = create<ActiveRoomSessionState>((set, get) =>
     set({
       activeRoomId: null,
       activeRoomTitle: null,
+      status: "idle",
       isVoiceActive: false,
       livekitToken: null,
       livekitUrl: null,
       participants: [],
+      error: null,
     });
   },
 
@@ -100,3 +148,4 @@ export const useActiveRoomSession = create<ActiveRoomSessionState>((set, get) =>
   toggleSpeaker: () => set((state) => ({ isSpeakerOn: !state.isSpeakerOn })),
   setParticipants: (participants) => set({ participants }),
 }));
+
