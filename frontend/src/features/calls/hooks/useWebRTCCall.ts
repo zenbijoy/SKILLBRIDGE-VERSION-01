@@ -40,6 +40,14 @@ export function useWebRTCCall(callId?: string) {
   const offerCreatedRef = useRef<boolean>(false);
   const offerInFlightRef = useRef<boolean>(false);
 
+  // Single-flight guards to prevent duplicate media/PeerConnection initialization (Bug 2)
+  const mediaInitPromiseRef = useRef<Promise<any> | null>(null);
+  const pcSetupPromiseRef = useRef<Promise<any> | null>(null);
+
+  // Outgoing ICE candidate buffering on caller until callee emits call:ready (Bug 1)
+  const peerReadyRef = useRef<boolean>(false);
+  const outgoingCandidatesRef = useRef<any[]>([]);
+
   // Authoritative current call ID ref to avoid stale closures during asynchronous events
   const currentCallIdRef = useRef<string | undefined>(callId || activeCall?.callId);
   useEffect(() => {
@@ -50,38 +58,57 @@ export function useWebRTCCall(callId?: string) {
   // Trickle ICE Candidate Queue (Prevents dropped candidates before remoteDescription is set)
   const pendingCandidatesRef = useRef<any[]>([]);
 
-  // 1. Initialize Local Media Stream
+  // 1. Initialize Local Media Stream (Single-flight safe)
   const initLocalMedia = useCallback(
     async (type: "audio" | "video" = "video") => {
       if (!mediaDevices) {
         throw new Error("Media devices are not supported on this platform.");
       }
 
-      try {
-        const constraints = {
-          audio: true,
-          video:
-            type === "video"
-              ? {
-                  facingMode: "user",
-                  width: { ideal: 640 },
-                  height: { ideal: 480 },
-                  frameRate: { ideal: 24 },
-                }
-              : false,
-        };
-
-        const stream = await mediaDevices.getUserMedia(constraints);
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-        return stream;
-      } catch (err: any) {
-        console.warn("Could not capture requested video constraints, attempting audio-only fallback:", err);
-        const fallbackStream = await mediaDevices.getUserMedia({ audio: true, video: false });
-        localStreamRef.current = fallbackStream;
-        setLocalStream(fallbackStream);
-        return fallbackStream;
+      // Reuse existing active stream if present
+      if (localStreamRef.current && typeof localStreamRef.current.getTracks === "function") {
+        const liveTracks = localStreamRef.current.getTracks().filter((t: any) => t.readyState === "live");
+        if (liveTracks.length > 0) {
+          return localStreamRef.current;
+        }
       }
+
+      if (mediaInitPromiseRef.current) {
+        return mediaInitPromiseRef.current;
+      }
+
+      const initPromise = (async () => {
+        try {
+          const constraints = {
+            audio: true,
+            video:
+              type === "video"
+                ? {
+                    facingMode: "user",
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 24 },
+                  }
+                : false,
+          };
+
+          const stream = await mediaDevices.getUserMedia(constraints);
+          localStreamRef.current = stream;
+          setLocalStream(stream);
+          return stream;
+        } catch (err: any) {
+          console.warn("Could not capture requested video constraints, attempting audio-only fallback:", err);
+          const fallbackStream = await mediaDevices.getUserMedia({ audio: true, video: false });
+          localStreamRef.current = fallbackStream;
+          setLocalStream(fallbackStream);
+          return fallbackStream;
+        } finally {
+          mediaInitPromiseRef.current = null;
+        }
+      })();
+
+      mediaInitPromiseRef.current = initPromise;
+      return initPromise;
     },
     [],
   );
@@ -185,131 +212,209 @@ export function useWebRTCCall(callId?: string) {
     }
   }, [setMetrics]);
 
-  // 3. Bounded ICE Restart & Reconnect Mechanism
-  const triggerIceRestart = useCallback(() => {
-    if (isReconnectingRef.current) return;
-    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-      setCallStatus("failed");
-      setErrorMessage("Call disconnected due to network instability.");
-      callSounds.playCallEnd();
-      return;
-    }
+  // Helper to notify backend and peer when WebRTC connection is established (Bug 6)
+  const notifyCallConnected = useCallback(() => {
+    const targetCallId =
+      currentCallIdRef.current ||
+      useCallStore.getState().activeCall?.callId ||
+      activeCall?.callId ||
+      callId;
 
-    isReconnectingRef.current = true;
-    reconnectAttemptsRef.current += 1;
-    setCallStatus("reconnecting");
-
-    const targetCallId = activeCall?.callId || callId;
+    if (!targetCallId) return;
     const socket = getSocket();
-    if (targetCallId && socket) {
-      socket.emit("call:reconnect", { callId: targetCallId });
+    if (socket) {
+      socket.emit("call:connected", { callId: targetCallId });
     }
+    import("../services/callApi")
+      .then(({ markCallConnectedApi }) => {
+        markCallConnectedApi(targetCallId).catch(() => {});
+      })
+      .catch(() => {});
+  }, [activeCall?.callId, callId]);
 
-    const pc = pcRef.current;
-    if (pc && typeof pc.restartIce === "function") {
-      try {
-        pc.restartIce();
-      } catch {
-        // Non-fatal
+  // Forward declaration ref for sendOffer so triggerIceRestart can invoke it
+  const sendOfferRef = useRef<((targetCallId: string, options?: { iceRestart?: boolean }) => Promise<void>) | null>(null);
+
+  // 3. Spec-Compliant Bounded ICE Restart & Reconnect Mechanism (Bug 4)
+  const triggerIceRestart = useCallback(
+    async (forcedByPeer = false) => {
+      if (isReconnectingRef.current && !forcedByPeer) return;
+      if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        setCallStatus("failed");
+        setErrorMessage("Call disconnected due to network instability.");
+        callSounds.playCallEnd();
+        return;
       }
-    }
 
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    reconnectTimerRef.current = setTimeout(() => {
-      isReconnectingRef.current = false;
-    }, RECONNECT_COOLDOWN_MS);
-  }, [activeCall?.callId, callId, setCallStatus]);
+      isReconnectingRef.current = true;
+      reconnectAttemptsRef.current += 1;
+      setCallStatus("reconnecting");
 
-  // 4. Setup RTCPeerConnection Lifecycle
-  const setupPeerConnection = useCallback(
-    async (stream: any) => {
-      const iceServers = await fetchIceServers();
-      const pc = createPeerConnection(iceServers);
-      pcRef.current = pc;
+      const targetCallId =
+        currentCallIdRef.current ||
+        useCallStore.getState().activeCall?.callId ||
+        activeCall?.callId ||
+        callId;
 
-      // Add local media tracks
-      if (stream) {
-        stream.getTracks().forEach((track: any) => {
-          try {
-            pc.addTrack(track, stream);
-          } catch {
-            // Track already attached
+      const role = activeCall?.role || useCallStore.getState().activeCall?.role;
+      const socket = getSocket();
+
+      // Fix (Bug 4): Caller initiates renegotiation with iceRestart: true.
+      // Callee signals caller with call:reconnect, so only one side initiates!
+      if (role === "caller" || forcedByPeer) {
+        if (targetCallId) {
+          const pc = pcRef.current;
+          if (pc && typeof pc.restartIce === "function") {
+            try { pc.restartIce(); } catch {}
           }
-        });
+          if (sendOfferRef.current) {
+            await sendOfferRef.current(targetCallId, { iceRestart: true });
+          }
+        }
+      } else {
+        // Callee: signal caller to initiate ICE restart (does NOT ping-pong)
+        if (targetCallId && socket) {
+          socket.emit("call:reconnect", { callId: targetCallId });
+        }
       }
 
-      // Remote stream handler
-      pc.ontrack = (event: any) => {
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
-        } else if (event.track) {
-          setRemoteStream((prev: any) => {
-            if (prev) {
-              try { prev.addTrack(event.track); } catch {}
-              return prev;
-            }
-            try {
-              const streamConstructor = (mediaDevices as any)?.MediaStream || (globalThis as any)?.MediaStream;
-              if (typeof streamConstructor === "function") {
-                const newStream = new streamConstructor();
-                newStream.addTrack(event.track);
-                return newStream;
-              }
-            } catch {}
-            return null;
-          });
-        }
-      };
-
-      // ICE Candidate generation with authoritative call ID resolution
-      pc.onicecandidate = (event: any) => {
-        const socket = getSocket();
-        const targetCallId =
-          currentCallIdRef.current ||
-          useCallStore.getState().activeCall?.callId ||
-          activeCall?.callId ||
-          callId;
-
-        if (event.candidate && socket && targetCallId) {
-          socket.emit("call:ice-candidate", {
-            callId: targetCallId,
-            candidate: event.candidate,
-          });
-        }
-      };
-
-      // Connection State Change Listeners (Both standard and ICE connection states)
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        if (state === "connected") {
-          callSounds.stopAll();
-          setCallStatus("connected");
-          connectStartTimeRef.current = Date.now();
-          reconnectAttemptsRef.current = 0;
-          isReconnectingRef.current = false;
-        } else if (state === "disconnected" || state === "failed") {
-          triggerIceRestart();
-        } else if (state === "closed") {
-          setCallStatus("ended");
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        const iceState = pc.iceConnectionState;
-        if (iceState === "connected" || iceState === "completed") {
-          callSounds.stopAll();
-          setCallStatus("connected");
-          if (!connectStartTimeRef.current) connectStartTimeRef.current = Date.now();
-          reconnectAttemptsRef.current = 0;
-          isReconnectingRef.current = false;
-        } else if (iceState === "failed") {
-          triggerIceRestart();
-        }
-      };
-
-      return pc;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = setTimeout(() => {
+        isReconnectingRef.current = false;
+      }, RECONNECT_COOLDOWN_MS);
     },
-    [activeCall?.callId, callId, setCallStatus, triggerIceRestart],
+    [activeCall?.callId, activeCall?.role, callId, setCallStatus],
+  );
+
+  // 4. Setup RTCPeerConnection Lifecycle (Single-flight safe, Bug 2 & Bug 5)
+  const setupPeerConnection = useCallback(
+    async (stream: any, forceRelay = false) => {
+      // Reuse existing open PeerConnection
+      if (pcRef.current && pcRef.current.signalingState !== "closed") {
+        const pc = pcRef.current;
+        if (stream && typeof stream.getTracks === "function") {
+          stream.getTracks().forEach((track: any) => {
+            try {
+              pc.addTrack(track, stream);
+            } catch {
+              // Track already attached
+            }
+          });
+        }
+        return pc;
+      }
+
+      if (pcSetupPromiseRef.current) {
+        return pcSetupPromiseRef.current;
+      }
+
+      const setupPromise = (async () => {
+        try {
+          const iceServers = await fetchIceServers();
+          const pc = createPeerConnection(iceServers, forceRelay);
+          pcRef.current = pc;
+
+          // Add local media tracks
+          if (stream && typeof stream.getTracks === "function") {
+            stream.getTracks().forEach((track: any) => {
+              try {
+                pc.addTrack(track, stream);
+              } catch {
+                // Track already attached
+              }
+            });
+          }
+
+          // Remote stream handler
+          pc.ontrack = (event: any) => {
+            if (event.streams && event.streams[0]) {
+              setRemoteStream(event.streams[0]);
+            } else if (event.track) {
+              setRemoteStream((prev: any) => {
+                if (prev) {
+                  try { prev.addTrack(event.track); } catch {}
+                  return prev;
+                }
+                try {
+                  const streamConstructor = (mediaDevices as any)?.MediaStream || (globalThis as any)?.MediaStream;
+                  if (typeof streamConstructor === "function") {
+                    const newStream = new streamConstructor();
+                    newStream.addTrack(event.track);
+                    return newStream;
+                  }
+                } catch {}
+                return null;
+              });
+            }
+          };
+
+          // ICE Candidate generation with authoritative call ID resolution & buffering (Bug 1)
+          pc.onicecandidate = (event: any) => {
+            const socket = getSocket();
+            const targetCallId =
+              currentCallIdRef.current ||
+              useCallStore.getState().activeCall?.callId ||
+              activeCall?.callId ||
+              callId;
+
+            if (event.candidate && targetCallId) {
+              const currentRole = activeCall?.role || useCallStore.getState().activeCall?.role;
+              // On caller: buffer candidates until callee has signaled call:ready (Bug 1)
+              if (currentRole === "caller" && !peerReadyRef.current) {
+                outgoingCandidatesRef.current.push(event.candidate);
+                return;
+              }
+
+              if (socket) {
+                socket.emit("call:ice-candidate", {
+                  callId: targetCallId,
+                  candidate: event.candidate,
+                });
+              }
+            }
+          };
+
+          // Connection State Change Listeners (Both standard and ICE connection states)
+          pc.onconnectionstatechange = () => {
+            const state = pc.connectionState;
+            if (state === "connected") {
+              callSounds.stopAll();
+              setCallStatus("connected");
+              connectStartTimeRef.current = Date.now();
+              reconnectAttemptsRef.current = 0;
+              isReconnectingRef.current = false;
+              notifyCallConnected();
+            } else if (state === "disconnected" || state === "failed") {
+              triggerIceRestart();
+            } else if (state === "closed") {
+              setCallStatus("ended");
+            }
+          };
+
+          pc.oniceconnectionstatechange = () => {
+            const iceState = pc.iceConnectionState;
+            if (iceState === "connected" || iceState === "completed") {
+              callSounds.stopAll();
+              setCallStatus("connected");
+              if (!connectStartTimeRef.current) connectStartTimeRef.current = Date.now();
+              reconnectAttemptsRef.current = 0;
+              isReconnectingRef.current = false;
+              notifyCallConnected();
+            } else if (iceState === "failed") {
+              triggerIceRestart();
+            }
+          };
+
+          return pc;
+        } finally {
+          pcSetupPromiseRef.current = null;
+        }
+      })();
+
+      pcSetupPromiseRef.current = setupPromise;
+      return setupPromise;
+    },
+    [activeCall?.callId, activeCall?.role, callId, notifyCallConnected, setCallStatus, triggerIceRestart],
   );
 
   // 5. Complete Resource Cleanup & Hangup
@@ -375,6 +480,10 @@ export function useWebRTCCall(callId?: string) {
       }
 
       pendingCandidatesRef.current = [];
+      outgoingCandidatesRef.current = [];
+      peerReadyRef.current = false;
+      mediaInitPromiseRef.current = null;
+      pcSetupPromiseRef.current = null;
       offerCreatedRef.current = false;
       offerInFlightRef.current = false;
       setCallStatus("ended");
@@ -413,44 +522,66 @@ export function useWebRTCCall(callId?: string) {
     };
   }, [activeCall?.status, activeCall?.durationSeconds, setDurationSeconds, updateStats]);
 
-  // Helper to create and send WebRTC SDP Offer (Idempotent & InvalidStateError safe)
-  const sendOffer = useCallback(async (targetCallId: string) => {
-    if (offerCreatedRef.current || offerInFlightRef.current) return;
+  // Helper to create and send WebRTC SDP Offer (Idempotent, re-send safe & renegotiation safe)
+  const sendOffer = useCallback(
+    async (targetCallId: string, options: { iceRestart?: boolean } = {}) => {
+      if (offerInFlightRef.current) return;
 
-    try {
-      offerInFlightRef.current = true;
-      setCallStatus("connecting");
-      let stream = localStreamRef.current;
-      if (!stream) {
-        stream = await initLocalMedia(activeCall?.type || "video");
-      }
-
-      let pc = pcRef.current;
-      if (!pc) {
-        pc = await setupPeerConnection(stream);
-      }
-
-      if (pc.signalingState !== "stable") {
-        offerInFlightRef.current = false;
+      const pc = pcRef.current;
+      // If local description is already set as an offer and this is NOT an iceRestart,
+      // re-send the existing localDescription to the ready peer without throwing InvalidStateError!
+      if (!options.iceRestart && pc && pc.localDescription && pc.localDescription.type === "offer") {
+        const socket = getSocket();
+        socket?.emit("call:offer", { callId: targetCallId, sdp: pc.localDescription });
         return;
       }
 
-      const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: (activeCall?.type || "video") === "video",
-      });
-      await pc.setLocalDescription(offer);
-      offerCreatedRef.current = true;
+      try {
+        offerInFlightRef.current = true;
+        setCallStatus(options.iceRestart ? "reconnecting" : "connecting");
+        let stream = localStreamRef.current;
+        if (!stream) {
+          stream = await initLocalMedia(activeCall?.type || "video");
+        }
 
-      const socket = getSocket();
-      socket?.emit("call:offer", { callId: targetCallId, sdp: offer });
-    } catch (err: any) {
-      console.error("Failed to create WebRTC SDP Offer:", err);
-      setCallStatus("failed");
-    } finally {
-      offerInFlightRef.current = false;
-    }
-  }, [activeCall?.type, initLocalMedia, setupPeerConnection, setCallStatus]);
+        let peerConn = pcRef.current;
+        if (!peerConn) {
+          const forceRelay = reconnectAttemptsRef.current > 1;
+          peerConn = await setupPeerConnection(stream, forceRelay);
+        }
+
+        if (peerConn.signalingState !== "stable" && !options.iceRestart) {
+          offerInFlightRef.current = false;
+          return;
+        }
+
+        const offer = await peerConn.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: (activeCall?.type || "video") === "video",
+          iceRestart: options.iceRestart ?? false,
+        });
+        await peerConn.setLocalDescription(offer);
+        offerCreatedRef.current = true;
+
+        const socket = getSocket();
+        socket?.emit("call:offer", {
+          callId: targetCallId,
+          sdp: offer,
+          iceRestart: options.iceRestart ?? false,
+        });
+      } catch (err: any) {
+        console.error("Failed to create WebRTC SDP Offer:", err);
+        setCallStatus("failed");
+      } finally {
+        offerInFlightRef.current = false;
+      }
+    },
+    [activeCall?.type, initLocalMedia, setupPeerConnection, setCallStatus],
+  );
+
+  useEffect(() => {
+    sendOfferRef.current = sendOffer;
+  }, [sendOffer]);
 
   // 8. Robust Socket Signaling Listeners
   useEffect(() => {
@@ -529,11 +660,24 @@ export function useWebRTCCall(callId?: string) {
       }
     });
 
-    // When callee signals readiness or acceptance, caller sends the offer (for WebRTC P2P)
+    // When callee signals readiness, caller sends the offer (for WebRTC P2P) and flushes buffered ICE candidates
     const unsubReady = onSocket("call:ready", async (payload: { callId: string }) => {
       const currentCallId = currentCallIdRef.current || activeCall?.callId || callId;
       if (currentCallId && currentCallId !== payload.callId) return;
       if (activeCall?.provider === "livekit") return;
+
+      peerReadyRef.current = true;
+
+      // Flush queued outgoing candidates on caller
+      const socket = getSocket();
+      if (socket && outgoingCandidatesRef.current.length > 0) {
+        const buffered = [...outgoingCandidatesRef.current];
+        outgoingCandidatesRef.current = [];
+        for (const candidate of buffered) {
+          socket.emit("call:ice-candidate", { callId: payload.callId, candidate });
+        }
+      }
+
       const role = activeCall?.role || useCallStore.getState().activeCall?.role;
       if (role === "caller") {
         await sendOffer(payload.callId);
@@ -545,15 +689,32 @@ export function useWebRTCCall(callId?: string) {
       if (currentCallId && currentCallId !== payload.callId) return;
       setCallStatus("accepted");
       if (activeCall?.provider === "livekit") return;
+
+      // NOTE (Bug 1 Fix): Do NOT emit offer on call:accept!
+      // The callee is still mounting CallScreen. Pre-warm media so we're ready
+      // as soon as call:ready arrives from the callee.
       const role = activeCall?.role || useCallStore.getState().activeCall?.role;
       if (role === "caller") {
-        await sendOffer(payload.callId);
+        try {
+          const stream = await initLocalMedia(activeCall?.type || "video");
+          await setupPeerConnection(stream);
+        } catch (err) {
+          console.warn("Could not pre-initialize media on call:accept:", err);
+        }
       }
     });
 
     const unsubReject = onSocket("call:reject", () => endCall("declined"));
     const unsubEnd = onSocket("call:end", () => endCall("remote_ended"));
-    const unsubReconnect = onSocket("call:reconnect", () => triggerIceRestart());
+
+    // Fix (Bug 4): Only caller handles call:reconnect by creating an iceRestart offer.
+    // Callee does not emit call:reconnect back, avoiding ping-pong loops.
+    const unsubReconnect = onSocket("call:reconnect", () => {
+      const role = activeCall?.role || useCallStore.getState().activeCall?.role;
+      if (role === "caller") {
+        void triggerIceRestart(true);
+      }
+    });
 
     return () => {
       unsubOffer();
