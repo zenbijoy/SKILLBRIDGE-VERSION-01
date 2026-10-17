@@ -71,10 +71,51 @@ export default function LiveRoomScreenWeb() {
         setLoading(false);
       })
       .catch((e: any) => {
-        setError(e.message || "Failed to join live room");
+        const msg = e.message || "Failed to join live room";
+        if (msg.includes("Join the learning room first") && roomId) {
+          api(`/rooms/${roomId}/join`, { method: "POST" })
+            .then(() => {
+              return api<LiveCreds>(`/live/token/${target}`, { method: "POST" });
+            })
+            .then((data) => {
+              setCreds(data);
+              setLoading(false);
+            })
+            .catch((retryErr) => {
+              setError(retryErr.message || msg);
+              setLoading(false);
+            });
+          return;
+        }
+
+        setError(msg);
         setLoading(false);
       });
   }, [roomId, sessionId]);
+
+  const joinAndRetry = useCallback(async () => {
+    if (!roomId) {
+      fetchToken();
+      return;
+    }
+    try {
+      await api(`/rooms/${roomId}/join`, { method: "POST" });
+      fetchToken();
+    } catch (joinErr: any) {
+      const msg = joinErr?.message || "";
+      if (
+        msg.toLowerCase().includes("approval") ||
+        msg.toLowerCase().includes("knock") ||
+        msg.toLowerCase().includes("private") ||
+        msg.toLowerCase().includes("invit")
+      ) {
+        window.alert("This room requires host approval. Please request access from the room lobby.");
+        router.replace(`/room/${roomId}` as any);
+      } else {
+        setError(msg || "Failed to join room");
+      }
+    }
+  }, [roomId, fetchToken]);
 
   useEffect(() => {
     void requestMediaPermissions();
@@ -92,6 +133,11 @@ export default function LiveRoomScreenWeb() {
   }
 
   if (error || !creds) {
+    const isMembershipError =
+      error?.toLowerCase().includes("join") ||
+      error?.toLowerCase().includes("learning room") ||
+      error?.toLowerCase().includes("membership");
+
     return (
       <div style={styles.centerContainer}>
         <div style={styles.card}>
@@ -104,9 +150,15 @@ export default function LiveRoomScreenWeb() {
             <button onClick={() => router.back()} style={styles.btnSecondary}>
               Go Back
             </button>
-            <button onClick={fetchToken} style={styles.btnPrimary}>
-              Retry Connection
-            </button>
+            {isMembershipError && roomId ? (
+              <button onClick={joinAndRetry} style={{ ...styles.btnPrimary, backgroundColor: "#10B981" }}>
+                Join Room & Enter
+              </button>
+            ) : (
+              <button onClick={fetchToken} style={styles.btnPrimary}>
+                Retry Connection
+              </button>
+            )}
           </div>
         </div>
       </div>

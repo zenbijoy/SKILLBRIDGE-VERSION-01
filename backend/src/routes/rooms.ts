@@ -3135,7 +3135,7 @@ rooms.post(
       });
     }
 
-    const { data: member } = await admin
+    let { data: member } = await admin
       .from("room_members")
       .select("role")
       .eq("room_id", roomId)
@@ -3143,7 +3143,45 @@ rooms.post(
       .maybeSingle();
 
     if (!member) {
-      return res.status(403).json({ error: "Join the room first to enter voice" });
+      const { data: roomData } = await admin
+        .from("rooms")
+        .select("id, owner_id, visibility, knock_mode_enabled, is_locked")
+        .eq("id", roomId)
+        .maybeSingle();
+
+      if (roomData?.owner_id === req.userId) {
+        const { data: healedMember } = await admin
+          .from("room_members")
+          .upsert({
+            room_id: roomId,
+            user_id: req.userId!,
+            role: "owner",
+          })
+          .select("role")
+          .single();
+        member = healedMember || { role: "owner" };
+      } else if (
+        roomData &&
+        roomData.visibility === "public" &&
+        !roomData.is_locked &&
+        !roomData.knock_mode_enabled
+      ) {
+        const { error: joinErr } = await admin.rpc("join_room_service_atomic", {
+          p_room_id: roomId,
+          p_user_id: req.userId!,
+        });
+        if (!joinErr) {
+          member = { role: "member" };
+        }
+      }
+    }
+
+    if (!member) {
+      return res.status(403).json({
+        error: "Join the room first to enter voice",
+        code: "MEMBERSHIP_REQUIRED",
+        roomId,
+      });
     }
 
     const { data: profile } = await admin

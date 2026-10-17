@@ -65,6 +65,7 @@ export default function LiveRoomScreen() {
   const [creds, setCreds] = useState<LiveCreds | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [joiningRoom, setJoiningRoom] = useState(false);
 
   const requestNativePermissions = useCallback(async () => {
     if (Platform.OS === "android") {
@@ -90,10 +91,66 @@ export default function LiveRoomScreen() {
         setLoading(false);
       })
       .catch((e) => {
-        setError(e.message || "Failed to join live room.");
+        const msg = e.message || "Failed to join live room.";
+        // If membership is required in an open room, attempt auto-join once
+        if (msg.includes("Join the learning room first") && roomId) {
+          api(`/rooms/${roomId}/join`, { method: "POST" })
+            .then(() => {
+              // Re-fetch token after auto-join
+              return api<LiveCreds>(`/live/token/${target}`, { method: "POST" });
+            })
+            .then((data) => {
+              setCreds(data);
+              setLoading(false);
+            })
+            .catch((retryErr) => {
+              setError(retryErr.message || msg);
+              setLoading(false);
+            });
+          return;
+        }
+
+        setError(msg);
         setLoading(false);
       });
   }, [roomId, sessionId]);
+
+  const joinAndRetry = useCallback(async () => {
+    const targetRoom = roomId || (sessionId ? creds?.sessionId : null);
+    if (!targetRoom) {
+      fetchToken();
+      return;
+    }
+    setJoiningRoom(true);
+    try {
+      await api(`/rooms/${targetRoom}/join`, { method: "POST" });
+      setJoiningRoom(false);
+      fetchToken();
+    } catch (joinErr: any) {
+      setJoiningRoom(false);
+      const msg = joinErr?.message || "";
+      if (
+        msg.toLowerCase().includes("approval") ||
+        msg.toLowerCase().includes("knock") ||
+        msg.toLowerCase().includes("private") ||
+        msg.toLowerCase().includes("invit")
+      ) {
+        Alert.alert(
+          "Host Approval Required",
+          "This room requires approval from the host before entering. Please request entry in the room lobby.",
+          [
+            {
+              text: "Go to Lobby",
+              onPress: () => router.replace(`/room/${targetRoom}` as any),
+            },
+            { text: "Cancel", style: "cancel" },
+          ]
+        );
+      } else {
+        setError(msg || "Could not join room.");
+      }
+    }
+  }, [roomId, sessionId, creds?.sessionId, fetchToken]);
 
   useEffect(() => {
     void requestNativePermissions();
@@ -116,6 +173,11 @@ export default function LiveRoomScreen() {
   }
 
   if (error || !creds) {
+    const isMembershipError =
+      error?.toLowerCase().includes("join") ||
+      error?.toLowerCase().includes("learning room") ||
+      error?.toLowerCase().includes("membership");
+
     return (
       <View style={s.centerScreen}>
         <View style={s.errorBox}>
@@ -126,9 +188,23 @@ export default function LiveRoomScreen() {
             <Pressable onPress={() => router.back()} style={s.btnSecondary}>
               <Text style={s.btnSecondaryText}>Go Back</Text>
             </Pressable>
-            <Pressable onPress={fetchToken} style={s.btnPrimary}>
-              <Text style={s.btnPrimaryText}>Retry</Text>
-            </Pressable>
+            {isMembershipError && roomId ? (
+              <Pressable
+                onPress={joinAndRetry}
+                disabled={joiningRoom}
+                style={[s.btnPrimary, { backgroundColor: "#10B981" }]}
+              >
+                {joiningRoom ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={s.btnPrimaryText}>Join Room & Enter</Text>
+                )}
+              </Pressable>
+            ) : (
+              <Pressable onPress={fetchToken} style={s.btnPrimary}>
+                <Text style={s.btnPrimaryText}>Retry</Text>
+              </Pressable>
+            )}
           </View>
         </View>
       </View>

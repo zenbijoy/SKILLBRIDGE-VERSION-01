@@ -194,15 +194,56 @@ live.post(
 
     // 3. If still no session, check if caller is room owner/teacher to start one
     const targetRoomId = session?.room_id || paramId;
-    const { data: member } = await admin
+    let { data: member } = await admin
       .from("room_members")
       .select("role")
       .eq("room_id", targetRoomId)
       .eq("user_id", req.userId!)
       .maybeSingle();
+
+    if (!member) {
+      // Check if caller is owner in rooms table or if room is public/open
+      const { data: roomData } = await admin
+        .from("rooms")
+        .select("id, owner_id, visibility, knock_mode_enabled, is_locked")
+        .eq("id", targetRoomId)
+        .maybeSingle();
+
+      if (roomData?.owner_id === req.userId) {
+        // Auto-heal owner membership in room_members
+        const { data: healedMember } = await admin
+          .from("room_members")
+          .upsert({
+            room_id: targetRoomId,
+            user_id: req.userId!,
+            role: "owner",
+          })
+          .select("role")
+          .single();
+        member = healedMember || { role: "owner" };
+      } else if (
+        roomData &&
+        roomData.visibility === "public" &&
+        !roomData.is_locked &&
+        !roomData.knock_mode_enabled
+      ) {
+        // Open public room with no approval required: auto-join caller as member
+        const { error: joinErr } = await admin.rpc("join_room_service_atomic", {
+          p_room_id: targetRoomId,
+          p_user_id: req.userId!,
+        });
+        if (!joinErr) {
+          member = { role: "member" };
+        }
+      }
+    }
       
     if (!member) {
-      return res.status(403).json({ error: "Join the learning room first" });
+      return res.status(403).json({
+        error: "Join the learning room first",
+        code: "MEMBERSHIP_REQUIRED",
+        roomId: targetRoomId,
+      });
     }
 
     if (!session) {

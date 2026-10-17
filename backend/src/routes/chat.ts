@@ -1226,7 +1226,7 @@ export function chat(io: Server) {
         .object({
           body: z.string().trim().max(5000).default(""),
           client_message_id: z.string().uuid().optional(),
-          reply_to_message_id: z.string().uuid().optional(),
+          reply_to_message_id: z.string().uuid().nullable().optional(),
           attachment: z
             .object({
               url: z.string().url(),
@@ -1238,6 +1238,7 @@ export function chat(io: Server) {
               // mint a fresh signed read URL after the initial one expires.
               storagePath: z.string().max(300).optional(),
             })
+            .nullable()
             .optional(),
         })
         .refine((data) => data.body.length > 0 || data.attachment, {
