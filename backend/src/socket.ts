@@ -89,6 +89,29 @@ function checkSignalingRateLimit(socketId: string, limit = 60, windowMs = 10000)
   return entry.count <= limit;
 }
 
+// Server-side call signaling buffer (Bug 3: prevents dropped offer/ICE during navigation)
+export interface BufferedCallSignaling {
+  offer?: any;
+  candidates: any[];
+  createdAt: number;
+}
+
+export const callSignalingBuffer = new Map<string, BufferedCallSignaling>();
+
+// Clean up stale buffered call signaling entries older than 30 seconds
+const SIGNALING_BUFFER_TTL_MS = 30_000;
+const signalingCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [callId, entry] of callSignalingBuffer.entries()) {
+    if (now - entry.createdAt > SIGNALING_BUFFER_TTL_MS) {
+      callSignalingBuffer.delete(callId);
+    }
+  }
+}, 15_000);
+if (typeof signalingCleanupTimer.unref === "function") {
+  signalingCleanupTimer.unref();
+}
+
 export function setupSocket(io: SocketServer) {
   // Make the server instance reachable from webhook-driven presence broadcasts.
   registerSocketServer(io);
@@ -374,7 +397,7 @@ export function setupSocket(io: SocketServer) {
       return null;
     }
 
-    // Call SDP Offer forwarder (Payload limit: 64KB)
+    // Call SDP Offer forwarder with buffering for early arrivals (Bug 3)
     socket.on("call:offer", async (payload: { callId?: string; sdp?: any }) => {
       if (!checkSignalingRateLimit(socket.id)) return;
       const { callId, sdp } = payload || {};
@@ -383,6 +406,13 @@ export function setupSocket(io: SocketServer) {
 
       const peerId = await getAuthorizedCallPeer(callId);
       if (!peerId) return;
+
+      // Buffer offer so callee receives it if mounting CallScreen during navigation (Bug 3)
+      const existing = callSignalingBuffer.get(callId) || { candidates: [], createdAt: Date.now() };
+      existing.offer = sdp;
+      existing.createdAt = Date.now();
+      callSignalingBuffer.set(callId, existing);
+
       io.to(`user:${peerId}`).emit("call:offer", { callId, sdp });
     });
 
@@ -398,7 +428,7 @@ export function setupSocket(io: SocketServer) {
       io.to(`user:${peerId}`).emit("call:answer", { callId, sdp });
     });
 
-    // Call ICE Candidate forwarder (Payload limit: 4KB)
+    // Call ICE Candidate forwarder with buffering for early arrivals (Bug 3)
     socket.on("call:ice-candidate", async (payload: { callId?: string; candidate?: any }) => {
       if (!checkSignalingRateLimit(socket.id)) return;
       const { callId, candidate } = payload || {};
@@ -406,6 +436,12 @@ export function setupSocket(io: SocketServer) {
 
       const peerId = await getAuthorizedCallPeer(callId);
       if (!peerId) return;
+
+      // Buffer ICE candidate so it can be replayed to callee on call:ready
+      const existing = callSignalingBuffer.get(callId) || { candidates: [], createdAt: Date.now() };
+      existing.candidates.push(candidate);
+      callSignalingBuffer.set(callId, existing);
+
       io.to(`user:${peerId}`).emit("call:ice-candidate", { callId, candidate });
     });
 
@@ -427,6 +463,8 @@ export function setupSocket(io: SocketServer) {
       if (!callId) return;
       const safeReason = typeof reason === "string" ? reason.slice(0, 50) : "declined";
 
+      callSignalingBuffer.delete(callId);
+
       const peerId = await getAuthorizedCallPeer(callId);
       if (!peerId) return;
       io.to(`user:${peerId}`).emit("call:reject", { callId, reason: safeReason });
@@ -437,6 +475,8 @@ export function setupSocket(io: SocketServer) {
       if (!checkSignalingRateLimit(socket.id)) return;
       const { callId, durationSeconds = 0 } = payload || {};
       if (!callId) return;
+
+      callSignalingBuffer.delete(callId);
 
       const peerId = await getAuthorizedCallPeer(callId);
       if (!peerId) return;
@@ -455,6 +495,56 @@ export function setupSocket(io: SocketServer) {
       const peerId = await getAuthorizedCallPeer(callId);
       if (!peerId) return;
       io.to(`user:${peerId}`).emit("call:ready", { callId });
+
+      // Replay any buffered offer and ICE candidates directly to the ready peer (Bug 3)
+      const buffered = callSignalingBuffer.get(callId);
+      if (buffered) {
+        if (buffered.offer) {
+          socket.emit("call:offer", { callId, sdp: buffered.offer });
+        }
+        if (buffered.candidates && buffered.candidates.length > 0) {
+          for (const candidate of buffered.candidates) {
+            socket.emit("call:ice-candidate", { callId, candidate });
+          }
+        }
+      }
+    });
+
+    // Call Connected signal (emitted by client when WebRTC connectionState reaches "connected") (Bug 6)
+    socket.on("call:connected", async (payload: { callId?: string }) => {
+      if (!checkSignalingRateLimit(socket.id)) return;
+      const { callId } = payload || {};
+      if (!callId) return;
+
+      const peerId = await getAuthorizedCallPeer(callId);
+      if (!peerId) return;
+
+      try {
+        const { data: callRecord } = await admin
+          .from("calls")
+          .select("status")
+          .eq("id", callId)
+          .maybeSingle();
+
+        if (
+          callRecord &&
+          (callRecord.status === "accepted" ||
+            callRecord.status === "connecting" ||
+            callRecord.status === "reconnecting")
+        ) {
+          await admin
+            .from("calls")
+            .update({
+              status: "connected",
+              connected_at: new Date().toISOString(),
+            })
+            .eq("id", callId);
+        }
+      } catch {
+        // DB update error non-fatal to real-time relay
+      }
+
+      io.to(`user:${peerId}`).emit("call:connected", { callId });
     });
 
     // Real-time peer presence lookup with Facebook Messenger privacy enforcement

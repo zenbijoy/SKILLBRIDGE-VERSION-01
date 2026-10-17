@@ -39,7 +39,10 @@ test("One-to-One Audio & Video Calling Deep Investigation & Fix Verification Sui
     assert.strictEqual(isValidTransition("ringing", "busy"), true);
     assert.strictEqual(isValidTransition("ringing", "missed"), true);
     assert.strictEqual(isValidTransition("accepted", "connecting"), true);
+    assert.strictEqual(isValidTransition("accepted", "connected"), true);
+    assert.strictEqual(isValidTransition("accepted", "failed"), true);
     assert.strictEqual(isValidTransition("connecting", "connected"), true);
+    assert.strictEqual(isValidTransition("connecting", "failed"), true);
     assert.strictEqual(isValidTransition("connected", "reconnecting"), true);
     assert.strictEqual(isValidTransition("reconnecting", "connected"), true);
     assert.strictEqual(isValidTransition("connected", "ended"), true);
@@ -230,4 +233,43 @@ test("One-to-One Audio & Video Calling Deep Investigation & Fix Verification Sui
     assert.strictEqual(appliedCandidates.length, 3);
     assert.strictEqual(appliedCandidates[0].candidate, "candidate:1");
   });
+
+  await suite.test("11. Server-side Signaling Buffer - replays buffered offer and ICE candidates on call:ready", () => {
+    // Simulating the server-side callSignalingBuffer mechanism in socket.ts
+    const buffer = new Map<string, { offer?: any; candidates: any[]; createdAt: number }>();
+
+    function saveOffer(callId: string, offer: any) {
+      const entry = buffer.get(callId) || { candidates: [], createdAt: Date.now() };
+      entry.offer = offer;
+      buffer.set(callId, entry);
+    }
+
+    function saveCandidate(callId: string, candidate: any) {
+      const entry = buffer.get(callId) || { candidates: [], createdAt: Date.now() };
+      entry.candidates.push(candidate);
+      buffer.set(callId, entry);
+    }
+
+    function handleCallReady(callId: string): { replayedOffer: any; replayedCandidates: any[] } {
+      const entry = buffer.get(callId);
+      if (!entry) return { replayedOffer: null, replayedCandidates: [] };
+      return {
+        replayedOffer: entry.offer || null,
+        replayedCandidates: [...entry.candidates],
+      };
+    }
+
+    // Caller emits offer and 2 ICE candidates before callee emits call:ready
+    saveOffer(CALL_ID, { type: "offer", sdp: "v=0 mock_sdp" });
+    saveCandidate(CALL_ID, { candidate: "cand-1", sdpMid: "0" });
+    saveCandidate(CALL_ID, { candidate: "cand-2", sdpMid: "1" });
+
+    // Callee mounts screen and emits call:ready
+    const replayed = handleCallReady(CALL_ID);
+    assert.ok(replayed.replayedOffer);
+    assert.strictEqual(replayed.replayedOffer.type, "offer");
+    assert.strictEqual(replayed.replayedCandidates.length, 2);
+    assert.strictEqual(replayed.replayedCandidates[0].candidate, "cand-1");
+  });
 });
+
