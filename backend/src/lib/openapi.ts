@@ -228,6 +228,78 @@ export function getOpenApiSpec() {
           },
         },
       },
+      "/rooms/{id}/live/status": {
+        get: {
+          summary: "Get room live sessions status and active participant roster",
+          tags: ["Room Live"],
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: {
+            "200": { description: "Active open session, study session, and participant state" },
+          },
+        },
+      },
+      "/rooms/{id}/live/open": {
+        post: {
+          summary: "Start or join an open room audio/video session",
+          tags: ["Room Live"],
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { media: { type: "string", enum: ["audio", "video"], default: "audio" } },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "LiveKit connection token and session metadata" },
+            "409": { description: "Blocked: study session is live or scheduled within 2 minutes" },
+          },
+        },
+      },
+      "/rooms/{id}/live/{sessionId}/token": {
+        post: {
+          summary: "Generate fresh LiveKit token for open or study session",
+          tags: ["Room Live"],
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+            { name: "sessionId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          ],
+          responses: {
+            "200": { description: "Fresh token with proper track source constraints" },
+          },
+        },
+      },
+      "/rooms/{id}/study-sessions": {
+        get: {
+          summary: "List room study sessions",
+          tags: ["Room Study Sessions"],
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "List of room study sessions" } },
+        },
+        post: {
+          summary: "Schedule or immediately start a study session (ends open sessions)",
+          tags: ["Room Study Sessions"],
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "201": { description: "Study session created or started" } },
+        },
+      },
+      "/rooms/{id}/study-permissions": {
+        get: {
+          summary: "List members granted study session creation permission",
+          tags: ["Room Study Permissions"],
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "List of granted permissions" } },
+        },
+      },
     },
   };
 }

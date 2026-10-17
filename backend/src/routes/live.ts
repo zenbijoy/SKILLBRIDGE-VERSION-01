@@ -5,7 +5,7 @@ import { env } from "../config/env.js";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { logger } from "../lib/logger.js";
-import { broadcastRoomPresence } from "../socket.js";
+import { broadcastRoomPresence, getSocketServer, roomPresenceRoom } from "../socket.js";
 import { NotificationService } from "../services/notificationService.js";
 
 export const live = Router();
@@ -89,7 +89,26 @@ liveWebhooks.post("/", wrap(async (req, res) => {
     let meta: any = {};
     try { meta = JSON.parse(event.participant?.metadata || "{}"); } catch(e){}
     
-    if (meta.sessionId && event.participant?.identity) {
+    if ((meta.openSessionId || meta.kind === "open") && event.participant?.identity) {
+      const openSessionId = meta.openSessionId;
+      if (openSessionId) {
+        await admin.rpc("join_open_session_atomic", {
+          p_session_id: openSessionId,
+          p_user_id: event.participant.identity,
+        });
+        if (meta.roomId) {
+          const io = getSocketServer();
+          if (io) {
+            io.to(roomPresenceRoom(meta.roomId)).emit("room:live:participants", {
+              roomId: meta.roomId,
+              sessionId: openSessionId,
+              action: "joined",
+              userId: event.participant.identity,
+            });
+          }
+        }
+      }
+    } else if (meta.sessionId && event.participant?.identity) {
       const { error: rpcErr } = await admin.rpc("record_livekit_join", {
         p_session_id: meta.sessionId,
         p_user_id: event.participant.identity,
@@ -112,7 +131,37 @@ liveWebhooks.post("/", wrap(async (req, res) => {
     let meta: any = {};
     try { meta = JSON.parse(event.participant?.metadata || "{}"); } catch(e){}
     
-    if (meta.sessionId && event.participant?.identity) {
+    if ((meta.openSessionId || meta.kind === "open") && event.participant?.identity) {
+      const openSessionId = meta.openSessionId;
+      if (openSessionId) {
+        const { data: rawLeave } = await admin.rpc("leave_open_session_atomic", {
+          p_session_id: openSessionId,
+          p_user_id: event.participant.identity,
+        });
+        const leaveRes = rawLeave as {
+          host_transferred?: boolean;
+          new_host_id?: string | null;
+          remaining_participants: number;
+        };
+        if (meta.roomId) {
+          const io = getSocketServer();
+          if (io) {
+            if (leaveRes?.host_transferred && leaveRes.new_host_id) {
+              io.to(roomPresenceRoom(meta.roomId)).emit("room:live:host_changed", {
+                roomId: meta.roomId,
+                sessionId: openSessionId,
+                newHostId: leaveRes.new_host_id,
+              });
+            }
+            io.to(roomPresenceRoom(meta.roomId)).emit("room:live:participants", {
+              roomId: meta.roomId,
+              sessionId: openSessionId,
+              remainingParticipants: leaveRes?.remaining_participants ?? 0,
+            });
+          }
+        }
+      }
+    } else if (meta.sessionId && event.participant?.identity) {
       const { error: rpcErr } = await admin.rpc("record_livekit_leave", {
         p_session_id: meta.sessionId,
         p_user_id: event.participant.identity,
@@ -132,9 +181,43 @@ liveWebhooks.post("/", wrap(async (req, res) => {
     }
   } else if (event.event === "room_finished") {
     const roomName = event.room?.name || "";
-    const prefix = "skillbridge-session-";
-    if (roomName.startsWith(prefix)) {
-      const sessionId = roomName.substring(prefix.length);
+    const openPrefix = "skillbridge-open-";
+    const sessionPrefix = "skillbridge-session-";
+
+    if (roomName.startsWith(openPrefix)) {
+      const openSessionId = roomName.substring(openPrefix.length);
+      if (openSessionId) {
+        const { data: updated } = await admin
+          .from("room_open_sessions")
+          .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: "livekit_room_finished" })
+          .eq("id", openSessionId)
+          .eq("status", "live")
+          .select("id, room_id")
+          .maybeSingle();
+
+        await admin
+          .from("room_open_participants")
+          .update({ left_at: new Date().toISOString() })
+          .eq("session_id", openSessionId)
+          .is("left_at", null);
+
+        if (updated) {
+          const io = getSocketServer();
+          if (io) {
+            io.to(roomPresenceRoom(updated.room_id)).emit("room:live:ended", {
+              roomId: updated.room_id,
+              sessionId: openSessionId,
+              reason: "livekit_room_finished",
+            });
+            io.emit("room:live:feed", {
+              roomId: updated.room_id,
+              isLive: false,
+            });
+          }
+        }
+      }
+    } else if (roomName.startsWith(sessionPrefix)) {
+      const sessionId = roomName.substring(sessionPrefix.length);
       if (sessionId) {
         const { error: updateErr } = await admin
           .from("sessions")
@@ -170,6 +253,79 @@ live.post(
     }
 
     const paramId = z.string().uuid().parse(req.params.sessionId);
+
+    // 0. Check if paramId resolves to an active open session
+    const { data: openSession } = await admin
+      .from("room_open_sessions")
+      .select("id, room_id, media, status, host_id, livekit_room")
+      .or(`id.eq.${paramId},room_id.eq.${paramId}`)
+      .eq("status", "live")
+      .maybeSingle();
+
+    if (openSession) {
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", openSession.room_id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      if (!member) {
+        return res.status(403).json({ error: "Join the room first", code: "MEMBERSHIP_REQUIRED" });
+      }
+
+      await admin.rpc("join_open_session_atomic", {
+        p_session_id: openSession.id,
+        p_user_id: req.userId!,
+      });
+
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("full_name, username, avatar_url")
+        .eq("id", req.userId!)
+        .maybeSingle();
+
+      const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : req.userId!);
+      const isHost = openSession.host_id === req.userId!;
+
+      const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+        identity: req.userId!,
+        name: participantName,
+        ttl: "4h",
+        metadata: JSON.stringify({
+          kind: "open",
+          openSessionId: openSession.id,
+          roomId: openSession.room_id,
+          media: openSession.media,
+          role: member.role,
+          isHost,
+          fullName: profile?.full_name || null,
+          username: profile?.username || null,
+          avatarUrl: profile?.avatar_url || null,
+        }),
+      });
+
+      at.addGrant({
+        roomJoin: true,
+        room: openSession.livekit_room,
+        canSubscribe: true,
+        canPublish: true,
+        canPublishData: true,
+      });
+
+      return res.json({
+        url: env.LIVEKIT_URL,
+        token: await at.toJwt(),
+        canPublish: true,
+        isHost,
+        role: member.role,
+        sessionId: openSession.id,
+        roomName: openSession.livekit_room,
+        participantName,
+        kind: "open",
+        media: openSession.media,
+      });
+    }
     
     // 1. Try resolving directly as session ID
     let { data: session } = await admin

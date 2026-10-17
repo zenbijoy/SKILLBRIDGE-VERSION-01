@@ -145,3 +145,12 @@ export const clubAuthLimiter = createLimiter(
   10,
   "Club membership action rate limit reached. Please wait a moment before trying again.",
 );
+
+// 15. Room Live Session Operations: 30 requests per minute
+export const roomLiveLimiter = createLimiter(
+  "room_live",
+  60 * 1000,
+  30,
+  "Live session rate limit reached. Please wait a moment before trying again.",
+);
+

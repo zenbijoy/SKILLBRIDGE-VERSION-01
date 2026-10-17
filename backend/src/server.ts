@@ -6,6 +6,7 @@ import { setupSocket, userConnections } from "./socket.js";
 import { startPushWorker } from "./workers/pushWorker.js";
 import { startKeepAliveWorker } from "./workers/keepAlive.js";
 import { startCallTimeoutWorker } from "./workers/callTimeoutWorker.js";
+import { startRoomLiveWorker } from "./workers/roomLiveWorker.js";
 import { redis } from "./lib/redis.js";
 import { runAdminBootstrap } from "./services/admin-bootstrap.js";
 import { initializeFirebase } from "./services/firebase.js";
@@ -166,6 +167,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_EN
     startPushWorker();
     startKeepAliveWorker();
     startCallTimeoutWorker();
+    startRoomLiveWorker();
   };
 
   startServer().catch((err) => {

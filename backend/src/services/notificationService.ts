@@ -8,6 +8,9 @@ import { getSocketServer } from "../socket.js";
 export type NextGenNotificationType =
   | "ROOM_SESSION_STARTING"
   | "ROOM_SESSION_LIVE"
+  | "ROOM_LIVE_OPEN_STARTED"
+  | "ROOM_STUDY_STARTED"
+  | "ROOM_STUDY_PERMISSION_GRANTED"
   | "QUESTION_ANSWERED"
   | "ANSWER_ACCEPTED"
   | "NEW_ROOM_MATERIAL"
@@ -45,6 +48,9 @@ export interface NotificationEvent {
 const typeToCategory: Record<NextGenNotificationType, "messages" | "connections" | "rooms" | "sessions" | "teaching" | "system"> = {
   ROOM_SESSION_STARTING: "sessions",
   ROOM_SESSION_LIVE: "sessions",
+  ROOM_LIVE_OPEN_STARTED: "rooms",
+  ROOM_STUDY_STARTED: "sessions",
+  ROOM_STUDY_PERMISSION_GRANTED: "rooms",
   QUESTION_ANSWERED: "rooms",
   ANSWER_ACCEPTED: "rooms",
   NEW_ROOM_MATERIAL: "rooms",

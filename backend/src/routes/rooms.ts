@@ -3122,7 +3122,7 @@ rooms.delete(
   }),
 );
 
-// POST /api/v1/rooms/:id/voice/token - Generate audio-first LiveKit token for Voice Room
+// POST /api/v1/rooms/:id/voice/token - (Deprecated Shim) Generate LiveKit token for open Voice Session
 rooms.post(
   "/:id/voice/token",
   wrap(async (req, res) => {
@@ -3184,6 +3184,26 @@ rooms.post(
       });
     }
 
+    // Call atomic open session RPC
+    const { data: rawResult, error: rpcErr } = await admin.rpc("start_open_session_atomic", {
+      p_room_id: roomId,
+      p_user_id: req.userId!,
+      p_media: "audio",
+    });
+
+    if (rpcErr) {
+      return res.status(400).json({ error: rpcErr.message });
+    }
+
+    const result = rawResult as {
+      session_id: string;
+      room_id: string;
+      media: "audio" | "video";
+      status: string;
+      host_id: string;
+      livekit_room: string;
+    };
+
     const { data: profile } = await admin
       .from("profiles")
       .select("full_name, username, avatar_url")
@@ -3191,13 +3211,15 @@ rooms.post(
       .maybeSingle();
 
     const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : req.userId!);
-    const roomName = `skillbridge-voice-${roomId}`;
+    const roomName = result.livekit_room;
 
     const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
       identity: req.userId!,
       name: participantName,
       ttl: "4h",
       metadata: JSON.stringify({
+        kind: "open",
+        openSessionId: result.session_id,
         roomId,
         mode: "voice",
         role: member.role,
@@ -3220,27 +3242,39 @@ rooms.post(
       roomName,
       participantName,
       canPublish: true,
+      sessionId: result.session_id,
     });
   }),
 );
 
-// GET /api/v1/rooms/:id/voice/active - Active voice presence
+// GET /api/v1/rooms/:id/voice/active - (Deprecated Shim) Active voice presence backed by Postgres source of truth
 rooms.get(
   "/:id/voice/active",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
+
+    const { data: openSession } = await admin
+      .from("room_open_sessions")
+      .select("id, livekit_room")
+      .eq("room_id", roomId)
+      .eq("status", "live")
+      .maybeSingle();
+
     let count = 0;
-    if (redis) {
-      try {
-        count = await redis.scard(`room:${roomId}:voice_users`);
-      } catch {
-        count = 0;
-      }
+    if (openSession) {
+      const { count: c } = await admin
+        .from("room_open_participants")
+        .select("user_id", { count: "exact", head: true })
+        .eq("session_id", openSession.id)
+        .is("left_at", null);
+      count = c ?? 0;
     }
+
     res.json({
-      active: count > 0,
+      active: Boolean(openSession),
       participantCount: count,
-      roomName: `skillbridge-voice-${roomId}`,
+      roomName: openSession ? openSession.livekit_room : `skillbridge-voice-${roomId}`,
+      sessionId: openSession?.id || null,
     });
   }),
 );
