@@ -25,6 +25,7 @@ import { RoomAnalyticsView } from "@/features/room/more/RoomAnalyticsView";
 import { RoomSettingsModal } from "@/features/room/more/RoomSettingsModal";
 import { RoomVoiceSheet } from "@/features/room/voice/RoomVoiceSheet";
 import { RoomVoiceBanner } from "@/features/room/voice/RoomVoiceBanner";
+import { useActiveRoomSession } from "@/features/room/voice/useActiveRoomSession";
 import { RoomKnockLobbyScreen } from "@/features/room/knock/RoomKnockLobbyScreen";
 import { RoomKnockRequestsModal } from "@/features/room/knock/RoomKnockRequestsModal";
 import { RoomMonitoringCenterModal } from "@/features/room/monitoring/RoomMonitoringCenterModal";
@@ -62,6 +63,7 @@ export default function RoomDetailScreen() {
   const [analyticsVisible, setAnalyticsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
+  const voiceSession = useActiveRoomSession();
   const [knockRequestsVisible, setKnockRequestsVisible] = useState(false);
   const [monitoringVisible, setMonitoringVisible] = useState(false);
   const [hasInitializedLandingTab, setHasInitializedLandingTab] = useState(false);
@@ -319,7 +321,13 @@ export default function RoomDetailScreen() {
           onLeave={() => leaveMutation.mutate()}
           onOpenMore={() => setActiveTab("more")}
           onJoinLiveSession={() => router.push(`/live/${room.id}` as any)}
-          onOpenVoice={() => setVoiceSheetVisible(true)}
+          onOpenVoice={async () => {
+            triggerHaptic();
+            if (!voiceSession.isVoiceActive) {
+              await voiceSession.joinVoiceSession(room.id, room.title);
+            }
+            setVoiceSheetVisible(true);
+          }}
           onSearch={undefined}
           onToggleRolePreview={handleToggleRolePreview}
         />
@@ -374,7 +382,13 @@ export default function RoomDetailScreen() {
               : (`/live/${room.id}` as any),
           );
         }}
-        onOpenVoice={() => setVoiceSheetVisible(true)}
+        onOpenVoice={async () => {
+          triggerHaptic();
+          if (!voiceSession.isVoiceActive) {
+            await voiceSession.joinVoiceSession(room.id, room.title);
+          }
+          setVoiceSheetVisible(true);
+        }}
         onSearch={() => setSearchModalVisible(true)}
         onPostAnnouncement={() => {
           setActiveTab("posts");
@@ -573,7 +587,11 @@ export default function RoomDetailScreen() {
         roomId={room.id}
         roomTitle={room.title}
         isHostOrMod={permissions.isOwner || permissions.canModerate}
-        onClose={() => setVoiceSheetVisible(false)}
+        onClose={() => {
+          setVoiceSheetVisible(false);
+          // Stop LiveKit audio bridge when user dismisses without clicking Leave
+          voiceSession.leaveVoiceSession();
+        }}
       />
 
       {/* Knock & Waiting Requests Management Modal */}

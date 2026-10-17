@@ -204,7 +204,7 @@ export function RoomVoiceSheet({
             <Pressable
               onPress={() => {
                 triggerHaptic();
-                session.leaveVoiceSession();
+                // leaveVoiceSession is called by onClose in the parent
                 onClose();
               }}
               style={[s.controlBtn, { backgroundColor: colors.danger, borderColor: colors.danger }]}

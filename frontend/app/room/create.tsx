@@ -29,16 +29,8 @@ const MAX_ROOM_CAPACITY = 250;
 const CAPACITY_PRESETS = [10, 30, 50, 100];
 
 // Discord Activities / Telegram Channel style presets (Theme-driven color keys)
+// Note: Voice Room preset removed — Audio Session is available inside every room via the header.
 const ACTIVITY_PRESETS = [
-  {
-    id: "voice_lounge",
-    name: "Voice Room",
-    icon: "headset",
-    colorKey: "primary",
-    defaultTopic: "Open Audio Discussion & Study",
-    tags: ["voice", "casual", "study"],
-    desc: "Discord-style open voice room for relaxed studying and group discussions.",
-  },
   {
     id: "coding_lab",
     name: "Coding Lab",
@@ -75,6 +67,15 @@ const ACTIVITY_PRESETS = [
     tags: ["exam", "revision", "practice"],
     desc: "High-intensity past papers, quick questions, and peer problem-solving.",
   },
+  {
+    id: "study_group",
+    name: "Study Group",
+    icon: "account-group-outline",
+    colorKey: "primary",
+    defaultTopic: "Collaborative Learning & Discussion",
+    tags: ["study", "group", "collaborative"],
+    desc: "Open academic discussion, Q&A, and peer-to-peer collaborative learning.",
+  },
 ] as const;
 
 const ROOM_ICONS = [
@@ -97,18 +98,18 @@ export default function CreateRoomScreen() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
 
-  const [selectedPreset, setSelectedPreset] = useState<string>("voice_lounge");
-  const [selectedIcon, setSelectedIcon] = useState<string>("headset");
+  const [selectedPreset, setSelectedPreset] = useState<string>("coding_lab");
+  const [selectedIcon, setSelectedIcon] = useState<string>("code-tags");
   const [coverImageUrl, setCoverImageUrl] = useState<string>("");
   const [storageProvider, setStorageProvider] = useState<string>("");
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [uploadProgressMsg, setUploadProgressMsg] = useState("");
   const [title, setTitle] = useState("");
-  const [topic, setTopic] = useState("Open Audio Discussion & Study");
+  const [topic, setTopic] = useState("Software Dev & Algorithms");
   const [description, setDescription] = useState("");
   const [rules] = useState("");
   const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState<string[]>(["voice", "study"]);
+  const [tags, setTags] = useState<string[]>(["programming", "study"]);
   const [visibility, setVisibility] = useState<"public" | "private" | "invite_only">("public");
   const [knockModeEnabled, setKnockModeEnabled] = useState(true);
   const [capacity, setCapacity] = useState("30");
