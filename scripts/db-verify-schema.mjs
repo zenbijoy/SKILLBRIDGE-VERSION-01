@@ -17,6 +17,7 @@ try {
         'profiles', 'skills', 'user_skills', 'connection_requests', 'connections', 'blocks',
         'conversations', 'conversation_members', 'messages', 'message_reactions', 'message_delivery_receipts',
         'rooms', 'room_members', 'teaching_requests',
+        'room_open_sessions', 'room_open_participants', 'room_study_permissions',
         'sessions', 'session_participants', 'livekit_attendance',
         'reviews', 'clubs', 'club_members', 'events', 'event_applications',
         'resources', 'saved_items', 'points_ledger', 'achievements', 'user_achievements',
@@ -80,6 +81,12 @@ try {
     // 4. Key Functions Existence check
     const requiredFunctions = [
         'create_room_atomic',
+        'create_room_full_atomic',
+        'start_open_session_atomic',
+        'join_open_session_atomic',
+        'leave_open_session_atomic',
+        'end_open_sessions_for_room',
+        'start_study_session_atomic',
         'recompute_reputation',
         'record_livekit_join',
         'record_livekit_leave',
@@ -115,11 +122,33 @@ try {
     const roomSignature = query(containerName, `
         SELECT
           to_regprocedure('public.create_room_atomic(text,text,text,text,text,integer,text,text[],text,uuid)') IS NOT NULL
-          AND to_regprocedure('public.create_room_atomic(text,text,text,integer,text,text[],uuid)') IS NULL;
+          AND to_regprocedure('public.create_room_atomic(text,text,text,integer,text,text[],uuid)') IS NULL
+          AND to_regprocedure('public.create_room_full_atomic(text,text,text,text,text,integer,text,text[],text,uuid,text,boolean,boolean,jsonb,text[])') IS NOT NULL
+          AND to_regprocedure('public.start_open_session_atomic(uuid,uuid,text)') IS NOT NULL
+          AND to_regprocedure('public.join_open_session_atomic(uuid,uuid)') IS NOT NULL
+          AND to_regprocedure('public.leave_open_session_atomic(uuid,uuid)') IS NOT NULL
+          AND to_regprocedure('public.end_open_sessions_for_room(uuid,text)') IS NOT NULL
+          AND to_regprocedure('public.start_study_session_atomic(uuid,uuid,text,text,timestamptz,timestamptz)') IS NOT NULL;
     `);
     report.room_rpc_signature = roomSignature === 't';
     if (!report.room_rpc_signature) {
-        console.error("[VERIFY] create_room_atomic does not expose only the canonical 10-argument signature");
+        console.error("[VERIFY] Room RPC signatures do not match expected canonical definitions");
+    }
+
+    // 4b. Room Table Columns Check
+    const roomColsRaw = query(containerName, `
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'rooms';
+    `);
+    const roomCols = roomColsRaw.split('\n').map(c => c.trim());
+    const requiredRoomCols = ['cover_image_url', 'is_teacher_mode', 'knock_mode_enabled', 'is_locked', 'appearance'];
+    const missingRoomCols = requiredRoomCols.filter(c => !roomCols.includes(c));
+    if (missingRoomCols.length > 0) {
+        console.error("[VERIFY] Missing required room columns:", missingRoomCols);
+        report.room_columns = false;
+    } else {
+        report.room_columns = true;
     }
 
     // 5. Check RPC execution privileges (authenticated role should NOT have EXECUTE on admin/service RPCs)
@@ -130,7 +159,10 @@ try {
         WHERE n.nspname = 'public'
         AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
         AND p.proname IN (
-          'create_room_atomic', 'join_room_service_atomic', 'leave_room_service_atomic',
+          'create_room_atomic', 'create_room_full_atomic',
+          'start_open_session_atomic', 'join_open_session_atomic', 'leave_open_session_atomic',
+          'end_open_sessions_for_room', 'start_study_session_atomic',
+          'join_room_service_atomic', 'leave_room_service_atomic',
           'recompute_reputation', 'block_user_atomic', 'submit_review_atomic',
           'save_user_dashboard_layout_atomic', 'save_onboarding_progress_atomic',
           'save_notification_preferences_atomic', 'complete_guided_tour_step_atomic',

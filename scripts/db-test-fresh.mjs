@@ -204,6 +204,183 @@ async function run() {
         const reputation = query(container, `SELECT reputation FROM public.profiles WHERE id = '${user1Id}';`);
         console.log(`[PASS] recompute_reputation(uuid) executed successfully. Resulting reputation: ${reputation}`);
 
+        // Phase 15: Room Live Sessions & Atomic Room Creation Test Suite
+        console.log("[db-test-fresh] Running Phase 15 Room Live Sessions & Atomic Room Suite...");
+
+        // 15a. Test create_room_full_atomic with full metadata & invitations
+        const fullRoomRes = JSON.parse(query(container, `
+            SELECT public.create_room_full_atomic(
+                'Full Room Test',
+                'Advanced full atomic room with all props',
+                'Computer Science',
+                'public',
+                'online',
+                50,
+                'Be courteous',
+                ARRAY['live', 'cs'],
+                'Online Campus',
+                '${user1Id}'::uuid,
+                'https://cdn.skillbridge.com/covers/cs.jpg',
+                true,
+                true,
+                '{"theme": "cyberpunk"}'::jsonb,
+                ARRAY['user2']
+            );
+        `));
+
+        const fullRoomId = fullRoomRes.room_id;
+        if (!fullRoomId || fullRoomRes.invited_count !== 1) {
+            throw new Error(`create_room_full_atomic failed: ${JSON.stringify(fullRoomRes)}`);
+        }
+        console.log("[PASS] create_room_full_atomic created room, conversation, and pending invite");
+
+        // Add user2 as a member of fullRoomId for session participation
+        execSql(container, `
+            INSERT INTO public.room_members (room_id, user_id, role)
+            VALUES ('${fullRoomId}', '${user2Id}', 'member')
+            ON CONFLICT DO NOTHING;
+        `);
+
+        // 15b. Concurrent/Sequential start_open_session_atomic: User 1 and User 2 start
+        const session1Res = JSON.parse(query(container, `
+            SELECT public.start_open_session_atomic(
+                '${fullRoomId}'::uuid,
+                '${user1Id}'::uuid,
+                'audio'
+            );
+        `));
+
+        const openSessionId = session1Res.session_id;
+        if (!openSessionId || session1Res.host_id !== user1Id || !session1Res.livekit_room.startsWith('skillbridge-open-')) {
+            throw new Error(`start_open_session_atomic failed for User 1: ${JSON.stringify(session1Res)}`);
+        }
+
+        // User 2 attempts to start an open session on the same room (must return existing session with already_live=true)
+        const session2Res = JSON.parse(query(container, `
+            SELECT public.start_open_session_atomic(
+                '${fullRoomId}'::uuid,
+                '${user2Id}'::uuid,
+                'video'
+            );
+        `));
+
+        if (session2Res.session_id !== openSessionId || session2Res.already_live !== true || session2Res.host_id !== user1Id) {
+            throw new Error(`start_open_session_atomic idempotency failed for User 2: ${JSON.stringify(session2Res)}`);
+        }
+
+        const liveCount = query(container, `SELECT count(*) FROM public.room_open_sessions WHERE room_id = '${fullRoomId}' AND status = 'live';`).trim();
+        if (liveCount !== '1') {
+            throw new Error(`Expected exactly 1 live session, found ${liveCount}`);
+        }
+        console.log("[PASS] Concurrent/multiple start_open_session_atomic returns single live session idempotently");
+
+        // 15c. Host Transfer on Leave: User 1 leaves, host should transfer to User 2
+        const leave1Res = JSON.parse(query(container, `
+            SELECT public.leave_open_session_atomic(
+                '${openSessionId}'::uuid,
+                '${user1Id}'::uuid
+            );
+        `));
+
+        if (leave1Res.host_transferred !== true || leave1Res.new_host_id !== user2Id || leave1Res.remaining_participants !== 1) {
+            throw new Error(`Host transfer failed on User 1 leave: ${JSON.stringify(leave1Res)}`);
+        }
+        console.log("[PASS] leave_open_session_atomic properly transferred host to oldest remaining participant");
+
+        // 15d. Empty session & grace period: User 2 leaves, remaining = 0, last_empty_at set
+        const leave2Res = JSON.parse(query(container, `
+            SELECT public.leave_open_session_atomic(
+                '${openSessionId}'::uuid,
+                '${user2Id}'::uuid
+            );
+        `));
+
+        if (leave2Res.remaining_participants !== 0) {
+            throw new Error(`Expected 0 remaining participants, got ${leave2Res.remaining_participants}`);
+        }
+
+        const emptyTimestamp = query(container, `SELECT last_empty_at FROM public.room_open_sessions WHERE id = '${openSessionId}';`).trim();
+        if (!emptyTimestamp || emptyTimestamp === '') {
+            throw new Error("last_empty_at was not recorded when session became empty");
+        }
+        console.log("[PASS] Session empty state records last_empty_at for grace period countdown");
+
+        // 15e. Study Session exclusivity: User 1 starts study session, ending open session
+        // Re-join user 1 to make session active again
+        execSql(container, `
+            UPDATE public.room_open_sessions SET last_empty_at = NULL WHERE id = '${openSessionId}';
+            INSERT INTO public.room_open_participants (session_id, user_id, is_host)
+            VALUES ('${openSessionId}', '${user1Id}', true);
+        `);
+
+        // User 2 without permission tries to start study session (must fail)
+        let studyDenied = false;
+        try {
+            execSql(container, `
+                SELECT public.start_study_session_atomic(
+                    '${fullRoomId}'::uuid,
+                    '${user2Id}'::uuid,
+                    'Unauthorized Study Session',
+                    'video'
+                );
+            `);
+        } catch {
+            studyDenied = true;
+        }
+        if (!studyDenied) {
+            throw new Error("SECURITY FAILURE: User without study permission was able to start study session");
+        }
+        console.log("[PASS] start_study_session_atomic rejects unauthorized user");
+
+        // User 1 (room owner) starts study session atomically
+        const studyRes = JSON.parse(query(container, `
+            SELECT public.start_study_session_atomic(
+                '${fullRoomId}'::uuid,
+                '${user1Id}'::uuid,
+                'Official Study Session',
+                'video'
+            );
+        `));
+
+        if (!studyRes.session_id || studyRes.status !== 'live') {
+            throw new Error(`start_study_session_atomic failed for owner: ${JSON.stringify(studyRes)}`);
+        }
+
+        // Verify that the open session was atomically ended
+        const openSessionStatus = query(container, `
+            SELECT status || ':' || COALESCE(end_reason, 'none')
+            FROM public.room_open_sessions 
+            WHERE id = '${openSessionId}';
+        `).trim();
+
+        if (openSessionStatus !== 'ended:study_session_started') {
+            throw new Error(`Open session was not atomically ended with study_session_started reason: ${openSessionStatus}`);
+        }
+        console.log("[PASS] Starting study session atomically terminated live open session");
+
+        // 15f. Open session blocked while study session is active
+        let openBlocked = false;
+        try {
+            execSql(container, `
+                SELECT public.start_open_session_atomic(
+                    '${fullRoomId}'::uuid,
+                    '${user1Id}'::uuid,
+                    'audio'
+                );
+            `);
+        } catch (err) {
+            if (err.message.includes('SB004')) {
+                openBlocked = true;
+            } else {
+                throw err;
+            }
+        }
+
+        if (!openBlocked) {
+            throw new Error("FAILURE: Open session was allowed while a study session was active!");
+        }
+        console.log("[PASS] start_open_session_atomic correctly blocked with SB004 while study session is live");
+
         console.log("=== FRESH DATABASE TEST PASSED ===");
     } catch (e) {
         console.error("=== FRESH DATABASE TEST FAILED ===", e.message);

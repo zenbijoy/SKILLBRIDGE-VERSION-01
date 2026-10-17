@@ -79,6 +79,40 @@ check("Admin Control Plane Build Verification", () => {
   runNpm(["run", "build"], path.resolve("admin"));
 });
 
+// 8. Database Migrations Synchronization & Room Live Schema
+check("Database Migrations Synchronization (infra vs supabase)", () => {
+  const infraMigrations = fs.readdirSync(path.resolve("infra/supabase/migrations")).filter((f) => f.endsWith(".sql"));
+  const supabaseMigrations = fs.readdirSync(path.resolve("supabase/migrations")).filter((f) => f.endsWith(".sql"));
+  const missingInSupabase = infraMigrations.filter((f) => !supabaseMigrations.includes(f));
+  if (missingInSupabase.length > 0) {
+    throw new Error(`supabase/migrations is missing migrations from infra/supabase/migrations: ${missingInSupabase.join(", ")}`);
+  }
+});
+
+check("Room Live Sessions Schema Definition (048_room_live_sessions.sql)", () => {
+  const migration048 = path.resolve("infra/supabase/migrations/048_room_live_sessions.sql");
+  if (!fs.existsSync(migration048)) {
+    throw new Error("Missing 048_room_live_sessions.sql migration!");
+  }
+  const content = fs.readFileSync(migration048, "utf8");
+  const requiredSymbols = [
+    "room_open_sessions",
+    "room_open_participants",
+    "room_study_permissions",
+    "start_open_session_atomic",
+    "join_open_session_atomic",
+    "leave_open_session_atomic",
+    "end_open_sessions_for_room",
+    "start_study_session_atomic",
+    "create_room_full_atomic",
+  ];
+  for (const sym of requiredSymbols) {
+    if (!content.includes(sym)) {
+      throw new Error(`048_room_live_sessions.sql is missing required symbol: ${sym}`);
+    }
+  }
+});
+
 const failed = checks.filter((c) => c.status === "FAIL");
 
 console.log("\n" + "=".repeat(60));

@@ -9,6 +9,7 @@ import { startCallTimeoutWorker } from "./workers/callTimeoutWorker.js";
 import { redis } from "./lib/redis.js";
 import { runAdminBootstrap } from "./services/admin-bootstrap.js";
 import { initializeFirebase } from "./services/firebase.js";
+import { verifyRoomSchema } from "./services/roomSchemaCheck.js";
 import { logger } from "./lib/logger.js";
 import { sentry } from "./lib/sentry.js";
 
@@ -135,6 +136,10 @@ if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_EN
     } else if (!redis && env.REDIS_REQUIRED) {
       logger.fatal({ event: "redis_required_missing" }, "REDIS_URL is not set but REDIS_REQUIRED is true. Exiting.");
       process.exit(1);
+    }
+
+    if (env.SUPABASE_URL) {
+      await verifyRoomSchema();
     }
 
     server.listen(env.PORT, "0.0.0.0", async () => {
