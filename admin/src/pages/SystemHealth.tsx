@@ -25,15 +25,20 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { SystemHealthData } from '../types/admin';
 
 type RealtimeData = {
-  socketio: {
-    status: string;
-    connectedSockets: number;
-    roomsTracked: number;
+  socketStatus?: string;
+  activeOnlineUsers?: number;
+  activeLearningSessions?: number;
+  socketio?: {
+    status?: string;
+    connectedSockets?: number;
+    roomsTracked?: number;
   };
-  livekit: {
-    configured: boolean;
-    activeRooms: number;
+  livekit?: {
+    configured?: boolean;
+    activeRooms?: number;
     host?: string;
+    status?: string;
+    p2pFallbackEnabled?: boolean;
   };
 };
 
@@ -324,7 +329,7 @@ export default function SystemHealth() {
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Active rooms:</span>
                   <span className="font-mono text-slate-200">
-                    {realtime?.livekit.activeRooms ?? 0}
+                    {realtime?.livekit?.activeRooms ?? realtime?.activeLearningSessions ?? 0}
                   </span>
                 </div>
               </div>
@@ -343,13 +348,13 @@ export default function SystemHealth() {
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Connected sockets:</span>
                   <span className="font-mono font-medium text-emerald-400">
-                    {realtime?.socketio.connectedSockets ?? 0}
+                    {realtime?.socketio?.connectedSockets ?? realtime?.activeOnlineUsers ?? 0}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Active room channels:</span>
                   <span className="font-mono text-slate-200">
-                    {realtime?.socketio.roomsTracked ?? 0}
+                    {realtime?.socketio?.roomsTracked ?? realtime?.activeLearningSessions ?? 0}
                   </span>
                 </div>
               </div>

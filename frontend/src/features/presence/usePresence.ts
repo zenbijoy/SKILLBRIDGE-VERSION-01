@@ -80,3 +80,11 @@ export function useUserPresence(userId?: string | null, initialOnline?: boolean)
 
   return initialOnline ?? false;
 }
+
+export function toggleMyPresence(isOnlineVisible: boolean): void {
+  const socket = getSocket();
+  if (socket && socket.connected) {
+    socket.emit("presence:toggle", { isOnlineVisible });
+  }
+}
+

@@ -474,7 +474,7 @@ export function ImportRoutineModal({
                   {progressStep}
                 </Text>
                 <Text style={[styles.processingSub, { color: colors.muted }]}>
-                  Gemini multimodal extractor is structuring timetable slots...
+                  AI assistant is structuring timetable slots...
                 </Text>
               </View>
             ) : null}

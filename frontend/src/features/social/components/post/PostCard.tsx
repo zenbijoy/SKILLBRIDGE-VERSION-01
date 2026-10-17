@@ -2,8 +2,9 @@ import React, { useState } from "react";
 import { StyleSheet, Alert, View, Text, TextInput, Image, Pressable } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { router } from "expo-router";
 import { useTheme } from "@/theme";
-import { Card, Row } from "@/components/ui";
+import { Card, Row, triggerHaptic } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { PostComment, ReactionType, SocialPost } from "../../types";
 
@@ -36,6 +37,7 @@ export interface PostCardProps {
   onReport?: (postId: string) => void;
   onHashtagPress?: (tag: string) => void;
   onMentionPress?: (username: string) => void;
+  onAuthorPress?: (authorId: string) => void;
   isPreview?: boolean;
 }
 
@@ -53,6 +55,7 @@ export function PostCard({
   onReport,
   onHashtagPress,
   onMentionPress,
+  onAuthorPress,
   isPreview = false,
 }: PostCardProps) {
   const { colors } = useTheme();
@@ -109,12 +112,28 @@ export function PostCard({
 
   const commentsList = commentsQuery.data?.comments || [];
 
+  const handleAuthorPress = () => {
+    if (post.is_anonymous || !post.author_id) return;
+    triggerHaptic("selection");
+    if (onAuthorPress) {
+      onAuthorPress(post.author_id);
+    } else {
+      const isSelf = currentUserId === post.author_id;
+      if (isSelf) {
+        router.push("/(tabs)/profile" as any);
+      } else {
+        router.push(`/user/${post.author_id}` as any);
+      }
+    }
+  };
+
   return (
     <Card style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       {/* 1. Header */}
       <PostHeader
         post={post}
         onOpenMenu={isPreview ? undefined : () => setShowMenu(true)}
+        onAuthorPress={handleAuthorPress}
       />
 
       {/* 2. Text / Text Art Content */}
@@ -169,6 +188,7 @@ export function PostCard({
           images={post.media_urls}
           attachments={post.attachments}
           youtube={post.youtube}
+          onDoubleTapLike={() => onReact(post.id, "like")}
         />
       )}
 

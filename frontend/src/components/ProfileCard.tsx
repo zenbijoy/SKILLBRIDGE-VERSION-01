@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Profile } from "@/types";
 import { Card, Muted, Pill, Row, triggerHaptic } from "./ui";
 import { useTheme } from "@/theme";
+import { ActiveDot } from "@/features/presence/ActiveDot";
 
 function Initials({ name }: { name: string }) {
   const { colors } = useTheme();
@@ -38,11 +39,18 @@ export function ProfileCard({ profile }: { profile: Profile }) {
     >
       <Card tone={isTutor ? "glow" : "default"}>
         <View style={s.top}>
-          {profile.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={s.avatar} />
-          ) : (
-            <Initials name={profile.full_name} />
-          )}
+          <View style={{ position: "relative" }}>
+            {profile.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={s.avatar} />
+            ) : (
+              <Initials name={profile.full_name} />
+            )}
+            <ActiveDot
+              userId={profile.id}
+              size={13}
+              style={{ position: "absolute", bottom: -1, right: -1 }}
+            />
+          </View>
           <View style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <Text style={[s.name, { color: colors.text }]}>{profile.full_name}</Text>
@@ -60,23 +68,80 @@ export function ProfileCard({ profile }: { profile: Profile }) {
 
         {profile.bio ? <Muted numberOfLines={2}>{profile.bio}</Muted> : null}
 
-        <Row>
-          {profile.roles.slice(0, 3).map((role) => (
-            <Pill
-              key={role}
-              tone={
-                role === "peer_tutor"
-                  ? "success"
-                  : role === "researcher"
-                  ? "accent"
-                  : role === "moderator" || role === "admin"
-                  ? "danger"
-                  : "default"
-              }
+        <Row style={{ justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
+          <Row style={{ gap: 6, flex: 1 }}>
+            {profile.roles.slice(0, 2).map((role) => (
+              <Pill
+                key={role}
+                tone={
+                  role === "peer_tutor"
+                    ? "success"
+                    : role === "researcher"
+                    ? "accent"
+                    : role === "moderator" || role === "admin"
+                    ? "danger"
+                    : "default"
+                }
+              >
+                {role.replace("_", " ")}
+              </Pill>
+            ))}
+          </Row>
+
+          {/* Quick Direct Call Actions */}
+          <Row style={{ gap: 8 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Voice call ${profile.full_name}`}
+              onPress={(e) => {
+                e.stopPropagation();
+                triggerHaptic();
+                router.push({
+                  pathname: `/call/${profile.id}` as any,
+                  params: {
+                    targetId: profile.id,
+                    name: profile.full_name,
+                    avatar: profile.avatar_url || "",
+                    type: "audio",
+                  },
+                });
+              }}
+              style={({ pressed }) => ({
+                padding: 7,
+                borderRadius: 12,
+                backgroundColor: "rgba(16, 185, 129, 0.14)",
+                opacity: pressed ? 0.75 : 1,
+              })}
             >
-              {role.replace("_", " ")}
-            </Pill>
-          ))}
+              <MaterialCommunityIcons name="phone" size={16} color="#10B981" />
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Video call ${profile.full_name}`}
+              onPress={(e) => {
+                e.stopPropagation();
+                triggerHaptic();
+                router.push({
+                  pathname: `/call/${profile.id}` as any,
+                  params: {
+                    targetId: profile.id,
+                    name: profile.full_name,
+                    avatar: profile.avatar_url || "",
+                    type: "video",
+                  },
+                });
+              }}
+              style={({ pressed }) => ({
+                padding: 7,
+                borderRadius: 12,
+                backgroundColor: "rgba(37, 99, 235, 0.14)",
+                opacity: pressed ? 0.75 : 1,
+              })}
+            >
+              <MaterialCommunityIcons name="video" size={16} color="#3B82F6" />
+            </Pressable>
+          </Row>
         </Row>
       </Card>
     </Pressable>

@@ -25,6 +25,7 @@ export default function EditProfile() {
   const [batch, setBatch] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [removingAvatar, setRemovingAvatar] = useState(false);
 
   useEffect(() => {
     const p = profile.data?.profile;
@@ -112,6 +113,22 @@ export default function EditProfile() {
     }
   };
 
+  const removeAvatar = async () => {
+    try {
+      setRemovingAvatar(true);
+      await api("/profiles/me/avatar", { method: "DELETE" });
+      setAvatarUrl(null);
+      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ["me-edit"] });
+      triggerHaptic();
+      Alert.alert("Avatar removed", "Your profile photo has been removed.");
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not remove profile photo.");
+    } finally {
+      setRemovingAvatar(false);
+    }
+  };
+
   return (
     <Screen>
       <H1>Edit Profile</H1>
@@ -148,6 +165,15 @@ export default function EditProfile() {
               >
                 <MaterialCommunityIcons name="camera" size={16} color={colors.white} />
               </Pressable>
+              {avatarUrl && (
+                <Pressable
+                  onPress={removeAvatar}
+                  disabled={removingAvatar}
+                  style={[s.removeBadge, { backgroundColor: "rgba(239,68,68,0.9)" }]}
+                >
+                  <MaterialCommunityIcons name="close" size={14} color={colors.white} />
+                </Pressable>
+              )}
             </View>
 
             <Button
@@ -197,6 +223,18 @@ const s = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     borderWidth: 3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  removeBadge: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
   },

@@ -75,8 +75,8 @@ export function RoomOSHeader({
     }
   };
 
-  const topicOrTitle = room.topic || room.title || "Physics Basics";
-  const hostDisplayName = userFullName || "Course Educator";
+  const topicOrTitle = room.topic ? `#${room.topic}` : room.title;
+  const hostDisplayName = userFullName || "Educator";
 
   return (
     <View style={s.container}>

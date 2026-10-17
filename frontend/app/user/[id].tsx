@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   Alert,
+  Image,
   Pressable,
   ScrollView,
   Share,
@@ -8,6 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Animated, { FadeInUp } from "react-native-reanimated";
@@ -29,6 +31,7 @@ import {
   triggerHaptic,
 } from "@/components/ui";
 import { useUserPresence } from "@/features/presence/usePresence";
+import { ActiveDot } from "@/features/presence/ActiveDot";
 import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
 import { useConnections } from "@/features/connections/useConnections";
@@ -220,29 +223,63 @@ export default function UserProfile() {
           </Row>
         </Row>
 
-        {/* Profile Card Header */}
-        <Animated.View entering={FadeInUp.delay(100).springify()}>
-          <Row style={s.profileHeader}>
-            <View style={[s.avatarWrap, { backgroundColor: colors.primarySoft }]}>
-              <MaterialCommunityIcons name="account" size={44} color={colors.primary} />
+        {/* Profile Card Header with Cover Banner */}
+        <Animated.View entering={FadeInUp.delay(100).springify()} style={[s.headerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={s.coverWrapper}>
+            {d.profile.cover_url ? (
+              <Image source={{ uri: d.profile.cover_url }} style={s.coverImage} resizeMode="cover" />
+            ) : (
+              <LinearGradient
+                colors={[colors.primary, colors.accent, colors.surface]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={s.coverGradient}
+              />
+            )}
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.5)"]}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+          </View>
+
+          <View style={s.profileBody}>
+            <View style={s.avatarContainer}>
+              {d.profile.avatar_url ? (
+                <Image source={{ uri: d.profile.avatar_url }} style={[s.avatar, { borderColor: colors.surface }]} />
+              ) : (
+                <View style={[s.avatar, s.avatarFallback, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+                  <Text style={s.avatarInitials}>
+                    {d.profile.full_name?.split(/\s+/).map((w: string) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "SB"}
+                  </Text>
+                </View>
+              )}
+              {!isSelf && (
+                <ActiveDot
+                  userId={id}
+                  initialOnline={isUserOnline}
+                  size={18}
+                  style={{ position: "absolute", bottom: 2, right: 2 }}
+                />
+              )}
             </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <H1 style={s.fullName}>{d.profile.full_name}</H1>
-              <Muted style={s.username}>
-                @{d.profile.username} · {d.profile.university || "SkillBridge Campus"}
-              </Muted>
-              <Row style={{ gap: 6, marginTop: 4, alignItems: "center" }}>
-                {!isSelf && (
-                  <Pill tone={isUserOnline ? "success" : "default"}>
-                    {isUserOnline ? "Active Now" : "Offline"}
-                  </Pill>
-                )}
-                <Pill tone="accent">{d.profile.reputation} rep</Pill>
-                <Pill>{d.mutualCount} mutual connections</Pill>
-                {isTutor && <Pill tone="primary">PEER TUTOR</Pill>}
-              </Row>
-            </View>
-          </Row>
+
+            <H1 style={s.fullName}>{d.profile.full_name}</H1>
+            <Muted style={s.username}>
+              @{d.profile.username} · {d.profile.university || "SkillBridge Campus"}
+            </Muted>
+
+            <Row style={{ gap: 6, marginTop: 4, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+              {!isSelf && (
+                <Pill tone={isUserOnline ? "success" : "default"}>
+                  {isUserOnline ? "Active Now" : "Offline"}
+                </Pill>
+              )}
+              <Pill tone="accent">{d.profile.reputation} rep</Pill>
+              <Pill>{d.mutualCount} mutual connections</Pill>
+              {isTutor && <Pill tone="primary">PEER TUTOR</Pill>}
+            </Row>
+          </View>
         </Animated.View>
 
         {/* Bio */}
@@ -502,24 +539,59 @@ const s = StyleSheet.create({
   iconBtn: {
     padding: 6,
   },
-  profileHeader: {
-    alignItems: "center",
-    gap: 14,
-    marginBottom: 12,
+  headerCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 16,
   },
-  avatarWrap: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+  coverWrapper: {
+    height: 120,
+    width: "100%",
+    position: "relative",
+    backgroundColor: "#1e293b",
+  },
+  coverGradient: {
+    height: 120,
+    width: "100%",
+  },
+  coverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  profileBody: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    alignItems: "center",
+    marginTop: -38,
+  },
+  avatarContainer: {
+    marginBottom: 8,
+  },
+  avatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 3,
+  },
+  avatarFallback: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarInitials: {
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "900",
   },
   fullName: {
     fontSize: 20,
     fontWeight: "800",
+    textAlign: "center",
   },
   username: {
     fontSize: 13,
+    marginBottom: 4,
+    textAlign: "center",
   },
   bioText: {
     fontSize: 14,

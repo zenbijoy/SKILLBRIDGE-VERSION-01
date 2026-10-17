@@ -25,7 +25,7 @@ const items: FeatureItem[] = [
   { icon: "brain", label: "Skill Quizzes", labelBn: "স্কিল কুইজ", badge: "Earn XP", badgeBn: "XP অর্জন", color: "#EC4899", target: "/quiz" },
   { icon: "flask-outline", label: "Research Labs", labelBn: "রিসার্চ ল্যাব", badge: "Collaborate", badgeBn: "কোলাবরেশন", color: "#06B6D4", target: "/research" },
   { icon: "calendar-star", label: "Campus Events", labelBn: "ক্যাম্পাস ইভেন্ট", badge: "Workshops", badgeBn: "ওয়ার্কশপ", color: "#6366F1", target: "/events" },
-  { icon: "bookmark-outline", label: "Saved Vault", labelBn: "সেভড ভল্ট", badge: "Notes", badgeBn: "নোটস", color: "#14B8A6", target: "/saved" },
+  { icon: "file-document-outline", label: "Note Vault", labelBn: "নোট ভল্ট", badge: "PDFs", badgeBn: "পিডিএফ", color: "#14B8A6", target: "/vault" as any },
   { icon: "account-multiple-outline", label: "Peer Network", labelBn: "সহপাঠী নেটওয়ার্ক", badge: "Mentors", badgeBn: "মেন্টর", color: "#F97316", target: "/connections" },
 ];
 

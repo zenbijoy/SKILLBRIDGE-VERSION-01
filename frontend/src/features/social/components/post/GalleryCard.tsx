@@ -1,9 +1,30 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, Image, Pressable, Modal, Linking } from "react-native";
+import React, { useRef, useState } from "react";
+import {
+  Dimensions,
+  Image,
+  Linking,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useTheme, radius } from "@/theme";
-import { Row } from "@/components/ui";
+import { radius, useTheme } from "@/theme";
+import { Row, triggerHaptic } from "@/components/ui";
 import type { PostAttachment } from "../../types";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface GalleryCardProps {
   images?: string[];
@@ -14,11 +35,18 @@ interface GalleryCardProps {
     thumbnailUrl: string;
     durationSeconds?: number | null;
   };
+  onDoubleTapLike?: () => void;
 }
 
-export function GalleryCard({ images = [], attachments = [], youtube }: GalleryCardProps) {
-  const { colors } = useTheme();
+export function GalleryCard({
+  images = [],
+  attachments = [],
+  youtube,
+  onDoubleTapLike,
+}: GalleryCardProps) {
+  const { colors, isDark } = useTheme();
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
   // Separate media by type
   const docAttachments = attachments.filter((a) => a.media_type === "document");
@@ -38,6 +66,59 @@ export function GalleryCard({ images = [], attachments = [], youtube }: GalleryC
   const openExternal = (url: string) => {
     Linking.openURL(url).catch(() => {});
   };
+
+  // Double Tap detection & heart burst animation
+  const lastTapRef = useRef<number>(0);
+  const heartScale = useSharedValue(0);
+  const heartOpacity = useSharedValue(0);
+
+  const heartAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: heartScale.value }],
+    opacity: heartOpacity.value,
+  }));
+
+  const handleImagePress = (idx: number) => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+      // Double tap detected!
+      triggerHaptic("impactMedium");
+      onDoubleTapLike?.();
+
+      // Trigger Instagram Heart Burst
+      heartScale.value = withSequence(
+        withSpring(1.2, { damping: 5, stiffness: 220 }),
+        withTiming(1, { duration: 150 }),
+        withTiming(0, { duration: 250 }),
+      );
+      heartOpacity.value = withSequence(
+        withTiming(1, { duration: 100 }),
+        withTiming(1, { duration: 300 }),
+        withTiming(0, { duration: 250 }),
+      );
+      lastTapRef.current = 0;
+    } else {
+      lastTapRef.current = now;
+      // Single tap timeout to open lightbox
+      setTimeout(() => {
+        if (lastTapRef.current === now) {
+          setActiveImageIndex(idx);
+        }
+      }, DOUBLE_TAP_DELAY);
+    }
+  };
+
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const contentOffset = e.nativeEvent.contentOffset.x;
+    const viewSize = e.nativeEvent.layoutMeasurement.width;
+    const pageNum = Math.floor((contentOffset + viewSize / 2) / viewSize);
+    if (pageNum !== currentSlide && pageNum >= 0 && pageNum < allImages.length) {
+      setCurrentSlide(pageNum);
+    }
+  };
+
+  const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH - 28);
 
   return (
     <View style={styles.container}>
@@ -94,8 +175,8 @@ export function GalleryCard({ images = [], attachments = [], youtube }: GalleryC
       {docAttachments.map((doc) => {
         const sizeMb = doc.file_size_bytes
           ? `${(doc.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`
-          : "Document";
-        const fileName = doc.url.split("/").pop() || "Document.pdf";
+          : "PDF Document";
+        const fileName = (doc as any).name || doc.url.split("/").pop() || "Document.pdf";
 
         return (
           <Pressable
@@ -104,126 +185,106 @@ export function GalleryCard({ images = [], attachments = [], youtube }: GalleryC
             style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.surface }]}
           >
             <View style={[styles.docIconWrapper, { backgroundColor: `${colors.primary}15` }]}>
-              <MaterialCommunityIcons name="file-pdf-box" size={28} color="#EF4444" />
+              <MaterialCommunityIcons name="file-pdf-box" size={30} color="#EF4444" />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, gap: 2 }}>
               <Text style={[styles.docName, { color: colors.text }]} numberOfLines={1}>
                 {fileName}
               </Text>
-              <Text style={[styles.docSize, { color: colors.muted }]}>{sizeMb}</Text>
+              <Text style={[styles.docSize, { color: colors.muted }]}>{sizeMb} • PDF</Text>
             </View>
-            <Row style={[styles.docOpenBtn, { backgroundColor: `${colors.primary}15` }]}>
-              <MaterialCommunityIcons name="download" size={15} color={colors.primary} />
-              <Text style={[styles.docOpenText, { color: colors.primary }]}>Open</Text>
+            <Row style={[styles.docOpenBtn, { backgroundColor: colors.primarySoft }]}>
+              <MaterialCommunityIcons name="file-eye-outline" size={15} color={colors.primary} />
+              <Text style={[styles.docOpenText, { color: colors.primary }]}>Read</Text>
             </Row>
           </Pressable>
         );
       })}
 
-      {/* 4. Multi-Image Grid Layouts with Page Counter Badge */}
+      {/* 4. Instagram-Style Photo Display & Multi-Image Carousel */}
       {allImages.length > 0 && (
-        <View style={styles.gridContainer}>
-          {allImages.length > 0 && (
+        <View
+          style={[styles.instaMediaWrapper, { backgroundColor: isDark ? "#0A0D14" : "#F1F5F9" }]}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0) setContainerWidth(w);
+          }}
+        >
+          {/* Top-Right Carousel Counter Badge (e.g. 1/3) */}
+          {allImages.length > 1 && (
             <View style={styles.pageBadgeTopRight} pointerEvents="none">
-              <Text style={styles.pageBadgeText}>1/{allImages.length}</Text>
-            </View>
-          )}
-
-          {docAttachments.length > 0 && (
-            <View style={styles.docBadgeTopLeft} pointerEvents="none">
-              <MaterialCommunityIcons name="file-document-outline" size={13} color="#FFFFFF" />
               <Text style={styles.pageBadgeText}>
-                {(docAttachments[0] as any)?.name?.split(".")[0] || docAttachments[0]?.url?.split("/").pop()?.split(".")[0] || "Document"} • {allImages.length || 2} pages
+                {currentSlide + 1}/{allImages.length}
               </Text>
             </View>
           )}
 
-          {allImages.length === 1 && (
-            <Pressable onPress={() => setActiveImageIndex(0)} style={styles.imageWrapper}>
-              <Image source={{ uri: allImages[0] }} style={styles.singleImage} resizeMode="cover" />
-            </Pressable>
-          )}
+          {/* Double-Tap Heart Burst Animation Center Overlay */}
+          <Animated.View style={[styles.centerHeartOverlay, heartAnimStyle]} pointerEvents="none">
+            <MaterialCommunityIcons name="heart" size={90} color="#FFFFFF" style={styles.heartShadow} />
+          </Animated.View>
 
-          {allImages.length === 2 && (
-            <Row style={{ gap: 6 }}>
-              {allImages.map((url, idx) => (
-                <Pressable key={idx} onPress={() => setActiveImageIndex(idx)} style={{ flex: 1 }}>
-                  <Image source={{ uri: url }} style={styles.doubleImage} resizeMode="cover" />
+          {allImages.length === 1 ? (
+            <Pressable
+              onPress={() => handleImagePress(0)}
+              style={[styles.imageContainer, { width: containerWidth }]}
+            >
+              <Image
+                source={{ uri: allImages[0] }}
+                style={[styles.instaImage, { width: containerWidth }]}
+                resizeMode="cover"
+              />
+            </Pressable>
+          ) : (
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              style={{ width: containerWidth }}
+            >
+              {allImages.map((uri, idx) => (
+                <Pressable
+                  key={idx}
+                  onPress={() => handleImagePress(idx)}
+                  style={[styles.imageContainer, { width: containerWidth }]}
+                >
+                  <Image
+                    source={{ uri }}
+                    style={[styles.instaImage, { width: containerWidth }]}
+                    resizeMode="cover"
+                  />
                 </Pressable>
               ))}
-            </Row>
+            </ScrollView>
           )}
 
-          {allImages.length === 3 && (
-            <View style={{ gap: 6 }}>
-              <Pressable onPress={() => setActiveImageIndex(0)}>
-                <Image source={{ uri: allImages[0] }} style={styles.tripleTopImage} resizeMode="cover" />
-              </Pressable>
-              <Row style={{ gap: 6 }}>
-                <Pressable onPress={() => setActiveImageIndex(1)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[1] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-                <Pressable onPress={() => setActiveImageIndex(2)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[2] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-              </Row>
-            </View>
-          )}
-
-          {allImages.length === 4 && (
-            <View style={{ gap: 6 }}>
-              <Row style={{ gap: 6 }}>
-                <Pressable onPress={() => setActiveImageIndex(0)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[0] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-                <Pressable onPress={() => setActiveImageIndex(1)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[1] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-              </Row>
-              <Row style={{ gap: 6 }}>
-                <Pressable onPress={() => setActiveImageIndex(2)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[2] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-                <Pressable onPress={() => setActiveImageIndex(3)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[3] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-              </Row>
-            </View>
-          )}
-
-          {allImages.length >= 5 && (
-            <View style={{ gap: 6 }}>
-              <Row style={{ gap: 6 }}>
-                <Pressable onPress={() => setActiveImageIndex(0)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[0] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-                <Pressable onPress={() => setActiveImageIndex(1)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[1] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-              </Row>
-              <Row style={{ gap: 6 }}>
-                <Pressable onPress={() => setActiveImageIndex(2)} style={{ flex: 1 }}>
-                  <Image source={{ uri: allImages[2] }} style={styles.doubleImage} resizeMode="cover" />
-                </Pressable>
-                <Pressable onPress={() => setActiveImageIndex(3)} style={{ flex: 1, position: "relative" }}>
-                  <Image source={{ uri: allImages[3] }} style={styles.doubleImage} resizeMode="cover" />
-                  {/* Overlay with +N counter */}
-                  <View style={styles.overlayPlus}>
-                    <Text style={styles.overlayPlusText}>+{allImages.length - 3}</Text>
-                  </View>
-                </Pressable>
-              </Row>
+          {/* Instagram Carousel Indicator Dots */}
+          {allImages.length > 1 && (
+            <View style={styles.dotsRow} pointerEvents="none">
+              {allImages.map((_, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.dot,
+                    idx === currentSlide
+                      ? [styles.activeDot, { backgroundColor: colors.primary }]
+                      : [styles.inactiveDot, { backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.25)" }],
+                  ]}
+                />
+              ))}
             </View>
           )}
         </View>
       )}
 
-      {/* Full Screen Image Viewer Modal */}
+      {/* Full Screen Image Lightbox Modal */}
       {activeImageIndex !== null && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setActiveImageIndex(null)}>
           <View style={styles.modalBackdrop}>
             <Pressable style={styles.modalCloseBtn} onPress={() => setActiveImageIndex(null)}>
-              <MaterialCommunityIcons name="close" size={24} color="#FFFFFF" />
+              <MaterialCommunityIcons name="close" size={26} color="#FFFFFF" />
             </Pressable>
             <Image
               source={{ uri: allImages[activeImageIndex] }}
@@ -264,150 +325,130 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     overflow: "hidden",
   },
-  gridContainer: {
+  instaMediaWrapper: {
     position: "relative",
     borderRadius: radius.md,
     overflow: "hidden",
-  },
-  pageBadgeTopRight: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    zIndex: 10,
-  },
-  docBadgeTopLeft: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 6,
-    zIndex: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  pageBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 11.5,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-  imageWrapper: {
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  singleImage: {
-    width: "100%",
-    height: 300,
-    borderRadius: 14,
-  },
-  doubleImage: {
-    width: "100%",
-    height: 160,
-    borderRadius: radius.md,
-  },
-  tripleTopImage: {
-    width: "100%",
-    height: 170,
-    borderRadius: radius.md,
-  },
-  overlayPlus: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  overlayPlusText: {
+  imageContainer: {
+    height: 380,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  instaImage: {
+    height: 380,
+  },
+  centerHeartOverlay: {
+    position: "absolute",
+    zIndex: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heartShadow: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+  },
+  pageBadgeTopRight: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.68)",
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 14,
+    zIndex: 15,
+  },
+  pageBadgeText: {
     color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  dotsRow: {
+    position: "absolute",
+    bottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    zIndex: 15,
+  },
+  dot: {
+    borderRadius: 3,
+    height: 6,
+  },
+  activeDot: {
+    width: 18,
+  },
+  inactiveDot: {
+    width: 6,
   },
   youtubeCard: {
-    borderWidth: 1,
-    borderRadius: radius.md,
-    overflow: "hidden",
     flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-    marginBottom: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 6,
   },
   youtubeThumbContainer: {
     width: 120,
-    height: 75,
+    height: 80,
     position: "relative",
-    backgroundColor: "#000000",
   },
   youtubeThumb: {
     width: "100%",
     height: "100%",
   },
   ytPlayOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.3)",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.2)",
   },
   youtubeMeta: {
     flex: 1,
-    paddingRight: 10,
+    padding: 8,
+    justifyContent: "center",
   },
   youtubeTitle: {
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "600",
   },
   youtubeSub: {
     fontSize: 11,
   },
   videoCard: {
-    height: 190,
+    height: 200,
     borderRadius: radius.md,
+    borderWidth: 1,
     overflow: "hidden",
     position: "relative",
-    marginBottom: 8,
-    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
   },
   videoThumb: {
     width: "100%",
     height: "100%",
   },
   videoPlaceholder: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   videoPlayOverlay: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   playCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(0,0,0,0.65)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -416,9 +457,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     paddingVertical: 5,
-    alignItems: "center",
+    paddingHorizontal: 10,
   },
   videoBarText: {
     color: "#FFFFFF",
@@ -428,33 +469,32 @@ const styles = StyleSheet.create({
   docCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    padding: 12,
+    padding: 10,
     borderRadius: radius.md,
-    marginBottom: 8,
+    borderWidth: 1,
+    gap: 10,
+    marginBottom: 6,
   },
   docIconWrapper: {
     width: 44,
     height: 44,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   docName: {
-    fontSize: 13.5,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "600",
   },
   docSize: {
     fontSize: 11,
-    marginTop: 2,
   },
   docOpenBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.sm,
   },
   docOpenText: {
     fontSize: 12,
@@ -462,22 +502,20 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.92)",
+    backgroundColor: "rgba(0,0,0,0.95)",
     justifyContent: "center",
     alignItems: "center",
   },
   modalCloseBtn: {
     position: "absolute",
-    top: 48,
+    top: 50,
     right: 20,
     zIndex: 10,
     padding: 8,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 20,
   },
   modalFullImage: {
-    width: "95%",
-    height: "75%",
+    width: "100%",
+    height: "80%",
   },
   modalNavRow: {
     position: "absolute",
@@ -486,13 +524,11 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   modalNavBtn: {
-    padding: 8,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 20,
+    padding: 10,
   },
   modalCounter: {
     color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
   },
 });

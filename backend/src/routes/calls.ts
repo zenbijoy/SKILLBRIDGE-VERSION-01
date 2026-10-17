@@ -96,7 +96,45 @@ export const callMetrics = {
 /**
  * Server-authoritative Provider Selection
  */
-export async function getProviderForCall(callId: string, userId: string, userName: string) {
+export async function getProviderForCall(
+  callId: string,
+  userId: string,
+  userName: string,
+  requestedProvider?: "webrtc" | "livekit",
+) {
+  const livekitKey = env.LIVEKIT_API_KEY || process.env.LIVEKIT_API_KEY;
+  const livekitSecret = env.LIVEKIT_API_SECRET || process.env.LIVEKIT_API_SECRET;
+  const livekitUrl = env.LIVEKIT_URL || process.env.LIVEKIT_URL || "wss://skillbridge-rrx7e4cd.livekit.cloud";
+
+  // If LiveKit is explicitly requested or P2P is disabled, use LiveKit SFU
+  const useLivekit =
+    (requestedProvider === "livekit" || !env.P2P_CALLS_ENABLED) &&
+    Boolean(livekitKey && livekitSecret);
+
+  if (useLivekit && livekitKey && livekitSecret) {
+    const at = new AccessToken(livekitKey, livekitSecret, {
+      identity: userId,
+      name: userName,
+      ttl: "1h",
+      metadata: JSON.stringify({ callId }),
+    });
+    at.addGrant({
+      roomJoin: true,
+      room: `skillbridge-call-${callId}`,
+      canSubscribe: true,
+      canPublish: true,
+      canPublishData: true,
+    });
+    return {
+      provider: "livekit" as const,
+      providerConfig: {
+        url: livekitUrl,
+        roomName: `skillbridge-call-${callId}`,
+        token: await at.toJwt(),
+      },
+    };
+  }
+
   if (env.P2P_CALLS_ENABLED) {
     return {
       provider: "webrtc" as const,
@@ -105,10 +143,6 @@ export async function getProviderForCall(callId: string, userId: string, userNam
   }
 
   // Fallback to LiveKit SFU Cloud
-  const livekitKey = env.LIVEKIT_API_KEY || process.env.LIVEKIT_API_KEY;
-  const livekitSecret = env.LIVEKIT_API_SECRET || process.env.LIVEKIT_API_SECRET;
-  const livekitUrl = env.LIVEKIT_URL || process.env.LIVEKIT_URL || "wss://livekit.skillbridge.app";
-
   if (livekitKey && livekitSecret) {
     const at = new AccessToken(livekitKey, livekitSecret, {
       identity: userId,
@@ -189,6 +223,7 @@ export function callsRouter(io?: Server) {
         .object({
           calleeId: z.string().uuid(),
           type: z.enum(["audio", "video"]).default("video"),
+          provider: z.enum(["webrtc", "livekit"]).optional(),
         })
         .parse(req.body);
 
@@ -214,16 +249,20 @@ export function callsRouter(io?: Server) {
       }
 
       // Check block relationship
-      const { data: blockRecord } = await admin
-        .from("user_blocks")
-        .select("id")
-        .or(
-          `and(blocker_id.eq.${callerId},blocked_id.eq.${calleeId}),and(blocker_id.eq.${calleeId},blocked_id.eq.${callerId})`,
-        )
-        .maybeSingle();
+      try {
+        const { data: blockRecord } = await admin
+          .from("user_blocks")
+          .select("id")
+          .or(
+            `and(blocker_id.eq.${callerId},blocked_id.eq.${calleeId}),and(blocker_id.eq.${calleeId},blocked_id.eq.${callerId})`,
+          )
+          .maybeSingle();
 
-      if (blockRecord) {
-        return res.status(403).json({ error: "Cannot connect call due to privacy settings." });
+        if (blockRecord) {
+          return res.status(403).json({ error: "Cannot connect call due to privacy settings." });
+        }
+      } catch {
+        // Fallback handled by authoritative canUserCall below
       }
 
       // Check authoritative call privacy permissions
@@ -233,12 +272,21 @@ export function callsRouter(io?: Server) {
         return res.status(403).json({ error: callCheck.reason || "Cannot connect call due to privacy settings." });
       }
 
+      // Auto-expire any stale calls older than 60 seconds to prevent deadlocks
+      const staleThreshold = new Date(Date.now() - 60_000).toISOString();
+      await admin
+        .from("calls")
+        .update({ status: "missed", end_reason: "timeout", ended_at: new Date().toISOString() })
+        .in("status", ["ringing", "connecting", "reconnecting"])
+        .lt("created_at", staleThreshold);
+
       // Unified check: Check if caller or callee is in an active call
       const { data: activeCall } = await admin
         .from("calls")
-        .select("id, caller_id, callee_id")
+        .select("id, caller_id, callee_id, created_at")
         .or(`caller_id.eq.${calleeId},callee_id.eq.${calleeId},caller_id.eq.${callerId},callee_id.eq.${callerId}`)
         .in("status", ["ringing", "accepted", "connecting", "connected", "reconnecting"])
+        .gt("created_at", new Date(Date.now() - 300_000).toISOString())
         .maybeSingle();
 
       if (activeCall) {
@@ -273,6 +321,7 @@ export function callsRouter(io?: Server) {
           metadata: {
             callerName,
             callerAvatar: callerProfile?.avatar_url || null,
+            provider: body.provider,
           },
         })
         .select()
@@ -281,7 +330,7 @@ export function callsRouter(io?: Server) {
       if (insertErr) throw insertErr;
 
       // Server-authoritative provider selection
-      const { provider, providerConfig } = await getProviderForCall(callRecord.id, callerId, callerName);
+      const { provider, providerConfig } = await getProviderForCall(callRecord.id, callerId, callerName, body.provider);
 
       // 1. Immediate in-app real-time socket alert
       if (io) {
@@ -381,7 +430,13 @@ export function callsRouter(io?: Server) {
       // Idempotent return if already accepted or active
       if (callRecord.status === "accepted" || callRecord.status === "connecting" || callRecord.status === "connected") {
         const { data: calleeProfile } = await admin.from("profiles").select("full_name").eq("id", userId).maybeSingle();
-        const { provider, providerConfig } = await getProviderForCall(callId, userId, calleeProfile?.full_name || "Callee");
+        const storedProvider = (callRecord.metadata as any)?.provider;
+        const { provider, providerConfig } = await getProviderForCall(
+          callId,
+          userId,
+          calleeProfile?.full_name || "Callee",
+          storedProvider,
+        );
         return res.json({ call: callRecord, provider, providerConfig });
       }
 
@@ -409,7 +464,13 @@ export function callsRouter(io?: Server) {
       }
 
       const { data: calleeProfile } = await admin.from("profiles").select("full_name").eq("id", userId).maybeSingle();
-      const { provider, providerConfig } = await getProviderForCall(callId, userId, calleeProfile?.full_name || "Callee");
+      const storedProvider = (callRecord.metadata as any)?.provider;
+      const { provider, providerConfig } = await getProviderForCall(
+        callId,
+        userId,
+        calleeProfile?.full_name || "Callee",
+        storedProvider,
+      );
 
       res.json({
         call: updated,

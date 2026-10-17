@@ -30,4 +30,8 @@ _*.json
 task.md
 supabase/.temp/
 .vscode/
+*-service-account*.json
+*service-account*.json
+firebase-service-account.json
+backend/data/
 

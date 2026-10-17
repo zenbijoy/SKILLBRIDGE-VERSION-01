@@ -8,7 +8,6 @@ import {
   Text,
   View,
 } from "react-native";
-import Animated, { ZoomIn } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -45,6 +44,31 @@ const POPULAR_TOPICS = [
 ];
 
 const PAGE_SIZE = 20;
+
+function CreateRoomFloatingButton() {
+  const { colors } = useTheme();
+  const { t } = useI18n();
+
+  return (
+    <View style={s.createFabContainer}>
+      <Pressable
+        onPress={() => {
+          triggerHaptic();
+          router.push("/room/create" as any);
+        }}
+        style={({ pressed }) => [
+          s.createFab,
+          { backgroundColor: colors.primary, opacity: pressed ? 0.9 : 1 },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={t("rooms.create", "Create room")}
+      >
+        <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
+        <Text style={s.createFabText}>{t("rooms.create", "Create room")}</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 export default function RoomsScreen() {
   const { colors } = useTheme();
@@ -138,6 +162,7 @@ export default function RoomsScreen() {
         await roomsQuery.refetch();
       }}
       refreshing={roomsQuery.isRefetching}
+      floatingElement={<CreateRoomFloatingButton />}
     >
       {/* Hero Stats & Quick Action */}
       <View style={s.heroSection}>
@@ -463,10 +488,10 @@ export default function RoomsScreen() {
 
       {/* Room Cards List */}
       <View style={s.roomList}>
-        {filteredRooms.map((room, idx) => (
-          <Animated.View key={room.id} entering={ZoomIn.delay(Math.min(idx * 40, 400)).springify()}>
+        {filteredRooms.map((room) => (
+          <View key={room.id} style={{ marginVertical: 2 }}>
             <RoomCard room={room} />
-          </Animated.View>
+          </View>
         ))}
       </View>
 
@@ -493,25 +518,6 @@ export default function RoomsScreen() {
           {t("rooms.resultCount", "Showing all {n} rooms").replace("{n}", String(serverTotal))}
         </Muted>
       ) : null}
-
-      {/* Single, unified room creation flow lives in /room/create.
-          The list screen only provides the entry point so there is exactly one
-          source of truth for creation logic. */}
-      <Pressable
-        onPress={() => {
-          triggerHaptic();
-          router.push("/room/create" as any);
-        }}
-        style={({ pressed }) => [
-          s.createFab,
-          { backgroundColor: colors.primary, opacity: pressed ? 0.9 : 1 },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={t("rooms.create", "Create room")}
-      >
-        <MaterialCommunityIcons name="plus" size={26} color="#FFFFFF" />
-        <Text style={s.createFabText}>{t("rooms.create", "Create room")}</Text>
-      </Pressable>
     </Screen>
   );
 }
@@ -742,25 +748,28 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
   },
-  createFab: {
+  createFabContainer: {
     position: "absolute",
-    right: 16,
+    right: 18,
     bottom: 24,
+    zIndex: 999,
+  },
+  createFab: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 13,
     borderRadius: 28,
-    elevation: 6,
+    elevation: 8,
     shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
   },
   createFabText: {
     color: "#FFFFFF",
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: "800",
   },
   roomList: {

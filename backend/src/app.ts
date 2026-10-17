@@ -52,6 +52,7 @@ import { feed } from "./routes/feed.js";
 import { integrations, handleYouTubeCallback } from "./routes/integrations.js";
 import { help } from "./routes/help.js";
 import { shares } from "./routes/shares.js";
+import { vault } from "./routes/vault.js";
 
 export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true;
@@ -63,10 +64,12 @@ export function isOriginAllowed(origin: string | undefined): boolean {
   if (configured.includes(lower)) return true;
   // 2. All Vercel deployments (production, preview, branch previews)
   if (/^https:\/\/[a-z0-9-_.]+\.vercel\.app$/i.test(lower)) return true;
-  // 3. All local development ports
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(lower)) return true;
+  // 3. All local development ports and LAN addresses (mobile testing over WiFi)
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/i.test(lower)) return true;
   // 4. Production domain and subdomains
   if (/^https:\/\/(.*\.)?skillbridge\.app$/i.test(lower)) return true;
+  // 5. DuckDNS deployment domains (RUET SkillBridge VPS)
+  if (/^https?:\/\/(.*\.)?duckdns\.org(:\d+)?$/i.test(lower)) return true;
 
   return false;
 }
@@ -104,7 +107,19 @@ export function createApp(io?: SocketServer) {
       },
       credentials: true,
       methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "Origin",
+        "X-App-Version",
+        "X-App-Locale",
+        "X-Data-Saver",
+        "X-Correlation-Id",
+        "X-Request-Id",
+        "X-Client-Platform",
+      ],
       optionsSuccessStatus: 204,
     }),
   );
@@ -204,6 +219,7 @@ export function createApp(io?: SocketServer) {
   api.use("/feed", feed);
   api.use("/help", help);
   api.use("/shares", shares);
+  api.use("/vault", vault);
   api.use("/integrations", integrations);
   api.use("/admin", adminAccessRoutes);
   api.use("/admin", requireRole("moderator", "admin"), adminRoutes);

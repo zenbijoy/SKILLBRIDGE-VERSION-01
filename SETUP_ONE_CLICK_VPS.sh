@@ -174,8 +174,8 @@ REDIS_REQUIRED=false
 
 # ── LiveKit (Cloud) ───────────────────────────────────────────────────────────
 LIVEKIT_URL=wss://skillbridge-rrx7e4cd.livekit.cloud
-LIVEKIT_API_KEY=APIErCJDpRFfLiw
-LIVEKIT_API_SECRET=VY2e95PotVa6WNMVuM65JzhbwNO34gb4JI9cVbDVaNd
+LIVEKIT_API_KEY=API6jaYSdqhZK7v
+LIVEKIT_API_SECRET=u1zhYPlCOIU84F80oeifetTaTSofVADfMBrmcdD9WePE
 
 # ── Push Notifications ────────────────────────────────────────────────────────
 EXPO_PUSH_ACCESS_TOKEN=pA22IrkC5uHH2Hixwcqit9IXELklzlpEE5z3-SBH
@@ -234,6 +234,15 @@ mkdir -p "$APP_DIR/infra/caddy"
 cat > "$APP_DIR/infra/caddy/Caddyfile" << 'EOF'
 # ── SkillBridge Backend API ────────────────────────────────────────────────────
 ruetskillbridge.duckdns.org {
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-App-Version, X-App-Locale, X-Data-Saver, X-Correlation-Id, X-Request-Id, X-Client-Platform"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+
     @ws {
         header Connection *Upgrade*
         header Upgrade    websocket
@@ -269,7 +278,13 @@ ruetskillbridgeadmin.duckdns.org {
 
 # ── SkillBridge Student Web App ────────────────────────────────────────────────
 ruetskillbridgeweb.duckdns.org {
-    reverse_proxy web:80
+    handle /api/v1/* {
+        reverse_proxy api:4000
+    }
+
+    handle {
+        reverse_proxy web:80
+    }
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"

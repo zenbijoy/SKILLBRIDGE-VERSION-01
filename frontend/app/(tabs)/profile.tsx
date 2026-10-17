@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   Share,
@@ -11,8 +13,10 @@ import Animated, { FadeInUp, ZoomIn } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { api } from "@/lib/api";
+import { optimizeImageForUpload, OPTIMIZATION_PRESETS } from "@/lib/imageOptimizer";
 import type { Profile, Room } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import {
@@ -50,7 +54,10 @@ type TabKey = "about" | "activity" | "resources";
 export default function OwnProfileScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
+  const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabKey>("about");
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const profileQuery = useQuery({
     queryKey: ["me"],
@@ -89,6 +96,176 @@ export default function OwnProfileScreen() {
     void Share.share({
       message: `Check out ${p.full_name}'s profile on SkillBridge: https://skillbridge.app/user/${p.id}`,
     });
+  };
+
+  const handleCoverAction = () => {
+    triggerHaptic();
+    if (p?.cover_url) {
+      Alert.alert(
+        "Cover Photo",
+        "Choose an action for your profile cover photo",
+        [
+          { text: "Change Photo", onPress: () => void pickAndUploadCover() },
+          {
+            text: "Remove Photo",
+            style: "destructive",
+            onPress: () => void removeCover(),
+          },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+    } else {
+      void pickAndUploadCover();
+    }
+  };
+
+  const handleAvatarAction = () => {
+    triggerHaptic();
+    if (p?.avatar_url) {
+      Alert.alert(
+        "Profile Photo",
+        "Choose an action for your profile photo",
+        [
+          { text: "Change Photo", onPress: () => void pickAndUploadAvatar() },
+          {
+            text: "Remove Photo",
+            style: "destructive",
+            onPress: () => void removeAvatar(),
+          },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+    } else {
+      void pickAndUploadAvatar();
+    }
+  };
+
+  const pickAndUploadCover = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission required", "Please allow photo library access to change your cover photo.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [16, 7],
+        quality: 0.85,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets[0]?.uri) return;
+
+      triggerHaptic();
+      setUploadingCover(true);
+
+      const asset = result.assets[0];
+      const optimized = await optimizeImageForUpload(
+        asset.uri,
+        OPTIMIZATION_PRESETS.COVER_BANNER,
+        "cover.jpg"
+      );
+
+      const payloadBase64 = optimized.base64 || asset.base64;
+      if (!payloadBase64) {
+        throw new Error("Could not process cover photo.");
+      }
+
+      await api<{ cover_url: string; profile: Profile }>("/profiles/me/cover", {
+        method: "POST",
+        body: JSON.stringify({
+          imageBase64: payloadBase64,
+          contentType: optimized.mimeType || "image/jpeg",
+        }),
+      });
+
+      triggerHaptic();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      Alert.alert("Cover Updated", "Your new profile cover is now live.");
+    } catch (err: any) {
+      Alert.alert("Upload Failed", err.message || "Could not upload cover photo.");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const removeCover = async () => {
+    try {
+      setUploadingCover(true);
+      await api("/profiles/me/cover", { method: "DELETE" });
+      triggerHaptic();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not remove cover photo.");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const pickAndUploadAvatar = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission required", "Please allow photo library access to change your profile photo.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets[0]?.uri) return;
+
+      triggerHaptic();
+      setUploadingAvatar(true);
+
+      const asset = result.assets[0];
+      const optimized = await optimizeImageForUpload(
+        asset.uri,
+        OPTIMIZATION_PRESETS.AVATAR,
+        "avatar.jpg"
+      );
+
+      const payloadBase64 = optimized.base64 || asset.base64;
+      if (!payloadBase64) {
+        throw new Error("Could not process profile photo.");
+      }
+
+      await api<{ avatar_url: string; profile: Profile }>("/profiles/me/avatar", {
+        method: "POST",
+        body: JSON.stringify({
+          imageBase64: payloadBase64,
+          contentType: optimized.mimeType || "image/jpeg",
+        }),
+      });
+
+      triggerHaptic();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      Alert.alert("Profile Photo Updated", "Your new profile photo is now live.");
+    } catch (err: any) {
+      Alert.alert("Upload Failed", err.message || "Could not upload profile photo.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    try {
+      setUploadingAvatar(true);
+      await api("/profiles/me/avatar", { method: "DELETE" });
+      triggerHaptic();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not remove profile photo.");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const onRefresh = async () => {
@@ -137,29 +314,68 @@ export default function OwnProfileScreen() {
         <Animated.View entering={FadeInUp.duration(300)} style={{ gap: 16 }}>
           {/* Header Card with Cover and Avatar */}
           <View style={[s.headerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <LinearGradient
-              colors={[colors.primary, colors.accent, colors.surface]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={s.cover}
-            />
+            <View style={s.coverWrapper}>
+              {p.cover_url ? (
+                <Image
+                  source={{ uri: p.cover_url }}
+                  style={s.coverImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <LinearGradient
+                  colors={[colors.primary, colors.accent, colors.surface]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={s.cover}
+                />
+              )}
+              <LinearGradient
+                colors={["transparent", "rgba(0,0,0,0.5)"]}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+              <Pressable
+                style={[s.coverEditBadge, { backgroundColor: "rgba(15,23,42,0.72)" }]}
+                onPress={handleCoverAction}
+                disabled={uploadingCover}
+                hitSlop={8}
+              >
+                {uploadingCover ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="camera-outline" size={14} color="#fff" />
+                    <Text style={s.coverEditText}>
+                      {p.cover_url ? "Edit Cover" : "Add Cover"}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
 
             <View style={s.profileBody}>
               {/* Avatar with nextGen Frame */}
               <Animated.View entering={ZoomIn.springify()} style={s.avatarContainer}>
-                {p.avatar_url ? (
-                  <Image source={{ uri: p.avatar_url }} style={[s.avatar, { borderColor: colors.surface }]} />
-                ) : (
-                  <View
-                    style={[
-                      s.avatar,
-                      s.avatarFallback,
-                      { backgroundColor: colors.primary, borderColor: colors.surface },
-                    ]}
-                  >
-                    <Text style={s.avatarInitials}>{initials(p.full_name)}</Text>
-                  </View>
-                )}
+                <Pressable onPress={handleAvatarAction} disabled={uploadingAvatar} hitSlop={12}>
+                  {p.avatar_url ? (
+                    <Image source={{ uri: p.avatar_url }} style={[s.avatar, { borderColor: colors.surface }]} />
+                  ) : (
+                    <View
+                      style={[
+                        s.avatar,
+                        s.avatarFallback,
+                        { backgroundColor: colors.primary, borderColor: colors.surface },
+                      ]}
+                    >
+                      <Text style={s.avatarInitials}>{initials(p.full_name)}</Text>
+                    </View>
+                  )}
+                  {p.avatar_url && (
+                    <View style={s.avatarEditOverlay}>
+                      <MaterialCommunityIcons name="camera-outline" size={16} color="#fff" />
+                    </View>
+                  )}
+                </Pressable>
                 {/* Visual Distinction Frame */}
                 {(p.reputation ?? 0) >= 50 && (
                   <Image
@@ -431,9 +647,38 @@ const s = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
-  cover: {
-    height: 100,
+  coverWrapper: {
+    height: 125,
     width: "100%",
+    position: "relative",
+    backgroundColor: "#1e293b",
+  },
+  cover: {
+    height: 125,
+    width: "100%",
+  },
+  coverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  coverEditBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+    zIndex: 10,
+  },
+  coverEditText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
   },
   profileBody: {
     paddingHorizontal: 16,
@@ -460,6 +705,16 @@ const s = StyleSheet.create({
   avatarFallback: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarEditOverlay: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    backgroundColor: "rgba(15,23,42,0.75)",
+    borderRadius: 20,
+    padding: 6,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.3)",
   },
   avatarInitials: {
     color: "#fff",

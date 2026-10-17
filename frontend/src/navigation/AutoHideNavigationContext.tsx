@@ -71,10 +71,10 @@ export interface AutoHideNavigationContextType {
   showNavigation: (immediate?: boolean) => void;
   hideNavigation: () => void;
   resetNavigation: () => void;
-  scrollHandler: ReturnType<typeof useAnimatedScrollHandler>;
 }
 
 const AutoHideNavigationContext = createContext<AutoHideNavigationContextType | null>(null);
+const AutoHideScrollHandlerContext = createContext<ReturnType<typeof useAnimatedScrollHandler> | null>(null);
 
 export function AutoHideNavigationProvider({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
@@ -347,7 +347,6 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
       showNavigation,
       hideNavigation,
       resetNavigation,
-      scrollHandler,
     }),
     [
       headerTranslateY,
@@ -368,13 +367,14 @@ export function AutoHideNavigationProvider({ children }: { children: ReactNode }
       showNavigation,
       hideNavigation,
       resetNavigation,
-      scrollHandler,
     ]
   );
 
   return (
     <AutoHideNavigationContext.Provider value={value}>
-      {children}
+      <AutoHideScrollHandlerContext.Provider value={scrollHandler}>
+        {children}
+      </AutoHideScrollHandlerContext.Provider>
     </AutoHideNavigationContext.Provider>
   );
 }
@@ -389,5 +389,9 @@ export function useAutoHideNavigation(): AutoHideNavigationContextType {
 
 export function useOptionalAutoHideNavigation(): AutoHideNavigationContextType | null {
   return useContext(AutoHideNavigationContext);
+}
+
+export function useAutoHideScrollHandler(): ReturnType<typeof useAnimatedScrollHandler> | null {
+  return useContext(AutoHideScrollHandlerContext);
 }
 

@@ -30,7 +30,7 @@ import Animated, {
   withRepeat,
   withSequence,
 } from "react-native-reanimated";
-import { useOptionalAutoHideNavigation } from "@/navigation/AutoHideNavigationContext";
+import { useOptionalAutoHideNavigation, useAutoHideScrollHandler } from "@/navigation/AutoHideNavigationContext";
 import { AutoHideHeader } from "./navigation/AutoHideHeader";
 import { AppTextField } from "./ui/AppTextField";
 import { PasswordField } from "./ui/PasswordField";
@@ -56,6 +56,7 @@ export function Screen({
   refreshing = false,
   keyboardAvoiding = true,
   autoHideNav = true,
+  floatingElement,
 }: {
   children: ReactNode;
   header?: ReactNode;
@@ -65,12 +66,14 @@ export function Screen({
   refreshing?: boolean;
   keyboardAvoiding?: boolean;
   autoHideNav?: boolean;
+  floatingElement?: ReactNode;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useStyles();
   const [internalRefreshing, setInternalRefreshing] = useState(false);
   const autoHideNavContext = useOptionalAutoHideNavigation();
+  const autoHideScrollHandler = useAutoHideScrollHandler();
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -144,7 +147,7 @@ export function Screen({
       {hasFloatingHeader ? <AutoHideHeader>{header}</AutoHideHeader> : null}
       {scroll ? (
         <Animated.ScrollView
-          onScroll={autoHideNav && autoHideNavContext ? autoHideNavContext.scrollHandler : undefined}
+          onScroll={autoHideNav && autoHideScrollHandler ? autoHideScrollHandler : undefined}
           scrollEventThrottle={16}
           decelerationRate={scrollDecelRate}
           onTouchStart={handleTouchStart}
@@ -182,6 +185,7 @@ export function Screen({
           {content}
         </View>
       )}
+      {floatingElement}
     </SafeAreaView>
   );
 

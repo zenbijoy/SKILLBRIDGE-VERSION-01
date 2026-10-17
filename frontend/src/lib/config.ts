@@ -21,10 +21,20 @@ if (exposedPrivilegedKeys.length > 0) {
 const DEFAULT_DEV_API_URL = "http://localhost:4000/api/v1";
 const expoApiUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
 
+let browserOrigin = '';
+if (typeof window !== 'undefined' && window.location?.origin) {
+  browserOrigin = window.location.origin.trim().replace(/\/+$/, '');
+}
+
 let rawApiUrl =
   process.env.EXPO_PUBLIC_API_URL ||
   (!isProduction ? expoApiUrl : '') ||
   (isProduction ? '' : DEFAULT_DEV_API_URL);
+
+// If running in browser on ruetskillbridgeweb, use same-origin /api/v1 proxy via Caddy to avoid CORS restrictions
+if (browserOrigin && browserOrigin.includes('ruetskillbridgeweb.duckdns.org')) {
+  rawApiUrl = `${browserOrigin}/api/v1`;
+}
 
 rawApiUrl = (rawApiUrl || '').trim().replace(/\/+$/, ''); // Strip trailing slashes safely
 

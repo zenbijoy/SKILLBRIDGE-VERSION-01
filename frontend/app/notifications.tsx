@@ -68,6 +68,32 @@ export default function Notifications() {
     },
   });
 
+  const admitKnockMutation = useMutation({
+    mutationFn: ({ roomId, requestId, notificationId }: { roomId: string; requestId: string; notificationId: string }) =>
+      api(`/rooms/${roomId}/knock/${requestId}/admit`, { method: "POST" }),
+    onSuccess: (_, vars) => {
+      triggerHaptic();
+      markRead.mutate(vars.notificationId);
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["room-knock-requests", vars.roomId] });
+      qc.invalidateQueries({ queryKey: ["room", vars.roomId] });
+      Alert.alert("Admitted 🎉", "User has been admitted to the room.");
+    },
+    onError: (err: Error) => Alert.alert("Admission failed", err.message),
+  });
+
+  const declineKnockMutation = useMutation({
+    mutationFn: ({ roomId, requestId, notificationId }: { roomId: string; requestId: string; notificationId: string }) =>
+      api(`/rooms/${roomId}/knock/${requestId}/decline`, { method: "POST" }),
+    onSuccess: (_, vars) => {
+      triggerHaptic();
+      markRead.mutate(vars.notificationId);
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["room-knock-requests", vars.roomId] });
+    },
+    onError: (err: Error) => Alert.alert("Decline failed", err.message),
+  });
+
   const allList = useMemo(() => notifications.data?.notifications ?? [], [notifications.data]);
   const unreadCount = allList.filter((n) => !n.read_at).length;
 
@@ -155,10 +181,14 @@ export default function Notifications() {
       return;
     }
 
-    // 1. Next-Gen Study Room & Q&A & Recordings Deep Link
+    // 1. Next-Gen Study Room & Knock Waiting Deep Link
     if (data.route === "room" || data.roomId) {
       const roomId = data.roomId;
-      router.push(`/room/${roomId}` as any);
+      if (data.requestId || item.kind?.toLowerCase().includes("knock")) {
+        router.push(`/room/${roomId}?openKnock=true` as any);
+      } else {
+        router.push(`/room/${roomId}` as any);
+      }
       return;
     }
 
@@ -324,6 +354,70 @@ export default function Notifications() {
                               {new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                             </Text>
                           </View>
+
+                          {Boolean(item.data?.requestId && item.data?.roomId) && (
+                            <View style={s.knockActionContainer}>
+                              {item.data?.message ? (
+                                <View style={[s.knockMsgBox, { backgroundColor: colors.surface2 }]}>
+                                  <Text style={[s.knockMsgText, { color: colors.muted }]} numberOfLines={2}>
+                                    "{item.data.message}"
+                                  </Text>
+                                </View>
+                              ) : null}
+
+                              <Row style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                                <Pressable
+                                  onPress={() => {
+                                    triggerHaptic();
+                                    admitKnockMutation.mutate({
+                                      roomId: item.data!.roomId,
+                                      requestId: item.data!.requestId,
+                                      notificationId: item.id,
+                                    });
+                                  }}
+                                  disabled={admitKnockMutation.isPending}
+                                  style={[s.inlineKnockBtn, { backgroundColor: "#10B981" }]}
+                                >
+                                  <MaterialCommunityIcons name="check" size={14} color="#FFFFFF" />
+                                  <Text style={s.inlineKnockBtnText}>Admit</Text>
+                                </Pressable>
+
+                                <Pressable
+                                  onPress={() => {
+                                    triggerHaptic();
+                                    declineKnockMutation.mutate({
+                                      roomId: item.data!.roomId,
+                                      requestId: item.data!.requestId,
+                                      notificationId: item.id,
+                                    });
+                                  }}
+                                  disabled={declineKnockMutation.isPending}
+                                  style={[
+                                    s.inlineKnockBtn,
+                                    {
+                                      backgroundColor: `${colors.danger || "#ef4444"}18`,
+                                      borderColor: colors.danger || "#ef4444",
+                                      borderWidth: 1,
+                                    },
+                                  ]}
+                                >
+                                  <MaterialCommunityIcons name="close" size={14} color={colors.danger || "#ef4444"} />
+                                  <Text style={[s.inlineKnockBtnText, { color: colors.danger || "#ef4444" }]}>Decline</Text>
+                                </Pressable>
+
+                                <Pressable
+                                  onPress={() => {
+                                    triggerHaptic();
+                                    router.push(`/room/${item.data!.roomId}?openKnock=true` as any);
+                                  }}
+                                  style={[s.inlineKnockBtn, { backgroundColor: colors.surface2 }]}
+                                >
+                                  <MaterialCommunityIcons name="tune" size={14} color={colors.primary} />
+                                  <Text style={[s.inlineKnockBtnText, { color: colors.primary }]}>Waiting Lobby</Text>
+                                </Pressable>
+                              </Row>
+                            </View>
+                          )}
                         </View>
                       </View>
                     </Card>
@@ -356,6 +450,12 @@ function getIconDetails(
 } {
   const k = (kind || "").toUpperCase();
 
+  if (k.includes("ROOM_KNOCK_CALL") || (_data && _data.knockType === "phone_call")) {
+    return { icon: "phone-incoming", color: "#10b981", bgColor: "rgba(16, 185, 129, 0.15)" };
+  }
+  if (k.includes("ROOM_KNOCK") || (_data && _data.requestId)) {
+    return { icon: "door-open", color: "#f59e0b", bgColor: "rgba(245, 158, 11, 0.15)" };
+  }
   if (k.includes("ANSWER_ACCEPTED") || k.includes("SOLVED")) {
     return { icon: "check-decagram", color: "#10b981", bgColor: "rgba(16, 185, 129, 0.12)" };
   }
@@ -388,6 +488,8 @@ function getIconDetails(
 }
 
 function humanKind(kind: string): string {
+  if (kind === "room_knock") return "🚪 Join Request";
+  if (kind === "room_knock_call") return "📞 Phone Call Request";
   return kind
     .replace(/_/g, " ")
     .toLowerCase()
@@ -405,6 +507,18 @@ const s = StyleSheet.create({
   itemTitle: { fontSize: 15, fontWeight: "800", flex: 1 },
   unreadDot: { width: 8, height: 8, borderRadius: 4 },
   meta: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 },
+  knockActionContainer: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: "rgba(150,150,150,0.15)" },
+  knockMsgBox: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, marginBottom: 4 },
+  knockMsgText: { fontSize: 12, fontStyle: "italic", lineHeight: 16 },
+  inlineKnockBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  inlineKnockBtnText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
   emptyBox: { alignItems: "center", paddingVertical: 24 },
   emptyImage: { width: 140, height: 140, marginBottom: 12 },
 });

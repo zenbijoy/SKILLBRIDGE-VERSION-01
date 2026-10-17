@@ -43,6 +43,13 @@ export const OPTIMIZATION_PRESETS = {
     quality: 0.75,
     format: "jpeg" as const,
   },
+  /** Profile Cover Photo / Banner: 1600x600, crisp on high-res retina devices */
+  COVER_BANNER: {
+    maxWidth: 1600,
+    maxHeight: 600,
+    quality: 0.82,
+    format: "jpeg" as const,
+  },
 };
 
 /**

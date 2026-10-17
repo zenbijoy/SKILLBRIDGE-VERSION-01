@@ -306,10 +306,12 @@ $cleanName = "SkillBridge-v$pkgVersion-$Arch-release.apk"
 $exported = Join-Path $releaseDir $cleanName
 Copy-Item -Path $apk.FullName -Destination $exported -Force
 Copy-Item -Path $apk.FullName -Destination (Join-Path $projectRoot "skillbridge-app.apk") -Force
+Copy-Item -Path $apk.FullName -Destination (Join-Path $projectRoot "SkillBridge.apk") -Force
 
 Write-Host ""
 Write-Host "  Shareable copy : $exported" -ForegroundColor Cyan
 Write-Host "  Root copy      : $(Join-Path $projectRoot 'skillbridge-app.apk')" -ForegroundColor Cyan
+Write-Host "  Root copy      : $(Join-Path $projectRoot 'SkillBridge.apk')" -ForegroundColor Cyan
 Write-Host "  Signature      : production keystore (alias '$storeAlias')" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  [!] BACK UP frontend/android/keystore + key.properties." -ForegroundColor Yellow
@@ -317,7 +319,7 @@ Write-Host "      Losing them means you can never update this app again." -Foreg
 Write-Host "  [!] Phones with an OLD debug-signed build must UNINSTALL first:" -ForegroundColor Yellow
 Write-Host "      Settings > Apps > SkillBridge > Uninstall, then install this APK." -ForegroundColor Yellow
 
-# --- 9. Optional ADB install ----------------------------------------------------
+# --- 9. Optional ADB install + phone download ---------------------------------
 if ($Install) {
     Write-Host ""
     Write-Host "[*] Looking for a connected Android device..." -ForegroundColor Yellow
@@ -326,7 +328,11 @@ if ($Install) {
     $devices = @(& $adb devices | Where-Object { $_ -match "\tdevice$" })
     if ($devices.Count -gt 0) {
         $serial = ($devices[0] -split "\t")[0]
-        Write-Host "[*] Installing release APK to device ($serial)..." -ForegroundColor Yellow
+        Write-Host "[*] Downloading APK directly into phone's Download folder (/sdcard/Download/)..." -ForegroundColor Yellow
+        & $adb -s $serial push $exported /sdcard/Download/SkillBridge.apk
+        Write-Host "[+] Downloaded APK into phone's Download folder: /sdcard/Download/SkillBridge.apk" -ForegroundColor Green
+
+        Write-Host "[*] Installing release APK on device ($serial)..." -ForegroundColor Yellow
         & $adb -s $serial install -r -d $exported
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[!] Direct install failed (likely certificate mismatch from prior debug build). Performing clean reinstall..." -ForegroundColor Yellow

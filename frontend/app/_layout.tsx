@@ -231,10 +231,10 @@ function Gate() {
         <Stack.Screen name="challenges/index" options={{ headerShown: false }} />
         <Stack.Screen name="settings/integrations" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
-        <Stack.Screen name="room/[id]" options={{ title: "Learning room" }} />
-        <Stack.Screen name="user/[id]" options={{ title: "Profile" }} />
-        <Stack.Screen name="chat/[id]" options={{ title: "Conversation" }} />
-        <Stack.Screen name="live/[roomId]" options={{ title: "Live classroom" }} />
+        <Stack.Screen name="room/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="live/[roomId]" options={{ headerShown: false }} />
         <Stack.Screen name="call/[id]" options={{ headerShown: false }} />
       </Stack>
       <TourOverlay />

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -7,6 +7,7 @@ import { IconButton, triggerHaptic } from "@/components/ui";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useAppStore } from "@/state/useAppStore";
+import { DirectCallModal } from "@/features/calls/components/DirectCallModal";
 
 type NotificationItem = { id: string; read_at?: string | null };
 
@@ -14,6 +15,7 @@ export function HomeNavbar() {
   const { colors, isDark } = useTheme();
   const { t } = useI18n();
   const { cachedProfile } = useAppStore();
+  const [showDirectCall, setShowDirectCall] = useState(false);
 
   const notifications = useQuery({
     queryKey: ["notifications"],

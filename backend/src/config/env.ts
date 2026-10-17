@@ -58,6 +58,8 @@ const schema = z.object({
   LIVEKIT_API_KEY: optionalString,
   LIVEKIT_API_SECRET: optionalString,
   EXPO_PUSH_ACCESS_TOKEN: optionalString,
+  FIREBASE_SERVICE_ACCOUNT_PATH: optionalString,
+  FIREBASE_PROJECT_ID: optionalString,
   AI_PROVIDER_URL: optionalUrl,
   AI_PROVIDER_API_KEY: optionalString,
   MAX_ROOM_CAPACITY: z.coerce.number().int().min(2).max(250).default(250),

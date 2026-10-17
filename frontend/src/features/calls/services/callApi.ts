@@ -25,10 +25,14 @@ export interface CallResponse {
   providerConfig?: ProviderConfig;
 }
 
-export async function initiateCallApi(calleeId: string, type: CallType = "video"): Promise<CallResponse> {
+export async function initiateCallApi(
+  calleeId: string,
+  type: CallType = "video",
+  provider: RealtimeProvider = "webrtc",
+): Promise<CallResponse> {
   const res = await api<CallResponse>("/calls", {
     method: "POST",
-    body: JSON.stringify({ calleeId, type }),
+    body: JSON.stringify({ calleeId, type, provider }),
   });
   return res;
 }

@@ -32,7 +32,7 @@ const CAPACITY_PRESETS = [10, 30, 50, 100];
 const ACTIVITY_PRESETS = [
   {
     id: "voice_lounge",
-    name: "Voice Lounge",
+    name: "Voice Room",
     icon: "headset",
     colorKey: "primary",
     defaultTopic: "Open Audio Discussion & Study",

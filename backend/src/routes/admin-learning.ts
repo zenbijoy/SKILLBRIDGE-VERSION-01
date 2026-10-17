@@ -207,10 +207,17 @@ adminLearningRoutes.get(
       socketStatus: "operational",
       activeOnlineUsers: userConnections.size,
       activeLearningSessions: liveSessionsCount ?? 0,
+      socketio: {
+        status: "operational",
+        connectedSockets: userConnections.size,
+        roomsTracked: liveSessionsCount ?? 0,
+      },
       livekit: {
         configured: livekitConfigured,
         status: livekitConfigured ? "operational" : "unconfigured",
         p2pFallbackEnabled: env.P2P_CALLS_ENABLED,
+        activeRooms: liveSessionsCount ?? 0,
+        host: env.LIVEKIT_URL,
       },
     });
   }),

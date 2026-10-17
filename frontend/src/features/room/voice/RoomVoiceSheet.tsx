@@ -15,6 +15,7 @@ import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useActiveRoomSession } from "./useActiveRoomSession";
+import { VoiceAudioBridge } from "./VoiceAudioBridge";
 
 type RoomVoiceSheetProps = {
   visible: boolean;
@@ -35,10 +36,8 @@ export function RoomVoiceSheet({
   const { t } = useI18n();
   const session = useActiveRoomSession();
 
-  // Real participant roster: room members are the voice lounge roster.
-  // (LiveKit audio-track presence lands here once voice joins LiveKit too —
-  // until then members list is the source of truth, no more mock names.)
-const membersQuery = useQuery({
+  // Real participant roster: room members are the voice room roster.
+  const membersQuery = useQuery({
     queryKey: ["room-voice-members", roomId],
     queryFn: () =>
       api<{ members: (Profile & { role?: string })[] }>(`/rooms/${roomId}/members`),
@@ -47,12 +46,19 @@ const membersQuery = useQuery({
     retry: false,
   });
   const members = membersQuery.data?.members ?? [];
-  const roster = members.slice(0, 24);
+  const roster = members.slice(0, 30);
   const hasRealRoster = roster.length > 0;
   const displayCount = hasRealRoster ? roster.length : session.participants.length;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      {session.isVoiceActive && session.livekitUrl && session.livekitToken ? (
+        <VoiceAudioBridge
+          url={session.livekitUrl}
+          token={session.livekitToken}
+          isMuted={session.isMuted}
+        />
+      ) : null}
       <Pressable style={s.backdrop} onPress={onClose}>
         <Pressable style={[s.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
           <View style={s.handle} />
@@ -82,7 +88,7 @@ const membersQuery = useQuery({
           </Text>
           <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
              {hasRealRoster ? (
-               roster.map((m) => {
+               roster.map((m: any) => {
                  const role = (m as any).role || t("rooms.voice.member");
                  return (
                    <View key={m.id} style={s.participantItem}>

@@ -71,22 +71,20 @@ export function PostHeader({ post, onOpenMenu, onAuthorPress }: PostHeaderProps)
 
         {/* Info Column */}
         <View style={styles.infoCol}>
-          {/* Line 1: Name + Badges + Connection */}
+          {/* Line 1: Name + Verification + Badges */}
           <Row style={styles.nameRow}>
-            <Pressable onPress={post.is_anonymous ? undefined : onAuthorPress}>
-              <Text style={[styles.authorName, { color: colors.text }]} numberOfLines={1}>
+            <Pressable
+              onPress={post.is_anonymous ? undefined : onAuthorPress}
+              hitSlop={8}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, flexDirection: "row", alignItems: "center", gap: 3, flexShrink: 1 }]}
+            >
+              <Text style={[styles.authorName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
                 {authorName}
               </Text>
+              {!post.is_anonymous && (
+                <MaterialCommunityIcons name="check-decagram" size={14} color="#0A66C2" style={{ marginLeft: 2 }} />
+              )}
             </Pressable>
-
-            {!post.is_anonymous && (
-              <Row style={{ alignItems: "center", gap: 3 }}>
-                <MaterialCommunityIcons name="check-decagram" size={15} color="#0A66C2" />
-                <Text style={[styles.connectionText, { color: colors.muted }]}>
-                  {" • 1st"}
-                </Text>
-              </Row>
-            )}
 
             {post.is_anonymous && (
               <Pill tone="info">Anonymous</Pill>
@@ -106,7 +104,7 @@ export function PostHeader({ post, onOpenMenu, onAuthorPress }: PostHeaderProps)
 
           {/* Line 2: Headline / Role / University (if exists) */}
           {headline ? (
-            <Text style={[styles.headlineText, { color: colors.muted }]} numberOfLines={1}>
+            <Text style={[styles.headlineText, { color: colors.muted }]} numberOfLines={1} ellipsizeMode="tail">
               {headline}
             </Text>
           ) : null}

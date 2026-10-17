@@ -20,6 +20,7 @@ import Animated, {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { AICraftingLoader } from "@/components/AICraftingLoader";
 import {
   Button,
   Card,
@@ -397,20 +398,11 @@ export default function QuizScreen() {
   if (mode === "generating" || startMutation.isPending) {
     return (
       <Screen>
-        <Animated.View entering={FadeIn} style={s.centeredFull}>
-          <Animated.View entering={ZoomIn.delay(200)} style={[s.genIcon, { backgroundColor: colors.primarySoft }]}>
-            <MaterialCommunityIcons name="brain" size={56} color={colors.primary} />
-          </Animated.View>
-          <H1 style={{ textAlign: "center" }}>Crafting Your Assessment</H1>
-          <Muted style={{ textAlign: "center", paddingHorizontal: 32 }}>
-            Gemini AI is generating personalised questions with Bloom taxonomy distractor engineering.
-          </Muted>
-          <Row style={{ gap: 10 }}>
-            {[0, 1, 2].map((i) => (
-              <View key={i} style={[s.genDot, { backgroundColor: colors.primary, opacity: 0.3 + i * 0.3 }]} />
-            ))}
-          </Row>
-        </Animated.View>
+        <AICraftingLoader
+          title="Crafting Your Assessment"
+          subtitle="AI is generating personalized questions with Bloom's taxonomy distractor engineering."
+          iconName="brain"
+        />
       </Screen>
     );
   }

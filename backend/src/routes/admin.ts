@@ -395,6 +395,247 @@ adminRoutes.get(
   }),
 );
 
+// ═════════════════════════════════════════════════════════════════════════════
+// API Key Management (Admin only)
+// ═════════════════════════════════════════════════════════════════════════════
+
+const apiKeyServiceSchema = z.enum(["livekit", "gemini", "youtube", "push", "ai", "turn", "other"]);
+const apiKeyLimitSchema = z.object({
+  service: apiKeyServiceSchema,
+  keyName: z.string().trim().min(2).max(100),
+  apiKey: z.string().trim().min(10).max(500),
+  apiSecret: z.string().trim().max(500).optional(),
+  baseUrl: z.string().trim().url().optional().nullable(),
+  monthlyLimit: z.coerce.number().int().min(1).max(10_000_000),
+  isEnabled: z.boolean().default(true),
+});
+
+// Mask a key for safe display (show only last 4 chars)
+function maskKey(key: string): string {
+  if (!key || key.length <= 8) return "••••••••";
+  return "••••••••" + key.slice(-4);
+}
+
+adminRoutes.get(
+  "/api-keys",
+  requireRole("admin"),
+  wrap(async (_req, res) => {
+    const { data, error } = await db
+      .from("api_keys")
+      .select("*")
+      .order("service", { ascending: true })
+      .order("is_active", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const rows = (data ?? []).map((row) => ({
+      id: row.id,
+      service: row.service,
+      keyName: row.key_name,
+      maskedKey: maskKey(row.api_key),
+      apiSecretSet: Boolean(row.api_secret),
+      baseUrl: row.base_url,
+      monthlyLimit: row.monthly_limit,
+      currentUsage: row.current_usage ?? 0,
+      isActive: row.is_active,
+      isEnabled: row.is_enabled,
+      usagePercent: row.monthly_limit > 0 ? Math.round(((row.current_usage ?? 0) / row.monthly_limit) * 100) : 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+
+    // Include LiveKit free tier reference info
+    const livekitFreeTier = {
+      service: "livekit",
+      freeMonthlyMinutes: 10_000,
+      note: "LiveKit Cloud free tier: 10,000 minutes/month. Additional usage is billed.",
+    };
+
+    res.json({ apiKeys: rows, livekitFreeTier });
+  }),
+);
+
+adminRoutes.post(
+  "/api-keys",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const body = apiKeyLimitSchema.parse(req.body);
+
+    // If this key should be active, deactivate other keys for same service
+    if (true) {
+      await db.from("api_keys").update({ is_active: false }).eq("service", body.service).eq("is_active", true);
+    }
+
+    const { data, error } = await db
+      .from("api_keys")
+      .insert({
+        service: body.service,
+        key_name: body.keyName,
+        api_key: body.apiKey,
+        api_secret: body.apiSecret ?? null,
+        base_url: body.baseUrl ?? null,
+        monthly_limit: body.monthlyLimit,
+        current_usage: 0,
+        is_active: true,
+        is_enabled: body.isEnabled,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await audit(req.userId!, "admin.api_key.create", "api_key", data.id, {
+      service: body.service,
+      keyName: body.keyName,
+      monthlyLimit: body.monthlyLimit,
+    });
+
+    res.status(201).json({
+      id: data.id,
+      service: data.service,
+      keyName: data.key_name,
+      maskedKey: maskKey(data.api_key),
+      monthlyLimit: data.monthly_limit,
+      currentUsage: data.current_usage,
+      isActive: data.is_active,
+      isEnabled: data.is_enabled,
+    });
+  }),
+);
+
+adminRoutes.patch(
+  "/api-keys/:id",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        keyName: z.string().trim().min(2).max(100).optional(),
+        apiKey: z.string().trim().min(10).max(500).optional(),
+        apiSecret: z.string().trim().max(500).optional().nullable(),
+        baseUrl: z.string().trim().url().optional().nullable(),
+        monthlyLimit: z.coerce.number().int().min(1).max(10_000_000).optional(),
+        currentUsage: z.coerce.number().int().min(0).optional(),
+        isEnabled: z.boolean().optional(),
+      })
+      .parse(req.body);
+
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.keyName !== undefined) updates.key_name = body.keyName;
+    if (body.apiKey !== undefined) updates.api_key = body.apiKey;
+    if (body.apiSecret !== undefined) updates.api_secret = body.apiSecret;
+    if (body.baseUrl !== undefined) updates.base_url = body.baseUrl;
+    if (body.monthlyLimit !== undefined) updates.monthly_limit = body.monthlyLimit;
+    if (body.currentUsage !== undefined) updates.current_usage = body.currentUsage;
+    if (body.isEnabled !== undefined) updates.is_enabled = body.isEnabled;
+
+    const { data, error } = await db.from("api_keys").update(updates).eq("id", id).select().single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "API key not found" });
+
+    await audit(req.userId!, "admin.api_key.update", "api_key", id, updates);
+
+    res.json({
+      id: data.id,
+      service: data.service,
+      keyName: data.key_name,
+      maskedKey: maskKey(data.api_key),
+      monthlyLimit: data.monthly_limit,
+      currentUsage: data.current_usage,
+      isActive: data.is_active,
+      isEnabled: data.is_enabled,
+    });
+  }),
+);
+
+adminRoutes.post(
+  "/api-keys/:id/switch",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+
+    // Get the target key to know its service
+    const { data: targetKey, error: targetError } = await db
+      .from("api_keys")
+      .select("service, is_active")
+      .eq("id", id)
+      .single();
+
+    if (targetError) throw targetError;
+    if (!targetKey) return res.status(404).json({ error: "API key not found" });
+
+    // Deactivate all keys for this service, then activate the target
+    await db.from("api_keys").update({ is_active: false }).eq("service", targetKey.service);
+    const { data, error } = await db
+      .from("api_keys")
+      .update({ is_active: true, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await audit(req.userId!, "admin.api_key.switch", "api_key", id, {
+      service: targetKey.service,
+      previousActive: false,
+    });
+
+    res.json({
+      id: data.id,
+      service: data.service,
+      keyName: data.key_name,
+      isActive: data.is_active,
+      switchedAt: new Date().toISOString(),
+    });
+  }),
+);
+
+adminRoutes.delete(
+  "/api-keys/:id",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+
+    const { data: keyToDelete, error: fetchError } = await db
+      .from("api_keys")
+      .select("service, is_active")
+      .eq("id", id)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!keyToDelete) return res.status(404).json({ error: "API key not found" });
+
+    const { error } = await db.from("api_keys").delete().eq("id", id);
+    if (error) throw error;
+
+    // If we deleted the active key, activate another key for the same service if one exists
+    if (keyToDelete.is_active) {
+      const { data: nextKey } = await db
+        .from("api_keys")
+        .select("id")
+        .eq("service", keyToDelete.service)
+        .eq("is_enabled", true)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (nextKey) {
+        await db.from("api_keys").update({ is_active: true }).eq("id", nextKey.id);
+      }
+    }
+
+    await audit(req.userId!, "admin.api_key.delete", "api_key", id, {
+      service: keyToDelete.service,
+    });
+
+    res.json({ success: true, deletedId: id });
+  }),
+);
+
 adminRoutes.use("/system", adminSystemRoutes);
 adminRoutes.use("/analytics", adminAnalyticsRoutes);
 adminRoutes.use("/skills-intelligence", adminSkillsRoutes);
@@ -1137,5 +1378,124 @@ adminRoutes.get(
 
     if (error) throw error;
     res.json({ logs: data ?? [], total: count ?? 0, page, limit });
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-Bucket Cloudflare R2 Storage Pool Management Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+adminRoutes.get(
+  "/storage/pools",
+  wrap(async (_req, res) => {
+    const { multiBucketManager } = await import("../services/multiBucketStorage.js");
+    const pools = multiBucketManager.listPools();
+    res.json({ pools });
+  }),
+);
+
+adminRoutes.post(
+  "/storage/pools",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        name: z.string().trim().min(2).max(100),
+        accountId: z.string().trim().min(5),
+        bucketName: z.string().trim().min(2),
+        accessKeyId: z.string().trim().min(5),
+        secretAccessKey: z.string().trim().min(10),
+        publicDomain: z.string().trim().url().optional(),
+        maxCapacityGb: z.number().min(1).max(100_000).optional().default(10),
+        setAsActive: z.boolean().optional().default(false),
+      })
+      .parse(req.body);
+
+    const { multiBucketManager } = await import("../services/multiBucketStorage.js");
+
+    // Pre-flight test connectivity
+    const testResult = await multiBucketManager.testConnectivity({
+      accountId: body.accountId,
+      bucketName: body.bucketName,
+      accessKeyId: body.accessKeyId,
+      secretAccessKey: body.secretAccessKey,
+    });
+
+    if (!testResult.success) {
+      return res.status(400).json({ error: testResult.message });
+    }
+
+    const created = multiBucketManager.addPool(body);
+    await audit(req.userId!, "admin.storage.add_pool", "storage_pool", created.id, {
+      bucketName: created.bucketName,
+      accountId: created.accountId,
+    });
+
+    res.status(201).json({
+      success: true,
+      pool: {
+        id: created.id,
+        name: created.name,
+        accountId: created.accountId,
+        bucketName: created.bucketName,
+        publicDomain: created.publicDomain,
+        maxCapacityBytes: created.maxCapacityBytes,
+        usedBytes: created.usedBytes,
+        fileCount: created.fileCount,
+        status: created.status,
+      },
+    });
+  }),
+);
+
+adminRoutes.patch(
+  "/storage/pools/:id",
+  wrap(async (req, res) => {
+    const id = String(req.params.id);
+    const body = z
+      .object({
+        name: z.string().trim().min(2).max(100).optional(),
+        publicDomain: z.string().trim().url().optional(),
+        maxCapacityGb: z.number().min(1).max(100_000).optional(),
+        status: z.enum(["active", "full", "standby", "disabled"]).optional(),
+        priority: z.number().int().min(1).max(1000).optional(),
+      })
+      .parse(req.body);
+
+    const { multiBucketManager } = await import("../services/multiBucketStorage.js");
+    const updated = multiBucketManager.updatePool(id, body);
+
+    await audit(req.userId!, "admin.storage.update_pool", "storage_pool", id, body);
+    res.json({ success: true, pool: updated });
+  }),
+);
+
+adminRoutes.delete(
+  "/storage/pools/:id",
+  wrap(async (req, res) => {
+    const id = String(req.params.id);
+    const { multiBucketManager } = await import("../services/multiBucketStorage.js");
+    multiBucketManager.deletePool(id);
+
+    await audit(req.userId!, "admin.storage.delete_pool", "storage_pool", id, {});
+    res.json({ success: true });
+  }),
+);
+
+adminRoutes.post(
+  "/storage/pools/test",
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        accountId: z.string().trim().min(5),
+        bucketName: z.string().trim().min(2),
+        accessKeyId: z.string().trim().min(5),
+        secretAccessKey: z.string().trim().min(10),
+      })
+      .parse(req.body);
+
+    const { multiBucketManager } = await import("../services/multiBucketStorage.js");
+    const testResult = await multiBucketManager.testConnectivity(body);
+
+    res.json(testResult);
   }),
 );

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { AccessToken, WebhookReceiver } from "livekit-server-sdk";
+import { AccessToken, WebhookReceiver, RoomServiceClient } from "livekit-server-sdk";
 import { env } from "../config/env.js";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
@@ -10,6 +10,17 @@ import { NotificationService } from "../services/notificationService.js";
 
 export const live = Router();
 export const liveWebhooks = Router();
+
+function getRoomServiceClient(): RoomServiceClient | null {
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_URL) {
+    return null;
+  }
+  return new RoomServiceClient(
+    env.LIVEKIT_URL,
+    env.LIVEKIT_API_KEY,
+    env.LIVEKIT_API_SECRET,
+  );
+}
 
 /**
  * Count who is currently connected to a LiveKit session and push that number
@@ -256,10 +267,12 @@ live.post(
       return res.status(403).json({ error: "Unauthorized role" });
     }
 
-    const canPublish = ["owner", "teacher", "moderator"].includes(member.role) || activeSession.teacher_id === req.userId;
+    const isHost = ["owner", "teacher", "moderator"].includes(member.role) || activeSession.teacher_id === req.userId;
+    // Allow all authorized participants to speak, broadcast video, and share screen (like Zoom)
+    const canPublish = true;
 
     // Transition scheduled session to live when teacher/host joins
-    if (activeSession.status === "scheduled" && canPublish) {
+    if (activeSession.status === "scheduled" && isHost) {
       await admin
         .from("sessions")
         .update({ status: "live" })
@@ -283,6 +296,7 @@ live.post(
         sessionId: activeSession.id,
         roomId: activeSession.room_id,
         role: member.role,
+        isHost,
         fullName: profile?.full_name || null,
         username: profile?.username || null,
         avatarUrl: profile?.avatar_url || null,
@@ -293,14 +307,16 @@ live.post(
       roomJoin: true,
       room: `skillbridge-session-${activeSession.id}`,
       canSubscribe: true,
-      canPublish,
+      canPublish: true,
       canPublishData: true,
     });
     
     res.json({
       url: env.LIVEKIT_URL,
       token: await at.toJwt(),
-      canPublish,
+      canPublish: true,
+      isHost,
+      role: member.role,
       sessionId: activeSession.id,
       roomName: `skillbridge-session-${activeSession.id}`,
       participantName,
@@ -308,13 +324,162 @@ live.post(
   }),
 );
 
-// 1:1 WhatsApp-style Call Initiation Endpoint
-// NOTE: the previous `/calls/initiate` + `/calls/:id/end` pair here was dead,
-// incomplete code reachable only from an unused client hook. It minted a
-// LiveKit token without any privacy/block checks and never rang the callee
-// (no accept/decline/ring over socket), so it could not work end to end.
-// The supported 1:1 call flow is the WebRTC pipeline in routes/calls.ts
-// (POST /calls -> socket `call:incoming` -> accept/reject -> call:* signaling).
+// Helper: verify caller has host privileges for this session
+async function verifySessionHost(sessionId: string, userId: string) {
+  let { data: session } = await admin
+    .from("sessions")
+    .select("id, room_id, teacher_id, status")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (!session) {
+    const { data: roomSession } = await admin
+      .from("sessions")
+      .select("id, room_id, teacher_id, status")
+      .eq("room_id", sessionId)
+      .in("status", ["live", "scheduled"])
+      .order("starts_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    session = roomSession;
+  }
+
+  if (!session) {
+    return { ok: false, error: "Session not found", status: 404 as const };
+  }
+
+  const { data: member } = await admin
+    .from("room_members")
+    .select("role")
+    .eq("room_id", session.room_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const isHost = ["owner", "teacher", "moderator"].includes(member?.role || "") || session.teacher_id === userId;
+  if (!isHost) {
+    return { ok: false, error: "Only the session host can perform this action", status: 403 as const };
+  }
+
+  return { ok: true, session, member };
+}
+
+// 1. Host Mute Individual Participant
+live.post(
+  "/rooms/:sessionId/mute-participant",
+  wrap(async (req, res) => {
+    const sessionId = z.string().uuid().parse(req.params.sessionId);
+    const auth = await verifySessionHost(sessionId, req.userId!);
+    if (!auth.ok || !auth.session) return res.status(auth.status || 403).json({ error: auth.error || "Forbidden" });
+
+    const body = z.object({
+      participantIdentity: z.string().min(1),
+      trackSid: z.string().optional(),
+      mute: z.boolean().default(true),
+    }).parse(req.body);
+
+    const client = getRoomServiceClient();
+    if (!client) return res.status(503).json({ error: "LiveKit not configured" });
+
+    const roomName = `skillbridge-session-${auth.session.id}`;
+    
+    if (body.trackSid) {
+      await client.mutePublishedTrack(roomName, body.participantIdentity, body.trackSid, body.mute);
+    } else {
+      try {
+        const participant = await client.getParticipant(roomName, body.participantIdentity);
+        for (const track of participant.tracks) {
+          if (track.type === 0 /* Audio */) {
+            await client.mutePublishedTrack(roomName, body.participantIdentity, track.sid, body.mute);
+          }
+        }
+      } catch (err) {
+        logger.warn({ err: (err as Error).message }, "Could not mute participant tracks via LiveKit");
+      }
+    }
+
+    res.json({ success: true, muted: body.mute, participant: body.participantIdentity });
+  }),
+);
+
+// 2. Host Mute All Participants
+live.post(
+  "/rooms/:sessionId/mute-all",
+  wrap(async (req, res) => {
+    const sessionId = z.string().uuid().parse(req.params.sessionId);
+    const auth = await verifySessionHost(sessionId, req.userId!);
+    if (!auth.ok || !auth.session) return res.status(auth.status || 403).json({ error: auth.error || "Forbidden" });
+
+    const client = getRoomServiceClient();
+    if (!client) return res.status(503).json({ error: "LiveKit not configured" });
+
+    const roomName = `skillbridge-session-${auth.session.id}`;
+    const participants = await client.listParticipants(roomName);
+
+    for (const p of participants) {
+      if (p.identity === req.userId) continue; // Do not mute host
+      for (const track of p.tracks) {
+        if (track.type === 0 /* Audio */ && !track.muted) {
+          try {
+            await client.mutePublishedTrack(roomName, p.identity, track.sid, true);
+          } catch (e) {
+            logger.warn({ err: (e as Error).message, participant: p.identity }, "Failed to mute participant track");
+          }
+        }
+      }
+    }
+
+    res.json({ success: true, message: "All participants muted" });
+  }),
+);
+
+// 3. Host Remove / Kick Participant
+live.post(
+  "/rooms/:sessionId/remove-participant",
+  wrap(async (req, res) => {
+    const sessionId = z.string().uuid().parse(req.params.sessionId);
+    const auth = await verifySessionHost(sessionId, req.userId!);
+    if (!auth.ok || !auth.session) return res.status(auth.status || 403).json({ error: auth.error || "Forbidden" });
+
+    const body = z.object({
+      participantIdentity: z.string().min(1),
+    }).parse(req.body);
+
+    const client = getRoomServiceClient();
+    if (!client) return res.status(503).json({ error: "LiveKit not configured" });
+
+    const roomName = `skillbridge-session-${auth.session.id}`;
+    await client.removeParticipant(roomName, body.participantIdentity);
+
+    res.json({ success: true, removed: body.participantIdentity });
+  }),
+);
+
+// 4. Host End Session for All
+live.post(
+  "/rooms/:sessionId/end",
+  wrap(async (req, res) => {
+    const sessionId = z.string().uuid().parse(req.params.sessionId);
+    const auth = await verifySessionHost(sessionId, req.userId!);
+    if (!auth.ok || !auth.session) return res.status(auth.status || 403).json({ error: auth.error || "Forbidden" });
+
+    const client = getRoomServiceClient();
+    const roomName = `skillbridge-session-${auth.session.id}`;
+    if (client) {
+      try {
+        await client.deleteRoom(roomName);
+      } catch (e) {
+        logger.warn({ err: (e as Error).message }, "Could not delete LiveKit room");
+      }
+    }
+
+    await admin
+      .from("sessions")
+      .update({ status: "completed", ended_at: new Date().toISOString() })
+      .eq("id", auth.session.id);
+
+    res.json({ success: true, status: "completed" });
+  }),
+);
 
 
 

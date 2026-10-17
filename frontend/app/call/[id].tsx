@@ -9,6 +9,8 @@ import { CallControls } from "@/features/calls/components/CallControls";
 import { ConnectionQuality } from "@/features/calls/components/ConnectionQuality";
 import { VideoView } from "@/features/calls/components/VideoView";
 import { initiateCallApi, getCallApi, acceptCallApi } from "@/features/calls/services/callApi";
+import { RemoteAudio } from "@/features/calls/components/RemoteAudio";
+import { LiveKitCallBridge } from "@/features/calls/components/LiveKitCallBridge";
 import { supabase } from "@/lib/supabase";
 import { triggerHaptic } from "@/components/ui";
 import { useUserPresence } from "@/features/presence/usePresence";
@@ -30,8 +32,10 @@ export default function CallScreen() {
   const acceptedCallId = first(params.callId);
   const targetParam = first(params.targetId);
   const calleeParam = first(params.userId);
-  const name = first(params.name);
-  const avatar = first(params.avatar);
+  const rawName = first(params.name);
+  const rawAvatar = first(params.avatar);
+  const name = rawName ? decodeURIComponent(rawName) : undefined;
+  const avatar = rawAvatar ? decodeURIComponent(rawAvatar) : undefined;
   const rawType = first(params.type);
   const type: "audio" | "video" = rawType === "audio" ? "audio" : "video";
 
@@ -44,6 +48,9 @@ export default function CallScreen() {
   const storeCallId = activeCall?.callId;
   const isJoiningExistingCall =
     Boolean(storeCallId) &&
+    activeCall?.status !== "ended" &&
+    activeCall?.status !== "declined" &&
+    activeCall?.status !== "failed" &&
     (storeCallId === routeSegment || storeCallId === queryCallId || Boolean(queryCallId));
   // Outgoing target is explicit via query (?targetId / ?userId) or, when this is
   // NOT an existing-call join, the route segment itself is the peer id.
@@ -202,9 +209,13 @@ export default function CallScreen() {
 
     async function startOutgoingCall() {
       // Join/resume path: IncomingCallModal (or a banner/tap) already created the
-      // call record and populated the store. Only ensure media is ready — never
-      // POST /calls again with the callId as if it were a peer id.
+      // call record and populated the store.
       if (existingCallId) {
+        if (activeCall?.provider === "livekit") {
+          const socket = getSocket();
+          socket?.emit("call:ready", { callId: existingCallId });
+          return;
+        }
         try {
           const stream = await initLocalMedia(activeCall?.type || (type as "audio" | "video"));
           await setupPeerConnection(stream);
@@ -224,7 +235,7 @@ export default function CallScreen() {
 
       try {
         setCallStatus("initiating");
-        const callResponse = await initiateCallApi(targetId, type as "audio" | "video");
+        const callResponse = await initiateCallApi(targetId, type as "audio" | "video", "webrtc");
         if (isCancelled) return;
 
         startCall({
@@ -240,9 +251,11 @@ export default function CallScreen() {
           providerConfig: callResponse.providerConfig,
         });
 
-        // Initialize local media and peer connection
-        const stream = await initLocalMedia(type as "audio" | "video");
-        await setupPeerConnection(stream);
+        // Initialize local media and peer connection only for WebRTC fallback
+        if (callResponse.provider !== "livekit") {
+          const stream = await initLocalMedia(type as "audio" | "video");
+          await setupPeerConnection(stream);
+        }
       } catch (err: any) {
         if (!isCancelled) {
           console.error("Failed to initiate outgoing call:", err);
@@ -291,6 +304,9 @@ export default function CallScreen() {
 
   const isConnected = activeCall?.status === "connected";
   const isVideo = activeCall?.type === "video";
+  const isLiveKit =
+    activeCall?.provider === "livekit" &&
+    Boolean(activeCall?.providerConfig?.token && activeCall?.providerConfig?.url);
 
   return (
     <Pressable
@@ -301,114 +317,138 @@ export default function CallScreen() {
         }
       }}
     >
-      {/* Remote Video Stream if available */}
-      {isConnected && isVideo && remoteStream ? (
-        <VideoView
-          stream={remoteStream}
-          style={StyleSheet.absoluteFill}
-          objectFit="cover"
+      {/* If LiveKit call, render LiveKitCallBridge */}
+      {isLiveKit ? (
+        <LiveKitCallBridge
+          url={activeCall!.providerConfig!.url || ""}
+          token={activeCall!.providerConfig!.token || ""}
+          type={activeCall!.type}
+          isMuted={activeCall!.isMuted}
+          isVideoEnabled={activeCall!.isVideoEnabled}
+          isFrontCamera={activeCall!.isFrontCamera}
+          peerName={activeCall!.peer.name || name || "SkillBridge Peer"}
+          peerAvatar={activeCall!.peer.avatarUrl || avatar}
+          onConnected={() => {
+            setCallStatus("connected");
+          }}
+          onDisconnected={handleEndCall}
         />
-      ) : null}
+      ) : (
+        <>
+          {/* Remote Video Stream if available */}
+          {isConnected && isVideo && remoteStream ? (
+            <VideoView
+              stream={remoteStream}
+              style={StyleSheet.absoluteFill}
+              objectFit="cover"
+            />
+          ) : null}
+
+          {/* Main Profile Info (Centered when audio or connecting) */}
+          {(!isConnected || !isVideo) && (
+            <View style={styles.centerProfile}>
+              <Animated.View style={[styles.avatarContainer, { transform: [{ scale: avatarPulse }] }]}>
+                {activeCall?.peer.avatarUrl || avatar ? (
+                  <Image
+                    source={{ uri: activeCall?.peer.avatarUrl || avatar }}
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <View style={[styles.avatar, styles.placeholderAvatar]}>
+                    <Text style={styles.avatarInitial}>
+                      {(activeCall?.peer.name || name || "U").charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </Animated.View>
+
+              <Text style={styles.calleeName}>
+                {activeCall?.peer.name || name || "SkillBridge Peer"}
+              </Text>
+
+              {/* Real-time Peer Presence Status Badge */}
+              <View style={styles.peerPresenceBadge}>
+                <View
+                  style={[
+                    styles.presenceDot,
+                    { backgroundColor: isPeerOnline ? "#10B981" : "#64748B" },
+                  ]}
+                />
+                <Text style={styles.presenceText}>{isPeerOnline ? "Active" : "Offline"}</Text>
+              </View>
+
+              <Text style={styles.callStatus}>
+                {activeCall?.status === "initiating"
+                  ? "Calling…"
+                  : activeCall?.status === "ringing"
+                  ? "Ringing…"
+                  : activeCall?.status === "connecting"
+                  ? "Connecting…"
+                  : activeCall?.status === "connected"
+                  ? formatDuration(activeCall.durationSeconds)
+                  : activeCall?.status === "reconnecting"
+                  ? "Reconnecting…"
+                  : activeCall?.status === "ended"
+                  ? "Call Ended"
+                  : activeCall?.status === "declined"
+                  ? "Call Declined"
+                  : activeCall?.status === "busy"
+                  ? "Busy"
+                  : errorMessage || "Calling…"}
+              </Text>
+            </View>
+          )}
+
+          {/* Local PIP Video preview if connected with video */}
+          {isConnected && isVideo && localStream ? (
+            <View style={styles.pipContainer}>
+              <VideoView
+                stream={localStream}
+                style={styles.pipVideo}
+                objectFit="cover"
+                mirror={activeCall?.isFrontCamera}
+                isMuted
+              />
+            </View>
+          ) : null}
+
+          {/* Universal Remote Audio Player (Works for both Web and Native VoIP) */}
+          {isConnected && remoteStream ? (
+            <RemoteAudio stream={remoteStream} isSpeakerOn={activeCall?.isSpeakerOn} />
+          ) : null}
+        </>
+      )}
 
       {/* Top Header Bar */}
       {controlsVisible && (
         <View style={styles.topBar}>
           <Pressable onPress={handleMinimize} hitSlop={12} style={styles.backButton}>
-            <MaterialCommunityIcons name="chevron-down" size={32} color="#FFFFFF" />
+            <MaterialCommunityIcons name="chevron-down" size={28} color="#FFFFFF" />
           </Pressable>
 
           <View style={styles.topBadges}>
             <View style={styles.encryptionBadge}>
-              <MaterialCommunityIcons name="shield-check-outline" size={12} color="#A7F3D0" />
-              <Text style={styles.encryptionText}>Secure Connection</Text>
+              <MaterialCommunityIcons name="shield-check" size={13} color="#10B981" />
+              <Text style={styles.encryptionText}>
+                {isConnected ? formatDuration(activeCall?.durationSeconds || 0) : "Live"}
+              </Text>
             </View>
             {isConnected ? <ConnectionQuality metrics={activeCall?.metrics} /> : null}
           </View>
         </View>
       )}
 
-      {/* Main Profile Info (Centered when audio or connecting) */}
-      {(!isConnected || !isVideo) && (
-        <View style={styles.centerProfile}>
-          <Animated.View style={[styles.avatarContainer, { transform: [{ scale: avatarPulse }] }]}>
-            {activeCall?.peer.avatarUrl || avatar ? (
-              <Image
-                source={{ uri: activeCall?.peer.avatarUrl || avatar }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={[styles.avatar, styles.placeholderAvatar]}>
-                <Text style={styles.avatarInitial}>
-                  {(activeCall?.peer.name || name || "U").charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-          </Animated.View>
-
-          <Text style={styles.calleeName}>
-            {activeCall?.peer.name || name || "SkillBridge Peer"}
-          </Text>
-
-          {/* Real-time Peer Presence Status Badge */}
-          <View style={styles.peerPresenceBadge}>
-            <View
-              style={[
-                styles.presenceDot,
-                { backgroundColor: isPeerOnline ? "#10B981" : "#64748B" },
-              ]}
-            />
-            <Text style={styles.presenceText}>{isPeerOnline ? "Active Now" : "Offline"}</Text>
-          </View>
-
-          <Text style={styles.callStatus}>
-            {activeCall?.status === "initiating"
-              ? "Connecting securely…"
-              : activeCall?.status === "ringing"
-              ? "Ringing…"
-              : activeCall?.status === "connecting"
-              ? "Establishing P2P link…"
-              : activeCall?.status === "connected"
-              ? formatDuration(activeCall.durationSeconds)
-              : activeCall?.status === "reconnecting"
-              ? "Reconnecting…"
-              : activeCall?.status === "ended"
-              ? "Call Ended"
-              : activeCall?.status === "declined"
-              ? "Call Declined"
-              : activeCall?.status === "busy"
-              ? "User is Busy"
-              : errorMessage || "Calling…"}
-          </Text>
-        </View>
-      )}
-
       {/* Missed / ended call notice (cold start from stale notification) */}
       {coldStartStatus === "missed" && (
         <View style={styles.missedCallOverlay}>
-          <MaterialCommunityIcons name="phone-hangup" size={48} color="#EF4444" />
-          <Text style={styles.missedCallTitle}>Missed Call</Text>
-          <Text style={styles.missedCallSubtitle}>
-            This call is no longer available.
-          </Text>
+          <MaterialCommunityIcons name="phone-hangup" size={44} color="#EF4444" />
+          <Text style={styles.missedCallTitle}>Call Ended</Text>
         </View>
       )}
 
-      {/* Local PIP Video preview if connected with video */}
-      {isConnected && isVideo && localStream ? (
-        <View style={styles.pipContainer}>
-          <VideoView
-            stream={localStream}
-            style={styles.pipVideo}
-            objectFit="cover"
-            mirror={activeCall?.isFrontCamera}
-            isMuted
-          />
-        </View>
-      ) : null}
-
       {/* Call Controls Bar */}
       {controlsVisible && (
-        <View style={{ width: "100%", paddingBottom: Math.max(insets.bottom, 12) }}>
+        <View style={{ width: "100%", paddingBottom: Math.max(insets.bottom, 12), zIndex: 30 }}>
           <CallControls
             isMuted={activeCall?.isMuted ?? false}
             isVideoEnabled={activeCall?.isVideoEnabled ?? false}

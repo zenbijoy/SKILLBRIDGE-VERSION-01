@@ -216,7 +216,7 @@ export function CampusFeatureDock() {
       tagColor: "#10B981",
       icon: "document-text",
       color: "#10B981",
-      route: "/discover",
+      route: "/vault",
     },
     {
       label: "Ask Doubts",

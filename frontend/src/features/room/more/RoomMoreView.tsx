@@ -18,6 +18,7 @@ import { useI18n } from "@/i18n";
 import type { Profile, Room } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { ActiveDot } from "@/features/presence/ActiveDot";
 
 type RoomMoreViewProps = {
   room: Room;
@@ -33,6 +34,8 @@ type RoomMoreViewProps = {
   onOpenModerationCenter?: () => void;
   onOpenAnalytics?: () => void;
   onOpenSettings?: () => void;
+  onOpenMonitoringCenter?: () => void;
+  onOpenKnockRequests?: () => void;
 };
 
 export function RoomMoreView({
@@ -49,6 +52,8 @@ export function RoomMoreView({
   onOpenModerationCenter,
   onOpenAnalytics,
   onOpenSettings,
+  onOpenMonitoringCenter,
+  onOpenKnockRequests,
 }: RoomMoreViewProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -305,10 +310,17 @@ export function RoomMoreView({
                   !isLast && { borderBottomWidth: 1, borderBottomColor: colors.divider },
                 ]}
               >
-                <View style={[s.memberAvatar, { backgroundColor: colors.primarySoft }]}>
-                  <Text style={{ color: colors.primary, fontWeight: "900", fontSize: 13 }}>
-                    {member.full_name?.[0] || "U"}
-                  </Text>
+                <View style={{ position: "relative" }}>
+                  <View style={[s.memberAvatar, { backgroundColor: colors.primarySoft }]}>
+                    <Text style={{ color: colors.primary, fontWeight: "900", fontSize: 13 }}>
+                      {member.full_name?.[0] || "U"}
+                    </Text>
+                  </View>
+                  <ActiveDot
+                    userId={member.id}
+                    size={11}
+                    style={{ position: "absolute", bottom: -1, right: -1 }}
+                  />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Row style={{ alignItems: "center", gap: 6 }}>
@@ -351,6 +363,48 @@ export function RoomMoreView({
                 <Text style={[s.toolTitle, { color: colors.text }]}>Pinned Content Hub</Text>
                 <Text style={[s.toolSub, { color: colors.muted }]}>
                   Important posts, files, recordings & announcements
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
+            </Pressable>
+          )}
+
+          {canModerate && onOpenMonitoringCenter && (
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                onOpenMonitoringCenter();
+              }}
+              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
+            >
+              <View style={[s.toolIcon, { backgroundColor: "#10B98120" }]}>
+                <MaterialCommunityIcons name="monitor-dashboard" size={18} color="#10B981" />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[s.toolTitle, { color: colors.text }]}>Live Room Monitoring Center</Text>
+                <Text style={[s.toolSub, { color: colors.muted }]}>
+                  Real-time telemetry, participant stream health & intervention
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
+            </Pressable>
+          )}
+
+          {canModerate && onOpenKnockRequests && (
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                onOpenKnockRequests();
+              }}
+              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
+            >
+              <View style={[s.toolIcon, { backgroundColor: colors.primarySoft }]}>
+                <MaterialCommunityIcons name="account-clock" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[s.toolTitle, { color: colors.text }]}>Knock & Waiting Requests</Text>
+                <Text style={[s.toolSub, { color: colors.muted }]}>
+                  Review lobby requests & toggle open access for all
                 </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />

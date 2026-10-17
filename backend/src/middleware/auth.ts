@@ -159,7 +159,15 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
 
 export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (Boolean(req.userRoles?.some((r) => roles.includes(r)))) {
+    const effectiveRoles = new Set(roles);
+    if (roles.includes("admin") || roles.includes("moderator")) {
+      effectiveRoles.add("owner");
+      effectiveRoles.add("co_admin");
+    }
+    if (roles.includes("moderator")) {
+      effectiveRoles.add("admin");
+    }
+    if (Boolean(req.userRoles?.some((r) => effectiveRoles.has(r)))) {
       return next();
     }
     void recordAuthFailure();

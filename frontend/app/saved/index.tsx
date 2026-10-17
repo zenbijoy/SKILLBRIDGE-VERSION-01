@@ -28,12 +28,12 @@ import {
 type MediaTypeTab = "all" | "posts" | "liked" | "videos" | "audio" | "research";
 
 const MEDIA_TABS: { key: MediaTypeTab; label: string; icon: string }[] = [
-  { key: "all", label: "All Saved", icon: "bookmark" },
-  { key: "posts", label: "Bookmarked", icon: "bookmark-outline" },
-  { key: "liked", label: "Liked Posts", icon: "heart" },
-  { key: "videos", label: "Watch Later", icon: "play-circle" },
-  { key: "audio", label: "Audio", icon: "headset" },
-  { key: "research", label: "Research & PDFs", icon: "document-text" },
+  { key: "all", label: "সব সেভ করা", icon: "bookmark" },
+  { key: "posts", label: "বুকমার্ক করা পোস্ট", icon: "bookmark-outline" },
+  { key: "liked", label: "পছন্দকৃত পোস্ট", icon: "heart" },
+  { key: "videos", label: "পরে দেখুন", icon: "play-circle" },
+  { key: "audio", label: "অডিও", icon: "headset" },
+  { key: "research", label: "গবেষণা ও পিডিএফ", icon: "document-text" },
 ];
 
 export default function SavedLibraryScreen() {
@@ -82,11 +82,24 @@ export default function SavedLibraryScreen() {
       setItems((prev) => prev.filter((it) => it.id !== id));
       triggerHaptic("selection");
     } catch (err: any) {
-      Alert.alert(t("common.error"), err.message || "Failed to remove item");
+      Alert.alert(t("common.error"), err.message || "ইটেম সরিয়ে ফেলতে সমস্যা");
     }
   };
 
-  // Filter items based on active media tab
+  const getItemImageUrl = (item: SavedItem): string | null => {
+    const d = (item as any).details || {};
+    return (
+      d.image_url ||
+      d.thumbnail ||
+      d.cover_url ||
+      d.thumbnail_url ||
+      d.post_image_url ||
+      d.resource_image_url ||
+      d.preview_url ||
+      null
+    );
+  };
+
   const displayedItems = useMemo(() => {
     if (activeMediaTab === "videos") {
       return items.filter(
@@ -108,7 +121,6 @@ export default function SavedLibraryScreen() {
       );
     }
     if (activeMediaTab === "posts") {
-      // Posts bookmarked via the feed's Save action (saved_items.entity_type === "post")
       return items.filter((it) => it.entity_type === "post");
     }
     if (activeMediaTab === "research") {
@@ -150,15 +162,14 @@ export default function SavedLibraryScreen() {
   return (
     <Screen scroll={false}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Top Header */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
         <Row style={{ alignItems: "center", gap: 10 }}>
           <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View>
-            <Text style={[styles.title, { color: colors.text }]}>Saved & Liked</Text>
-            <Text style={{ fontSize: 11, color: colors.muted }}>Library, watch later & bookmarks</Text>
+            <Text style={[styles.title, { color: colors.text }]}>সেভ করা ও পছন্দকৃত</Text>
+            <Text style={{ fontSize: 11, color: colors.muted }}>লাইব্রেরি, পরে দেখুন ও বুকমার্ক</Text>
           </View>
         </Row>
         <TouchableOpacity
@@ -166,11 +177,10 @@ export default function SavedLibraryScreen() {
           onPress={() => router.push("/collections/create" as any)}
         >
           <Ionicons name="add" size={16} color={colors.primary} />
-          <Text style={[styles.createColText, { color: colors.primary }]}>Collection</Text>
+          <Text style={[styles.createColText, { color: colors.primary }]}>কলেকশন</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Segmented Media Filter Tabs */}
       <View style={[styles.tabsWrap, { borderBottomColor: colors.border }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
           {MEDIA_TABS.map((tab) => {
@@ -217,7 +227,6 @@ export default function SavedLibraryScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Collections Carousel (when in All Saved) */}
         {activeMediaTab === "all" && collections.length > 0 && (
           <View style={styles.collectionsSection}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.colScroll}>
@@ -243,7 +252,7 @@ export default function SavedLibraryScreen() {
                     { color: selectedCollectionId === null ? colors.primary : colors.text, fontWeight: "700" },
                   ]}
                 >
-                  All ({items.length})
+                  সব ({items.length})
                 </Text>
               </TouchableOpacity>
 
@@ -275,19 +284,17 @@ export default function SavedLibraryScreen() {
           </View>
         )}
 
-        {/* Content View */}
         {loading ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : activeMediaTab === "liked" ? (
-          // Liked Posts View
           likedPosts.length === 0 ? (
             <View style={styles.emptyWrap}>
               <MaterialCommunityIcons name="heart-outline" size={48} color={colors.muted} />
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No Liked Posts Yet</Text>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>এখনও কোনো পছন্দকৃত পোস্ট নেই</Text>
               <Text style={[styles.emptySub, { color: colors.muted }]}>
-                Posts you like or react to in the campus feed will automatically show up here.
+                ক্যাম্পাস ফিডে আপনার পছন্দ বা রিঅ্যাক্ট করা পোস্টগুলো এখানে দেখাবে।
               </Text>
             </View>
           ) : (
@@ -311,19 +318,27 @@ export default function SavedLibraryScreen() {
                       </View>
                       <View>
                         <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text }}>
-                          {post.author?.full_name || "Campus Peer"}
+                          {post.author?.full_name || "ক্যাম্পাস পিয়ার"}
                         </Text>
                         <Text style={{ fontSize: 10, color: colors.muted }}>
                           {new Date(post.created_at).toLocaleDateString()}
                         </Text>
                       </View>
                     </Row>
-                    <Pill tone="danger">❤️ Liked</Pill>
+                    <Pill tone="danger">❤️ পছন্দকৃত</Pill>
                   </Row>
 
                   <Text style={{ fontSize: 13.5, color: colors.text, lineHeight: 19 }} numberOfLines={3}>
                     {post.body}
                   </Text>
+
+                  {(post.image_url || post.thumbnail || post.cover_url) && (
+                    <Image
+                      source={{ uri: post.image_url || post.thumbnail || post.cover_url }}
+                      style={styles.likedPostImage}
+                      resizeMode="cover"
+                    />
+                  )}
 
                   <Row style={{ gap: 12, marginTop: 8 }}>
                     <Row style={{ alignItems: "center", gap: 4 }}>
@@ -342,63 +357,74 @@ export default function SavedLibraryScreen() {
         ) : displayedItems.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Ionicons name="bookmark-outline" size={48} color={colors.muted} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Items Saved</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>কোনো সেভ করা ইটেম নেই</Text>
             <Text style={[styles.emptySub, { color: colors.muted }]}>
               {activeMediaTab === "videos"
-                ? "Bookmark lecture recordings and video posts to watch them later."
+                ? "পরে দেখার জন্য লেকচার রেকর্ডিং এবং ভিডিও পোস্ট বুকমার্ক করুন।"
                 : activeMediaTab === "research"
-                ? "Save research hub papers, PDFs, and laboratory notes to review anytime."
-                : "Bookmark posts, rooms, and files across the app to view here."}
+                ? "গবেষণার পেপার, পিডিএফ এবং ল্যাব নোট সংগ্রহ করুন।"
+                : "অ্যাপ জুড়ে পোস্ট, রুম এবং ফাইল বুকমার্ক করুন যাতে এখানে দেখতে পান।"}
             </Text>
           </View>
         ) : (
           <View style={styles.itemsGrid}>
-            {displayedItems.map((it) => (
-              <View
-                key={it.id}
-                style={[
-                  styles.itemCard,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-              >
-                <Pressable
-                  style={styles.itemMain}
-                  onPress={() => {
-                    triggerHaptic();
-                    if (it.entity_type === "room") router.push(`/room/${it.entity_id}` as any);
-                    else if (it.entity_type === "research") router.push(`/research/${it.entity_id}` as any);
-                    else if (it.entity_type === "club") router.push(`/club/${it.entity_id}` as any);
-                    else if (it.entity_type === "event") router.push(`/event/${it.entity_id}` as any);
-                    else if (it.entity_type === "post") router.push(`/post/${it.entity_id}` as any);
-                    else if (it.entity_type === "profile") router.push(`/user/${it.entity_id}` as any);
-                  }}
+            {displayedItems.map((it) => {
+              const imageUrl = getItemImageUrl(it);
+              return (
+                <View
+                  key={it.id}
+                  style={[
+                    styles.itemCard,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
                 >
-                  <View style={[styles.itemIconWrap, { backgroundColor: colors.primarySoft }]}>
-                    <Ionicons
-                      name={getEntityIcon(it.entity_type) as any}
-                      size={20}
-                      color={colors.primary}
-                    />
-                  </View>
-                  <View style={styles.itemInfo}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
-                      {it.title || it.entity_type}
-                    </Text>
-                    <Text style={[styles.itemSub, { color: colors.muted }]} numberOfLines={1}>
-                      {it.subtitle || it.entity_type.toUpperCase()}
-                    </Text>
-                  </View>
-                </Pressable>
+                  <Pressable
+                    style={styles.itemMain}
+                    onPress={() => {
+                      triggerHaptic();
+                      if (it.entity_type === "room") router.push(`/room/${it.entity_id}` as any);
+                      else if (it.entity_type === "research") router.push(`/research/${it.entity_id}` as any);
+                      else if (it.entity_type === "club") router.push(`/club/${it.entity_id}` as any);
+                      else if (it.entity_type === "event") router.push(`/event/${it.entity_id}` as any);
+                      else if (it.entity_type === "post") router.push(`/post/${it.entity_id}` as any);
+                      else if (it.entity_type === "profile") router.push(`/user/${it.entity_id}` as any);
+                    }}
+                  >
+                    {imageUrl ? (
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={styles.itemImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.itemIconWrap, { backgroundColor: colors.primarySoft }]}>
+                        <Ionicons
+                          name={getEntityIcon(it.entity_type) as any}
+                          size={20}
+                          color={colors.primary}
+                        />
+                      </View>
+                    )}
+                    <View style={styles.itemInfo}>
+                      <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
+                        {it.title || it.entity_type}
+                      </Text>
+                      <Text style={[styles.itemSub, { color: colors.muted }]} numberOfLines={1}>
+                        {it.subtitle || it.entity_type.toUpperCase()}
+                      </Text>
+                    </View>
+                  </Pressable>
 
-                <TouchableOpacity
-                  style={styles.removeBtn}
-                  onPress={() => handleRemove(it.id)}
-                  hitSlop={8}
-                >
-                  <Ionicons name="trash-outline" size={17} color={colors.muted} />
-                </TouchableOpacity>
-              </View>
-            ))}
+                  <TouchableOpacity
+                    style={styles.removeBtn}
+                    onPress={() => handleRemove(it.id)}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="trash-outline" size={17} color={colors.muted} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -523,6 +549,12 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
+  itemImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 10,
+    backgroundColor: "#f1f5f9",
+  },
   itemIconWrap: {
     width: 38,
     height: 38,
@@ -548,6 +580,13 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
+  },
+  likedPostImage: {
+    width: "100%",
+    height: 160,
+    borderRadius: 12,
+    marginTop: 8,
+    backgroundColor: "#f1f5f9",
   },
   avatar: {
     width: 28,

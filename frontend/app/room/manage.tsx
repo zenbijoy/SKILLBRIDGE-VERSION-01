@@ -41,7 +41,7 @@ const AVAILABLE_MODULES = [
   { key: "chat", label: "Chat & Channels", icon: "chat-outline" },
   { key: "learn", label: "Learn & Sessions", icon: "school-outline" },
   { key: "media", label: "Media & Playlists", icon: "video-outline" },
-  { key: "voice", label: "Voice Lounge", icon: "microphone-outline" },
+  { key: "voice", label: "Voice Room", icon: "microphone-outline" },
 ];
 
 export default function RoomManageScreen() {
@@ -322,11 +322,14 @@ export default function RoomManageScreen() {
                 <Card key={room.id} style={[styles.roomCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   {/* Top Bar */}
                   <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
-                    <Row style={{ alignItems: "center", gap: 6 }}>
+                    <Row style={{ alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       <Pill tone="primary">HOST</Pill>
                       <Pill tone="default">{(room.mode || "online").toUpperCase()}</Pill>
                       <Pill tone={room.visibility === "private" ? "danger" : "info"}>
                         {(room.visibility || "public").toUpperCase()}
+                      </Pill>
+                      <Pill tone={room.knock_mode_enabled === false ? "default" : "accent"}>
+                        {room.knock_mode_enabled === false ? "OPEN TO ALL" : "KNOCK REQUIRED"}
                       </Pill>
                     </Row>
                     <Text style={{ fontSize: 11, color: colors.muted }}>
@@ -355,6 +358,18 @@ export default function RoomManageScreen() {
 
                   {/* Action Toolbar */}
                   <Row style={{ flexWrap: "wrap", gap: 8 }}>
+                    {/* Waiting & Knocks Button */}
+                    <Pressable
+                      onPress={() => {
+                        triggerHaptic();
+                        router.push(`/room/${room.id}?openKnock=true` as any);
+                      }}
+                      style={[styles.actionBtn, { backgroundColor: `${colors.primary}18`, borderColor: colors.primary, borderWidth: 1 }]}
+                    >
+                      <MaterialCommunityIcons name="door-open" size={15} color={colors.primary} />
+                      <Text style={[styles.actionBtnText, { color: colors.primary }]}>Waiting & Knocks</Text>
+                    </Pressable>
+
                     {/* Modify Settings Button */}
                     <Pressable
                       onPress={() => openSettingsModal(room)}

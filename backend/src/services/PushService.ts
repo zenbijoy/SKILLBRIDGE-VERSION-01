@@ -1,8 +1,113 @@
 import { admin } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
+import { getFirebaseMessaging } from "./firebase.js";
+
+export interface PushMessage {
+  title: string;
+  body: string;
+  data?: Record<string, any>;
+  priority?: "normal" | "high";
+}
 
 export interface PushProvider {
-  sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any>; priority?: "normal" | "high" }): Promise<void>;
+  sendNotification(userId: string, message: PushMessage): Promise<void>;
+}
+
+export class FirebasePushProvider implements PushProvider {
+  async sendNotification(userId: string, message: PushMessage): Promise<void> {
+    const messaging = getFirebaseMessaging();
+    if (!messaging) return;
+
+    const { data: tokens } = await admin
+      .from("device_tokens")
+      .select("token")
+      .eq("user_id", userId)
+      .eq("enabled", true)
+      .eq("provider", "fcm");
+
+    if (!tokens || tokens.length === 0) return;
+
+    const fcmTokens = tokens.map((t) => t.token);
+    const isHighPriority = message.priority === "high";
+
+    const stringData: Record<string, string> = {};
+    if (message.data) {
+      for (const [k, v] of Object.entries(message.data)) {
+        stringData[k] = typeof v === "string" ? v : JSON.stringify(v);
+      }
+    }
+
+    try {
+      const response = await messaging.sendEachForMulticast({
+        tokens: fcmTokens,
+        notification: {
+          title: message.title,
+          body: message.body,
+        },
+        data: stringData,
+        android: {
+          priority: isHighPriority ? "high" : "normal",
+          ttl: isHighPriority ? 60 * 1000 : 24 * 60 * 60 * 1000,
+          notification: {
+            channelId: isHighPriority ? "incoming_calls" : "default",
+            priority: isHighPriority ? "max" : "default",
+            sound: "default",
+            defaultSound: true,
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: {
+                title: message.title,
+                body: message.body,
+              },
+              sound: "default",
+              badge: 1,
+              interruptionLevel: isHighPriority ? "critical" : "active",
+            },
+          },
+        },
+      });
+
+      const invalidTokens: string[] = [];
+      response.responses.forEach((res: any, idx: number) => {
+        if (!res.success && res.error) {
+          const code = res.error.code;
+          if (
+            code === "messaging/invalid-registration-token" ||
+            code === "messaging/registration-token-not-registered"
+          ) {
+            invalidTokens.push(fcmTokens[idx]);
+          }
+        }
+      });
+
+      if (invalidTokens.length > 0) {
+        await admin.from("device_tokens").update({ enabled: false }).in("token", invalidTokens);
+      }
+
+      logger.info(
+        {
+          event: "fcm_push_dispatched",
+          userId,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+        },
+        "FCM push notification dispatched",
+      );
+    } catch (err) {
+      logger.error(
+        {
+          event: "fcm_dispatch_error",
+          userId,
+          err: err instanceof Error ? err.message : err,
+        },
+        "Failed to dispatch FCM push notification",
+      );
+    }
+  }
 }
 
 export class ExpoPushProvider implements PushProvider {
@@ -197,24 +302,39 @@ export class ExpoPushProvider implements PushProvider {
   }
 }
 
+export class DualPushProvider implements PushProvider {
+  private expo = new ExpoPushProvider();
+  private fcm = new FirebasePushProvider();
+
+  async sendNotification(userId: string, message: PushMessage): Promise<void> {
+    // Parallel dual delivery: if one fails or has no tokens for user, the other delivers!
+    await Promise.allSettled([
+      this.fcm.sendNotification(userId, message),
+      this.expo.sendNotification(userId, message),
+    ]);
+  }
+
+  async checkPendingReceipts(): Promise<void> {
+    await this.expo.checkPendingReceipts();
+  }
+}
+
 export class MockPushProvider implements PushProvider {
-  async sendNotification(userId: string, message: { title: string; body: string; data?: Record<string, any>; priority?: "normal" | "high" }) {
+  async sendNotification(userId: string, message: PushMessage) {
     logger.debug({ event: "mock_push_dispatched", userId, title: message.title, priority: message.priority }, `[MOCK PUSH] To: ${userId}`);
   }
   async checkPendingReceipts() {}
 }
 
 export class PushService {
-  private static provider: PushProvider & { checkPendingReceipts?: () => Promise<void> } = process.env.NODE_ENV === "test" ? new MockPushProvider() : new ExpoPushProvider();
-  
+  private static provider: PushProvider & { checkPendingReceipts?: () => Promise<void> } =
+    process.env.NODE_ENV === "test" ? new MockPushProvider() : new DualPushProvider();
+
   static setProvider(provider: PushProvider & { checkPendingReceipts?: () => Promise<void> }) {
     this.provider = provider;
   }
-  
-  static async sendNotification(
-    userId: string,
-    message: { title: string; body: string; data?: Record<string, any>; priority?: "normal" | "high" }
-  ) {
+
+  static async sendNotification(userId: string, message: PushMessage) {
     return this.provider.sendNotification(userId, message);
   }
 

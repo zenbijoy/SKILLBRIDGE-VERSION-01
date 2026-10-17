@@ -2161,4 +2161,317 @@ CREATE INDEX IF NOT EXISTS idx_events_starts_at ON events(starts_at);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_events_club_id ON events(club_id);
 
+-- ============================================================================
+-- MIGRATION 045: Note Vault, Profile Covers & Storage Pools Suite
+-- ============================================================================
+
+-- 1. Profile Cover Photo Column
+ALTER TABLE IF EXISTS public.profiles
+  ADD COLUMN IF NOT EXISTS cover_url text;
+
+-- 2. Note Vault Table for PDF and Academic Document Sharing
+CREATE TABLE IF NOT EXISTS public.vault_notes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  description text,
+  file_url text NOT NULL,
+  file_key text NOT NULL,
+  file_size_bytes bigint DEFAULT 0,
+  sha256_hash text,
+  mime_type text DEFAULT 'application/pdf',
+  uploader_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  department text,
+  semester text,
+  course_code text,
+  tags text[] DEFAULT '{}'::text[],
+  visibility text DEFAULT 'public' CHECK (visibility IN ('public', 'community', 'private')),
+  community_id uuid,
+  community_name text,
+  storage_bucket text DEFAULT 'skillbridge-media',
+  storage_provider text DEFAULT 'r2',
+  downloads_count integer DEFAULT 0,
+  views_count integer DEFAULT 0,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_notes_uploader ON public.vault_notes(uploader_id);
+CREATE INDEX IF NOT EXISTS idx_vault_notes_dept ON public.vault_notes(department);
+CREATE INDEX IF NOT EXISTS idx_vault_notes_visibility ON public.vault_notes(visibility);
+CREATE INDEX IF NOT EXISTS idx_vault_notes_hash ON public.vault_notes(sha256_hash);
+CREATE INDEX IF NOT EXISTS idx_vault_notes_created_at ON public.vault_notes(created_at DESC);
+
+ALTER TABLE public.vault_notes ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Anyone can view public notes'
+  ) THEN
+    CREATE POLICY "Anyone can view public notes"
+      ON public.vault_notes FOR SELECT
+      USING (visibility = 'public' OR uploader_id = auth.uid());
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Authenticated users can upload notes'
+  ) THEN
+    CREATE POLICY "Authenticated users can upload notes"
+      ON public.vault_notes FOR INSERT
+      WITH CHECK (auth.uid() = uploader_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Users can update own notes'
+  ) THEN
+    CREATE POLICY "Users can update own notes"
+      ON public.vault_notes FOR UPDATE
+      USING (auth.uid() = uploader_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Users can delete own notes'
+  ) THEN
+    CREATE POLICY "Users can delete own notes"
+      ON public.vault_notes FOR DELETE
+      USING (auth.uid() = uploader_id);
+  END IF;
+END $$;
+
+-- 3. Storage Pools Table for Multi-Bucket Routing
+CREATE TABLE IF NOT EXISTS public.storage_pools (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  provider text DEFAULT 'r2',
+  account_id text NOT NULL,
+  bucket_name text NOT NULL,
+  access_key_id text NOT NULL,
+  secret_access_key text NOT NULL,
+  public_domain text,
+  max_capacity_bytes bigint DEFAULT 10737418240,
+  used_bytes bigint DEFAULT 0,
+  file_count integer DEFAULT 0,
+  status text DEFAULT 'active' CHECK (status IN ('active', 'full', 'standby', 'disabled')),
+  priority integer DEFAULT 1,
+  is_default boolean DEFAULT false,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.storage_pools ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'storage_pools' AND policyname = 'Admins can view and manage storage pools'
+  ) THEN
+    CREATE POLICY "Admins can view and manage storage pools"
+      ON public.storage_pools FOR ALL
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.profiles
+          WHERE profiles.id = auth.uid() AND ('admin' = ANY(profiles.roles))
+        )
+      );
+  END IF;
+END $$;
+
+
+-- =============================================================================
+-- MODULE: infra/supabase/migrations/046_room_knock_and_monitoring.sql
+-- =============================================================================
+
+ALTER TABLE public.rooms
+  ADD COLUMN IF NOT EXISTS knock_mode_enabled BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS public.room_knock_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  method TEXT NOT NULL DEFAULT 'message' CHECK (method IN ('message', 'phone_call')),
+  message TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'admitted', 'declined', 'cancelled')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  decided_at TIMESTAMPTZ,
+  decided_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  UNIQUE (room_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_knock_requests_room ON public.room_knock_requests(room_id, status);
+CREATE INDEX IF NOT EXISTS idx_room_knock_requests_user ON public.room_knock_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_room_knock_requests_created ON public.room_knock_requests(created_at DESC);
+
+ALTER TABLE public.room_knock_requests ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'room_knock_requests' AND policyname = 'Requesters can view and submit own knock requests'
+  ) THEN
+    CREATE POLICY "Requesters can view and submit own knock requests"
+      ON public.room_knock_requests FOR ALL
+      USING (auth.uid() = user_id)
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'room_knock_requests' AND policyname = 'Room hosts and moderators can manage knock requests'
+  ) THEN
+    CREATE POLICY "Room hosts and moderators can manage knock requests"
+      ON public.room_knock_requests FOR ALL
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.rooms r
+          WHERE r.id = room_knock_requests.room_id AND r.owner_id = auth.uid()
+        ) OR EXISTS (
+          SELECT 1 FROM public.room_members rm
+          WHERE rm.room_id = room_knock_requests.room_id AND rm.user_id = auth.uid() AND rm.role IN ('owner', 'moderator')
+        )
+      );
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.room_monitoring_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  details JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_monitoring_events_room ON public.room_monitoring_events(room_id, created_at DESC);
+
+ALTER TABLE public.room_monitoring_events ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'room_monitoring_events' AND policyname = 'Room moderators can view monitoring events'
+  ) THEN
+    CREATE POLICY "Room moderators can view monitoring events"
+      ON public.room_monitoring_events FOR SELECT
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.rooms r
+          WHERE r.id = room_monitoring_events.room_id AND r.owner_id = auth.uid()
+        ) OR EXISTS (
+          SELECT 1 FROM public.room_members rm
+          WHERE rm.room_id = room_monitoring_events.room_id AND rm.user_id = auth.uid() AND rm.role IN ('owner', 'moderator')
+        )
+      );
+  END IF;
+END $$;
+
+-- =============================================================================
+-- MODULE: infra/supabase/migrations/047_calls_and_blocks_fix.sql
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.calls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    caller_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    callee_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('audio', 'video')),
+    status TEXT NOT NULL CHECK (
+        status IN (
+            'initiating',
+            'ringing',
+            'accepted',
+            'connecting',
+            'connected',
+            'reconnecting',
+            'declined',
+            'busy',
+            'missed',
+            'failed',
+            'ended'
+        )
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ringing_at TIMESTAMPTZ,
+    answered_at TIMESTAMPTZ,
+    connected_at TIMESTAMPTZ,
+    ended_at TIMESTAMPTZ,
+    duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK (duration_seconds >= 0),
+    end_reason TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT chk_caller_callee_different CHECK (caller_id <> callee_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calls_caller ON public.calls(caller_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_calls_callee ON public.calls(callee_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_calls_status ON public.calls(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_calls_active ON public.calls(caller_id, callee_id, status)
+    WHERE status IN ('initiating', 'ringing', 'accepted', 'connecting', 'connected', 'reconnecting');
+
+ALTER TABLE public.calls ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'calls' AND policyname = 'Call participants can view their call records') THEN
+    CREATE POLICY "Call participants can view their call records"
+    ON public.calls FOR SELECT
+    USING (
+        caller_id = auth.uid() OR
+        callee_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND ('admin' = ANY(profiles.roles) OR 'moderator' = ANY(profiles.roles))
+        )
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'calls' AND policyname = 'Authenticated users can initiate calls') THEN
+    CREATE POLICY "Authenticated users can initiate calls"
+    ON public.calls FOR INSERT
+    WITH CHECK (
+        auth.uid() = caller_id AND
+        caller_id <> callee_id
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'calls' AND policyname = 'Call participants can update call state') THEN
+    CREATE POLICY "Call participants can update call state"
+    ON public.calls FOR UPDATE
+    USING (
+        caller_id = auth.uid() OR
+        callee_id = auth.uid()
+    );
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.blocks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    blocker_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    blocked_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_block_self CHECK (blocker_id <> blocked_id),
+    UNIQUE (blocker_id, blocked_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocks_blocker ON public.blocks(blocker_id);
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON public.blocks(blocked_id);
+
+ALTER TABLE public.blocks ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'blocks' AND policyname = 'Users can view their own blocks') THEN
+    CREATE POLICY "Users can view their own blocks"
+    ON public.blocks FOR SELECT
+    USING (blocker_id = auth.uid() OR blocked_id = auth.uid());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'blocks' AND policyname = 'Users can block others') THEN
+    CREATE POLICY "Users can block others"
+    ON public.blocks FOR INSERT
+    WITH CHECK (blocker_id = auth.uid() AND blocker_id <> blocked_id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'blocks' AND policyname = 'Users can unblock others') THEN
+    CREATE POLICY "Users can unblock others"
+    ON public.blocks FOR DELETE
+    USING (blocker_id = auth.uid());
+  END IF;
+END $$;
+
+CREATE OR REPLACE VIEW public.user_blocks AS
+SELECT * FROM public.blocks;
+
+
+
 

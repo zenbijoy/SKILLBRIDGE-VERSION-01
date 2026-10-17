@@ -5,9 +5,10 @@ import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import type { Profile, Room, RoomPostType, Session } from "@/types";
-import { ErrorState, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { ErrorState, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { RoomOSHeader } from "@/features/room/RoomOSHeader";
 import { RoomOSTabs, type RoomOSTabKey } from "@/features/room/RoomOSTabs";
 import { RoomPostsView } from "@/features/room/posts/RoomPostsView";
@@ -24,6 +25,10 @@ import { RoomAnalyticsView } from "@/features/room/more/RoomAnalyticsView";
 import { RoomSettingsModal } from "@/features/room/more/RoomSettingsModal";
 import { RoomVoiceSheet } from "@/features/room/voice/RoomVoiceSheet";
 import { RoomVoiceBanner } from "@/features/room/voice/RoomVoiceBanner";
+import { RoomKnockLobbyScreen } from "@/features/room/knock/RoomKnockLobbyScreen";
+import { RoomKnockRequestsModal } from "@/features/room/knock/RoomKnockRequestsModal";
+import { RoomMonitoringCenterModal } from "@/features/room/monitoring/RoomMonitoringCenterModal";
+import { getSocket } from "@/lib/socket";
 
 type RoomDetailData = {
   room: Room;
@@ -45,7 +50,7 @@ type RoomDetailData = {
 };
 
 export default function RoomDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, openKnock } = useLocalSearchParams<{ id: string; openKnock?: string }>();
   const { colors } = useTheme();
   const qc = useQueryClient();
   const { session } = useSession();
@@ -57,10 +62,19 @@ export default function RoomDetailScreen() {
   const [analyticsVisible, setAnalyticsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
+  const [knockRequestsVisible, setKnockRequestsVisible] = useState(false);
+  const [monitoringVisible, setMonitoringVisible] = useState(false);
   const [hasInitializedLandingTab, setHasInitializedLandingTab] = useState(false);
   const [externalComposerOpen, setExternalComposerOpen] = useState(false);
   const [composerInitialType, setComposerInitialType] = useState<RoomPostType>("discussion");
   const [rolePreviewOverride, setRolePreviewOverride] = useState<"educator" | "learner" | null>(null);
+
+  // Auto-open knock requests if navigated with openKnock query param (e.g. from notification)
+  React.useEffect(() => {
+    if (openKnock === "true") {
+      setKnockRequestsVisible(true);
+    }
+  }, [openKnock]);
 
   // 1. Fetch Room Core Details
   const roomQuery = useQuery({
@@ -221,6 +235,53 @@ export default function RoomDetailScreen() {
   );
   const isEducator = rolePreviewOverride !== null ? rolePreviewOverride === "educator" : baseIsEducator;
 
+  // Real-time Pending Knock Requests for Room Admins & Educators
+  const knockRequestsQuery = useQuery({
+    queryKey: ["room-knock-requests", id],
+    queryFn: () => api<{ requests: any[]; knockModeEnabled: boolean }>(`/rooms/${id}/knock/requests`),
+    enabled: Boolean(id) && isEducator,
+    refetchInterval: isEducator ? 12000 : false,
+  });
+
+  const pendingKnocks = knockRequestsQuery.data?.requests ?? [];
+  const pendingKnockCount = pendingKnocks.length;
+
+  React.useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !isEducator) return;
+
+    const handleNewKnock = (payload: any) => {
+      if (payload?.roomId === id) {
+        triggerHaptic();
+        knockRequestsQuery.refetch();
+      }
+    };
+
+    socket.on("room:knock:new", handleNewKnock);
+    return () => {
+      socket.off("room:knock:new", handleNewKnock);
+    };
+  }, [id, isEducator, knockRequestsQuery]);
+
+  // ── Knock Lobby Guard for Non-Members ──────────────────────────────────────
+  // If user is not a member and knock mode is explicitly enabled (or room is private/locked),
+  // they enter the RoomKnockLobbyScreen where they can send a message request to the room host.
+  const requiresKnock = !isMember && (Boolean(room.knock_mode_enabled) || room.visibility === "private" || Boolean(room.is_locked));
+  if (requiresKnock) {
+    return (
+      <RoomKnockLobbyScreen
+        room={room}
+        onAdmitted={() => {
+          triggerHaptic();
+          qc.invalidateQueries({ queryKey: ["room", id] });
+          qc.invalidateQueries({ queryKey: ["room-permissions", id] });
+          qc.invalidateQueries({ queryKey: ["rooms"] });
+        }}
+        onBack={() => router.back()}
+      />
+    );
+  }
+
   const handleToggleRolePreview = () => {
     Alert.alert(
       "Room View Preview",
@@ -324,7 +385,7 @@ export default function RoomDetailScreen() {
         onToggleRolePreview={handleToggleRolePreview}
       />
 
-      {/* Voice Presence Banner (persistent when room voice lounge active) */}
+      {/* Voice Presence Banner (persistent when room voice room active) */}
       <RoomVoiceBanner
         roomId={room.id}
         roomTitle={room.title}
@@ -334,6 +395,39 @@ export default function RoomDetailScreen() {
           setVoiceSheetVisible(true);
         }}
       />
+
+      {/* Real-time Knock Waiting Banner for Room Admins & Educators */}
+      {isEducator && pendingKnockCount > 0 && (
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            setKnockRequestsVisible(true);
+          }}
+          style={[s.knockAlertBanner, { backgroundColor: colors.surface, borderColor: colors.primary }]}
+        >
+          <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
+            <Row style={{ alignItems: "center", gap: 10, flex: 1 }}>
+              <View style={[s.knockAlertIcon, { backgroundColor: `${colors.primary}20` }]}>
+                <MaterialCommunityIcons name="door-open" size={20} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Row style={{ alignItems: "center", gap: 6 }}>
+                  <Text style={[s.knockAlertTitle, { color: colors.text }]}>
+                    {pendingKnockCount} {pendingKnockCount === 1 ? "user waiting" : "users waiting"} to join
+                  </Text>
+                  <View style={[s.liveDot, { backgroundColor: "#10B981" }]} />
+                </Row>
+                <Text style={[s.knockAlertSub, { color: colors.muted }]} numberOfLines={1}>
+                  Review knock messages and audio call requests
+                </Text>
+              </View>
+            </Row>
+            <View style={[s.knockAlertBtn, { backgroundColor: colors.primary }]}>
+              <Text style={s.knockAlertBtnText}>Review ({pendingKnockCount})</Text>
+            </View>
+          </Row>
+        </Pressable>
+      )}
 
       {/* 2. ROOM OS 5-TAB BAR */}
       <RoomOSTabs
@@ -412,6 +506,8 @@ export default function RoomDetailScreen() {
             onOpenModerationCenter={() => setModerationCenterVisible(true)}
             onOpenAnalytics={() => setAnalyticsVisible(true)}
             onOpenSettings={() => setSettingsVisible(true)}
+            onOpenKnockRequests={() => setKnockRequestsVisible(true)}
+            onOpenMonitoringCenter={() => setMonitoringVisible(true)}
           />
         )}
       </View>
@@ -470,13 +566,32 @@ export default function RoomDetailScreen() {
         }}
       />
 
-      {/* Real-time Voice Lounge Sheet */}
+      {/* Real-time Voice Room Sheet */}
       <RoomVoiceSheet
         visible={voiceSheetVisible}
         roomId={room.id}
         roomTitle={room.title}
         isHostOrMod={permissions.isOwner || permissions.canModerate}
         onClose={() => setVoiceSheetVisible(false)}
+      />
+
+      {/* Knock & Waiting Requests Management Modal */}
+      <RoomKnockRequestsModal
+        visible={knockRequestsVisible}
+        roomId={room.id}
+        knockModeEnabled={room.knock_mode_enabled}
+        onClose={() => {
+          setKnockRequestsVisible(false);
+          qc.invalidateQueries({ queryKey: ["room", id] });
+        }}
+      />
+
+      {/* Real-time Room Telemetry & Monitoring Center Modal */}
+      <RoomMonitoringCenterModal
+        visible={monitoringVisible}
+        roomId={room.id}
+        isHost={isEducator}
+        onClose={() => setMonitoringVisible(false)}
       />
     </SafeAreaView>
   );
@@ -497,4 +612,41 @@ const s = StyleSheet.create({
   previewPostSub: { fontSize: 11, marginTop: 2 },
   previewJoin: { padding: 12, borderRadius: 10, alignItems: "center", marginTop: 4 },
   previewJoinTxt: { color: "#fff", fontWeight: "800", fontSize: 14 },
+  knockAlertBanner: {
+    marginHorizontal: 16,
+    marginVertical: 6,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  knockAlertIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  knockAlertTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  knockAlertSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  knockAlertBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+  },
+  knockAlertBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
 });

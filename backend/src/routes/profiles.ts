@@ -7,6 +7,37 @@ import type { UserSkillWithSkill } from "../types/database.js";
 import { cacheDelPattern } from "../lib/redis.js";
 import { logger } from "../lib/logger.js";
 import { sentry } from "../lib/sentry.js";
+import { env } from "../config/env.js";
+
+export async function resolveProfileCover(userId: string, currentCoverUrl?: string | null): Promise<string | null> {
+  if (currentCoverUrl) return currentCoverUrl;
+  try {
+    const { data: media } = await admin
+      .from("media_objects")
+      .select("object_key, bucket, provider")
+      .eq("uploader_id", userId)
+      .eq("entity_type", "profile_cover")
+      .eq("status", "ready")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (media?.object_key) {
+      const publicBase =
+        env.R2_PUBLIC_DOMAIN?.replace(/\/$/, "") ||
+        `https://${media.bucket}.${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+      return `${publicBase}/${media.object_key}`;
+    }
+
+    const { data: userAuth } = await admin.auth.admin.getUserById(userId);
+    if (userAuth?.user?.user_metadata?.cover_url) {
+      return userAuth.user.user_metadata.cover_url;
+    }
+  } catch (err) {
+    logger.warn({ err, userId }, "Could not resolve profile cover URL");
+  }
+  return null;
+}
 
 export const profiles = Router();
 
@@ -133,6 +164,9 @@ profiles.get(
   "/me",
   wrap(async (req, res) => {
     const profile = await ensureProfile(req.userId!);
+    if (profile) {
+      (profile as any).cover_url = await resolveProfileCover(req.userId!, (profile as any).cover_url);
+    }
 
     const { data: skills, error: skillsError } = await admin
       .from("user_skills")
@@ -485,6 +519,135 @@ profiles.post(
     res.json({ avatar_url: avatarUrl, profile: data });
   }),
 );
+
+profiles.delete(
+  "/me/avatar",
+  wrap(async (req, res) => {
+    try {
+      await admin.storage.from("avatars").remove([`${req.userId}/avatar`]);
+    } catch {}
+
+    try {
+      await admin
+        .from("profiles")
+        .update({ avatar_url: null, updated_at: new Date().toISOString() })
+        .eq("id", req.userId!);
+    } catch {}
+
+    try {
+      const { data: userAuth } = await admin.auth.admin.getUserById(req.userId!);
+      await admin.auth.admin.updateUserById(req.userId!, {
+        user_metadata: {
+          ...(userAuth?.user?.user_metadata || {}),
+          avatar_url: null,
+        },
+      });
+    } catch {}
+
+    await cacheDelPattern(`dashboard:${req.userId!}:*`);
+    res.json({ success: true, avatar_url: null });
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Profile Cover Photo Endpoints (Cloudflare R2 Storage)
+// ────────────────────────────────────────────────────────────────-------------
+profiles.post(
+  "/me/cover",
+  wrap(async (req, res) => {
+    const { imageBase64, contentType = "image/jpeg" } = z
+      .object({
+        imageBase64: z.string().min(16),
+        contentType: z.enum(["image/jpeg", "image/png", "image/webp"]).default("image/jpeg"),
+      })
+      .parse(req.body);
+
+    const rawBuffer = Buffer.from(imageBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+    if (rawBuffer.length > 5_000_000) {
+      return res.status(413).json({ error: "Cover image must be 5 MB or smaller" });
+    }
+
+    // 1. Optimize image buffer with compression algorithm
+    const { optimizeImage } = await import("../services/storageOptimizer.js");
+    const optResult = await optimizeImage(rawBuffer, contentType);
+
+    const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const objectKey = `covers/${req.userId}/cover_${Date.now()}.${ext}`;
+
+    // 2. Upload to Cloudflare R2 Multi-Bucket pool
+    const { multiBucketManager } = await import("../services/multiBucketStorage.js");
+    const uploadResult = await multiBucketManager.uploadToPool({
+      buffer: optResult.optimizedBuffer,
+      contentType,
+      objectKey,
+    });
+
+    const coverUrl = uploadResult.publicUrl;
+
+    // 3. Register media object for audit and CAS resolution
+    const { registerMediaObject } = await import("../services/storage.js");
+    await registerMediaObject({
+      bucket: uploadResult.bucketName,
+      objectKey,
+      mimeType: contentType,
+      fileSizeBytes: optResult.optimizedBuffer.length,
+      uploaderId: req.userId!,
+      entityType: "profile_cover" as any,
+      provider: "r2",
+      status: "ready",
+    });
+
+    // 4. Update profile in database & user_metadata in auth
+    try {
+      await admin
+        .from("profiles")
+        .update({ cover_url: coverUrl, updated_at: new Date().toISOString() })
+        .eq("id", req.userId!);
+    } catch {}
+
+    try {
+      const { data: userAuth } = await admin.auth.admin.getUserById(req.userId!);
+      await admin.auth.admin.updateUserById(req.userId!, {
+        user_metadata: {
+          ...(userAuth?.user?.user_metadata || {}),
+          cover_url: coverUrl,
+        },
+      });
+    } catch {}
+
+    await cacheDelPattern(`dashboard:${req.userId!}:*`);
+
+    const updatedProfile = await ensureProfile(req.userId!);
+    if (updatedProfile) {
+      (updatedProfile as any).cover_url = coverUrl;
+    }
+
+    logger.info({ userId: req.userId, coverUrl }, "Profile cover photo updated successfully via R2");
+    res.json({ cover_url: coverUrl, profile: updatedProfile });
+  }),
+);
+
+profiles.delete(
+  "/me/cover",
+  wrap(async (req, res) => {
+    try {
+      await admin.from("profiles").update({ cover_url: null, updated_at: new Date().toISOString() }).eq("id", req.userId!);
+    } catch {}
+
+    try {
+      const { data: userAuth } = await admin.auth.admin.getUserById(req.userId!);
+      await admin.auth.admin.updateUserById(req.userId!, {
+        user_metadata: {
+          ...(userAuth?.user?.user_metadata || {}),
+          cover_url: null,
+        },
+      });
+    } catch {}
+
+    await cacheDelPattern(`dashboard:${req.userId!}:*`);
+    res.json({ success: true, cover_url: null });
+  }),
+);
 profiles.get(
   "/me/privacy",
   wrap(async (req, res) => {
@@ -518,6 +681,23 @@ profiles.patch(
 
     const { updateUserPrivacySettings } = await import("../services/privacyService.js");
     const updated = await updateUserPrivacySettings(req.userId!, body);
+
+    if (body.presence_visibility) {
+      try {
+        const { getSocketServer, userConnections } = await import("../socket.js");
+        const io = getSocketServer();
+        if (io) {
+          if (body.presence_visibility === "nobody") {
+            io.emit("user:offline", { userId: req.userId! });
+          } else if (userConnections.has(req.userId!)) {
+            io.emit("user:online", { userId: req.userId! });
+          }
+        }
+      } catch {
+        // non-fatal socket broadcast
+      }
+    }
+
     res.json({ privacy: updated, profile: { profile_visibility: updated.profile_visibility } });
   }),
 );
@@ -600,6 +780,9 @@ profiles.get(
     }
 
     const userSkills = (skills ?? []) as unknown as UserSkillWithSkill[];
+    if (profile) {
+      (profile as any).cover_url = await resolveProfileCover(id, (profile as any).cover_url);
+    }
     res.json({
       profile,
       skills: userSkills.map((x) => ({

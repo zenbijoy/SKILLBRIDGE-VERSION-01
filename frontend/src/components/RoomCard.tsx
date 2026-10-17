@@ -4,9 +4,9 @@ import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import type { Room } from "@/types";
-import { Muted, Pill, Row, triggerHaptic } from "./ui";
+import { triggerHaptic } from "./ui";
 import { radius, useTheme } from "@/theme";
-import { nextGenBadges, nextGenAnimations } from "@/assets/nextgen";
+import { nextGenAnimations } from "@/assets/nextgen";
 import { getRoomCover, getRoomAccentColor } from "@/features/room/roomCovers";
 
 export function RoomCard({ room }: { room: Room }) {
@@ -31,7 +31,7 @@ export function RoomCard({ room }: { room: Room }) {
       accessibilityRole="button"
       accessibilityLabel={`Open room ${room.title}`}
       style={({ pressed }) => ({
-        opacity: pressed ? 0.94 : 1,
+        opacity: pressed ? 0.93 : 1,
         transform: [{ scale: pressed ? 0.985 : 1 }],
         marginVertical: 6,
       })}
@@ -40,17 +40,17 @@ export function RoomCard({ room }: { room: Room }) {
         style={[
           s.cardWrap,
           {
-            backgroundColor: isDark ? "#141724" : "#FFFFFF",
+            backgroundColor: isDark ? "#111524" : "#FFFFFF",
             borderColor: isLive
               ? colors.danger
               : isTeacher
-              ? "#10B98160"
+              ? "#10B98150"
               : isDark
-              ? "#252B42"
-              : "#E2E8F0",
-            borderWidth: isLive || isTeacher ? 1.5 : 1,
-            shadowColor: isLive ? colors.danger : isTeacher ? "#10B981" : "#000",
-            shadowOpacity: isDark ? 0.35 : 0.08,
+              ? "#232A42"
+              : "#E5E7EB",
+            borderWidth: isLive ? 1.5 : 1,
+            shadowColor: isLive ? colors.danger : "#000",
+            shadowOpacity: isDark ? 0.35 : 0.07,
           },
         ]}
       >
@@ -63,7 +63,7 @@ export function RoomCard({ room }: { room: Room }) {
           />
           {/* Rich Gradient Scrim Overlay */}
           <LinearGradient
-            colors={["rgba(0,0,0,0.15)", "rgba(10,12,20,0.85)"]}
+            colors={["rgba(0,0,0,0.2)", "rgba(10,14,26,0.88)"]}
             style={s.scrimGradient}
           />
 
@@ -74,13 +74,13 @@ export function RoomCard({ room }: { room: Room }) {
                 <View style={s.liveBadge}>
                   <Image
                     source={nextGenAnimations.livePulse}
-                    style={{ width: 14, height: 14 }}
+                    style={{ width: 13, height: 13 }}
                     resizeMode="contain"
                   />
-                  <Text style={s.liveBadgeText}>LIVE NOW</Text>
+                  <Text style={s.liveBadgeText}>LIVE</Text>
                 </View>
               ) : (
-                <View style={[s.statusBadge, { backgroundColor: room.status === "scheduled" ? "#F59E0B" : "#3B82F6" }]}>
+                <View style={[s.statusBadge, { backgroundColor: room.status === "scheduled" ? "#F59E0B" : "rgba(15,23,42,0.7)" }]}>
                   <Text style={s.statusBadgeText}>
                     {room.status === "scheduled" ? "UPCOMING" : "OPEN"}
                   </Text>
@@ -89,110 +89,87 @@ export function RoomCard({ room }: { room: Room }) {
 
               {isTeacher && (
                 <View style={s.teacherBadge}>
-                  <MaterialCommunityIcons name="school" size={13} color="#FFFFFF" />
-                  <Text style={s.teacherBadgeText}>TEACHER MODE</Text>
+                  <MaterialCommunityIcons name="school" size={12} color="#FFFFFF" />
+                  <Text style={s.teacherBadgeText}>EDUCATOR</Text>
                 </View>
               )}
             </View>
 
-            {/* Visibility Pill */}
-            <View style={s.visibilityPill}>
-              <MaterialCommunityIcons
-                name={room.visibility === "public" ? "earth" : room.visibility === "private" ? "lock" : "email-lock"}
-                size={12}
-                color="#FFFFFF"
-              />
-              <Text style={s.visibilityText}>
-                {room.visibility === "invite_only" ? "Invite" : room.visibility}
-              </Text>
+            {/* Visibility & Knock Access Badge */}
+            <View style={s.rightBadgeRow}>
+              {Boolean(room.knock_mode_enabled) ? (
+                <View style={[s.visibilityPill, { backgroundColor: "rgba(245, 158, 11, 0.9)" }]}>
+                  <MaterialCommunityIcons name="door-closed-lock" size={11} color="#FFFFFF" />
+                  <Text style={s.visibilityText}>Knock</Text>
+                </View>
+              ) : (
+                <View style={[s.visibilityPill, { backgroundColor: "rgba(16, 185, 129, 0.85)" }]}>
+                  <MaterialCommunityIcons name="lock-open-variant" size={11} color="#FFFFFF" />
+                  <Text style={s.visibilityText}>Open</Text>
+                </View>
+              )}
             </View>
           </View>
 
-          {/* Bottom Cover Info */}
+          {/* Bottom Cover Chips: Topic & Clean Mode */}
           <View style={s.coverBottomBar}>
-            <Row style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <View style={[s.modePill, { backgroundColor: "rgba(255,255,255,0.22)" }]}>
-                <Text style={s.modePillText}>
-                  {room.mode === "online" ? "🌐 Online Video" : room.mode === "offline" ? "📍 Campus" : "⚡ Hybrid"}
-                </Text>
-              </View>
+            <View style={s.chipRow}>
               {room.topic ? (
-                <View style={[s.topicPill, { backgroundColor: `${accentColor}35`, borderColor: accentColor }]}>
+                <View style={[s.topicPill, { backgroundColor: `${accentColor}30`, borderColor: accentColor }]}>
                   <Text style={[s.topicPillText, { color: "#FFFFFF" }]}>
                     #{room.topic}
                   </Text>
                 </View>
               ) : null}
-            </Row>
+              <View style={s.modePill}>
+                <Text style={s.modePillText}>
+                  {room.mode === "online" ? "🌐 Video Session" : room.mode === "offline" ? "📍 Campus" : "⚡ Hybrid"}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 
-        {/* Content Body */}
+        {/* Content Body: Clean, Sleek, Minimal Text */}
         <View style={s.bodyContent}>
-          <Text style={[s.title, { color: colors.text }]} numberOfLines={2}>
+          <Text style={[s.title, { color: colors.text }]} numberOfLines={1}>
             {room.title}
           </Text>
 
           {room.description ? (
-            <Muted numberOfLines={2} style={s.description}>
+            <Text style={[s.description, { color: colors.muted }]} numberOfLines={1}>
               {room.description}
-            </Muted>
+            </Text>
           ) : null}
 
-          {/* Teacher Mode Highlight Banner */}
-          {isTeacher && (
-            <View style={[s.teacherCallout, { backgroundColor: isDark ? "rgba(16,185,129,0.12)" : "#ECFDF5", borderColor: isDark ? "rgba(16,185,129,0.3)" : "#A7F3D0" }]}>
-              <MaterialCommunityIcons name="lightbulb-on-outline" size={15} color="#10B981" />
-              <Text style={[s.teacherCalloutText, { color: isDark ? "#6EE7B7" : "#065F46" }]}>
-                Teacher Mode active • Anyone can send request to teach & schedule classes
-              </Text>
-            </View>
-          )}
-
-          {/* Capacity Progress Bar */}
-          <View style={s.capacitySection}>
-            <View style={s.capacityHeader}>
-              <Text style={[s.capacityLabel, { color: colors.textSecondary }]}>
-                Capacity ({room.member_count}/{room.capacity})
-              </Text>
-              <Text style={[s.capacityPercent, { color: fillPercent > 85 ? colors.danger : colors.primary }]}>
-                {fillPercent}% full
-              </Text>
-            </View>
-            <View style={[s.capacityTrack, { backgroundColor: isDark ? "#202538" : "#E2E8F0" }]}>
-              <View
-                style={[
-                  s.capacityFill,
-                  {
-                    width: `${fillPercent}%`,
-                    backgroundColor: fillPercent > 85 ? colors.danger : isTeacher ? "#10B981" : colors.primary,
-                  },
-                ]}
-              />
-            </View>
-          </View>
-
-          {/* Footer Bar */}
-          <View style={[s.footerBar, { borderTopColor: isDark ? "#202538" : "#EDF2F7" }]}>
-            <View style={s.metaItem}>
-              <MaterialCommunityIcons name="account-group" size={16} color={isTeacher ? "#10B981" : colors.primary} />
-              <Text style={[s.metaText, { color: colors.textSecondary }]}>
-                {seatsLeft > 0 ? `${seatsLeft} seats left` : "Full"}
-              </Text>
+          {/* Footer: Capacity Progress & Enter CTA */}
+          <View style={s.footerRow}>
+            {/* Left: Capacity bar & seats */}
+            <View style={s.capacityCol}>
+              <View style={s.capacityMeta}>
+                <MaterialCommunityIcons
+                  name="account-multiple"
+                  size={14}
+                  color={isTeacher ? "#10B981" : colors.muted}
+                />
+                <Text style={[s.capacityText, { color: colors.muted }]}>
+                  {room.member_count}/{room.capacity} · {seatsLeft > 0 ? `${seatsLeft} seats left` : "Full"}
+                </Text>
+              </View>
+              <View style={[s.capacityTrack, { backgroundColor: isDark ? "#232A42" : "#E5E7EB" }]}>
+                <View
+                  style={[
+                    s.capacityFill,
+                    {
+                      width: `${fillPercent}%`,
+                      backgroundColor: fillPercent > 85 ? colors.danger : isTeacher ? "#10B981" : colors.primary,
+                    },
+                  ]}
+                />
+              </View>
             </View>
 
-            <View style={s.metaItem}>
-              <MaterialCommunityIcons
-                name={room.mode === "online" ? "video-vintage" : "map-marker-outline"}
-                size={16}
-                color={room.mode === "online" ? "#38BDF8" : colors.accent}
-              />
-              <Text numberOfLines={1} style={[s.metaText, { color: colors.textSecondary, maxWidth: 130 }]}>
-                {room.campus_location || (room.mode === "online" ? "LiveKit Call" : "Campus Hall")}
-              </Text>
-            </View>
-
-            {/* Action CTA */}
+            {/* Right: Sleek Action CTA */}
             <View
               style={[
                 s.actionBtn,
@@ -200,9 +177,7 @@ export function RoomCard({ room }: { room: Room }) {
                   backgroundColor: isLive
                     ? colors.danger
                     : isFull
-                    ? isDark ? "#23283E" : "#E2E8F0"
-                    : isTeacher
-                    ? "#10B981"
+                    ? isDark ? "#23283E" : "#E5E7EB"
                     : colors.primary,
                 },
               ]}
@@ -215,12 +190,12 @@ export function RoomCard({ room }: { room: Room }) {
                   },
                 ]}
               >
-                {isLive ? "Join Live" : isFull ? "Full" : "Enter Room"}
+                {isLive ? "Join Live" : isFull ? "Full" : "Enter"}
               </Text>
               {!isFull && (
                 <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={14}
+                  name="chevron-right"
+                  size={16}
                   color="#FFFFFF"
                 />
               )}
@@ -234,24 +209,32 @@ export function RoomCard({ room }: { room: Room }) {
 
 const s = StyleSheet.create({
   cardWrap: {
-    borderRadius: radius.lg,
+    borderRadius: 18,
     overflow: "hidden",
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 10,
     elevation: 3,
   },
   coverWrapper: {
-    height: 125,
+    height: 120,
     width: "100%",
     position: "relative",
     justifyContent: "space-between",
     padding: 10,
   },
   coverImage: {
-    ...StyleSheet.absoluteFill,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   scrimGradient: {
-    ...StyleSheet.absoluteFill,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   coverTopBar: {
     flexDirection: "row",
@@ -264,29 +247,36 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
+  rightBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   liveBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: 4,
     backgroundColor: "#EF4444",
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3.5,
     borderRadius: radius.pill,
   },
   liveBadgeText: {
     color: "#FFFFFF",
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: "900",
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   statusBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
     borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
   },
   statusBadgeText: {
     color: "#FFFFFF",
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
@@ -295,46 +285,46 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     backgroundColor: "#10B981",
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3.5,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.4)",
   },
   teacherBadgeText: {
     color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "900",
+    fontSize: 9.5,
+    fontWeight: "800",
     letterSpacing: 0.4,
   },
   visibilityPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(0,0,0,0.5)",
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
   },
   visibilityText: {
     color: "#FFFFFF",
-    fontSize: 10.5,
-    fontWeight: "600",
-    textTransform: "capitalize",
+    fontSize: 10,
+    fontWeight: "700",
   },
   coverBottomBar: {
     zIndex: 2,
   },
+  chipRow: {
+    flexDirection: "row",
+    gap: 6,
+    alignItems: "center",
+  },
   modePill: {
+    backgroundColor: "rgba(255,255,255,0.18)",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,
   },
   modePillText: {
     color: "#FFFFFF",
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: "700",
   },
   topicPill: {
@@ -344,90 +334,64 @@ const s = StyleSheet.create({
     borderWidth: 1,
   },
   topicPillText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: "700",
   },
   bodyContent: {
-    padding: 12,
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 12,
+    gap: 6,
   },
   title: {
-    fontSize: 16.5,
+    fontSize: 15.5,
     fontWeight: "800",
-    lineHeight: 22,
+    lineHeight: 20,
   },
   description: {
-    fontSize: 12.5,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
   },
-  teacherCallout: {
+  footerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 4,
   },
-  teacherCalloutText: {
-    fontSize: 11,
-    fontWeight: "700",
+  capacityCol: {
     flex: 1,
-    lineHeight: 15,
-  },
-  capacitySection: {
     gap: 4,
-    marginTop: 2,
   },
-  capacityHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  capacityLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  capacityPercent: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  capacityTrack: {
-    height: 5,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  capacityFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-  footerBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderTopWidth: 1,
-    paddingTop: 10,
-    marginTop: 2,
-  },
-  metaItem: {
+  capacityMeta: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
   },
-  metaText: {
-    fontSize: 11.5,
-    fontWeight: "700",
+  capacityText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  capacityTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+    width: "100%",
+  },
+  capacityFill: {
+    height: "100%",
+    borderRadius: 2,
   },
   actionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.md,
+    gap: 2,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
   },
   actionBtnText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: "800",
   },
 });

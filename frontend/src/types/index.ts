@@ -13,6 +13,7 @@ export interface Profile {
   full_name: string;
   username: string;
   avatar_url?: string | null;
+  cover_url?: string | null;
   bio?: string | null;
   university?: string | null;
   department?: string | null;
@@ -67,6 +68,8 @@ export interface Room {
   is_archived?: boolean;
   cover_image_url?: string | null;
   is_teacher_mode?: boolean;
+  knock_mode_enabled?: boolean;
+  is_locked?: boolean;
   my_teach_request?: {
     id: string;
     status: "pending" | "approved" | "rejected";

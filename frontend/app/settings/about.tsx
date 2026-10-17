@@ -1,12 +1,17 @@
 import Constants from "expo-constants";
-import { Image, StyleSheet, Text, View } from "react-native";
-import { Card, H1, H2, Muted, Screen } from "@/components/ui";
+import { Image, Linking, StyleSheet, Text, View, Alert } from "react-native";
+import { Button, Card, H1, H2, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
 import { useI18n } from "@/i18n";
 import { useTheme } from "@/theme";
 
 export default function AboutSettings() {
   const { t } = useI18n();
   const { colors } = useTheme();
+
+  const openUrl = (url: string) => {
+    triggerHaptic();
+    Linking.openURL(url).catch(() => Alert.alert("Could not open link"));
+  };
 
   return (
     <Screen>
@@ -24,14 +29,51 @@ export default function AboutSettings() {
         </Text>
       </View>
 
-      <Card>
+      <Card style={{ gap: 8 }}>
         <H2>SkillBridge Mobile</H2>
         <Muted>Version {Constants.expoConfig?.version ?? "2.x"}</Muted>
         <Muted>National-scale peer learning, mentoring, rooms, research collaboration, events and realtime communication.</Muted>
       </Card>
-      <Card>
-        <H2>Frontend V2 foundation</H2>
-        <Muted>Expo Router · React Native · TanStack Query · Zustand · Supabase · Socket.IO · LiveKit</Muted>
+
+      <Card style={{ gap: 8 }}>
+        <H2>Built With</H2>
+        <Muted>Expo Router &bull; React Native &bull; TanStack Query &bull; Zustand &bull; Supabase &bull; Socket.IO &bull; LiveKit</Muted>
+      </Card>
+
+      <Card style={{ gap: 8 }}>
+        <H2>Legal &amp; Support</H2>
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.linkText, { color: colors.primary, fontWeight: "600" }]}>Terms of Service</Text>
+            <Muted style={{ fontSize: 11 }}>Read our terms and conditions</Muted>
+          </View>
+          <Button title="Open" variant="secondary" compact onPress={() => openUrl("https://skillbridge.app/terms")} />
+        </Row>
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.linkText, { color: colors.primary, fontWeight: "600" }]}>Privacy Policy</Text>
+            <Muted style={{ fontSize: 11 }}>How we handle your data</Muted>
+          </View>
+          <Button title="Open" variant="secondary" compact onPress={() => openUrl("https://skillbridge.app/privacy")} />
+        </Row>
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.linkText, { color: colors.primary, fontWeight: "600" }]}>Contact Support</Text>
+            <Muted style={{ fontSize: 11 }}>help@skillbridge.app</Muted>
+          </View>
+          <Button title="Email" variant="secondary" compact onPress={() => Linking.openURL("mailto:help@skillbridge.app")} />
+        </Row>
+      </Card>
+
+      <Card style={{ gap: 8 }}>
+        <H2>License</H2>
+        <Muted>MIT License. Open source and community-driven.</Muted>
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.linkText, { color: colors.primary, fontWeight: "600" }]}>View on GitHub</Text>
+          </View>
+          <Button title="Open" variant="secondary" compact onPress={() => openUrl("https://github.com/skillbridge/skillbridge")} />
+        </Row>
       </Card>
     </Screen>
   );
@@ -58,5 +100,8 @@ const styles = StyleSheet.create({
   brandSubtitle: {
     fontSize: 13,
     fontWeight: "600",
+  },
+  linkText: {
+    fontSize: 15,
   },
 });

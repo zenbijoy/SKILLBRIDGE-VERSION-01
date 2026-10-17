@@ -56,10 +56,41 @@ test("LiveKit Integration Tests", async (t) => {
 
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.canPublish, true);
+    assert.strictEqual(res.body.isHost, true);
     assert.strictEqual(res.body.url, env.LIVEKIT_URL);
     assert.strictEqual(res.body.participantName, "Test Teacher");
     assert.strictEqual(res.body.sessionId, SESSION_ID);
     assert.ok(res.body.token);
+  });
+
+  await t.test("Host Controls - rejects unauthorized user", async () => {
+    mockAdmin.from = (table?: string) => {
+      if (table === "sessions") return createMockChain({ id: SESSION_ID, room_id: ROOM_ID, status: "live", teacher_id: "other-teacher" });
+      if (table === "room_members") return createMockChain({ role: "member" });
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/live/rooms/${SESSION_ID}/mute-all`)
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 403);
+  });
+
+  await t.test("Host Controls - allows authorized host to end session", async () => {
+    mockAdmin.from = (table?: string) => {
+      if (table === "sessions") return createMockChain({ id: SESSION_ID, room_id: ROOM_ID, status: "live", teacher_id: USER_A });
+      if (table === "room_members") return createMockChain({ role: "owner" });
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/live/rooms/${SESSION_ID}/end`)
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.status, "completed");
   });
 
   await t.test("POST /webhooks/live - rejects missing raw body", async () => {

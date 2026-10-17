@@ -21,6 +21,7 @@ import { radius, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
+import { ActiveDot } from "@/features/presence/ActiveDot";
 
 type TabType = "chats" | "calls";
 type ChatFilter = "all" | "unread" | "groups" | "archived";
@@ -318,8 +319,13 @@ export default function Inbox() {
               />
             </View>
           )}
-          {item.is_online !== false ? (
-            <View style={[styles.onlineDot, { backgroundColor: colors.success, borderColor: colors.surface }]} />
+          {item.kind === "dm" && item.peer_id ? (
+            <ActiveDot
+              userId={item.peer_id}
+              initialOnline={item.is_online}
+              size={13}
+              style={styles.onlineDot}
+            />
           ) : null}
         </View>
 

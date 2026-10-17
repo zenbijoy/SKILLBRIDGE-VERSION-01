@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 import Constants from "expo-constants";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 
-import { API_URL } from "./config";
+import { API_URL, isProduction } from "./config";
 
 const BASE = API_URL;
 
@@ -100,6 +100,13 @@ async function requestWithHeaders(path: string, init: RequestInit, accessToken?:
   try {
     return await fetchWithColdStartRetry(`${BASE}${normalizedPath}`, { ...init, headers });
   } catch (error) {
+    if (!isProduction && BASE !== "http://localhost:4000/api/v1") {
+      try {
+        return await fetchWithColdStartRetry(`http://localhost:4000/api/v1${normalizedPath}`, { ...init, headers });
+      } catch {
+        // Local fallback also failed
+      }
+    }
     throw new ApiError(
       0,
       "Cannot reach the SkillBridge API. The server may be waking up. Please retry in a moment.",

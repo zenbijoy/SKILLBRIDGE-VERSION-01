@@ -174,6 +174,42 @@ export const IncomingCallModal: React.FC = () => {
     }
   };
 
+  const [isSilenced, setIsSilenced] = useState(false);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+
+  const cannedMessages = [
+    "Can't talk now. What's up?",
+    "I'll call you right back.",
+    "Can you text me instead?",
+    "In a meeting, will reach out later.",
+  ];
+
+  const handleSilence = async () => {
+    await callSounds.stopAll();
+    setIsSilenced(true);
+    triggerHaptic();
+  };
+
+  const handleReplyWithMessage = async (msg: string) => {
+    await callSounds.stopAll();
+    triggerHaptic();
+    const callId = incomingCall.callId;
+    try {
+      await rejectCallApi(callId, "declined");
+      const socket = getSocket();
+      socket?.emit("call:reject", { callId, reason: "declined", message: msg });
+      socket?.emit("chat:send", {
+        receiverId: incomingCall.callerId,
+        content: msg,
+      });
+    } catch {
+      // Non-fatal
+    } finally {
+      setShowQuickReplies(false);
+      setIncomingCall(null);
+    }
+  };
+
   const isVideo = incomingCall.type === "video";
 
   return (
@@ -236,11 +272,44 @@ export const IncomingCallModal: React.FC = () => {
           <Text style={styles.callerName} numberOfLines={1}>
             {incomingCall.callerName}
           </Text>
-          <Text style={styles.ringingText}>Incoming {isVideo ? "video" : "voice"} call…</Text>
+          <Text style={styles.ringingText}>
+            {isSilenced ? "Call silenced" : `Incoming ${isVideo ? "video" : "voice"} call…`}
+          </Text>
         </View>
 
-        {/* Bottom: Action Controls */}
+        {/* Bottom: WhatsApp Style Auxiliary & Main Call Controls */}
         <View style={styles.actionsContainer}>
+          {/* Top auxiliary action row: Message & Silence (WhatsApp style) */}
+          <View style={styles.auxActionRow}>
+            <TouchableOpacity
+              style={styles.auxButton}
+              onPress={() => setShowQuickReplies(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Reply with message"
+            >
+              <MaterialCommunityIcons name="message-reply-text" size={22} color="#94A3B8" />
+              <Text style={styles.auxLabel}>Reply</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.auxButton}
+              onPress={handleSilence}
+              disabled={isSilenced}
+              activeOpacity={0.7}
+              accessibilityLabel="Silence ringtone"
+            >
+              <MaterialCommunityIcons
+                name={isSilenced ? "bell-off" : "bell"}
+                size={22}
+                color={isSilenced ? "#64748B" : "#94A3B8"}
+              />
+              <Text style={[styles.auxLabel, isSilenced && { color: "#64748B" }]}>
+                {isSilenced ? "Silenced" : "Silence"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Main Action Row: Decline (Red) & Accept (Green) */}
           <View style={styles.actionRow}>
             {/* Decline Button (Red) */}
             <View style={styles.buttonWrapper}>
@@ -277,6 +346,46 @@ export const IncomingCallModal: React.FC = () => {
             </View>
           </View>
         </View>
+
+        {/* WhatsApp-Style Quick Replies Sheet Modal */}
+        <Modal
+          visible={showQuickReplies}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowQuickReplies(false)}
+        >
+          <View style={styles.quickReplyOverlay}>
+            <View style={[styles.quickReplySheet, { paddingBottom: insets.bottom + 20 }]}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.quickReplyTitle}>Quick Message & Decline</Text>
+              <Text style={styles.quickReplySub}>
+                Send a quick reply to {incomingCall.callerName}
+              </Text>
+
+              <View style={styles.cannedList}>
+                {cannedMessages.map((msg, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.cannedItem}
+                    onPress={() => handleReplyWithMessage(msg)}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialCommunityIcons name="send-circle" size={24} color="#38BDF8" />
+                    <Text style={styles.cannedText}>{msg}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={styles.cancelSheetBtn}
+                onPress={() => setShowQuickReplies(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.cancelSheetBtnText}>Back to Call</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -369,6 +478,27 @@ const styles = StyleSheet.create({
   actionsContainer: {
     width: "100%",
     maxWidth: 340,
+    gap: 20,
+  },
+  auxActionRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  auxButton: {
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  auxLabel: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "600",
   },
   actionRow: {
     flexDirection: "row",
@@ -409,6 +539,74 @@ const styles = StyleSheet.create({
   actionLabel: {
     color: "#CBD5E1",
     fontSize: 14,
+    fontWeight: "600",
+  },
+  quickReplyOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "flex-end",
+  },
+  quickReplySheet: {
+    backgroundColor: "#0F172A",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#475569",
+    marginBottom: 16,
+  },
+  quickReplyTitle: {
+    color: "#F8FAFC",
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  quickReplySub: {
+    color: "#94A3B8",
+    fontSize: 13,
+    marginBottom: 20,
+  },
+  cannedList: {
+    width: "100%",
+    gap: 10,
+    marginBottom: 20,
+  },
+  cannedItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  cannedText: {
+    color: "#E2E8F0",
+    fontSize: 14,
+    fontWeight: "500",
+    flex: 1,
+  },
+  cancelSheetBtn: {
+    width: "100%",
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  cancelSheetBtnText: {
+    color: "#94A3B8",
+    fontSize: 15,
     fontWeight: "600",
   },
 });

@@ -35,6 +35,7 @@ import { radius, useTheme } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserPresence } from "@/features/presence/usePresence";
+import { ActiveDot } from "@/features/presence/ActiveDot";
 
 interface MessageReaction {
   id?: string;
@@ -1557,26 +1558,31 @@ export default function ChatScreen() {
               </View>
             )}
             {/* Online / Member Badge Dot */}
-            <View
-              style={[
-                styles.onlineDot,
-                {
-                  backgroundColor:
-                    conversation?.kind === "group"
-                      ? colors.primary
-                      : isPeerOnline
-                      ? colors.success
-                      : colors.muted,
-                  borderColor: colors.surface,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={conversation?.kind === "group" ? "account" : "check"}
-                size={8}
-                color={colors.white}
+            {/* Online / Member Badge Dot */}
+            {conversation?.kind === "dm" && conversation.peer_id ? (
+              <ActiveDot
+                userId={conversation.peer_id}
+                initialOnline={conversation.is_online}
+                size={13}
+                style={styles.onlineDot}
               />
-            </View>
+            ) : (
+              <View
+                style={[
+                  styles.onlineDot,
+                  {
+                    backgroundColor: colors.primary,
+                    borderColor: colors.surface,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account"
+                  size={8}
+                  color={colors.white}
+                />
+              </View>
+            )}
           </View>
 
           <View style={{ flex: 1, gap: 1 }}>
@@ -1595,7 +1601,7 @@ export default function ChatScreen() {
               {conversation?.kind === "group"
                 ? `${conversation?.members?.length || 0} members · ${onlineCount > 0 ? `${onlineCount} online` : "offline"}`
                 : isPeerOnline
-                ? "Online"
+                ? "Active now"
                 : "Offline"}
             </Text>
           </View>

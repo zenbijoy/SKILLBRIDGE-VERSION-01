@@ -55,29 +55,8 @@ export function RoomPostCard({
   const typeInfo = TYPE_CONFIG[post.type] || TYPE_CONFIG.discussion;
   const isHelpfulReacted = Boolean(post.my_reaction);
 
-  // Check if post should display diagram or learning attachment tiles based on metadata or content
-  const bodyLower = (post.body || "").toLowerCase();
-  const titleLower = (post.title || "").toLowerCase();
-  const hasDiagram =
-    Boolean(post.metadata?.has_diagram || post.metadata?.diagram) ||
-    bodyLower.includes("determinant") ||
-    bodyLower.includes("velocity") ||
-    bodyLower.includes("vector");
-
-  const hasLearningTiles =
-    Boolean(post.metadata?.quiz || post.metadata?.notes || post.metadata?.files) ||
-    post.type === "resource" ||
-    bodyLower.includes("kinetic energy") ||
-    bodyLower.includes("concepts") ||
-    bodyLower.includes("quiz");
-
-  const badgeText =
-    post.metadata?.badge ||
-    (hasDiagram
-      ? "Physics Lesson"
-      : hasLearningTiles
-      ? "10 concepts"
-      : typeInfo.label);
+  const hasLearningTiles = Boolean(post.metadata?.quiz || post.metadata?.notes || post.metadata?.files);
+  const badgeText = post.metadata?.badge || typeInfo.label;
 
   const handleMoreOptions = () => {
     triggerHaptic();
@@ -189,26 +168,6 @@ export function RoomPostCard({
       ) : null}
 
       <Text style={[s.postBody, { color: colors.text }]}>{post.body}</Text>
-
-      {/* ── 3. Rich Schematic / Diagram Preview (Matching Post 1 in Mockup) ── */}
-      {hasDiagram && (
-        <View style={[s.diagramContainer, { backgroundColor: isDark ? "#0F172A" : "#F8FAFC", borderColor: isDark ? colors.border : "#E2E8F0" }]}>
-          <View style={s.diagramGraphicArea}>
-            {/* Schematic Nodes B and C with vector arrow */}
-            <View style={s.diagramNodeB}>
-              <Text style={s.diagramNodeText}>B</Text>
-            </View>
-            <View style={s.diagramVectorRow}>
-              <View style={s.diagramArrowLine} />
-              <Text style={s.diagramFormulaText}>θ  |  8 sin θ</Text>
-              <MaterialCommunityIcons name="arrow-right" size={16} color="#475569" />
-            </View>
-            <View style={s.diagramNodeC}>
-              <Text style={s.diagramNodeText}>C</Text>
-            </View>
-          </View>
-        </View>
-      )}
 
       {/* ── 4. Interactive Learning Widgets (Matching Post 2 in Mockup) ── */}
       {hasLearningTiles && (

@@ -2,6 +2,11 @@ import type { Server as SocketServer } from "socket.io";
 import { admin } from "./lib/db.js";
 import { logger } from "./lib/logger.js";
 import { redis } from "./lib/redis.js";
+import {
+  getUserPrivacySettings,
+  filterVisiblePresence,
+  updateUserPrivacySettings,
+} from "./services/privacyService.js";
 
 /**
  * Lightweight real-time presence bus.
@@ -120,7 +125,15 @@ export function setupSocket(io: SocketServer) {
     userConnections.set(userId, count);
 
     if (count === 1) {
-      socket.broadcast.emit("user:online", { userId });
+      getUserPrivacySettings(userId)
+        .then((priv) => {
+          if (priv.presence_visibility !== "nobody") {
+            socket.broadcast.emit("user:online", { userId });
+          }
+        })
+        .catch(() => {
+          socket.broadcast.emit("user:online", { userId });
+        });
     }
 
     socket.on("disconnect", () => {
@@ -128,7 +141,15 @@ export function setupSocket(io: SocketServer) {
       const newCount = (userConnections.get(userId) || 1) - 1;
       if (newCount === 0) {
         userConnections.delete(userId);
-        socket.broadcast.emit("user:offline", { userId });
+        getUserPrivacySettings(userId)
+          .then((priv) => {
+            if (priv.presence_visibility !== "nobody") {
+              socket.broadcast.emit("user:offline", { userId });
+            }
+          })
+          .catch(() => {
+            socket.broadcast.emit("user:offline", { userId });
+          });
       } else {
         userConnections.set(userId, newCount);
       }
@@ -436,19 +457,66 @@ export function setupSocket(io: SocketServer) {
       io.to(`user:${peerId}`).emit("call:ready", { callId });
     });
 
-    // Real-time peer presence lookup
-    socket.on("presence:check", (payload: { userIds?: string[] }, callback?: (res: any) => void) => {
+    // Real-time peer presence lookup with Facebook Messenger privacy enforcement
+    socket.on("presence:check", async (payload: { userIds?: string[] }, callback?: (res: any) => void) => {
       const ids = Array.isArray(payload?.userIds) ? payload.userIds : [];
-      const statusMap: Record<string, boolean> = {};
-      for (const id of ids) {
-        if (typeof id === "string") {
-          statusMap[id] = userConnections.has(id);
+      const validIds = ids.filter((id): id is string => typeof id === "string");
+      const viewerId = socket.data?.userId;
+
+      // Facebook Messenger privacy:
+      // If the viewer has disabled their own active status ("nobody"), they also cannot see others' active status
+      if (viewerId) {
+        try {
+          const viewerPrivacy = await getUserPrivacySettings(viewerId);
+          if (viewerPrivacy.presence_visibility === "nobody") {
+            const hiddenMap: Record<string, boolean> = {};
+            for (const id of validIds) hiddenMap[id] = false;
+            if (typeof callback === "function") callback({ status: hiddenMap });
+            else socket.emit("presence:status", { status: hiddenMap });
+            return;
+          }
+        } catch {
+          // ignore error
         }
+      }
+
+      // Check which candidate users allow this viewer to see their presence
+      let allowedIds = new Set(validIds);
+      if (viewerId) {
+        try {
+          const visible = await filterVisiblePresence(viewerId, validIds);
+          allowedIds = new Set(visible);
+        } catch {
+          // fallback
+        }
+      }
+
+      const statusMap: Record<string, boolean> = {};
+      for (const id of validIds) {
+        statusMap[id] = allowedIds.has(id) && Boolean(userConnections.has(id));
       }
       if (typeof callback === "function") {
         callback({ status: statusMap });
       } else {
         socket.emit("presence:status", { status: statusMap });
+      }
+    });
+
+    // Real-time active status toggle from app settings (instant feedback)
+    socket.on("presence:toggle", async (payload: { isOnlineVisible?: boolean }, callback?: (res: any) => void) => {
+      const isVisible = Boolean(payload?.isOnlineVisible);
+      try {
+        await updateUserPrivacySettings(userId, {
+          presence_visibility: isVisible ? "everyone" : "nobody",
+        });
+        if (isVisible) {
+          socket.broadcast.emit("user:online", { userId });
+        } else {
+          socket.broadcast.emit("user:offline", { userId });
+        }
+        if (typeof callback === "function") callback({ success: true, isOnlineVisible: isVisible });
+      } catch (err: any) {
+        if (typeof callback === "function") callback({ success: false, error: err?.message });
       }
     });
 

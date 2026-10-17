@@ -460,6 +460,14 @@ export default function CampusFeedScreen() {
               onMentionPress={(username) => {
                 Alert.alert("Campus Peer", `@${username}`);
               }}
+              onAuthorPress={(authorId) => {
+                triggerHaptic("selection");
+                if (authorId === profile?.id) {
+                  router.push("/(tabs)/profile" as any);
+                } else {
+                  router.push(`/user/${authorId}` as any);
+                }
+              }}
             />
           )}
         />

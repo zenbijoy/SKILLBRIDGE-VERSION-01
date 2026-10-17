@@ -46,17 +46,10 @@ export function RoomOSTabs({
       key: "media",
       label: t("room.media") || "Media",
     },
-    isEducator
-      ? {
-          key: "more",
-          label: "Manage",
-        }
-      : {
-          key: "more",
-          label: "Menu",
-          isIconOnly: true,
-          iconName: "format-list-bulleted",
-        },
+    {
+      key: "more",
+      label: isEducator ? "Manage" : (t("common.more") || "More"),
+    },
   ];
 
   const activeColor = isDark ? "#60A5FA" : "#2563EB";

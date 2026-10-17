@@ -5,7 +5,7 @@ import { SOCKET_URL } from "./config";
 
 let socketInstance: Socket | null = null;
 let activeScreenUsers = 0;
-let idleDisconnectTimeout: NodeJS.Timeout | null = null;
+let idleDisconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export function getSocket(): Socket | null {
   // Guard against server-side rendering (SSR) where window is undefined in web runtime

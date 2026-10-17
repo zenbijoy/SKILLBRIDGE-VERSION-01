@@ -676,6 +676,14 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
                     triggerHaptic();
                     router.push(`/search?q=${encodeURIComponent(username)}` as any);
                   }}
+                  onAuthorPress={(authorId) => {
+                    triggerHaptic();
+                    if (authorId === currentUser?.id) {
+                      router.push("/(tabs)/profile" as any);
+                    } else {
+                      router.push(`/user/${authorId}` as any);
+                    }
+                  }}
                 />
               </Animated.View>
 
