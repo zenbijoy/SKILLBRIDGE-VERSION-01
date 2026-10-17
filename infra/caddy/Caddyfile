@@ -1,3 +1,9 @@
+{
+    on_demand_tls {
+        ask http://172.20.0.1:4000/v1/shop/tls/authorize
+    }
+}
+
 # ── SkillBridge Backend API ────────────────────────────────────────────────────
 ruetskillbridge.duckdns.org {
 
@@ -18,14 +24,14 @@ ruetskillbridge.duckdns.org {
     reverse_proxy api:4000
 
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options    "nosniff"
         X-Frame-Options           "DENY"
         Referrer-Policy           "strict-origin-when-cross-origin"
         -Server
     }
 
-    encode gzip
+    encode gzip zstd
 }
 
 # ── SkillBridge Admin Panel ────────────────────────────────────────────────────
@@ -34,14 +40,14 @@ ruetskillbridgeadmin.duckdns.org {
     reverse_proxy admin:80
 
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options    "nosniff"
         X-Frame-Options           "DENY"
         Referrer-Policy           "strict-origin-when-cross-origin"
         -Server
     }
 
-    encode gzip
+    encode gzip zstd
 }
 
 # ── SkillBridge Student Web App ────────────────────────────────────────────────
@@ -56,13 +62,42 @@ ruetskillbridgeweb.duckdns.org {
     }
 
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options    "nosniff"
         X-Frame-Options           "SAMEORIGIN"
         Referrer-Policy           "strict-origin-when-cross-origin"
         -Server
     }
 
-    encode gzip
+    encode gzip zstd
 }
 
+# ── SwapnoPay Platform (Admin, Web, API & Stores) ──────────────────────────────
+admin.swapnopay.top, pay.swapnopay.top, swapnopay.top, www.swapnopay.top, api.swapnopay.top, shop.swapnopay.top, shops.swapnopay.top {
+    reverse_proxy 172.20.0.1:8088
+}
+
+# ── SwapnoPay Merchant Custom Domains (On-Demand Automatic HTTPS) ──────────────
+https:// {
+    tls {
+        on_demand
+    }
+    reverse_proxy 172.20.0.1:8088
+}
+
+# ── SwapnoFlix Streaming Platform & Control Center ─────────────────────────────
+swapnofilx.duckdns.org {
+    @supabase_routes path /rest/* /realtime/* /storage/* /auth/*
+    reverse_proxy @supabase_routes 172.20.0.1:8000
+
+    reverse_proxy 172.20.0.1:5000
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip zstd
+}
