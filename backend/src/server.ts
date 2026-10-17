@@ -8,6 +8,7 @@ import { startKeepAliveWorker } from "./workers/keepAlive.js";
 import { startCallTimeoutWorker } from "./workers/callTimeoutWorker.js";
 import { redis } from "./lib/redis.js";
 import { runAdminBootstrap } from "./services/admin-bootstrap.js";
+import { initializeFirebase } from "./services/firebase.js";
 import { logger } from "./lib/logger.js";
 import { sentry } from "./lib/sentry.js";
 
@@ -109,6 +110,7 @@ process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
 if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_ENV !== "test") {
   const startServer = async () => {
     sentry.init();
+    initializeFirebase();
 
     logger.info(
       {
@@ -145,6 +147,14 @@ if (process.argv[1] === new URL(import.meta.url).pathname || process.env.NODE_EN
         },
         `SkillBridge API listening on http://0.0.0.0:${env.PORT}`,
       );
+
+      if (env.P2P_CALLS_ENABLED && !env.CLOUDFLARE_TURN_ENABLED) {
+        logger.warn(
+          { event: "p2p_turn_disabled" },
+          "WARNING: P2P_CALLS_ENABLED=true but CLOUDFLARE_TURN_ENABLED=false. Only public STUN is active. Calls across symmetric NATs or restrictive cellular networks may fail without a TURN relay server.",
+        );
+      }
+
       await runAdminBootstrap();
     });
 

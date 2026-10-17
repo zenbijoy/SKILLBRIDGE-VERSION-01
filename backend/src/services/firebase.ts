@@ -22,7 +22,10 @@ export function initializeFirebase(): { app: App | null; messaging: Messaging | 
       path.resolve(__dirname, "../../firebase-service-account.json");
 
     if (!fs.existsSync(credPath)) {
-      logger.warn({ credPath }, "Firebase service account credentials file not found, FCM push provider inactive");
+      logger.warn(
+        { credPath, fcmActive: false, expoActive: true },
+        "Firebase service account credentials file not found, FCM push provider inactive (Expo push provider active)",
+      );
       return { app: null, messaging: null };
     }
 
@@ -44,15 +47,17 @@ export function initializeFirebase(): { app: App | null; messaging: Messaging | 
       {
         projectId: serviceAccount.project_id,
         clientEmail: serviceAccount.client_email,
+        fcmActive: true,
+        expoActive: true,
       },
-      "Firebase Admin & Cloud Messaging (FCM) initialized successfully",
+      "Firebase Admin & Cloud Messaging (FCM) initialized successfully (Dual FCM + Expo push active)",
     );
 
     return { app: firebaseApp, messaging: messagingInstance };
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? err.message : err },
-      "Failed to initialize Firebase Admin SDK",
+      { err: err instanceof Error ? err.message : err, fcmActive: false, expoActive: true },
+      "Failed to initialize Firebase Admin SDK, continuing with Expo push only",
     );
     return { app: null, messaging: null };
   }
