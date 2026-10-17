@@ -89,6 +89,7 @@ const createSchema = z
     campus_location: z.string().max(200).optional().nullable(),
     cover_image_url: z.string().url().max(1000).optional().nullable(),
     is_teacher_mode: z.boolean().optional().default(false),
+    knock_mode_enabled: z.boolean().optional().default(true),
   })
   .refine(
     (data) => data.mode === "online" || (Boolean(data.campus_location) && data.campus_location!.trim().length > 0),
@@ -358,33 +359,32 @@ rooms.post(
     });
     if (error) throw error;
 
-    // Persist cover_image_url and is_teacher_mode.
-    // NOTE: supabase-js never throws on query errors — it returns { error } — so the
-    // fallback must check `error` explicitly. The appearance JSON mirror keeps the
-    // feature working even before migration 041 adds the dedicated columns.
-    if (body.cover_image_url || body.is_teacher_mode) {
-      const appearance = {
-        accent_color: null,
-        theme: "auto",
+    // Persist cover_image_url, is_teacher_mode, and knock_mode_enabled.
+    const appearance = {
+      accent_color: null,
+      theme: "auto",
+      cover_image_url: body.cover_image_url || null,
+      is_teacher_mode: Boolean(body.is_teacher_mode),
+    };
+    const { error: updateErr } = await admin
+      .from("rooms")
+      .update({
         cover_image_url: body.cover_image_url || null,
         is_teacher_mode: Boolean(body.is_teacher_mode),
-      };
-      const { error: coverErr } = await admin
+        knock_mode_enabled: body.knock_mode_enabled !== false,
+        appearance,
+      })
+      .eq("id", v_room_id);
+    if (updateErr) {
+      const { error: fallbackErr } = await admin
         .from("rooms")
         .update({
-          cover_image_url: body.cover_image_url || null,
-          is_teacher_mode: Boolean(body.is_teacher_mode),
+          knock_mode_enabled: body.knock_mode_enabled !== false,
           appearance,
         })
         .eq("id", v_room_id);
-      if (coverErr) {
-        const { error: fallbackErr } = await admin
-          .from("rooms")
-          .update({ appearance })
-          .eq("id", v_room_id);
-        if (fallbackErr) {
-          logger.warn({ err: fallbackErr }, "[rooms] failed to persist cover/teacher mode");
-        }
+      if (fallbackErr) {
+        logger.warn({ err: fallbackErr }, "[rooms] failed to persist room metadata");
       }
     }
 

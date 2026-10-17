@@ -193,35 +193,12 @@ export default function RoomDetailScreen() {
     onError: (err: Error) => Alert.alert("Remove Failed", err.message),
   });
 
-  // ── Guards ──────────────────────────────────────────────────────────────────
-  if (roomQuery.isLoading) {
-    return (
-      <Screen>
-        <Skeleton height={140} style={{ borderRadius: radius.md }} />
-        <Skeleton height={48} style={{ marginVertical: 8, borderRadius: radius.sm }} />
-        <Skeleton height={200} />
-      </Screen>
-    );
-  }
-
-  if (roomQuery.isError || !roomQuery.data?.room) {
-    return (
-      <Screen>
-        <ErrorState
-          title="Room not found"
-          detail="This learning room may have been archived or is private."
-          onRetry={() => roomQuery.refetch()}
-        />
-      </Screen>
-    );
-  }
-
   const data = roomQuery.data;
-  const room = data.room;
+  const room = data?.room;
   // Single source of truth for membership: server-authoritative permissions,
   // falling back to the membership row returned with the room payload.
-  const isMember = permissions.isMember || Boolean(data.membership);
-  const isPreview = Boolean(data.preview?.isPreview) && !isMember;
+  const isMember = permissions.isMember || Boolean(data?.membership);
+  const isPreview = Boolean(data?.preview?.isPreview) && !isMember;
 
   const baseIsEducator = Boolean(
     permissions.isOwner ||
@@ -229,17 +206,18 @@ export default function RoomDetailScreen() {
     permissions.role === "teacher" ||
     permissions.role === "moderator" ||
     permissions.canModerate ||
-    data.membership?.role === "host" ||
-    data.membership?.role === "teacher" ||
-    data.membership?.role === "moderator"
+    data?.membership?.role === "host" ||
+    data?.membership?.role === "teacher" ||
+    data?.membership?.role === "moderator"
   );
   const isEducator = rolePreviewOverride !== null ? rolePreviewOverride === "educator" : baseIsEducator;
 
   // Real-time Pending Knock Requests for Room Admins & Educators
+  // Declared at top level unconditionally to preserve React hooks ordering
   const knockRequestsQuery = useQuery({
     queryKey: ["room-knock-requests", id],
     queryFn: () => api<{ requests: any[]; knockModeEnabled: boolean }>(`/rooms/${id}/knock/requests`),
-    enabled: Boolean(id) && isEducator,
+    enabled: Boolean(id) && isEducator && Boolean(room),
     refetchInterval: isEducator ? 12000 : false,
   });
 
@@ -262,6 +240,29 @@ export default function RoomDetailScreen() {
       socket.off("room:knock:new", handleNewKnock);
     };
   }, [id, isEducator, knockRequestsQuery]);
+
+  // ── Guards ──────────────────────────────────────────────────────────────────
+  if (roomQuery.isLoading) {
+    return (
+      <Screen>
+        <Skeleton height={140} style={{ borderRadius: radius.md }} />
+        <Skeleton height={48} style={{ marginVertical: 8, borderRadius: radius.sm }} />
+        <Skeleton height={200} />
+      </Screen>
+    );
+  }
+
+  if (roomQuery.isError || !room) {
+    return (
+      <Screen>
+        <ErrorState
+          title="Room not found"
+          detail="This learning room may have been archived or is private."
+          onRetry={() => roomQuery.refetch()}
+        />
+      </Screen>
+    );
+  }
 
   // ── Knock Lobby Guard for Non-Members ──────────────────────────────────────
   // If user is not a member and knock mode is explicitly enabled (or room is private/locked),

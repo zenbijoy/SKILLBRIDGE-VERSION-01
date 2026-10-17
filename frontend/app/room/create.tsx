@@ -110,6 +110,7 @@ export default function CreateRoomScreen() {
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(["voice", "study"]);
   const [visibility, setVisibility] = useState<"public" | "private" | "invite_only">("public");
+  const [knockModeEnabled, setKnockModeEnabled] = useState(true);
   const [capacity, setCapacity] = useState("30");
   const [mode, setMode] = useState<"online" | "offline" | "hybrid">("online");
   const [campusLocation, setCampusLocation] = useState("");
@@ -312,6 +313,7 @@ export default function CreateRoomScreen() {
         mode,
         campus_location: mode !== "online" ? campusLocation.trim() : undefined,
         cover_image_url: coverImageUrl.trim() ? coverImageUrl.trim() : undefined,
+        knock_mode_enabled: knockModeEnabled,
       };
 
       const res = await api<Room>("/rooms", {
@@ -773,6 +775,58 @@ export default function CreateRoomScreen() {
             </Row>
           </View>
 
+          {/* Entry Approval / Knock Mode Toggle */}
+          <View style={s.fieldWrapper}>
+            <Text style={[s.label, { color: colors.text }]}>Entry Approval</Text>
+            <Pressable
+              onPress={() => {
+                triggerHaptic("selection");
+                setKnockModeEnabled(!knockModeEnabled);
+              }}
+              style={[
+                s.approvalToggleCard,
+                {
+                  backgroundColor: knockModeEnabled ? colors.primarySoft : colors.background,
+                  borderColor: knockModeEnabled ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
+                <Row style={{ alignItems: "center", gap: 12, flex: 1 }}>
+                  <View
+                    style={[
+                      s.approvalIconBox,
+                      {
+                        backgroundColor: knockModeEnabled ? colors.primary : colors.surface2,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={knockModeEnabled ? "door-closed-lock" : "door-open"}
+                      size={20}
+                      color={knockModeEnabled ? "#FFFFFF" : colors.muted}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.approvalTitle, { color: colors.text }]}>
+                      {knockModeEnabled ? "Require Host Approval (Knock Mode)" : "Open Entry (No Approval Required)"}
+                    </Text>
+                    <Text style={[s.approvalSub, { color: colors.muted }]}>
+                      {knockModeEnabled
+                        ? "Peers must request to join and be approved by you before entering."
+                        : "Anyone can join immediately and access room features."}
+                    </Text>
+                  </View>
+                </Row>
+                <MaterialCommunityIcons
+                  name={knockModeEnabled ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
+                  size={24}
+                  color={knockModeEnabled ? colors.primary : colors.muted}
+                />
+              </Row>
+            </Pressable>
+          </View>
+
           <View style={s.fieldWrapper}>
             <Text style={[s.label, { color: colors.text }]}>Capacity Limit</Text>
             <Row style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -1226,5 +1280,26 @@ const s = StyleSheet.create({
     fontSize: 9,
     fontWeight: "700",
     alignSelf: "flex-start",
+  },
+  approvalToggleCard: {
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+  },
+  approvalIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  approvalTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  approvalSub: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
   },
 });
