@@ -29,6 +29,10 @@ test("WebRTC P2P Calls Hybrid Architecture Test Suite", async (t) => {
       then: (resolve: any) => resolve({ data, error }),
       or: () => chain,
       match: () => chain,
+      lt: () => chain,
+      gt: () => chain,
+      lte: () => chain,
+      gte: () => chain,
     };
     return chain;
   };
@@ -144,7 +148,7 @@ test("WebRTC P2P Calls Hybrid Architecture Test Suite", async (t) => {
       if (table === "user_blocks") return createMockChain(null);
       if (table === "calls") {
         callQueryCount++;
-        if (callQueryCount === 1) {
+        if (callQueryCount <= 2) {
           return createMockChain(null);
         }
         return createMockChain({
@@ -286,4 +290,94 @@ test("WebRTC P2P Calls Hybrid Architecture Test Suite", async (t) => {
     assert.strictEqual(typeof res.body.metrics.p2pRatio, "number");
     assert.strictEqual(typeof res.body.metrics.turnRatio, "number");
   });
+
+  // 11. POST /api/v1/calls/:id/connected
+  await t.test("POST /calls/:id/connected - updates call status to connected and sets connected_at", async () => {
+    mockAdmin.auth.getUser = async () => ({
+      data: { user: { id: USER_A, role: "authenticated" } },
+      error: null,
+    });
+
+    let updatedPayload: any = null;
+    const callData = {
+      id: CALL_ID,
+      caller_id: USER_A,
+      callee_id: USER_B,
+      status: "accepted",
+    };
+    mockAdmin.from = (table?: string) => {
+      if (table === "calls") {
+        const chain: any = createMockChain(callData);
+        chain.update = (payload: any) => {
+          updatedPayload = payload;
+          return createMockChain({ ...callData, ...payload });
+        };
+        return chain;
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/calls/${CALL_ID}/connected`)
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.call.status, "connected");
+    assert.ok(updatedPayload);
+    assert.strictEqual(updatedPayload.status, "connected");
+    assert.ok(updatedPayload.connected_at);
+  });
+
+  await t.test("POST /calls/:id/connected - duplicate call returns 200 idempotently", async () => {
+    mockAdmin.auth.getUser = async () => ({
+      data: { user: { id: USER_A, role: "authenticated" } },
+      error: null,
+    });
+
+    mockAdmin.from = (table?: string) => {
+      if (table === "calls") {
+        return createMockChain({
+          id: CALL_ID,
+          caller_id: USER_A,
+          callee_id: USER_B,
+          status: "connected",
+        });
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/calls/${CALL_ID}/connected`)
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.call.status, "connected");
+  });
+
+  await t.test("POST /calls/:id/connected - rejects transition if call is already ended", async () => {
+    mockAdmin.auth.getUser = async () => ({
+      data: { user: { id: USER_A, role: "authenticated" } },
+      error: null,
+    });
+
+    mockAdmin.from = (table?: string) => {
+      if (table === "calls") {
+        return createMockChain({
+          id: CALL_ID,
+          caller_id: USER_A,
+          callee_id: USER_B,
+          status: "ended",
+        });
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/calls/${CALL_ID}/connected`)
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /Cannot transition call/);
+  });
 });
+

@@ -26,7 +26,7 @@ export type CallStatus =
 const VALID_TRANSITIONS: Record<CallStatus, CallStatus[]> = {
   initiating: ["ringing", "failed"],
   ringing: ["accepted", "declined", "busy", "missed", "failed", "ended"],
-  accepted: ["connecting", "failed", "ended"],
+  accepted: ["connecting", "connected", "failed", "ended"],
   connecting: ["connected", "failed", "ended"],
   connected: ["reconnecting", "ended", "failed"],
   reconnecting: ["connected", "failed", "ended"],
@@ -477,6 +477,55 @@ export function callsRouter(io?: Server) {
         provider,
         providerConfig,
       });
+    }),
+  );
+
+  // POST /api/v1/calls/:id/connected (Bug 6)
+  calls.post(
+    "/:id/connected",
+    wrap(async (req, res) => {
+      const callId = z.string().uuid().parse(req.params.id);
+      const userId = req.userId!;
+
+      const { data: callRecord } = await admin
+        .from("calls")
+        .select("*")
+        .eq("id", callId)
+        .maybeSingle();
+
+      if (!callRecord) return res.status(404).json({ error: "Call not found." });
+      if (callRecord.caller_id !== userId && callRecord.callee_id !== userId) {
+        return res.status(403).json({ error: "Unauthorized." });
+      }
+
+      // Idempotent return if already connected
+      if (callRecord.status === "connected") {
+        return res.json({ call: callRecord });
+      }
+
+      if (!isValidTransition(callRecord.status, "connected")) {
+        return res.status(400).json({ error: `Cannot transition call in ${callRecord.status} to connected.` });
+      }
+
+      const connectedAt = new Date().toISOString();
+      const { data: updated, error } = await admin
+        .from("calls")
+        .update({
+          status: "connected",
+          connected_at: connectedAt,
+        })
+        .eq("id", callId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (io) {
+        const peerId = callRecord.caller_id === userId ? callRecord.callee_id : callRecord.caller_id;
+        io.to(`user:${peerId}`).emit("call:connected", { callId, connectedAt });
+      }
+
+      res.json({ call: updated });
     }),
   );
 

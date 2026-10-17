@@ -80,3 +80,10 @@ export async function getCallApi(callId: string): Promise<CallRecord> {
   const res = await api<{ call: CallRecord }>(`/calls/${callId}`);
   return res.call;
 }
+
+export async function markCallConnectedApi(callId: string): Promise<CallRecord> {
+  const res = await api<{ call: CallRecord }>(`/calls/${callId}/connected`, {
+    method: "POST",
+  });
+  return res.call;
+}
