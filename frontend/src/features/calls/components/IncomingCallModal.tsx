@@ -27,6 +27,8 @@ export const IncomingCallModal: React.FC = () => {
   const [pulse1] = useState(() => new Animated.Value(1));
   const [pulse2] = useState(() => new Animated.Value(1));
   const [buttonPulse] = useState(() => new Animated.Value(1));
+  const [isSilenced, setIsSilenced] = useState(false);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
 
   // Pulse animation loop
   useEffect(() => {
@@ -173,9 +175,6 @@ export const IncomingCallModal: React.FC = () => {
       setIncomingCall(null);
     }
   };
-
-  const [isSilenced, setIsSilenced] = useState(false);
-  const [showQuickReplies, setShowQuickReplies] = useState(false);
 
   const cannedMessages = [
     "Can't talk now. What's up?",

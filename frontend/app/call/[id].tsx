@@ -8,7 +8,7 @@ import { useCallStore } from "@/features/calls/store/callStore";
 import { CallControls } from "@/features/calls/components/CallControls";
 import { ConnectionQuality } from "@/features/calls/components/ConnectionQuality";
 import { VideoView } from "@/features/calls/components/VideoView";
-import { initiateCallApi, getCallApi, acceptCallApi } from "@/features/calls/services/callApi";
+import { initiateCallApi, getCallApi, acceptCallApi, rejectCallApi } from "@/features/calls/services/callApi";
 import { RemoteAudio } from "@/features/calls/components/RemoteAudio";
 import { LiveKitCallBridge } from "@/features/calls/components/LiveKitCallBridge";
 import { supabase } from "@/lib/supabase";
@@ -118,32 +118,24 @@ export default function CallScreen() {
         if (isCancelled) return;
 
         if (record.status === "ringing") {
-          // Tapping the notification is an implicit accept.
-          try {
-            const res = await acceptCallApi(existingCallId);
-            if (isCancelled) return;
+          // Open incoming call screen for ringing status so user can choose Accept or Decline (Bug 7)
+          const isCaller = record.caller_id === currentUserId;
+          const peerId = isCaller ? record.callee_id : record.caller_id;
+          const peerProfile = isCaller ? record.callee : record.caller;
 
-            const isCaller = record.caller_id === currentUserId;
-            const peerId = isCaller ? record.callee_id : record.caller_id;
-            const peerProfile = isCaller ? record.callee : record.caller;
-
-            startCall({
-              callId: record.id,
-              role: isCaller ? "caller" : "callee",
-              peer: {
-                id: peerId,
-                name: peerProfile?.full_name || peerProfile?.username || "SkillBridge Peer",
-                avatarUrl: peerProfile?.avatar_url || null,
-              },
-              type: (record.type as "audio" | "video") || "video",
-              provider: res.provider,
-              providerConfig: res.providerConfig,
-            });
-            setColdStartStatus(null);
-          } catch (err) {
-            console.error("Failed to accept call from notification:", err);
-            setCallStatus("failed");
-          }
+          startCall({
+            callId: record.id,
+            role: isCaller ? "caller" : "callee",
+            peer: {
+              id: peerId,
+              name: peerProfile?.full_name || peerProfile?.username || "SkillBridge Peer",
+              avatarUrl: peerProfile?.avatar_url || null,
+            },
+            type: (record.type as "audio" | "video") || "video",
+            provider: (record.metadata as any)?.provider || "webrtc",
+          });
+          setCallStatus("ringing");
+          setColdStartStatus(null);
         } else if (
           record.status === "missed" ||
           record.status === "ended" ||
@@ -211,6 +203,11 @@ export default function CallScreen() {
       // Join/resume path: IncomingCallModal (or a banner/tap) already created the
       // call record and populated the store.
       if (existingCallId) {
+        // If callee is still in ringing status (waiting for user to accept), do not auto-initialize media (Bug 7)
+        if (activeCall?.role === "callee" && activeCall?.status === "ringing") {
+          return;
+        }
+
         if (activeCall?.provider === "livekit") {
           const socket = getSocket();
           socket?.emit("call:ready", { callId: existingCallId });
@@ -268,7 +265,7 @@ export default function CallScreen() {
     // cold start from a notification, `activeCall` is populated
     // by the restore effect above — don't race ahead and open
     // the mic/camera before we know whether the call is live.
-    const shouldJoinExistingCall = Boolean(existingCallId && activeCall);
+    const shouldJoinExistingCall = Boolean(existingCallId && activeCall && activeCall.status !== "ringing");
     const shouldStartOutgoingCall =
       !existingCallId &&
       (!activeCall || (targetId && activeCall.peer.id !== targetId));
@@ -281,7 +278,7 @@ export default function CallScreen() {
       isCancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, name, avatar, type]);
+  }, [targetId, name, avatar, type, activeCall?.status]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -299,6 +296,48 @@ export default function CallScreen() {
     triggerHaptic();
     setMinimized(false);
     endCall("hangup");
+    router.back();
+  };
+
+  const handleIncomingAccept = async () => {
+    if (!activeCall) return;
+    triggerHaptic();
+    try {
+      setCallStatus("connecting");
+      const res = await acceptCallApi(activeCall.callId);
+      const socket = getSocket();
+      socket?.emit("call:accept", { callId: activeCall.callId });
+
+      startCall({
+        callId: activeCall.callId,
+        role: activeCall.role,
+        peer: activeCall.peer,
+        type: activeCall.type,
+        provider: res.provider,
+        providerConfig: res.providerConfig,
+      });
+      setCallStatus("connecting");
+
+      if (res.provider !== "livekit") {
+        const stream = await initLocalMedia(activeCall.type);
+        await setupPeerConnection(stream);
+        socket?.emit("call:ready", { callId: activeCall.callId });
+      }
+    } catch (err) {
+      console.error("Failed to accept call:", err);
+      setCallStatus("failed");
+    }
+  };
+
+  const handleIncomingDecline = async () => {
+    if (!activeCall) return;
+    triggerHaptic();
+    try {
+      await rejectCallApi(activeCall.callId, "declined");
+      const socket = getSocket();
+      socket?.emit("call:reject", { callId: activeCall.callId, reason: "declined" });
+    } catch {}
+    endCall("declined");
     router.back();
   };
 
@@ -446,20 +485,42 @@ export default function CallScreen() {
         </View>
       )}
 
-      {/* Call Controls Bar */}
+      {/* Call Controls Bar or Incoming Ringing Actions (Bug 7) */}
       {controlsVisible && (
         <View style={{ width: "100%", paddingBottom: Math.max(insets.bottom, 12), zIndex: 30 }}>
-          <CallControls
-            isMuted={activeCall?.isMuted ?? false}
-            isVideoEnabled={activeCall?.isVideoEnabled ?? false}
-            isSpeakerOn={activeCall?.isSpeakerOn ?? false}
-            isFrontCamera={activeCall?.isFrontCamera ?? true}
-            onToggleMute={toggleMuteTrack}
-            onToggleVideo={toggleVideoTrack}
-            onToggleSpeaker={toggleSpeaker}
-            onToggleCameraFacing={toggleCameraFacing}
-            onEndCall={handleEndCall}
-          />
+          {activeCall?.role === "callee" && activeCall?.status === "ringing" ? (
+            <View style={styles.incomingActionsRow}>
+              <Pressable
+                onPress={handleIncomingDecline}
+                style={[styles.incomingActionBtn, styles.incomingDeclineBtn]}
+                accessibilityLabel="Decline Call"
+              >
+                <MaterialCommunityIcons name="phone-hangup" size={32} color="#FFFFFF" />
+                <Text style={styles.incomingActionText}>Decline</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleIncomingAccept}
+                style={[styles.incomingActionBtn, styles.incomingAcceptBtn]}
+                accessibilityLabel="Accept Call"
+              >
+                <MaterialCommunityIcons name="phone" size={32} color="#FFFFFF" />
+                <Text style={styles.incomingActionText}>Accept</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <CallControls
+              isMuted={activeCall?.isMuted ?? false}
+              isVideoEnabled={activeCall?.isVideoEnabled ?? false}
+              isSpeakerOn={activeCall?.isSpeakerOn ?? false}
+              isFrontCamera={activeCall?.isFrontCamera ?? true}
+              onToggleMute={toggleMuteTrack}
+              onToggleVideo={toggleVideoTrack}
+              onToggleSpeaker={toggleSpeaker}
+              onToggleCameraFacing={toggleCameraFacing}
+              onEndCall={handleEndCall}
+            />
+          )}
         </View>
       )}
     </Pressable>
@@ -600,5 +661,36 @@ const styles = StyleSheet.create({
   pipVideo: {
     width: "100%",
     height: "100%",
+  },
+  incomingActionsRow: {
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+  },
+  incomingActionBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  incomingDeclineBtn: {
+    backgroundColor: "#EF4444",
+  },
+  incomingAcceptBtn: {
+    backgroundColor: "#10B981",
+  },
+  incomingActionText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 4,
   },
 });
