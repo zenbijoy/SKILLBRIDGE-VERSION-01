@@ -93,6 +93,15 @@ const ROOM_ICONS = [
   "gamepad-variant-outline",
 ];
 
+const RULE_PRESETS = [
+  { label: "🔇 Mute mic", rule: "• Keep microphones muted when not speaking." },
+  { label: "💬 Respectful", rule: "• Maintain a respectful, supportive, and constructive environment." },
+  { label: "🚫 No spam", rule: "• No promotional links, spam, or off-topic commercial content." },
+  { label: "🎯 Stay focused", rule: "• Keep questions and discussions aligned with room goals." },
+  { label: "🎥 Camera optional", rule: "• Video camera is welcome but completely optional." },
+  { label: "💡 Share notes", rule: "• Feel free to share helpful resources, code, and notes in chat." },
+];
+
 export default function CreateRoomScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -107,7 +116,7 @@ export default function CreateRoomScreen() {
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("Software Dev & Algorithms");
   const [description, setDescription] = useState("");
-  const [rules] = useState("");
+  const [rules, setRules] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(["programming", "study"]);
   const [visibility, setVisibility] = useState<"public" | "private" | "invite_only">("public");
@@ -288,6 +297,20 @@ export default function CreateRoomScreen() {
 
   const removeTag = (tagToRemove: string) => {
     setTags(tags.filter((t) => t !== tagToRemove));
+  };
+
+  const toggleRulePreset = (presetRule: string) => {
+    triggerHaptic("selection");
+    setRules((prev) => {
+      if (prev.includes(presetRule)) {
+        return prev
+          .split("\n")
+          .filter((line) => line.trim() !== presetRule.trim())
+          .join("\n")
+          .trim();
+      }
+      return prev ? `${prev.trim()}\n${presetRule}` : presetRule;
+    });
   };
 
   const createMutation = useMutation({
@@ -655,6 +678,56 @@ export default function CreateRoomScreen() {
               numberOfLines={2}
               maxLength={400}
             />
+          </View>
+
+          {/* Room Rules & Study Guidelines */}
+          <View style={s.fieldWrapper}>
+            <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={[s.label, { color: colors.text }]}>Study Rules & Guidelines</Text>
+              <Text style={{ fontSize: 11, color: colors.muted }}>Optional</Text>
+            </Row>
+            <TextInput
+              style={[s.input, s.textArea, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border, minHeight: 72 }]}
+              placeholder="Set room etiquette, collaboration ground rules, or study expectations..."
+              placeholderTextColor={colors.muted}
+              value={rules}
+              onChangeText={setRules}
+              multiline
+              numberOfLines={3}
+              maxLength={800}
+            />
+            {/* Quick-add Guideline Presets */}
+            <View style={{ marginTop: 6, gap: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: "600", color: colors.muted }}>Quick-add guidelines:</Text>
+              <Row style={{ flexWrap: "wrap", gap: 6 }}>
+                {RULE_PRESETS.map((p) => {
+                  const isActive = rules.includes(p.rule);
+                  return (
+                    <Pressable
+                      key={p.label}
+                      onPress={() => toggleRulePreset(p.rule)}
+                      style={[
+                        s.tagPill,
+                        {
+                          backgroundColor: isActive ? colors.primarySoft : colors.surface2,
+                          borderColor: isActive ? colors.primary : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: isActive ? colors.primary : colors.text,
+                        }}
+                      >
+                        {p.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </Row>
+            </View>
           </View>
 
           {/* Tags */}

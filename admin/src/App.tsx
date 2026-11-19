@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthGuard } from './components/AuthGuard';
 import { AdminShell } from './components/AdminShell';
+import { ToastProvider } from './components/ToastContext';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const User360 = lazy(() => import('./pages/User360'));
@@ -95,12 +96,14 @@ function ProtectedApp() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Suspense fallback={null}><Login /></Suspense>} />
-        <Route path="/*" element={<ProtectedApp />} />
-      </Routes>
-    </BrowserRouter>
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Suspense fallback={null}><Login /></Suspense>} />
+          <Route path="/*" element={<ProtectedApp />} />
+        </Routes>
+      </BrowserRouter>
+    </ToastProvider>
   );
 }
 

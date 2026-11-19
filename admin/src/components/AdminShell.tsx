@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   BarChart3,
   Bell,
+  Command,
   Compass,
   Database,
   Flag,
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import api from '../lib/api';
+import { CommandPalette } from './CommandPalette';
 
 type NavItem = {
   to: string;
@@ -109,7 +111,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const [query, setQuery] = useState('');
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [unreadAlerts, setUnreadAlerts] = useState<AlertPreview[]>([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -219,17 +233,39 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <Menu size={22} />
           </button>
 
-          <form onSubmit={search} className="global-search">
+          <form onSubmit={search} className="global-search cursor-text" onClick={(e) => {
+            if ((e.target as HTMLElement).tagName !== 'INPUT') {
+              setPaletteOpen(true);
+            }
+          }}>
             <Search size={18} />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search users, universities, rooms or audit logs…"
+              placeholder="Search users, universities, rooms or commands…"
             />
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              className="hidden sm:flex items-center gap-1 text-[10px] font-mono font-bold text-slate-500 bg-white hover:bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 transition"
+              title="Open Command Palette (Ctrl+K)"
+            >
+              <Command size={11} /> K
+            </button>
             <kbd>Enter</kbd>
           </form>
 
           <div className="topbar-actions relative">
+            <button
+              type="button"
+              className="icon-action text-slate-600 hover:text-blue-600 transition"
+              aria-label="Command Palette"
+              title="Command Palette (Ctrl+K)"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <Command size={18} />
+            </button>
+
             <button
               className="icon-action relative"
               aria-label="Notifications"
@@ -308,6 +344,28 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </>
             ) : null}
 
+            <a
+              href="https://ruetskillbridgeweb.duckdns.org/showcase"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition"
+              title="Download APK & View Live Platform Showcase"
+            >
+              <span>📱</span>
+              <span>App Showcase & APK</span>
+            </a>
+
+            <a
+              href="https://ruetskillbridgeweb.duckdns.org"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500/20 transition"
+              title="Launch SkillBridge Student Web App"
+            >
+              <span>🌐</span>
+              <span>Web App</span>
+            </a>
+
             <div className="operator-pill">
               <span className="operator-avatar">A</span>
               <span className="operator-copy">
@@ -320,6 +378,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
         <main className="admin-content">{children}</main>
       </div>
+
+      <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

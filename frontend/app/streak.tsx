@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -15,7 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
-import { Card, Empty, ErrorState, H1, H2, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { Card, Empty, ErrorState, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { nextGenHeroBanners } from "@/assets/nextgen";
 import { formatRelativeTime } from "@/features/help/helpUtils";
@@ -57,7 +56,6 @@ export interface StreakAnalytics {
 export default function StreakScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery<StreakAnalytics>({
     queryKey: ["activity-streak"],
@@ -399,29 +397,34 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   flameBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: "rgba(249, 115, 22, 0.25)",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: "#F97316",
     marginBottom: 8,
+    shadowColor: "#F97316",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 4,
   },
   heroStreakNumber: {
     color: "#FFFFFF",
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: "900",
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   heroSubtitle: {
-    color: "rgba(255, 255, 255, 0.85)",
-    fontSize: 13,
-    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.9)",
+    fontSize: 13.5,
+    fontWeight: "600",
     textAlign: "center",
     marginTop: 4,
-    maxWidth: 280,
+    maxWidth: 290,
   },
   contentSection: {
     paddingHorizontal: 16,
@@ -433,25 +436,36 @@ const s = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    borderRadius: radius.md,
+    borderRadius: 16,
     borderWidth: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 8,
     alignItems: "center",
     gap: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   statVal: {
-    fontSize: 18,
-    fontWeight: "800",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: -0.3,
   },
   statLbl: {
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   weekCard: {
-    padding: 16,
-    borderRadius: radius.lg,
+    padding: 18,
+    borderRadius: 20,
     borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 16,

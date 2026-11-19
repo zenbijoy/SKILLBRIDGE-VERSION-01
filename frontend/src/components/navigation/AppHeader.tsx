@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View, Platform, useWindowDimensions } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { IconButton } from "@/components/ui";
@@ -43,6 +43,21 @@ export function AppHeader({
     />
   ) : null;
 
+  const { width } = useWindowDimensions();
+  const isWebDesktop = Platform.OS === "web" && width >= 768;
+
+  if (isWebDesktop) {
+    if (!hasTitle && !actionButton) return null;
+    return (
+      <View style={[styles.wrap, { paddingBottom: 6 }]}>
+        <View style={styles.titleRow}>
+          {hasTitle ? <Text style={[styles.brand, { color: colors.text }]}>{title}</Text> : <View />}
+          {actionButton}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.wrap}>
       {hasTitle ? (
@@ -84,6 +99,20 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   brand: { fontSize: 24, fontWeight: "900", letterSpacing: -0.7 },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  search: { flex: 1, height: 48, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 9 },
-  searchText: { flex: 1, fontSize: 14, fontWeight: "600" },
+  search: {
+    flex: 1,
+    height: 46,
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  searchText: { flex: 1, fontSize: 14, fontWeight: "500", letterSpacing: 0.1 },
 });

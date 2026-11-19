@@ -26,12 +26,9 @@ export function InstagramProfileCard({
   const {
     getConnectionStatus,
     sendRequest,
-    withdrawRequest,
     acceptRequest,
     getIncomingRequest,
-    getOutgoingRequest,
     promptWithdrawRequest,
-    promptRemoveConnection,
   } = useConnections();
 
   const status = getConnectionStatus(profile.id);
@@ -211,25 +208,25 @@ export function InstagramProfileCard({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingBottom: 12,
     alignItems: "center",
     marginRight: 10,
     overflow: "hidden",
-    elevation: 2,
+    elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
   },
   topBanner: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    height: 38,
+    height: 42,
   },
   avatarWrapper: {
     marginTop: 12,

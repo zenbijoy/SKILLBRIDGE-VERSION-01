@@ -28,6 +28,7 @@ import { saved } from "./routes/saved.js";
 import { gamification } from "./routes/gamification.js";
 import { quiz } from "./routes/quiz.js";
 import { notifications } from "./routes/notifications.js";
+import { getVapidPublicKey } from "./services/PushService.js";
 import { moderation } from "./routes/moderation.js";
 import { live, liveWebhooks } from "./routes/live.js";
 import { account } from "./routes/account.js";
@@ -54,6 +55,7 @@ import { integrations, handleYouTubeCallback } from "./routes/integrations.js";
 import { help } from "./routes/help.js";
 import { shares } from "./routes/shares.js";
 import { vault } from "./routes/vault.js";
+import { appVersionRouter } from "./routes/app-version.js";
 
 export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true;
@@ -165,10 +167,37 @@ export function createApp(io?: SocketServer) {
 
   app.use("/health", health);
   app.use("/api/v1/health", health);
+  app.use("/api/v1/app", appVersionRouter);
+  app.use("/api/v1/version", appVersionRouter);
+  app.get("/download/SkillBridge.apk", (_req, res) => {
+    res.redirect(302, "/api/v1/app/download");
+  });
+  app.get("/", (_req, res) => {
+    res.json({
+      name: "SkillBridge API & Services",
+      version: "2.0.10",
+      status: "operational",
+      endpoints: {
+        health: "/api/v1/health",
+        version: "/api/v1/app/version",
+        download: "/api/v1/app/download",
+        docs: "/api-docs",
+      },
+      links: {
+        web_app: "https://ruetskillbridgeweb.duckdns.org",
+        admin_panel: "https://ruetskillbridgeadmin.duckdns.org",
+        showcase: "https://ruetskillbridgeweb.duckdns.org/showcase",
+        download_apk: "https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk",
+      },
+    });
+  });
   app.use("/webhooks/live", liveWebhooks);
   app.use("/api/v1/experience", experience);
   app.use("/api/v1/achievements/verify", verifyCodeLimiter, achievementsPublic);
   app.use("/api/v1/integrations/youtube/callback", handleYouTubeCallback);
+  app.get("/api/v1/notifications/vapid-public-key", (_req, res) => {
+    res.json({ publicKey: getVapidPublicKey() });
+  });
 
   const api = express.Router();
   api.use(auth);

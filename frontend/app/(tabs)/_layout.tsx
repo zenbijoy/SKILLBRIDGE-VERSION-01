@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Platform, BackHandler, ToastAndroid, StyleSheet } from "react-native";
+import { Platform, BackHandler, ToastAndroid, StyleSheet, useWindowDimensions } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from "react-native-reanimated";
@@ -12,11 +12,21 @@ import { useI18n } from "@/i18n";
 import { BottomTabBar, type BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
 import { useAutoHideNavigation } from "@/navigation/AutoHideNavigationContext";
 
-const Icon = ({ name, color, focused }: { name: keyof typeof MaterialCommunityIcons.glyphMap; color: any; focused: boolean }) => {
-  const scale = useSharedValue(focused ? 1.15 : 1);
+const Icon = ({
+  name,
+  color,
+  focused,
+  activeColor,
+}: {
+  name: keyof typeof MaterialCommunityIcons.glyphMap;
+  color: any;
+  focused: boolean;
+  activeColor?: string;
+}) => {
+  const scale = useSharedValue(focused ? 1.1 : 1);
 
   useEffect(() => {
-    scale.value = withSpring(focused ? 1.15 : 1, { damping: 12, stiffness: 200 });
+    scale.value = withSpring(focused ? 1.1 : 1, { damping: 14, stiffness: 220 });
   }, [focused, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -24,14 +34,32 @@ const Icon = ({ name, color, focused }: { name: keyof typeof MaterialCommunityIc
   }));
 
   return (
-    <Animated.View style={animatedStyle}>
-      <MaterialCommunityIcons name={name} size={24} color={color} />
+    <Animated.View
+      style={[
+        animatedStyle,
+        {
+          alignItems: "center",
+          justifyContent: "center",
+          width: 44,
+          height: 30,
+          borderRadius: 15,
+          backgroundColor: focused && activeColor ? `${activeColor}1A` : "transparent",
+        },
+      ]}
+    >
+      <MaterialCommunityIcons name={name} size={22} color={color} />
     </Animated.View>
   );
 };
 
 function AutoHideTabBar(props: BottomTabBarProps) {
   const { bottomNavAnimatedStyle, isNavVisible, setBottomNavHeight } = useAutoHideNavigation();
+  const { width } = useWindowDimensions();
+
+  // On Web Desktop or Tablet, bottom tab bar is hidden in favor of Facebook-style top header
+  if (Platform.OS === "web" && width >= 768) {
+    return null;
+  }
 
   return (
     <Animated.View
@@ -55,10 +83,12 @@ function AutoHideTabBar(props: BottomTabBarProps) {
 export default function TabsLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useI18n();
   const { resetNavigation } = useAutoHideNavigation();
+  const isWebDesktop = Platform.OS === "web" && width >= 768;
 
   // Ensure navigation is visible on route / tab change
   useEffect(() => {
@@ -112,30 +142,32 @@ export default function TabsLayout() {
       tabBar={(props) => <AutoHideTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.tabBar,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: tabHeight,
-          paddingTop: 8,
-          paddingBottom: bottomInset,
-          elevation: 8,
-          shadowColor: colors.black,
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 6,
-        },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+        tabBarStyle: isWebDesktop
+          ? { display: "none" }
+          : {
+              backgroundColor: colors.tabBar,
+              borderTopColor: colors.border,
+              borderTopWidth: 1,
+              height: tabHeight,
+              paddingTop: 6,
+              paddingBottom: bottomInset,
+              elevation: 12,
+              shadowColor: colors.black,
+              shadowOffset: { width: 0, height: -3 },
+              shadowOpacity: 0.08,
+              shadowRadius: 10,
+            },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "700", marginTop: 2, letterSpacing: 0.1 },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.muted,
         tabBarHideOnKeyboard: true,
       }}
     >
-      <Tabs.Screen name="index" options={{ title: t("nav.home"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "home-variant" : "home-variant-outline"} color={color} focused={focused} /> }} />
-      <Tabs.Screen name="discover" options={{ title: t("nav.discover"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "compass" : "compass-outline"} color={color} focused={focused} /> }} />
-      <Tabs.Screen name="rooms" options={{ title: t("nav.rooms"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "account-group" : "account-group-outline"} color={color} focused={focused} /> }} />
-      <Tabs.Screen name="inbox" options={{ title: t("nav.inbox"), tabBarBadge: unread > 0 ? (unread > 99 ? "99+" : unread) : undefined, tabBarBadgeStyle: { backgroundColor: colors.danger, color: colors.white, fontSize: 10 }, tabBarIcon: ({ color, focused }) => <Icon name={focused ? "message-text" : "message-text-outline"} color={color} focused={focused} /> }} />
-      <Tabs.Screen name="tools" options={{ title: t("nav.tools"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "toolbox" : "toolbox-outline"} color={color} focused={focused} /> }} />
+      <Tabs.Screen name="index" options={{ title: t("nav.home"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "home-variant" : "home-variant-outline"} color={color} focused={focused} activeColor={colors.primary} /> }} />
+      <Tabs.Screen name="discover" options={{ title: t("nav.discover"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "compass" : "compass-outline"} color={color} focused={focused} activeColor={colors.primary} /> }} />
+      <Tabs.Screen name="rooms" options={{ title: t("nav.rooms"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "account-group" : "account-group-outline"} color={color} focused={focused} activeColor={colors.primary} /> }} />
+      <Tabs.Screen name="inbox" options={{ title: t("nav.inbox"), tabBarBadge: unread > 0 ? (unread > 99 ? "99+" : unread) : undefined, tabBarBadgeStyle: { backgroundColor: colors.danger, color: colors.white, fontSize: 10, fontWeight: "800" }, tabBarIcon: ({ color, focused }) => <Icon name={focused ? "message-text" : "message-text-outline"} color={color} focused={focused} activeColor={colors.primary} /> }} />
+      <Tabs.Screen name="tools" options={{ title: t("nav.tools"), tabBarIcon: ({ color, focused }) => <Icon name={focused ? "toolbox" : "toolbox-outline"} color={color} focused={focused} activeColor={colors.primary} /> }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );

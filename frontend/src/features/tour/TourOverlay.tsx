@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -8,7 +7,6 @@ import {
 } from "react-native";
 import Animated, {
   FadeIn,
-  FadeOut,
   SlideInDown,
   SlideOutDown,
   Layout,
@@ -17,7 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTour } from "./TourContext";
 import { useI18n } from "@/i18n";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
 
 const CHAPTER_CONFIGS: Record<

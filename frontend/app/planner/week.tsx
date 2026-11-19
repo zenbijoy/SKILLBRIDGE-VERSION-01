@@ -93,6 +93,57 @@ export default function PlannerWeekScreen() {
         illustrationSize={120}
       />
 
+      {/* 7-Day Selector Strip */}
+      <View style={styles.dayStrip}>
+        {weekDays.map((item, idx) => {
+          const isSelected = selectedDay === idx;
+          const hasEvents =
+            blocks.some((b) => b.start_time.slice(0, 10) === item.dateStr) ||
+            bookings.some((b) => b.start_time.slice(0, 10) === item.dateStr);
+
+          return (
+            <TouchableOpacity
+              key={item.dateStr}
+              onPress={() => setSelectedDay(idx)}
+              style={[
+                styles.dayCell,
+                {
+                  backgroundColor: isSelected ? colors.primary : colors.surface,
+                  borderColor: isSelected ? colors.primary : colors.border,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.dayName} ${item.dayNum}`}
+            >
+              <Text
+                style={[
+                  styles.dayName,
+                  { color: isSelected ? "#FFFFFF" : colors.textSecondary },
+                ]}
+              >
+                {item.dayName}
+              </Text>
+              <Text
+                style={[
+                  styles.dayNum,
+                  { color: isSelected ? "#FFFFFF" : colors.text },
+                ]}
+              >
+                {item.dayNum}
+              </Text>
+              {hasEvents ? (
+                <View
+                  style={[
+                    styles.dot,
+                    { backgroundColor: isSelected ? "#FFFFFF" : colors.primary },
+                  ]}
+                />
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {/* Day Content */}
       {loading ? (
         <View style={styles.centerContainer}>

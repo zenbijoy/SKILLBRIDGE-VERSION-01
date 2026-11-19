@@ -2,9 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Image,
-  Linking,
-  Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,7 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenContainer, triggerHaptic } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { spacing, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { classifyAuthError, logAuthFailure } from "@/features/auth/authErrors";
 import { signInWithGoogle } from "@/features/auth/googleOAuth";
 import { useI18n } from "@/i18n";

@@ -3,8 +3,10 @@ import { ShieldAlert, MessageSquare, ArrowRight } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { LoadingState, ErrorState } from '../components/States';
+import { useToast } from '../components/ToastContext';
 
 export default function TrustCases() {
+  const { success, error: toastError } = useToast();
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +34,13 @@ export default function TrustCases() {
   const handleUpdateCase = async (caseId: string, patch: any) => {
     try {
       await api.patch(`/admin/trust-cases/${caseId}`, patch);
+      success('Trust case updated successfully.');
       void loadCases();
       if (selectedCase?.id === caseId) {
         setSelectedCase((prev: any) => ({ ...prev, ...patch }));
       }
     } catch (err: any) {
-      alert(err?.message || 'Failed to update case.');
+      toastError(err?.message || 'Failed to update case.');
     }
   };
 
@@ -47,10 +50,11 @@ export default function TrustCases() {
     setSubmittingNote(true);
     try {
       await api.patch(`/admin/trust-cases/${selectedCase.id}`, { note: newNote.trim() });
+      success('Internal case note recorded.');
       setNewNote('');
       void loadCases();
     } catch (err: any) {
-      alert(err?.message || 'Failed to add note');
+      toastError(err?.message || 'Failed to add note.');
     } finally {
       setSubmittingNote(false);
     }

@@ -3,8 +3,10 @@ import { Megaphone, Send, Users, Plus, X } from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { LoadingState, ErrorState } from '../components/States';
+import { useToast } from '../components/ToastContext';
 
 export default function Campaigns() {
+  const { success, error: toastError } = useToast();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,13 +73,14 @@ export default function Campaigns() {
         targetCampus: targetCampus.trim() || undefined,
         channel: 'all',
       });
+      success(`Campaign "${title.trim()}" dispatched successfully.`);
       setModalOpen(false);
       setTitle('');
       setBody('');
       setActionUrl('');
       void loadCampaigns();
     } catch (err: any) {
-      alert(err?.message || 'Failed to dispatch campaign.');
+      toastError(err?.message || 'Failed to dispatch campaign.');
     } finally {
       setDispatching(false);
     }

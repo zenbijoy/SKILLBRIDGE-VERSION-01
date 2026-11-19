@@ -7,6 +7,32 @@
 # ── SkillBridge Backend API ────────────────────────────────────────────────────
 ruetskillbridge.duckdns.org {
 
+    # Direct APK downloads mirror
+    handle_path /download/* {
+        root * /srv/release-apk
+        header Content-Disposition "attachment"
+        file_server
+    }
+
+    # Demo Showcase / Landing Web mirror
+    handle_path /showcase/* {
+        root * /srv/showcase
+        file_server
+        try_files {path} {path}/ /index.html
+    }
+    handle /showcase {
+        redir /showcase/ permanent
+    }
+
+    handle_path /landing/* {
+        root * /srv/showcase
+        file_server
+        try_files {path} {path}/ /index.html
+    }
+    handle /landing {
+        redir /landing/ permanent
+    }
+
     @cors_preflight method OPTIONS
     handle @cors_preflight {
         header Access-Control-Allow-Origin "*"
@@ -55,6 +81,32 @@ ruetskillbridgeweb.duckdns.org {
 
     handle /api/v1/* {
         reverse_proxy api:4000
+    }
+
+    # Direct APK downloads
+    handle_path /download/* {
+        root * /srv/release-apk
+        header Content-Disposition "attachment"
+        file_server
+    }
+
+    # Demo Showcase / Landing Web
+    handle_path /showcase/* {
+        root * /srv/showcase
+        file_server
+        try_files {path} {path}/ /index.html
+    }
+    handle /showcase {
+        redir /showcase/ permanent
+    }
+
+    handle_path /landing/* {
+        root * /srv/showcase
+        file_server
+        try_files {path} {path}/ /index.html
+    }
+    handle /landing {
+        redir /landing/ permanent
     }
 
     handle {

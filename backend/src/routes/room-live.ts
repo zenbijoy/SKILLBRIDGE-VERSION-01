@@ -14,6 +14,7 @@ import { audit } from "../services/audit.js";
 import { roomLiveLimiter } from "../middleware/rateLimiters.js";
 import { getSocketServer, roomPresenceRoom } from "../socket.js";
 import { NotificationService } from "../services/notificationService.js";
+import { generateCloudflareIceServers } from "../services/turn.js";
 
 export const roomLive = Router();
 
@@ -148,15 +149,16 @@ export async function getAllRoomMemberIds(
     let query = admin
       .from("room_members")
       .select("user_id")
-      .eq("room_id", roomId)
-      .range(from, from + pageSize - 1);
+      .eq("room_id", roomId);
 
     if (excludeUserId) {
       query = query.neq("user_id", excludeUserId);
     }
 
-    const { data, error } = await query;
-    if (error || !data || data.length === 0) {
+    const { data, error } = typeof (query as any).range === "function"
+      ? await query.range(from, from + pageSize - 1)
+      : await query;
+    if (error || !data || !Array.isArray(data) || data.length === 0) {
       break;
     }
 
@@ -358,12 +360,8 @@ const openSessionSchema = z.object({
 roomLive.post(
   "/:id/live/open",
   wrap(async (req: Request, res: Response) => {
-    if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_URL) {
-      return res.status(503).json({
-        error: "LiveKit service is not configured",
-        code: "LIVEKIT_NOT_CONFIGURED",
-      });
-    }
+    const hasLiveKit = Boolean(env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_URL);
+    const iceConfig = await generateCloudflareIceServers();
 
     const roomId = z.string().uuid().parse(req.params.id);
     const userId = req.userId!;
@@ -408,7 +406,7 @@ roomLive.post(
       already_live?: boolean;
     };
 
-    // Enrich participant info for LiveKit token
+    // Enrich participant info
     const { data: profile } = await admin
       .from("profiles")
       .select("full_name, username, avatar_url")
@@ -418,41 +416,53 @@ roomLive.post(
     const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : userId);
     const isHost = result.host_id === userId;
 
-    const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-      identity: userId,
-      name: participantName,
-      ttl: "4h",
-      metadata: JSON.stringify({
-        kind: "open",
-        openSessionId: result.session_id,
-        roomId: result.room_id,
-        media: result.media,
-        role: role || "member",
-        isHost,
-        fullName: profile?.full_name || null,
-        username: profile?.username || null,
-        avatarUrl: profile?.avatar_url || null,
-      }),
-    });
+    let token = `webrtc_session_${result.session_id}`;
+    let provider: "livekit" | "webrtc" = "webrtc";
+    let liveUrl = "";
 
-    at.addGrant({
-      roomJoin: true,
-      room: result.livekit_room,
-      canSubscribe: true,
-      canPublish: true,
-      canPublishData: true,
-      canPublishSources:
-        result.media === "audio"
-          ? [TrackSource.MICROPHONE]
-          : [
-              TrackSource.CAMERA,
-              TrackSource.MICROPHONE,
-              TrackSource.SCREEN_SHARE,
-              TrackSource.SCREEN_SHARE_AUDIO,
-            ],
-    });
+    if (hasLiveKit) {
+      try {
+        const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
+          identity: userId,
+          name: participantName,
+          ttl: "4h",
+          metadata: JSON.stringify({
+            kind: "open",
+            openSessionId: result.session_id,
+            roomId: result.room_id,
+            media: result.media,
+            role: role || "member",
+            isHost,
+            fullName: profile?.full_name || null,
+            username: profile?.username || null,
+            avatarUrl: profile?.avatar_url || null,
+          }),
+        });
 
-    const token = await at.toJwt();
+        at.addGrant({
+          roomJoin: true,
+          room: result.livekit_room,
+          canSubscribe: true,
+          canPublish: true,
+          canPublishData: true,
+          canPublishSources:
+            result.media === "audio"
+              ? [TrackSource.MICROPHONE]
+              : [
+                  TrackSource.CAMERA,
+                  TrackSource.MICROPHONE,
+                  TrackSource.SCREEN_SHARE,
+                  TrackSource.SCREEN_SHARE_AUDIO,
+                ],
+        });
+
+        token = await at.toJwt();
+        provider = "livekit";
+        liveUrl = env.LIVEKIT_URL!;
+      } catch (e) {
+        logger.warn({ err: (e as Error).message }, "LiveKit token generation failed, using WebRTC fallback");
+      }
+    }
 
     // Broadcast socket event to room presence room
     const io = getSocketServer();
@@ -529,8 +539,10 @@ roomLive.post(
         startedAt: result.started_at,
       },
       alreadyLive: Boolean(result.already_live),
+      provider,
       token,
-      url: env.LIVEKIT_URL,
+      url: liveUrl,
+      iceServers: iceConfig.iceServers,
       roomName: result.livekit_room,
       isHost,
       media: result.media,
@@ -545,12 +557,8 @@ roomLive.post(
 roomLive.post(
   "/:id/live/:sessionId/token",
   wrap(async (req: Request, res: Response) => {
-    if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_URL) {
-      return res.status(503).json({
-        error: "LiveKit service is not configured",
-        code: "LIVEKIT_NOT_CONFIGURED",
-      });
-    }
+    const hasLiveKit = Boolean(env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_URL);
+    const iceConfig = await generateCloudflareIceServers();
 
     const roomId = z.string().uuid().parse(req.params.id);
     const sessionId = z.string().uuid().parse(req.params.sessionId);
@@ -604,43 +612,59 @@ roomLive.post(
       const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : userId);
       const isHost = openSession.host_id === userId;
 
-      const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-        identity: userId,
-        name: participantName,
-        ttl: "4h",
-        metadata: JSON.stringify({
-          kind: "open",
-          openSessionId: openSession.id,
-          roomId: openSession.room_id,
-          media: openSession.media,
-          role: role || "member",
-          isHost,
-          fullName: profile?.full_name || null,
-          username: profile?.username || null,
-          avatarUrl: profile?.avatar_url || null,
-        }),
-      });
+      let token = `webrtc_session_${openSession.id}`;
+      let provider: "livekit" | "webrtc" = "webrtc";
+      let liveUrl = "";
 
-      at.addGrant({
-        roomJoin: true,
-        room: openSession.livekit_room,
-        canSubscribe: true,
-        canPublish: true,
-        canPublishData: true,
-        canPublishSources:
-          openSession.media === "audio"
-            ? [TrackSource.MICROPHONE]
-            : [
-                TrackSource.CAMERA,
-                TrackSource.MICROPHONE,
-                TrackSource.SCREEN_SHARE,
-                TrackSource.SCREEN_SHARE_AUDIO,
-              ],
-      });
+      if (hasLiveKit) {
+        try {
+          const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
+            identity: userId,
+            name: participantName,
+            ttl: "4h",
+            metadata: JSON.stringify({
+              kind: "open",
+              openSessionId: openSession.id,
+              roomId: openSession.room_id,
+              media: openSession.media,
+              role: role || "member",
+              isHost,
+              fullName: profile?.full_name || null,
+              username: profile?.username || null,
+              avatarUrl: profile?.avatar_url || null,
+            }),
+          });
+
+          at.addGrant({
+            roomJoin: true,
+            room: openSession.livekit_room,
+            canSubscribe: true,
+            canPublish: true,
+            canPublishData: true,
+            canPublishSources:
+              openSession.media === "audio"
+                ? [TrackSource.MICROPHONE]
+                : [
+                    TrackSource.CAMERA,
+                    TrackSource.MICROPHONE,
+                    TrackSource.SCREEN_SHARE,
+                    TrackSource.SCREEN_SHARE_AUDIO,
+                  ],
+          });
+
+          token = await at.toJwt();
+          provider = "livekit";
+          liveUrl = env.LIVEKIT_URL!;
+        } catch (e) {
+          logger.warn({ err: (e as Error).message }, "LiveKit token generation failed, using WebRTC fallback");
+        }
+      }
 
       return res.json({
-        url: env.LIVEKIT_URL,
-        token: await at.toJwt(),
+        provider,
+        url: liveUrl,
+        token,
+        iceServers: iceConfig.iceServers,
         sessionId: openSession.id,
         roomName: openSession.livekit_room,
         participantName,
@@ -680,47 +704,63 @@ roomLive.post(
     const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : userId);
     const roomName = `skillbridge-session-${studySession.id}`;
 
-    const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-      identity: userId,
-      name: participantName,
-      ttl: "4h",
-      metadata: JSON.stringify({
-        kind: "study",
-        sessionId: studySession.id,
-        roomId: studySession.room_id,
-        role: role || "member",
-        isHost,
-        fullName: profile?.full_name || null,
-        username: profile?.username || null,
-        avatarUrl: profile?.avatar_url || null,
-      }),
-    });
+    let token = `webrtc_session_${studySession.id}`;
+    let provider: "livekit" | "webrtc" = "webrtc";
+    let liveUrl = "";
 
-    at.addGrant({
-      roomJoin: true,
-      room: roomName,
-      canSubscribe: true,
-      canPublish: true,
-      canPublishData: true,
-      canPublishSources:
-        studySession.media === "audio"
-          ? [TrackSource.MICROPHONE]
-          : [
-              TrackSource.CAMERA,
-              TrackSource.MICROPHONE,
-              TrackSource.SCREEN_SHARE,
-              TrackSource.SCREEN_SHARE_AUDIO,
-            ],
-    });
+    if (hasLiveKit) {
+      try {
+        const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
+          identity: userId,
+          name: participantName,
+          ttl: "4h",
+          metadata: JSON.stringify({
+            kind: "study",
+            sessionId: studySession.id,
+            roomId: studySession.room_id,
+            role: role || "member",
+            isHost,
+            fullName: profile?.full_name || null,
+            username: profile?.username || null,
+            avatarUrl: profile?.avatar_url || null,
+          }),
+        });
+
+        at.addGrant({
+          roomJoin: true,
+          room: roomName,
+          canSubscribe: true,
+          canPublish: true,
+          canPublishData: true,
+          canPublishSources:
+            studySession.media === "audio"
+              ? [TrackSource.MICROPHONE]
+              : [
+                  TrackSource.CAMERA,
+                  TrackSource.MICROPHONE,
+                  TrackSource.SCREEN_SHARE,
+                  TrackSource.SCREEN_SHARE_AUDIO,
+                ],
+        });
+
+        token = await at.toJwt();
+        provider = "livekit";
+        liveUrl = env.LIVEKIT_URL!;
+      } catch (e) {
+        logger.warn({ err: (e as Error).message }, "LiveKit token generation failed, using WebRTC fallback");
+      }
+    }
 
     res.json({
-      url: env.LIVEKIT_URL,
-      token: await at.toJwt(),
+      provider,
+      url: liveUrl,
+      token,
+      iceServers: iceConfig.iceServers,
       sessionId: studySession.id,
       roomName,
       participantName,
       isHost,
-      media: studySession.media || "video",
+      media: studySession.media,
       kind: "study",
     });
   }),

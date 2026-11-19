@@ -15,7 +15,7 @@ import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { useTheme, radius } from "@/theme";
+import { useTheme } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
 
 interface DirectCallModalProps {

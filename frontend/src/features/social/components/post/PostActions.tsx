@@ -6,7 +6,6 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withSequence,
-  withTiming,
 } from "react-native-reanimated";
 import { useTheme } from "@/theme";
 import { Row, triggerHaptic } from "@/components/ui";
@@ -29,7 +28,7 @@ export function PostActions({
   onSharePress,
   onSavePress,
 }: PostActionsProps) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [showPicker, setShowPicker] = useState(false);
 
   const isLiked = Boolean(post.my_reaction || (post as any).is_liked);
@@ -87,11 +86,15 @@ export function PostActions({
             style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
           >
             <Animated.View style={heartAnimatedStyle}>
-              <MaterialCommunityIcons
-                name={isLiked ? "heart" : "heart-outline"}
-                size={26}
-                color={isLiked ? "#ED4956" : colors.text}
-              />
+              {activeReaction && activeReaction.type !== "like" ? (
+                <Text style={{ fontSize: 22 }}>{activeReaction.emoji}</Text>
+              ) : (
+                <MaterialCommunityIcons
+                  name={isLiked ? "heart" : "heart-outline"}
+                  size={26}
+                  color={isLiked ? "#ED4956" : colors.text}
+                />
+              )}
             </Animated.View>
           </Pressable>
 

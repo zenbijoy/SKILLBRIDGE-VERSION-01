@@ -18,6 +18,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Platform,
   useWindowDimensions,
   type ViewToken,
 } from "react-native";
@@ -183,6 +184,15 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         badge: "new",
       },
       {
+        key: "ct-prep",
+        icon: "lightning-bolt-circle",
+        title: "CT Exam Prep & AI Guide",
+        subtitle: "AI syllabi plans & mock tests",
+        route: "/ct",
+        color: "#8B5CF6",
+        badge: "new",
+      },
+      {
         key: "academic-schedule",
         icon: "calendar-clock",
         title: "Visual Routine",
@@ -292,7 +302,9 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         key: "live-streaming",
         icon: "broadcast",
         title: "Live Workshops",
+        titleKey: "liveWorkshops.title",
         subtitle: "Peer broadcast sessions",
+        subtitleKey: "liveWorkshops.subtitle",
         route: "/live",
         color: "#EF4444",
       },
@@ -723,10 +735,17 @@ export default function ToolsScreen() {
   });
   const profile = data?.profile;
 
-  const columns = width < CARD_COLUMNS_BREAKPOINT ? 1 : 2;
+  const effectiveWidth = useMemo(() => {
+    if (Platform.OS === "web") {
+      return Math.min(width, 780);
+    }
+    return width;
+  }, [width]);
+
+  const columns = effectiveWidth < CARD_COLUMNS_BREAKPOINT ? 1 : effectiveWidth >= 700 ? 3 : 2;
   const cardWidth = useMemo(
-    () => Math.floor((width - H_PADDING * 2 - CARD_GAP * (columns - 1)) / columns),
-    [width, columns],
+    () => Math.floor((effectiveWidth - H_PADDING * 2 - CARD_GAP * (columns - 1)) / columns),
+    [effectiveWidth, columns],
   );
 
   // Flattened data: Profile + categories + cards + Sign Out card
@@ -1174,28 +1193,28 @@ const s = StyleSheet.create({
   },
   card: {
     width: "100%",
-    minHeight: 106,
-    borderRadius: radius.lg,
+    minHeight: 110,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 12,
+    padding: 13,
     gap: 4,
-    elevation: 1,
+    elevation: 2,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowRadius: 8,
   },
   cardTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 6,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   cardIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },

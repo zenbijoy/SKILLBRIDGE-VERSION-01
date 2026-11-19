@@ -30,7 +30,9 @@
     "db:test:fresh": "node scripts/db-test-fresh.mjs",
     "db:test:upgrade": "node scripts/db-test-upgrade.mjs",
     "db:test": "npm run db:test:fresh && npm run db:test:upgrade",
-    "db:verify": "node scripts/db-verify-schema.mjs"
+    "db:verify": "node scripts/db-verify-schema.mjs",
+    "db:verify:supabase": "node scripts/verify-supabase-complete.mjs",
+    "db:apply": "node scripts/apply-supabase-migrations.mjs"
   },
   "engines": {
     "node": ">=22"

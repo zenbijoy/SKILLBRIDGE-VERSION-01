@@ -21,6 +21,7 @@ export const LiveKitCallBridge: React.FC<LiveKitCallBridgeProps> = ({
   peerAvatar,
   onConnected,
   onDisconnected,
+  onError,
 }) => {
   useEffect(() => {
     AudioSession.startAudioSession();
@@ -40,6 +41,8 @@ export const LiveKitCallBridge: React.FC<LiveKitCallBridgeProps> = ({
         audio={!isMuted}
         video={type === "video" && isVideoEnabled}
         options={{ adaptiveStream: true, dynacast: true }}
+        onError={(err) => onError?.(err)}
+        onDisconnected={() => onDisconnected?.()}
       >
         <NativeCallInterior
           type={type}

@@ -91,7 +91,7 @@ export function FeaturedHeroCarousel({ mode, onDismiss }: FeaturedHeroCarouselPr
     }, 10000);
 
     return () => clearTimeout(autoVanishTimer);
-  }, [isDismissed, onDismiss]);
+  }, [isDismissed, onDismiss, opacity, scaleY]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = event.nativeEvent.contentOffset.x;

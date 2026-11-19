@@ -497,12 +497,22 @@ function humanKind(kind: string): string {
 }
 
 const s = StyleSheet.create({
-  filterBar: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginVertical: 8 },
-  filterTab: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1 },
-  sectionContainer: { marginTop: 14 },
+  filterBar: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginVertical: 10 },
+  filterTab: {
+    paddingHorizontal: 14,
+    paddingVertical: 8.5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  sectionContainer: { marginTop: 16 },
   sectionHeader: { fontSize: 12, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 },
   row: { flexDirection: "row", gap: 12, alignItems: "center" },
-  icon: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  icon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   itemTitle: { fontSize: 15, fontWeight: "800", flex: 1 },
   unreadDot: { width: 8, height: 8, borderRadius: 4 },

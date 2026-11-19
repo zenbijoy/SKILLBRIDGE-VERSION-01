@@ -34,6 +34,7 @@ test("Room Live & Open Sessions API Suite", async (t) => {
       lt: () => chain,
       limit: () => chain,
       order: () => chain,
+      range: () => chain,
       single: () => Promise.resolve({ data, error }),
       maybeSingle: () => Promise.resolve({ data, error }),
       then: (resolve: any) => resolve({ data, error }),

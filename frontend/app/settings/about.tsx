@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import { Image, Linking, StyleSheet, Text, View, Alert } from "react-native";
-import { Button, Card, H1, H2, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
+import { Button, Card, H1, H2, Muted, Row, Screen, triggerHaptic } from "@/components/ui";
 import { useI18n } from "@/i18n";
 import { useTheme } from "@/theme";
 

@@ -21,6 +21,7 @@ export const LiveKitCallBridge: React.FC<LiveKitCallBridgeProps> = ({
   peerAvatar,
   onConnected,
   onDisconnected,
+  onError,
 }) => {
   if (!url || !token) return null;
 
@@ -34,6 +35,7 @@ export const LiveKitCallBridge: React.FC<LiveKitCallBridgeProps> = ({
       options={{ adaptiveStream: true, dynacast: true }}
       style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }}
       onDisconnected={onDisconnected}
+      onError={(err) => onError?.(err)}
     >
       <CallInterior
         type={type}

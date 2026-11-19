@@ -6,7 +6,7 @@ import { logger } from "../lib/logger.js";
  * These ensure zero-downtime operation out-of-the-box across 3 separate free-tier accounts.
  */
 const DEFAULT_GEMINI_KEYS: string[] = (() => {
-  const enc = "QVEuQWI4Uk42SmtSYWJEVzBrQnZaRmM0Q3JXcFpUT3hfTk5YN2Ftdk1tbWlHeVJjb2xId2csQVEuQWI4Uk42S0trZEVTOWNHM1B3V0dYVjE3akduTHhkaWtGSHZ0WW9xQ2FxWE91NHdPaFEsQVEuQWI4Uk42TFlnS21ZT0dFZlBxWVUtVURfNmVlcEdfVk5STmNPb2NmT3h6WTdWSHFmM1E=";
+  const enc = "QVEuQWI4Uk42S0trZEVTOWNHM1B3V0dYVjE3akduTHhkaWtGSHZ0WW9xQ2FxWE91NHdPaFEsQVEuQWI4Uk42TFlnS21ZT0dFZlBxWVUtVURfNmVlcEdfVk5STmNPb2NmT3h6WTdWSHFmM1EsQVEuQWI4Uk42SmtSYWJEVzBrQnZaRmM0Q3JXcFpUT3hfTk5YN2Ftdk1tbWlHeVJjb2xId2c=";
   try {
     return Buffer.from(enc, "base64").toString("utf-8").split(",");
   } catch {
@@ -67,9 +67,10 @@ function maskKey(key: string): string {
 
 export const GEMINI_FALLBACK_MODELS = [
   "gemini-3.5-flash-lite",
-  "gemini-3-flash-preview",
   "gemini-3.5-flash",
-  "gemini-3.8-flash",
+  "gemini-3-flash-preview",
+  "gemini-flash-lite-latest",
+  "gemini-flash-latest",
 ] as const;
 
 class GeminiKeyManager {
@@ -109,14 +110,18 @@ class GeminiKeyManager {
 
     const uniqueKeys = Array.from(new Set(rawKeys.filter((k) => k && k.length > 10)));
 
-    this.keys = uniqueKeys.map((key) => ({
-      key,
-      masked: maskKey(key),
-      cooldownUntil: 0,
-      failureCount: 0,
-      successCount: 0,
-      lastUsedAt: 0,
-    }));
+    this.keys = uniqueKeys.map((key) => {
+      const isKnownDisabled = key.includes("AQ.Ab8RN6JktRabDW0kBvZFc4CrWpZTOx_NNX7amvMmmiGyRcolHwg");
+      return {
+        key,
+        masked: maskKey(key),
+        cooldownUntil: isKnownDisabled ? Date.now() + 365 * 24 * 60 * 60_000 : 0,
+        failureCount: isKnownDisabled ? 1 : 0,
+        successCount: 0,
+        lastUsedAt: 0,
+        lastErrorStatus: isKnownDisabled ? 401 : undefined,
+      };
+    });
 
     logger.info(
       { keyCount: this.keys.length, keys: this.keys.map((k) => k.masked) },
@@ -247,7 +252,7 @@ class GeminiKeyManager {
         requestBody.generationConfig = options.generationConfig;
       }
 
-      const timeoutMs = options.timeoutMs || 25_000;
+      const timeoutMs = options.timeoutMs || 45_000;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -330,8 +335,8 @@ class GeminiKeyManager {
     const res = await this.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       systemInstruction: options?.systemInstruction,
-      preferredModel: "gemini-flash-lite-latest",
-      timeoutMs: options?.timeoutMs || 20_000,
+      preferredModel: "gemini-3.5-flash-lite",
+      timeoutMs: options?.timeoutMs || 35_000,
       generationConfig: {
         temperature: options?.temperature ?? 0.2,
         responseMimeType: "application/json",

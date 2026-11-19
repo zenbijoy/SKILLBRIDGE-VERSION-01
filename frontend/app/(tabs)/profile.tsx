@@ -33,7 +33,7 @@ import {
   Skeleton,
   triggerHaptic,
 } from "@/components/ui";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { fetchActivityTimeline, type ActivityEvent } from "@/features/growth/growthApi";
 import { nextGenAvatarFrames } from "@/assets/nextgen";
@@ -643,18 +643,23 @@ export default function OwnProfileScreen() {
 
 const s = StyleSheet.create({
   headerCard: {
-    borderRadius: radius.lg,
+    borderRadius: 20,
     borderWidth: 1,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   coverWrapper: {
-    height: 125,
+    height: 135,
     width: "100%",
     position: "relative",
     backgroundColor: "#1e293b",
   },
   cover: {
-    height: 125,
+    height: 135,
     width: "100%",
   },
   coverImage: {

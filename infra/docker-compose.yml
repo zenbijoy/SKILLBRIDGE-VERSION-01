@@ -85,6 +85,8 @@ services:
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../release-apk:/srv/release-apk:ro
+      - ../showcase:/srv/showcase:ro
       - caddy_data:/data
       - caddy_config:/config
     logging:

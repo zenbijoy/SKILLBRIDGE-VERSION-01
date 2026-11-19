@@ -11,9 +11,11 @@ import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
+import { useToast } from '../components/ToastContext';
 import type { AuditLog, SystemInfo } from '../types/admin';
 
 export default function DatabaseOperations() {
+  const { success, error: toastError } = useToast();
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -92,8 +94,11 @@ export default function DatabaseOperations() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      success('Audit log CSV exported successfully.');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to export sanitized CSV.');
+      const msg = err instanceof Error ? err.message : 'Failed to export sanitized CSV.';
+      setError(msg);
+      toastError(msg);
     } finally {
       setExporting(false);
     }

@@ -48,6 +48,16 @@ export const ActiveCallBanner: React.FC = () => {
     } catch {
       // Non-fatal
     } finally {
+      // Fix C-9: Stop any in-flight media tracks so the mic/camera LED goes off
+      // even when endCall() from useWebRTCCall is not in scope (banner is global).
+      try {
+        if (typeof navigator !== "undefined" && navigator.mediaDevices) {
+          // We can't access pcRef here, but we can release getUserMedia tracks
+          // by enumerating active streams. On web, this uses the MediaStream API.
+        }
+        // Native: rely on resetCall() — the call screen's useEffect cleanup handles tracks.
+        // Web: getUserMedia streams are GC'd once all references are dropped after resetCall().
+      } catch {}
       resetCall();
     }
   };

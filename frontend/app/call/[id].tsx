@@ -8,7 +8,7 @@ import { useCallStore } from "@/features/calls/store/callStore";
 import { CallControls } from "@/features/calls/components/CallControls";
 import { ConnectionQuality } from "@/features/calls/components/ConnectionQuality";
 import { VideoView } from "@/features/calls/components/VideoView";
-import { initiateCallApi, getCallApi, acceptCallApi, rejectCallApi } from "@/features/calls/services/callApi";
+import { initiateCallApi, getCallApi, acceptCallApi, rejectCallApi, endCallApi } from "@/features/calls/services/callApi";
 import { RemoteAudio } from "@/features/calls/components/RemoteAudio";
 import { LiveKitCallBridge } from "@/features/calls/components/LiveKitCallBridge";
 import { supabase } from "@/lib/supabase";
@@ -162,6 +162,31 @@ export default function CallScreen() {
       isCancelled = true;
     };
   }, [existingCallId, activeCall, startCall, setCallStatus]);
+
+  // Fix C-3: Auto-timeout ring after 60s (caller side) if callee never responds.
+  // If activeCall transitions away from ringing/initiating, the timeout is cancelled.
+  useEffect(() => {
+    if (!activeCall) return;
+    if (activeCall.role !== "caller") return;
+    if (activeCall.status !== "ringing" && activeCall.status !== "initiating") return;
+
+    const ringTimeout = setTimeout(() => {
+      const current = useCallStore.getState().activeCall;
+      if (current && (current.status === "ringing" || current.status === "initiating")) {
+        const socket = getSocket();
+        if (socket && current.callId) {
+          socket.emit("call:end", { callId: current.callId, durationSeconds: 0 });
+        }
+        // Use static import (already imported at top of file)
+        endCallApi(current.callId, 0, "missed").catch(() => {});
+        endCall("missed");
+        setTimeout(() => { setMinimized(false); router.back(); }, 1200);
+      }
+    }, 60_000);
+
+    return () => clearTimeout(ringTimeout);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCall?.status, activeCall?.role]);
 
   // Auto-dismiss screen if call ended/failed/declined
   useEffect(() => {
@@ -347,6 +372,23 @@ export default function CallScreen() {
     activeCall?.provider === "livekit" &&
     Boolean(activeCall?.providerConfig?.token && activeCall?.providerConfig?.url);
 
+  const handleLiveKitFailover = async (err: any) => {
+    console.warn("LiveKit call connection failed, failing over to WebRTC P2P:", err);
+    if (!activeCall) return;
+    try {
+      startCall({
+        ...activeCall,
+        provider: "webrtc",
+      });
+      const stream = await initLocalMedia(activeCall.type);
+      await setupPeerConnection(stream);
+      const socket = getSocket();
+      socket?.emit("call:ready", { callId: activeCall.callId });
+    } catch (fallbackErr) {
+      console.error("WebRTC fallback setup error:", fallbackErr);
+    }
+  };
+
   return (
     <Pressable
       style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}
@@ -371,6 +413,7 @@ export default function CallScreen() {
             setCallStatus("connected");
           }}
           onDisconnected={handleEndCall}
+          onError={handleLiveKitFailover}
         />
       ) : (
         <>

@@ -1,15 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Users2, Calendar, FileText, Award, Search, Check, EyeOff } from 'lucide-react';
+import {
+  Award,
+  Calendar,
+  Check,
+  EyeOff,
+  FileText,
+  Search,
+  Users2,
+  X,
+} from 'lucide-react';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { LoadingState, ErrorState } from '../components/States';
+import { useToast } from '../components/ToastContext';
 
 export default function CommunityOps() {
+  const { success, error: toastError } = useToast();
   const [tab, setTab] = useState<'clubs' | 'events' | 'resources' | 'quizzes'>('clubs');
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+
+  // Action modal
+  const [actionModal, setActionModal] = useState<{ id: string; action: string; title: string } | null>(null);
+  const [reason, setReason] = useState('');
+  const [submittingAction, setSubmittingAction] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -30,14 +46,32 @@ export default function CommunityOps() {
     void loadData();
   }, [loadData]);
 
-  const handleAction = async (entityId: string, action: string) => {
-    const reason = window.prompt(`Reason for ${action}:`);
-    if (!reason) return;
+  const handleOpenAction = (id: string, action: string, title: string) => {
+    setActionModal({ id, action, title });
+    setReason('');
+  };
+
+  const handleConfirmAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actionModal) return;
+    if (reason.trim().length < 3) {
+      toastError('Please enter a descriptive reason for this action.');
+      return;
+    }
+
+    setSubmittingAction(true);
     try {
-      await api.patch(`/admin/community/${tab}/${entityId}`, { action, reason });
+      await api.patch(`/admin/community/${tab}/${actionModal.id}`, {
+        action: actionModal.action,
+        reason: reason.trim(),
+      });
+      success(`Successfully executed "${actionModal.action}" for ${actionModal.title}.`);
+      setActionModal(null);
       void loadData();
     } catch (err: any) {
-      alert(err?.message || 'Action failed');
+      toastError(err?.message || 'Action failed.');
+    } finally {
+      setSubmittingAction(false);
     }
   };
 
@@ -45,7 +79,7 @@ export default function CommunityOps() {
     <div>
       <PageHeader
         eyebrow="Community Operations"
-        title="Clubs, Events & Shared Resources"
+        title="Clubs, Events &amp; Shared Resources"
         description="Review student-led clubs, campus events, shared academic files, and skill assessment quizzes."
         actions={
           <div className="flex flex-wrap gap-1 bg-slate-200/70 p-1 rounded-xl">
@@ -118,7 +152,9 @@ export default function CommunityOps() {
                       <td>
                         <strong className="text-slate-900 text-xs">{item.name || item.title}</strong>
                         {item.description && (
-                          <p className="text-[11px] text-slate-500 line-clamp-1 max-w-sm mt-0.5">{item.description}</p>
+                          <p className="text-[11px] text-slate-500 line-clamp-1 max-w-sm mt-0.5">
+                            {item.description}
+                          </p>
                         )}
                       </td>
                       <td>
@@ -143,15 +179,15 @@ export default function CommunityOps() {
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            className="btn-secondary py-1 px-2.5 text-[11px] text-emerald-700"
-                            onClick={() => handleAction(item.id, 'approve')}
+                            className="btn-secondary py-1 px-2.5 text-[11px] text-emerald-700 flex items-center gap-1"
+                            onClick={() => handleOpenAction(item.id, 'approve', item.name || item.title)}
                           >
                             <Check size={13} /> Approve
                           </button>
                           <button
                             type="button"
-                            className="btn-secondary py-1 px-2.5 text-[11px] text-slate-600"
-                            onClick={() => handleAction(item.id, 'hide')}
+                            className="btn-secondary py-1 px-2.5 text-[11px] text-slate-600 flex items-center gap-1"
+                            onClick={() => handleOpenAction(item.id, 'hide', item.name || item.title)}
                           >
                             <EyeOff size={13} /> Hide
                           </button>
@@ -162,6 +198,56 @@ export default function CommunityOps() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ACTION REASON MODAL */}
+      {actionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-extrabold text-slate-900 capitalize">
+                Confirm {actionModal.action}: {actionModal.title}
+              </h3>
+              <button onClick={() => setActionModal(null)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmAction} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Reason for {actionModal.action} (Audited)
+                </label>
+                <textarea
+                  required
+                  autoFocus
+                  rows={3}
+                  placeholder="e.g. Approved verified student robotics club"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="field w-full text-xs font-sans"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setActionModal(null)}
+                  className="btn-secondary text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingAction || reason.trim().length < 3}
+                  className="btn-primary text-xs"
+                >
+                  {submittingAction ? 'Executing…' : `Confirm ${actionModal.action}`}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

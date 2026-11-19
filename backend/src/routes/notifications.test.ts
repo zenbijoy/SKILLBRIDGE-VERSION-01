@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert";
+import request from "supertest";
+import * as webpush from "web-push";
+import { createApp } from "../app.js";
 import { NotificationService } from "../services/notificationService.js";
 import { registerSocketServer, getSocketServer } from "../socket.js";
 import { isWithinQuietHours } from "../services/push.js";
+import { getVapidPublicKey, setWebPushSender, WebPushProvider } from "../services/PushService.js";
 
 test("Next-Gen Notification System Verification Suite", async (t) => {
   const origFetch = globalThis.fetch;
@@ -174,5 +178,130 @@ test("Next-Gen Notification System Verification Suite", async (t) => {
     assert.strictEqual(socketDispatched.payload.data.url, "/room/room-abc");
 
     globalThis.fetch = origFetch;
+  });
+
+  // 4. Web Push Protocol and VAPID Endpoints
+  await t.test("GET /api/v1/notifications/vapid-public-key returns configured VAPID key", async () => {
+    const app = createApp();
+    const res = await request(app).get("/api/v1/notifications/vapid-public-key");
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.publicKey);
+    assert.strictEqual(typeof res.body.publicKey, "string");
+    assert.strictEqual(res.body.publicKey, getVapidPublicKey());
+  });
+
+  await t.test("POST /api/v1/notifications/devices accepts standards-compliant Web Push subscription JSON", async () => {
+    const { admin: activeAdmin, setAdminClient } = await import("../lib/db.js");
+    const origAdmin = activeAdmin;
+
+    const mockChain: any = {
+      upsert: () => mockChain,
+      select: () => mockChain,
+      single: async () => ({
+        data: {
+          token_fingerprint: "mock_fp_1234567890",
+          platform: "web",
+          provider: "web",
+        },
+        error: null,
+      }),
+    };
+
+    const mockAdmin: any = {
+      auth: {
+        getUser: async () => ({
+          data: { user: { id: "user-target-456", role: "authenticated" } },
+          error: null,
+        }),
+      },
+      from: (table: string) => {
+        if (table === "device_tokens") return mockChain;
+        if (table === "profiles") return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { roles: ["student"], account_status: "active" }, error: null }) }) }) };
+        if (table === "admin_accounts") return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+        return mockChain;
+      },
+    };
+
+    setAdminClient(mockAdmin);
+
+    try {
+      const app = createApp();
+      const mockSubscription = {
+        endpoint: "https://fcm.googleapis.com/fcm/send/test-web-push-client-token-with-large-payload-length-testing-w3c-standard-rfc8292",
+        expirationTime: null,
+        keys: {
+          p256dh: "BMs5...mock_p256dh_key_with_length_greater_than_normal...",
+          auth: "mock_auth_secret_token",
+        },
+      };
+      const subscriptionString = JSON.stringify(mockSubscription);
+
+      const res = await request(app)
+        .post("/api/v1/notifications/devices")
+        .set("Authorization", "Bearer valid_mock_token")
+        .send({
+          token: subscriptionString,
+          platform: "web",
+          provider: "web",
+          device_id: "web_browser_client_123",
+          app_version: "2.0.10",
+        });
+
+      assert.strictEqual(res.status, 201);
+      assert.ok(res.body);
+    } finally {
+      setAdminClient(origAdmin);
+    }
+  });
+
+  await t.test("WebPushProvider dispatches notification to registered web subscription", async () => {
+    const { admin: mockAdmin } = await import("../lib/db.js");
+    const origFrom = mockAdmin.from;
+
+    let invoked = false;
+    let sentPayload: any = null;
+    setWebPushSender((async (_sub: any, payload: any) => {
+      invoked = true;
+      sentPayload = JSON.parse(payload);
+      return { statusCode: 201 };
+    }) as any);
+
+    const testSubscription = {
+      endpoint: "https://fcm.googleapis.com/fcm/send/test-endpoint",
+      keys: { p256dh: "test_p256dh", auth: "test_auth" },
+    };
+
+    const mockTokensChain: any = {
+      select: () => mockTokensChain,
+      eq: () => mockTokensChain,
+      or: () => Promise.resolve({
+        data: [{ token: JSON.stringify(testSubscription) }],
+        error: null,
+      }),
+    };
+
+    mockAdmin.from = ((table: string) => {
+      if (table === "device_tokens") return mockTokensChain;
+      return origFrom.call(mockAdmin, table);
+    }) as any;
+
+    try {
+      const provider = new WebPushProvider();
+      await provider.sendNotification("user-target-456", {
+        title: "Web Test Alert",
+        body: "Hello Web Push",
+        data: { url: "/feed" },
+        priority: "high",
+      });
+      assert.strictEqual(invoked, true);
+      assert.strictEqual(sentPayload.title, "Web Test Alert");
+      assert.strictEqual(sentPayload.body, "Hello Web Push");
+      assert.strictEqual(sentPayload.data.url, "/feed");
+      assert.strictEqual(sentPayload.requireInteraction, true);
+    } finally {
+      mockAdmin.from = origFrom;
+      const wp = await import("web-push");
+      setWebPushSender(wp.sendNotification);
+    }
   });
 });

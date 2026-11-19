@@ -15,7 +15,6 @@ import Animated, {
   FadeInRight,
   FadeInUp,
   SlideInRight,
-  ZoomIn,
 } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

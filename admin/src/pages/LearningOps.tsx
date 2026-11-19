@@ -4,8 +4,10 @@ import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { LoadingState, ErrorState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
+import { useToast } from '../components/ToastContext';
 
 export default function LearningOps() {
+  const { success, error: toastError } = useToast();
   const [tab, setTab] = useState<'rooms' | 'sessions'>('rooms');
   const [roomsData, setRoomsData] = useState<any[]>([]);
   const [sessionsData, setSessionsData] = useState<any[]>([]);
@@ -67,11 +69,12 @@ export default function LearningOps() {
           reason: reason.trim(),
         });
       }
+      success(`Action ${actionModal.action} applied to ${actionModal.title}.`);
       setActionModal(null);
       setReason('');
       void loadTab();
     } catch (err: any) {
-      alert(err?.message || 'Action failed');
+      toastError(err?.message || 'Action failed.');
     } finally {
       setSubmitting(false);
     }

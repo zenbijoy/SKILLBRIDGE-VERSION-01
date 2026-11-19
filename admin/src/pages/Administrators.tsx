@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { ShieldAlert, ShieldCheck, UserPlus, RefreshCw, XCircle, AlertTriangle } from 'lucide-react';
+import { useToast } from '../components/ToastContext';
 
 export function Administrators() {
+  const { success, error: toastError } = useToast();
   const [members, setMembers] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,27 +62,30 @@ export function Administrators() {
     if (!window.confirm('Are you sure you want to revoke this invitation?')) return;
     try {
       await api.delete(`/admin/invitations/${id}`);
+      success('Invitation revoked successfully.');
       fetchMembers();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to revoke invite');
+      toastError(err.response?.data?.error || 'Failed to revoke invite');
     }
   };
 
   const handleChangeStatus = async (id: string, newStatus: string) => {
     try {
       await api.patch(`/admin/members/${id}/status`, { status: newStatus });
+      success(`Administrator status updated to ${newStatus}.`);
       fetchMembers();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to update status');
+      toastError(err.response?.data?.error || 'Failed to update status');
     }
   };
   
   const handleChangeRole = async (id: string, newRole: string) => {
     try {
       await api.patch(`/admin/members/${id}/role`, { role: newRole });
+      success(`Administrator role updated to ${newRole}.`);
       fetchMembers();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to update role');
+      toastError(err.response?.data?.error || 'Failed to update role');
     }
   };
 

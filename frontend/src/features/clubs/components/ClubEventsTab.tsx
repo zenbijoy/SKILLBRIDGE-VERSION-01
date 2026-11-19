@@ -123,7 +123,7 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
           `/clubs/${clubId}/events/${item.id}/attendance-code`
         );
         setOrganizerCode(res.data?.attendance_code || "AUTO-GEN");
-      } catch (err: unknown) {
+      } catch {
         setOrganizerCode(item.attendance_code || "UNAVAILABLE");
       } finally {
         setLoadingOrganizerCode(false);
@@ -274,7 +274,7 @@ export const ClubEventsTab: React.FC<ClubEventsTabProps> = ({
       </View>
 
       {/* Events List */}
-      {isLoading ? (
+      {isLoading || isEventsLoading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>

@@ -3,12 +3,40 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const sqlPath = path.resolve(__dirname, "../infra/supabase/RUN_IN_SUPABASE_SQL_EDITOR.sql");
+
+// Auto-load backend/.env if SUPABASE_ACCESS_TOKEN is not in environment
+if (!process.env.SUPABASE_ACCESS_TOKEN) {
+  const envPath = path.resolve(__dirname, "../backend/.env");
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, "utf-8").split("\n");
+    for (const line of lines) {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        const key = match[1];
+        let val = (match[2] || "").trim();
+        if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+        if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  }
+}
+
+const targetFileArg = process.argv[2];
+const sqlPath = targetFileArg
+  ? path.resolve(process.cwd(), targetFileArg)
+  : path.resolve(__dirname, "../infra/supabase/RUN_IN_SUPABASE_SQL_EDITOR.sql");
+
+if (!fs.existsSync(sqlPath)) {
+  console.error(`[Supabase CLI Runner] SQL file not found: ${sqlPath}`);
+  process.exit(1);
+}
+
 const sql = fs.readFileSync(sqlPath, "utf-8");
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
 if (!token) {
-  console.error("Missing SUPABASE_ACCESS_TOKEN environment variable.");
+  console.error("Missing SUPABASE_ACCESS_TOKEN environment variable (or in backend/.env).");
   process.exit(1);
 }
 const projectRef = process.env.SUPABASE_PROJECT_REF || "wyqsoxkwmulhpcoslnoj";

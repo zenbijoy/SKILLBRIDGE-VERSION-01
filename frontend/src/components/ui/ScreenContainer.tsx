@@ -19,7 +19,24 @@ export function ScreenContainer({
   const { colors } = useTheme();
   
   const content = (
-    <SafeAreaView style={[{ flex: 1, backgroundColor: colors.bg }, style]} edges={edges}>
+    <SafeAreaView
+      style={[
+        {
+          flex: 1,
+          backgroundColor: colors.bg,
+          ...(Platform.OS === "web"
+            ? {
+                width: "100%",
+                maxWidth: 540,
+                alignSelf: "center" as const,
+                boxSizing: "border-box" as const,
+              }
+            : {}),
+        },
+        style,
+      ]}
+      edges={edges}
+    >
       {children}
     </SafeAreaView>
   );

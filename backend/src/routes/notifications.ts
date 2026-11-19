@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { getVapidPublicKey } from "../services/PushService.js";
 export const notifications = Router();
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const preferenceSchema = z.object({
@@ -104,12 +105,19 @@ notifications.patch(
     res.json(data);
   }),
 );
+notifications.get(
+  "/vapid-public-key",
+  wrap(async (_req, res) => {
+    res.json({ publicKey: getVapidPublicKey() });
+  }),
+);
+
 notifications.post(
   "/devices",
   wrap(async (req, res) => {
     const { token, platform, provider = "expo", device_id, app_version } = z
       .object({ 
-        token: z.string().trim().min(10).max(512),
+        token: z.string().trim().min(10).max(4096),
         platform: z.string().trim().min(1).max(30).regex(/^[a-z0-9_-]+$/i).optional(),
         provider: z.string().trim().min(1).max(30).regex(/^[a-z0-9_-]+$/i).optional(),
         device_id: z.string().trim().min(1).max(200).optional(),

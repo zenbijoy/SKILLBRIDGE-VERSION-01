@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -17,15 +16,13 @@ import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import * as WebBrowser from "expo-web-browser";
 import * as Clipboard from "expo-clipboard";
 import { api } from "@/lib/api";
-import type { Profile } from "@/types";
 import {
   Button,
-  Card,
   Empty,
   ErrorState,
   H1,
@@ -1212,16 +1209,21 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   noteCard: {
-    padding: 14,
-    borderRadius: radius.lg,
+    padding: 15,
+    borderRadius: 18,
     borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   pdfBadgeWrap: {
     alignItems: "center",
     justifyContent: "center",
-    width: 48,
-    height: 54,
-    borderRadius: radius.md,
+    width: 50,
+    height: 56,
+    borderRadius: 14,
     backgroundColor: "rgba(239, 68, 68, 0.12)",
     borderWidth: 1,
     borderColor: "rgba(239, 68, 68, 0.25)",

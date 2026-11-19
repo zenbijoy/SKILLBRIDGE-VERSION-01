@@ -136,8 +136,10 @@ export function Screen({
   );
 
   const bottomPaddingCalculated =
-    Math.max(insets.bottom, 24) +
-    (autoHideNavContext?.bottomNavHeight ? autoHideNavContext.bottomNavHeight - 16 : 24);
+    Platform.OS === "web"
+      ? 24
+      : Math.max(insets.bottom, 24) +
+        (autoHideNavContext?.bottomNavHeight ? autoHideNavContext.bottomNavHeight - 16 : 24);
 
   const body = (
     <SafeAreaView
@@ -317,6 +319,7 @@ export function Pill({
         tone === "primary" && styles.pillPrimary,
         tone === "success" && styles.pillSuccess,
         tone === "info" && styles.pillInfo,
+        tone === "purple" && styles.pillPurple,
       ]}
     >
       <Text
@@ -328,6 +331,7 @@ export function Pill({
           tone === "danger" && { color: colors.danger },
           tone === "success" && { color: colors.success },
           tone === "info" && { color: colors.info },
+          tone === "purple" && { color: "#8B5CF6" },
         ]}
       >
         {children}
@@ -690,11 +694,11 @@ export function Empty({
 }) {
   const { colors } = useTheme();
   return (
-    <Card tone="soft" style={{ alignItems: "center", paddingVertical: 28, gap: 10 }}>
+    <Card tone="soft" style={{ alignItems: "center", paddingVertical: 32, paddingHorizontal: 20, gap: 12 }}>
       {animation ? (
         <Image
           source={animation}
-          style={{ width: 64, height: 64, marginBottom: 2 }}
+          style={{ width: 68, height: 68, marginBottom: 2 }}
           resizeMode="contain"
           accessible={false}
           accessibilityElementsHidden={true}
@@ -703,22 +707,33 @@ export function Empty({
       ) : (
         <View
           style={{
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            backgroundColor: `${colors.primary}18`,
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            backgroundColor: `${colors.primary}12`,
             alignItems: "center",
             justifyContent: "center",
-            borderWidth: 1,
-            borderColor: `${colors.primary}33`,
+            borderWidth: 1.5,
+            borderColor: `${colors.primary}2B`,
             marginBottom: 2,
           }}
         >
-          <MaterialCommunityIcons name={icon} size={28} color={colors.primary} />
+          <View
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: `${colors.primary}1F`,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <MaterialCommunityIcons name={icon} size={26} color={colors.primary} />
+          </View>
         </View>
       )}
-      <H2 style={{ textAlign: "center", fontSize: 18, fontWeight: "700" }}>{title}</H2>
-      <Muted style={{ textAlign: "center", maxWidth: 280, fontSize: 13, lineHeight: 18 }}>{detail}</Muted>
+      <H2 style={{ textAlign: "center", fontSize: 18, fontWeight: "800", letterSpacing: -0.3 }}>{title}</H2>
+      <Muted style={{ textAlign: "center", maxWidth: 280, fontSize: 13, lineHeight: 19 }}>{detail}</Muted>
       {actionTitle ? <Button title={actionTitle} variant="secondary" onPress={onAction} compact /> : null}
     </Card>
   );
@@ -727,12 +742,34 @@ export function Empty({
 export function ErrorState({ title = "Something went wrong", detail, onRetry }: { title?: string; detail?: string; onRetry?: () => void }) {
   const { colors } = useTheme();
   return (
-    <Card tone="soft" style={{ alignItems: "center", paddingVertical: 32, gap: 10 }}>
-      <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${colors.danger}18`, alignItems: "center", justifyContent: "center" }}>
-        <MaterialCommunityIcons name="alert-circle-outline" size={32} color={colors.danger} />
+    <Card tone="soft" style={{ alignItems: "center", paddingVertical: 32, paddingHorizontal: 20, gap: 12 }}>
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          backgroundColor: `${colors.danger}12`,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1.5,
+          borderColor: `${colors.danger}2B`,
+        }}
+      >
+        <View
+          style={{
+            width: 46,
+            height: 46,
+            borderRadius: 23,
+            backgroundColor: `${colors.danger}1F`,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <MaterialCommunityIcons name="alert-circle-outline" size={26} color={colors.danger} />
+        </View>
       </View>
-      <H2 style={{ textAlign: "center" }}>{title}</H2>
-      <Muted style={{ textAlign: "center", maxWidth: 280 }}>{detail ?? "We couldn't load this content."}</Muted>
+      <H2 style={{ textAlign: "center", fontSize: 18, fontWeight: "800", letterSpacing: -0.3 }}>{title}</H2>
+      <Muted style={{ textAlign: "center", maxWidth: 280, fontSize: 13, lineHeight: 19 }}>{detail ?? "We couldn't load this content."}</Muted>
       {onRetry ? <Button title="Try again" variant="secondary" onPress={onRetry} compact /> : null}
     </Card>
   );
@@ -858,57 +895,141 @@ const makeStyles = (colors: AppPalette, radius: typeof defaultRadius) =>
       borderColor: colors.border,
       gap: spacing.sm,
       shadowColor: colors.black,
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.05,
-      shadowRadius: 10,
-      elevation: 2,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.06,
+      shadowRadius: 14,
+      elevation: 3,
     },
-    cardSoft: { backgroundColor: colors.surface2, borderColor: colors.divider, shadowOpacity: 0, elevation: 0 },
-    cardPrimary: { backgroundColor: colors.primarySoft, borderColor: `${colors.primary}33`, shadowOpacity: 0, elevation: 0 },
-    cardGlow: {
-      backgroundColor: colors.surface,
-      borderColor: `${colors.primary}55`,
+    cardSoft: {
+      backgroundColor: colors.surface2,
+      borderColor: colors.divider,
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    cardPrimary: {
+      backgroundColor: colors.primarySoft,
+      borderColor: `${colors.primary}2E`,
       shadowColor: colors.primary,
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.22,
+      shadowOpacity: 0.12,
       shadowRadius: 12,
-      elevation: 4,
+      elevation: 2,
+    },
+    cardGlow: {
+      backgroundColor: colors.surface,
+      borderColor: `${colors.primary}4D`,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.28,
+      shadowRadius: 16,
+      elevation: 5,
     },
     cardGlass: {
       backgroundColor: `${colors.surface}E6`,
-      borderColor: `${colors.white}22`,
-      backdropFilter: "blur(16px)",
+      borderColor: `${colors.borderStrong}55`,
+      shadowColor: colors.black,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.08,
+      shadowRadius: 16,
+      elevation: 3,
     } as any,
     cardAccent: {
       backgroundColor: `${colors.accent}14`,
-      borderColor: `${colors.accent}44`,
+      borderColor: `${colors.accent}3D`,
     },
-    h1: { color: colors.text, fontSize: 28, fontWeight: "900", letterSpacing: -0.7, lineHeight: 34 },
-    h2: { color: colors.text, fontSize: 18, fontWeight: "800", lineHeight: 24 },
-    h3: { color: colors.text, fontSize: 16, fontWeight: "800" },
-    body: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
-    muted: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-    pill: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface2 },
-    pillAccent: { backgroundColor: `${colors.accent}1A` },
-    pillWarning: { backgroundColor: `${colors.warning}1A` },
-    pillDanger: { backgroundColor: `${colors.danger}1A` },
-    pillPrimary: { backgroundColor: colors.primarySoft },
-    pillSuccess: { backgroundColor: `${colors.success}1A` },
-    pillInfo: { backgroundColor: `${colors.info}1A` },
-    pillText: { color: colors.textSecondary, fontSize: 12, fontWeight: "800" },
-    button: { minHeight: 48, paddingHorizontal: 20, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, borderRadius: radius.md, backgroundColor: colors.primary },
-    buttonCompact: { minHeight: 38, paddingHorizontal: 14 },
-    secondary: { backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border },
-    ghost: { backgroundColor: "transparent" },
-    danger: { backgroundColor: colors.danger },
-    social: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-    buttonText: { color: colors.white, fontWeight: "800", fontSize: 15 },
+    h1: { color: colors.text, fontSize: 27, fontWeight: "900", letterSpacing: -0.7, lineHeight: 34 },
+    h2: { color: colors.text, fontSize: 18, fontWeight: "800", letterSpacing: -0.3, lineHeight: 24 },
+    h3: { color: colors.text, fontSize: 16, fontWeight: "800", letterSpacing: -0.2 },
+    body: { color: colors.textSecondary, fontSize: 15, lineHeight: 22 },
+    muted: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+    pill: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 11,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.surface2,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pillAccent: { backgroundColor: `${colors.accent}14`, borderColor: `${colors.accent}33` },
+    pillWarning: { backgroundColor: `${colors.warning}14`, borderColor: `${colors.warning}33` },
+    pillDanger: { backgroundColor: `${colors.danger}14`, borderColor: `${colors.danger}33` },
+    pillPrimary: { backgroundColor: colors.primarySoft, borderColor: `${colors.primary}2E` },
+    pillSuccess: { backgroundColor: `${colors.success}14`, borderColor: `${colors.success}33` },
+    pillInfo: { backgroundColor: `${colors.info}14`, borderColor: `${colors.info}33` },
+    pillPurple: { backgroundColor: "rgba(139, 92, 246, 0.12)", borderColor: "rgba(139, 92, 246, 0.28)" },
+    pillText: { color: colors.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.1 },
+    button: {
+      minHeight: 48,
+      paddingHorizontal: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "row",
+      gap: 8,
+      borderRadius: radius.md,
+      backgroundColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.26,
+      shadowRadius: 10,
+      elevation: 4,
+    },
+    buttonCompact: { minHeight: 38, paddingHorizontal: 14, borderRadius: radius.sm },
+    secondary: {
+      backgroundColor: colors.surface2,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    ghost: { backgroundColor: "transparent", shadowOpacity: 0, elevation: 0 },
+    danger: {
+      backgroundColor: colors.danger,
+      shadowColor: colors.danger,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.26,
+      shadowRadius: 10,
+      elevation: 4,
+    },
+    social: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: colors.black,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.04,
+      shadowRadius: 6,
+      elevation: 1,
+    },
+    buttonText: { color: colors.white, fontWeight: "800", fontSize: 15, letterSpacing: 0.15 },
     input: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 14, fontSize: 15, fontWeight: "500" },
     inputContainer: { minHeight: 52, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", overflow: "hidden", flexGrow: 0, flexShrink: 0 },
     inputInner: { flex: 1, minHeight: 50, paddingHorizontal: 14, paddingVertical: 10, color: colors.text, fontSize: 15, fontWeight: "500" },
     center: { flex: 1, minHeight: 300, alignItems: "center", justifyContent: "center", gap: 12 },
-    iconButton: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-    iconButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    iconButton: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: colors.black,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.04,
+      shadowRadius: 6,
+      elevation: 1,
+    },
+    iconButtonActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.28,
+      shadowRadius: 8,
+      elevation: 3,
+    },
     badge: { position: "absolute", right: -4, top: -4, minWidth: 19, height: 19, paddingHorizontal: 4, borderRadius: 10, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.bg },
     badgeText: { color: colors.white, fontSize: 10, fontWeight: "900" },
   });

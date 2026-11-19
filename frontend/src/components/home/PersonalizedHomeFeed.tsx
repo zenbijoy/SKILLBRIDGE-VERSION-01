@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Platform,
 } from "react-native";
 import Animated, {
   FadeInDown,
@@ -35,6 +36,8 @@ import {
 import { radius, spacing, useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { PostComposerModal } from "./PostComposerModal";
+import { WebStoriesCarousel } from "./WebStoriesCarousel";
+import { WebQuickComposer } from "./WebQuickComposer";
 import { InstagramProfileCard } from "@/components/InstagramProfileCard";
 import { UniversalShareSheet } from "@/components/UniversalShareSheet";
 import {
@@ -424,92 +427,99 @@ export function PersonalizedHomeFeed({ currentUser, onOpenComposer }: Personaliz
 
   return (
     <View style={styles.feedWrapper}>
-      {/* 1. TYPEWRITER ANIMATED PROMPT BANNER */}
-      <View
-        style={[
-          styles.promptBanner,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderLeftColor: colors.primary,
-          },
-        ]}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("feed.createPost")}
-          onPress={() => handleOpenPrompt()}
-          style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
-        >
-          <Row style={{ alignItems: "center", gap: 12 }}>
-            <View style={[styles.promptIconCircle, { backgroundColor: colors.primarySoft }]}>
-              <MaterialCommunityIcons name="feather" size={20} color={colors.primary} />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Row style={{ alignItems: "center", gap: 2 }}>
-                <Text style={[styles.typewriterText, { color: typedText ? colors.text : colors.muted }]}>
-                  {typedText || "কী ভাবছেন?..."}
-                </Text>
-                <View
-                  style={[
-                    styles.cursorBlink,
-                    { backgroundColor: colors.primary, opacity: cursorVisible ? 1 : 0 },
-                  ]}
-                />
-              </Row>
-              <Text style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
-                {t("feed.createPost")} • {t("feed.audiencePublic")}
-              </Text>
-            </View>
-
-            <View style={[styles.promptActionBtn, { backgroundColor: colors.primarySoft }]}>
-              <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
-            </View>
-          </Row>
-        </Pressable>
-
-        <View style={[styles.promptDivider, { backgroundColor: colors.border }]} />
-
-        {/* Quick Action Micro Chips */}
-        <View style={styles.quickActionsRow}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => handleOpenPrompt({ openMediaImmediately: true })}
-            style={({ pressed }) => [
-              styles.quickActionChip,
-              { backgroundColor: colors.primarySoft, opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <MaterialCommunityIcons name="image-outline" size={14} color={colors.primary} />
-            <Text style={[styles.quickActionText, { color: colors.primary }]}>{t("feed.quickPhoto")}</Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => handleOpenPrompt({ initialTag: "#Question", initialAudience: "campus" })}
-            style={({ pressed }) => [
-              styles.quickActionChip,
-              { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <MaterialCommunityIcons name="help-circle-outline" size={14} color="#E67E22" />
-            <Text style={[styles.quickActionText, { color: colors.text }]}>{t("feed.quickQuestion")}</Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => handleOpenPrompt({ initialTag: "#Resource" })}
-            style={({ pressed }) => [
-              styles.quickActionChip,
-              { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <MaterialCommunityIcons name="lightbulb-outline" size={14} color="#9B59B6" />
-            <Text style={[styles.quickActionText, { color: colors.text }]}>{t("feed.quickResource")}</Text>
-          </Pressable>
+      {/* 1. TOP STORIES & COMPOSER (Web vs Mobile Native) */}
+      {Platform.OS === "web" ? (
+        <View style={{ width: "100%", marginBottom: 8 }}>
+          <WebStoriesCarousel />
+          <WebQuickComposer onPostCreated={() => feedQuery.refetch()} />
         </View>
-      </View>
+      ) : (
+        <View
+          style={[
+            styles.promptBanner,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderLeftColor: colors.primary,
+            },
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("feed.createPost")}
+            onPress={() => handleOpenPrompt()}
+            style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+          >
+            <Row style={{ alignItems: "center", gap: 12 }}>
+              <View style={[styles.promptIconCircle, { backgroundColor: colors.primarySoft }]}>
+                <MaterialCommunityIcons name="feather" size={20} color={colors.primary} />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Row style={{ alignItems: "center", gap: 2 }}>
+                  <Text style={[styles.typewriterText, { color: typedText ? colors.text : colors.muted }]}>
+                    {typedText || "কী ভাবছেন?..."}
+                  </Text>
+                  <View
+                    style={[
+                      styles.cursorBlink,
+                      { backgroundColor: colors.primary, opacity: cursorVisible ? 1 : 0 },
+                    ]}
+                  />
+                </Row>
+                <Text style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
+                  {t("feed.createPost")} • {t("feed.audiencePublic")}
+                </Text>
+              </View>
+
+              <View style={[styles.promptActionBtn, { backgroundColor: colors.primarySoft }]}>
+                <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
+              </View>
+            </Row>
+          </Pressable>
+
+          <View style={[styles.promptDivider, { backgroundColor: colors.border }]} />
+
+          {/* Quick Action Micro Chips */}
+          <View style={styles.quickActionsRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => handleOpenPrompt({ openMediaImmediately: true })}
+              style={({ pressed }) => [
+                styles.quickActionChip,
+                { backgroundColor: colors.primarySoft, opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <MaterialCommunityIcons name="image-outline" size={14} color={colors.primary} />
+              <Text style={[styles.quickActionText, { color: colors.primary }]}>{t("feed.quickPhoto")}</Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => handleOpenPrompt({ initialTag: "#Question", initialAudience: "campus" })}
+              style={({ pressed }) => [
+                styles.quickActionChip,
+                { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <MaterialCommunityIcons name="help-circle-outline" size={14} color="#E67E22" />
+              <Text style={[styles.quickActionText, { color: colors.text }]}>{t("feed.quickQuestion")}</Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => handleOpenPrompt({ initialTag: "#Resource" })}
+              style={({ pressed }) => [
+                styles.quickActionChip,
+                { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <MaterialCommunityIcons name="lightbulb-outline" size={14} color="#9B59B6" />
+              <Text style={[styles.quickActionText, { color: colors.text }]}>{t("feed.quickResource")}</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {/* 2. SEGMENTED FEED TABS */}
       <ScrollView

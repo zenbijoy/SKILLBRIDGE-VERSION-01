@@ -154,6 +154,44 @@ export default function PlannerScreen() {
         </View>
       </View>
 
+      {/* Action Row: Generate Schedule & Week View */}
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={[
+            styles.generateBtn,
+            { backgroundColor: colors.primary, opacity: generating ? 0.7 : 1 },
+          ]}
+          onPress={handleGenerate}
+          disabled={generating}
+          accessibilityRole="button"
+          accessibilityLabel={t("planner.generate")}
+        >
+          {generating ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="sparkles" size={16} color="#FFFFFF" />
+          )}
+          <Text style={styles.generateBtnText}>
+            {generating ? "Calculating Plan…" : t("planner.generate")}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.weekBtn,
+            { borderColor: colors.border, backgroundColor: colors.surface },
+          ]}
+          onPress={() => router.push("/planner/week" as any)}
+          accessibilityRole="button"
+          accessibilityLabel={t("planner.weekView")}
+        >
+          <Ionicons name="calendar-outline" size={16} color={colors.text} />
+          <Text style={[styles.weekBtnText, { color: colors.text }]}>
+            {t("planner.weekView")}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Blocks List */}
       {loading ? (
         <View style={styles.centerContainer}>

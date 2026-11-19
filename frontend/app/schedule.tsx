@@ -73,6 +73,14 @@ export default function ScheduleScreen() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [verificationRoutine, setVerificationRoutine] =
     useState<AcademicRoutine | null>(null);
+  const [uploadedRoutineFile, setUploadedRoutineFile] = useState<{
+    uri: string;
+    name: string;
+    mimeType: string;
+    size?: number;
+    base64?: string;
+  } | null>(null);
+  const [extractionMeta, setExtractionMeta] = useState<any>(null);
   const [isManualClassModalOpen, setIsManualClassModalOpen] = useState(false);
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [createTaskDateIso, setCreateTaskDateIso] = useState<string | undefined>(
@@ -838,8 +846,10 @@ export default function ScheduleScreen() {
           visible={isImportModalOpen}
           profile={profile}
           onClose={() => setIsImportModalOpen(false)}
-          onExtractionSuccess={(draft) => {
+          onExtractionSuccess={(draft, file, meta) => {
             setIsImportModalOpen(false);
+            setUploadedRoutineFile(file || null);
+            setExtractionMeta(meta || null);
             setVerificationRoutine(draft);
           }}
         />
@@ -850,9 +860,17 @@ export default function ScheduleScreen() {
         <RoutineVerificationModal
           visible={!!verificationRoutine}
           routine={verificationRoutine}
-          onClose={() => setVerificationRoutine(null)}
+          uploadedFile={uploadedRoutineFile}
+          extractionMeta={extractionMeta}
+          onClose={() => {
+            setVerificationRoutine(null);
+            setUploadedRoutineFile(null);
+            setExtractionMeta(null);
+          }}
           onActivated={() => {
             setVerificationRoutine(null);
+            setUploadedRoutineFile(null);
+            setExtractionMeta(null);
             queryClient.invalidateQueries({ queryKey: ["calendar-routines"] });
             queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
             queryClient.invalidateQueries({ queryKey: ["calendar-upcoming"] });

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, type Href } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
 import { useI18n } from "@/i18n";
 import { AskHelpComposerModal } from "@/features/help/AskHelpComposerModal";

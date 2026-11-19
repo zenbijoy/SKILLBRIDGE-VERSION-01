@@ -15,7 +15,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { Button, Row, triggerHaptic } from "@/components/ui";
+import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 
 type KnockRequestItem = {

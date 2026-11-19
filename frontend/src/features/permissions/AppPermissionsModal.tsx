@@ -14,7 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import * as ImagePicker from "expo-image-picker";
 import { useSegments } from "expo-router";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { Button, triggerHaptic } from "@/components/ui";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
@@ -109,9 +109,9 @@ export function AppPermissionsModal() {
     };
   }, [session, hasCompletedPermissionsPrompt]);
 
-  // Only display the modal after successful login (session exists) and NOT inside (auth) screens
+  // Only display the modal on native after successful login (session exists) and NOT inside (auth) screens
   const inAuth = (segments as string[])[0] === "(auth)";
-  const shouldShow = Boolean(session) && !inAuth && !hasCompletedPermissionsPrompt;
+  const shouldShow = Platform.OS !== "web" && Boolean(session) && !inAuth && !hasCompletedPermissionsPrompt;
 
   const handleRequestSingle = async (type: keyof PermissionStatus) => {
     triggerHaptic();

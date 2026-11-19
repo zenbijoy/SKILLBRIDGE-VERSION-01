@@ -21,6 +21,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
+import * as Clipboard from "expo-clipboard";
 import { Audio } from "expo-av";
 import "react-native-get-random-values";
 import { v4 as uuidv4 } from "uuid";
@@ -50,6 +51,8 @@ interface ChatMessage {
   sender_id: string;
   body: string;
   created_at: string;
+  edited_at?: string | null;
+  deleted?: boolean;
   client_message_id?: string;
   reply_to_message_id?: string | null;
   attachment?: {
@@ -163,6 +166,14 @@ export default function ChatScreen() {
   // Selected Message for Reaction Menu
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
 
+  // Fix M-1: Edit message state
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [editBody, setEditBody] = useState("");
+
+  // Fix M-3: Forward message state
+  const [forwardMessage, setForwardMessage] = useState<ChatMessage | null>(null);
+  const [forwardConversations, setForwardConversations] = useState<Array<{ id: string; title: string; avatar_url?: string | null }>>([]);
+
   // Fullscreen Photo Viewer
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
@@ -172,6 +183,10 @@ export default function ChatScreen() {
   // Scroll & Jump-to-bottom
   const flatListRef = useRef<FlatList>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  // Fix M-7: Track showScrollBottom in a ref so socket subscriptions are stable.
+  // Previously, putting showScrollBottom in the useEffect dep array caused the
+  // socket to detach/reattach every time the user scrolled, dropping messages.
+  const showScrollBottomRef = useRef(false);
   const [newMessagesWhileScrolled, setNewMessagesWhileScrolled] = useState(0);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -340,13 +355,20 @@ export default function ChatScreen() {
           if (current.some((item) => item.id === message.id)) return old;
           return { messages: [...current, message] };
         });
-        if (showScrollBottom) {
+        // Fix M-7: Use ref instead of state to avoid re-subscribing on scroll
+        if (showScrollBottomRef.current) {
           setNewMessagesWhileScrolled((prev) => prev + 1);
         } else {
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
         }
       }
-      void api(`/chat/conversations/${id}/read`, { method: "PATCH" }).catch(() => undefined);
+      // When actively viewing the conversation, immediately mark incoming message as read
+      if (message.sender_id !== session?.user.id) {
+        void api(`/chat/conversations/${id}/read`, {
+          method: "PATCH",
+          body: JSON.stringify({ message_id: message.id }),
+        }).catch(() => undefined);
+      }
     };
 
     const onTypingStart = ({ conversationId, userId }: { conversationId: string; userId: string }) => {
@@ -368,7 +390,87 @@ export default function ChatScreen() {
           messages: old.messages.map((m) => {
             if (m.id !== messageId) return m;
             const existing = m.reactions || [];
+            // Avoid duplicates
+            if (existing.some((r) => r.user_id === reaction.user_id && r.reaction === reaction.reaction)) return m;
             return { ...m, reactions: [...existing, reaction] };
+          }),
+        };
+      });
+    };
+
+    // Fix M-6: Handle reaction removal in real-time
+    const onReactionRemove = ({ messageId, userId, reaction }: { messageId: string; userId: string; reaction: string }) => {
+      qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+        if (!old) return old;
+        return {
+          messages: old.messages.map((m) => {
+            if (m.id !== messageId) return m;
+            return {
+              ...m,
+              reactions: (m.reactions || []).filter(
+                (r) => !(r.user_id === userId && r.reaction === reaction)
+              ),
+            };
+          }),
+        };
+      });
+    };
+
+    // Fix M-1: Handle message edit in real-time
+    const onMessageEdited = ({ messageId, body, edited_at }: { messageId: string; body: string; edited_at: string }) => {
+      qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+        if (!old) return old;
+        return {
+          messages: old.messages.map((m) =>
+            m.id === messageId ? { ...m, body, edited_at } : m
+          ),
+        };
+      });
+    };
+
+    // Fix M-2: Handle message deletion in real-time
+    const onMessageDeleted = ({ messageId, deletedForAll }: { messageId: string; deletedForAll: boolean }) => {
+      qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+        if (!old) return old;
+        if (deletedForAll) {
+          return {
+            messages: old.messages.map((m) =>
+              m.id === messageId
+                ? { ...m, body: "This message was deleted.", attachment: null, deleted: true }
+                : m
+            ),
+          };
+        }
+        // "Delete for me" — remove from local list
+        return { messages: old.messages.filter((m) => m.id !== messageId) };
+      });
+    };
+
+    // Fix M-4: Handle delivery status updates (sent→delivered→read)
+    const onDeliveryStatus = ({ messageId, status }: { messageId: string; status: "delivered" | "read" }) => {
+      qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+        if (!old) return old;
+        return {
+          messages: old.messages.map((m) =>
+            m.id === messageId ? { ...m, delivery_status: status } : m
+          ),
+        };
+      });
+    };
+
+    // Real-time WhatsApp/Messenger read receipt: when peer reads conversation, mark all our earlier messages as read (blue double-tick)
+    const onConversationRead = ({ readerId, readAt }: { conversationId?: string; readerId: string; readAt: string }) => {
+      if (readerId === session?.user.id) return;
+      const readTimestamp = readAt ? new Date(readAt).getTime() : Date.now();
+      qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+        if (!old) return old;
+        return {
+          messages: old.messages.map((m) => {
+            const isEarlier = new Date(m.created_at).getTime() <= readTimestamp + 5000;
+            if (m.sender_id === session?.user.id && (isEarlier || m.delivery_status !== "read")) {
+              return { ...m, delivery_status: "read" as const };
+            }
+            return m;
           }),
         };
       });
@@ -412,6 +514,11 @@ export default function ChatScreen() {
       socket.on("typing:start", onTypingStart);
       socket.on("typing:stop", onTypingStop);
       socket.on("message:reaction:add", onReactionAdd);
+      socket.on("message:reaction:remove", onReactionRemove);
+      socket.on("message:edited", onMessageEdited);
+      socket.on("message:deleted", onMessageDeleted);
+      socket.on("message:delivery_status", onDeliveryStatus);
+      socket.on("conversation:read", onConversationRead);
       socket.on("conversation:members_updated", onMembersUpdated);
       socket.on("conversation:role_updated", onRoleUpdated);
       socket.on("conversation:updated", onConversationUpdated);
@@ -426,16 +533,30 @@ export default function ChatScreen() {
       socket.off("typing:start", onTypingStart);
       socket.off("typing:stop", onTypingStop);
       socket.off("message:reaction:add", onReactionAdd);
+      socket.off("message:reaction:remove", onReactionRemove);
+      socket.off("message:edited", onMessageEdited);
+      socket.off("message:deleted", onMessageDeleted);
+      socket.off("message:delivery_status", onDeliveryStatus);
+      socket.off("conversation:read", onConversationRead);
       socket.off("conversation:members_updated", onMembersUpdated);
       socket.off("conversation:role_updated", onRoleUpdated);
       socket.off("conversation:updated", onConversationUpdated);
       socket.off("chat:removed_from_group", onRemovedFromGroup);
       if (reconnectBound) socket.io.off("reconnect", onReconnect);
       socket.emit("conversation:leave", { conversationId: id });
-      if (typingTimeout.current) clearTimeout(typingTimeout.current);
+      // Fix M-8: Emit typing:stop on unmount so other users don't see stale "typing..."
+      if (typingTimeout.current) {
+        clearTimeout(typingTimeout.current);
+        socket.emit("typing:stop", { conversationId: id });
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, qc, socket, session?.user.id, showScrollBottom]);
+  }, [id, qc, socket, session?.user.id]);
+
+  // Fix M-7: Keep ref in sync with state so socket onMessage handler uses fresh value
+  useEffect(() => {
+    showScrollBottomRef.current = showScrollBottom;
+  }, [showScrollBottom]);
 
   function handleTyping(text: string) {
     setBody(text);
@@ -839,31 +960,172 @@ export default function ChatScreen() {
     }
   }
 
-  // Handle Emoji Reaction
+  // Handle Emoji Reaction (Fix M-5: toggle = remove if already reacted by this user)
   const handleToggleReaction = async (msg: ChatMessage, emoji: string) => {
     triggerHaptic();
     setSelectedMessage(null);
+    const myId = session?.user.id || "";
+    const alreadyReacted = (msg.reactions || []).some(
+      (r) => r.user_id === myId && r.reaction === emoji
+    );
+
+    if (alreadyReacted) {
+      // Remove reaction — backend uses URL param: DELETE /messages/:id/reactions/:reaction
+      try {
+        await api(`/chat/messages/${msg.id}/reactions/${encodeURIComponent(emoji)}`, {
+          method: "DELETE",
+        });
+        qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+          if (!old) return old;
+          return {
+            messages: old.messages.map((m) => {
+              if (m.id !== msg.id) return m;
+              return {
+                ...m,
+                reactions: (m.reactions || []).filter(
+                  (r) => !(r.user_id === myId && r.reaction === emoji)
+                ),
+              };
+            }),
+          };
+        });
+      } catch {
+        // Non-fatal
+      }
+    } else {
+      // Add reaction
+      try {
+        await api(`/chat/messages/${msg.id}/reactions`, {
+          method: "POST",
+          body: JSON.stringify({ reaction: emoji }),
+        });
+        qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+          if (!old) return old;
+          return {
+            messages: old.messages.map((m) => {
+              if (m.id !== msg.id) return m;
+              const current = m.reactions || [];
+              return {
+                ...m,
+                reactions: [...current, { message_id: msg.id, user_id: myId, reaction: emoji }],
+              };
+            }),
+          };
+        });
+      } catch {
+        // Non-fatal
+      }
+    }
+  };
+
+  // Fix M-1: Edit message handler
+  const handleEditMessage = async () => {
+    if (!editingMessage || !editBody.trim()) return;
+    const msgId = editingMessage.id;
+    const newBody = editBody.trim();
+    setEditingMessage(null);
+    setEditBody("");
+    // Optimistic update
+    qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+      if (!old) return old;
+      return {
+        messages: old.messages.map((m) =>
+          m.id === msgId ? { ...m, body: newBody, edited_at: new Date().toISOString() } : m
+        ),
+      };
+    });
     try {
-      await api(`/chat/messages/${msg.id}/reactions`, {
-        method: "POST",
-        body: JSON.stringify({ reaction: emoji }),
-      });
-      // Optimistic update
-      qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
-        if (!old) return old;
-        return {
-          messages: old.messages.map((m) => {
-            if (m.id !== msg.id) return m;
-            const current = m.reactions || [];
-            return {
-              ...m,
-              reactions: [...current, { message_id: msg.id, user_id: session?.user.id || "", reaction: emoji }],
-            };
-          }),
-        };
+      await api(`/chat/messages/${msgId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body: newBody }),
       });
     } catch {
-      // Non-fatal
+      // Revert optimistic update
+      qc.invalidateQueries({ queryKey: ["messages", id] });
+    }
+  };
+
+  // Fix M-2: Delete message handler
+  const handleDeleteMessage = (msg: ChatMessage) => {
+    const isMine = msg.sender_id === session?.user.id;
+    const options: Array<{ text: string; onPress: () => void; style?: "cancel" | "destructive" | "default" }> = [
+      { text: "Cancel", style: "cancel", onPress: () => {} },
+    ];
+    if (isMine) {
+      options.push({
+        text: "Delete for Everyone",
+        style: "destructive",
+        onPress: async () => {
+          // Optimistic: replace with tombstone
+          qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+            if (!old) return old;
+            return {
+              messages: old.messages.map((m) =>
+                m.id === msg.id
+                  ? { ...m, body: "This message was deleted.", attachment: null, deleted: true }
+                  : m
+              ),
+            };
+          });
+          try {
+            await api(`/chat/messages/${msg.id}`, { method: "DELETE", body: JSON.stringify({ deleteForAll: true }) });
+          } catch {
+            qc.invalidateQueries({ queryKey: ["messages", id] });
+          }
+        },
+      });
+    }
+    options.push({
+      text: "Delete for Me",
+      style: "destructive",
+      onPress: async () => {
+        qc.setQueryData<{ messages: ChatMessage[] }>(["messages", id], (old) => {
+          if (!old) return old;
+          return { messages: old.messages.filter((m) => m.id !== msg.id) };
+        });
+        try {
+          await api(`/chat/messages/${msg.id}`, { method: "DELETE", body: JSON.stringify({ deleteForAll: false }) });
+        } catch {
+          qc.invalidateQueries({ queryKey: ["messages", id] });
+        }
+      },
+    });
+    Alert.alert("Delete Message", "Choose an option:", options);
+  };
+
+  // Fix M-3: Forward message handler
+  const handleForwardMessage = async (msg: ChatMessage) => {
+    setForwardMessage(msg);
+    try {
+      const res = await api<{ conversations: Array<{ id: string; title?: string | null; avatar_url?: string | null }> }>("/chat/conversations");
+      setForwardConversations(
+        (res.conversations || []).map((c) => ({
+          id: c.id,
+          title: c.title || "Direct Message",
+          avatar_url: c.avatar_url,
+        }))
+      );
+    } catch {
+      Alert.alert("Error", "Could not load conversations for forwarding.");
+    }
+  };
+
+  const confirmForward = async (targetConversationId: string) => {
+    if (!forwardMessage) return;
+    const msg = forwardMessage;
+    setForwardMessage(null);
+    try {
+      await api(`/chat/conversations/${targetConversationId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+          body: msg.body || (msg.attachment ? "Forwarded attachment" : ""),
+          attachment: msg.attachment ?? undefined,
+        }),
+      });
+      triggerHaptic();
+      Alert.alert("Success", "Message forwarded successfully.");
+    } catch {
+      Alert.alert("Error", "Could not forward message.");
     }
   };
 
@@ -1170,6 +1432,7 @@ export default function ChatScreen() {
   // Render a Single Chat Bubble
   const renderMessageBubble = ({ item, index }: { item: ChatMessage; index: number }) => {
     const mine = item.sender_id === session?.user.id || item.sender_id === "me";
+    const isLastMessage = index === displayMessages.length - 1;
     const prev = displayMessages[index - 1];
     const isSameSender = prev && prev.sender_id === item.sender_id;
     const hasImage = item.attachment?.type === "image" && Boolean(item.attachment.url);
@@ -1403,9 +1666,14 @@ export default function ChatScreen() {
 
             {/* Message Body */}
             {item.body && !(hasImage && item.body === "[Photo]") && !isVoice ? (
-              <Text style={{ color: colors.text, fontSize: 15, lineHeight: 21 }}>
+              <Text style={{ color: item.deleted ? colors.muted : colors.text, fontSize: 15, lineHeight: 21, fontStyle: item.deleted ? "italic" : "normal" }}>
                 {item.body}
               </Text>
+            ) : null}
+
+            {/* Fix M-1: "Edited" label */}
+            {item.edited_at && !item.deleted ? (
+              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 1 }}>edited</Text>
             ) : null}
 
             {/* Meta Row: Timestamp + Delivery Checkmarks */}
@@ -1429,9 +1697,14 @@ export default function ChatScreen() {
                       <MaterialCommunityIcons name="alert-circle" size={12} color={colors.danger} />
                       <Text style={{ color: colors.danger, fontSize: 10, fontWeight: "700" }}>Retry</Text>
                     </Pressable>
-                  ) : item.delivery_status === "read" || item.delivery_status === "delivered" ? (
-                    <MaterialCommunityIcons name="check-all" size={14} color={colors.primary} />
+                  ) : item.delivery_status === "read" ? (
+                    // Fix M-4: Blue double-tick for read
+                    <MaterialCommunityIcons name="check-all" size={14} color="#38BDF8" />
+                  ) : item.delivery_status === "delivered" ? (
+                    // Grey double-tick for delivered
+                    <MaterialCommunityIcons name="check-all" size={14} color={colors.muted} />
                   ) : (
+                    // Single tick for sent
                     <MaterialCommunityIcons name="check" size={13} color={colors.muted} />
                   )}
                 </View>
@@ -1494,6 +1767,13 @@ export default function ChatScreen() {
             </Pressable>
           </View>
         )}
+
+        {/* Real-time Messenger-style Seen status indicator below last read message */}
+        {mine && isLastMessage && item.delivery_status === "read" && !item.failed ? (
+          <View style={{ alignSelf: "flex-end", marginRight: 42, marginTop: 2, marginBottom: 4 }}>
+            <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600" }}>Seen</Text>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -1986,20 +2266,25 @@ export default function ChatScreen() {
         <Pressable style={styles.modalOverlay} onPress={() => setSelectedMessage(null)}>
           <View style={[styles.reactionSheet, { backgroundColor: colors.surface }]}>
             <View style={styles.emojiRow}>
-              {EMOJI_REACTIONS.map((emoji) => (
-                <Pressable
-                  key={emoji}
-                  onPress={() => selectedMessage && handleToggleReaction(selectedMessage, emoji)}
-                  style={styles.emojiBtn}
-                >
-                  <Text style={styles.emojiChar}>{emoji}</Text>
-                </Pressable>
-              ))}
+              {EMOJI_REACTIONS.map((emoji) => {
+                const alreadyReacted = (selectedMessage?.reactions || []).some(
+                  (r) => r.user_id === session?.user.id && r.reaction === emoji
+                );
+                return (
+                  <Pressable
+                    key={emoji}
+                    onPress={() => selectedMessage && handleToggleReaction(selectedMessage, emoji)}
+                    style={[styles.emojiBtn, alreadyReacted && { backgroundColor: colors.primarySoft, borderRadius: 20 }]}
+                  >
+                    <Text style={styles.emojiChar}>{emoji}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
 
             <View style={[styles.sheetDivider, { backgroundColor: colors.border }]} />
 
-            {/* Quick Actions: Reply, Copy */}
+            {/* Quick Actions: Reply */}
             <Pressable
               style={styles.actionRow}
               onPress={() => {
@@ -2012,8 +2297,135 @@ export default function ChatScreen() {
               <MaterialCommunityIcons name="reply" size={20} color={colors.primary} />
               <Text style={[styles.actionRowText, { color: colors.text }]}>Reply</Text>
             </Pressable>
+
+            {/* Fix M-3: Forward */}
+            <Pressable
+              style={styles.actionRow}
+              onPress={() => {
+                const msg = selectedMessage;
+                setSelectedMessage(null);
+                if (msg) handleForwardMessage(msg);
+              }}
+            >
+              <MaterialCommunityIcons name="share" size={20} color={colors.primary} />
+              <Text style={[styles.actionRowText, { color: colors.text }]}>Forward</Text>
+            </Pressable>
+
+            {/* Fix M-1: Edit (only own messages, non-deleted) */}
+            {selectedMessage?.sender_id === session?.user.id && !selectedMessage?.deleted && (
+              <Pressable
+                style={styles.actionRow}
+                onPress={() => {
+                  const msg = selectedMessage;
+                  setSelectedMessage(null);
+                  if (msg) {
+                    setEditingMessage(msg);
+                    setEditBody(msg.body);
+                  }
+                }}
+              >
+                <MaterialCommunityIcons name="pencil" size={20} color={colors.primary} />
+                <Text style={[styles.actionRowText, { color: colors.text }]}>Edit</Text>
+              </Pressable>
+            )}
+
+            {/* Copy Text */}
+            <Pressable
+              style={styles.actionRow}
+              onPress={() => {
+                if (selectedMessage?.body) {
+                  Clipboard.setStringAsync(selectedMessage.body).catch(() => {});
+                  setSelectedMessage(null);
+                }
+              }}
+            >
+              <MaterialCommunityIcons name="content-copy" size={20} color={colors.primary} />
+              <Text style={[styles.actionRowText, { color: colors.text }]}>Copy</Text>
+            </Pressable>
+
+            {/* Fix M-2: Delete */}
+            {!selectedMessage?.deleted && (
+              <Pressable
+                style={[styles.actionRow, { borderTopWidth: 1, borderTopColor: colors.border }]}
+                onPress={() => {
+                  const msg = selectedMessage;
+                  setSelectedMessage(null);
+                  if (msg) handleDeleteMessage(msg);
+                }}
+              >
+                <MaterialCommunityIcons name="trash-can-outline" size={20} color="#EF4444" />
+                <Text style={[styles.actionRowText, { color: "#EF4444" }]}>Delete</Text>
+              </Pressable>
+            )}
           </View>
         </Pressable>
+      </Modal>
+
+      {/* Fix M-1: Edit Message Modal */}
+      <Modal
+        visible={Boolean(editingMessage)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setEditingMessage(null); setEditBody(""); }}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => { setEditingMessage(null); setEditBody(""); }}>
+          <View style={[styles.reactionSheet, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalHeaderTitle, { color: colors.text, marginBottom: 12 }]}>Edit Message</Text>
+            <TextInput
+              value={editBody}
+              onChangeText={setEditBody}
+              style={[styles.editInput, { backgroundColor: colors.surface2, color: colors.text, borderColor: colors.border }]}
+              multiline
+              autoFocus
+              maxLength={4000}
+            />
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+              <Pressable
+                onPress={() => { setEditingMessage(null); setEditBody(""); }}
+                style={[styles.editCancelBtn, { borderColor: colors.border }]}
+              >
+                <Text style={{ color: colors.muted, fontWeight: "600" }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleEditMessage}
+                style={[styles.editSaveBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Fix M-3: Forward Message Modal */}
+      <Modal
+        visible={Boolean(forwardMessage)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setForwardMessage(null)}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: "flex-end" }]}>
+          <View style={[styles.reactionSheet, { backgroundColor: colors.surface, maxHeight: "60%" }]}>
+            <Text style={[styles.modalHeaderTitle, { color: colors.text, marginBottom: 12 }]}>Forward to…</Text>
+            <ScrollView>
+              {forwardConversations.map((conv) => (
+                <Pressable
+                  key={conv.id}
+                  onPress={() => confirmForward(conv.id)}
+                  style={[styles.forwardItem, { borderBottomColor: colors.border }]}
+                >
+                  <MaterialCommunityIcons name="chat-outline" size={22} color={colors.primary} />
+                  <Text style={[styles.forwardItemText, { color: colors.text }]} numberOfLines={1}>
+                    {conv.title}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable onPress={() => setForwardMessage(null)} style={{ alignItems: "center", paddingVertical: 12 }}>
+              <Text style={{ color: colors.muted, fontWeight: "600" }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* Media Browser Sheet Modal */}
@@ -3512,5 +3924,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
+  },
+  // Fix M-1: Edit message input
+  editInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  editCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  editSaveBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  // Fix M-3: Forward message list item
+  forwardItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  forwardItemText: {
+    fontSize: 15,
+    fontWeight: "600",
+    flex: 1,
   },
 });

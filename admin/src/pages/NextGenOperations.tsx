@@ -25,6 +25,7 @@ import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
+import { useToast } from '../components/ToastContext';
 
 interface TelemetryData {
   activeRooms: number;
@@ -69,6 +70,7 @@ interface AuditLog {
 }
 
 export default function NextGenOperations() {
+  const { success, error: toastError } = useToast();
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
   const [providers, setProviders] = useState<ProvidersData | null>(null);
   const [reports, setReports] = useState<ModerationReport[]>([]);
@@ -158,9 +160,10 @@ export default function NextGenOperations() {
       setActionLoading(`sync-${recId}`);
       await api.post(`/admin/nextgen/recordings/${recId}/sync`);
       setMediaActionMessage('Recording metadata resynced successfully.');
+      success('Recording metadata resynced successfully.');
       void loadMediaData();
     } catch {
-      alert('Failed to resync recording metadata');
+      toastError('Failed to resync recording metadata');
     } finally {
       setActionLoading(null);
     }
@@ -173,12 +176,12 @@ export default function NextGenOperations() {
         '/admin/nextgen/jobs/run',
         { limit: 10 }
       );
-      setMediaActionMessage(
-        `Batch processed: ${res.data.stats.succeeded} succeeded, ${res.data.stats.failed} failed.`
-      );
+      const msg = `Batch processed: ${res.data.stats.succeeded} succeeded, ${res.data.stats.failed} failed.`;
+      setMediaActionMessage(msg);
+      success(msg);
       void loadMediaData();
     } catch {
-      alert('Failed to execute job queue batch');
+      toastError('Failed to execute job queue batch');
     } finally {
       setActionLoading(null);
     }
@@ -192,12 +195,12 @@ export default function NextGenOperations() {
         '/admin/nextgen/media/cleanup',
         { cutoffHours: 24 }
       );
-      setMediaActionMessage(
-        `Sweep complete: Scanned ${res.data.result.scanned} files, deleted ${res.data.result.deleted}.`
-      );
+      const msg = `Sweep complete: Scanned ${res.data.result.scanned} files, deleted ${res.data.result.deleted}.`;
+      setMediaActionMessage(msg);
+      success(msg);
       void loadMediaData();
     } catch {
-      alert('Failed running media sweep');
+      toastError('Failed running media sweep');
     } finally {
       setActionLoading(null);
     }
@@ -214,8 +217,9 @@ export default function NextGenOperations() {
       setReports((prev) =>
         prev.map((r) => (r.id === reportId ? { ...r, status: action === 'dismiss' ? 'dismissed' : 'resolved' } : r)),
       );
+      success(`Moderation action "${action}" executed.`);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to execute moderation action');
+      toastError(err instanceof Error ? err.message : 'Failed to execute moderation action');
     } finally {
       setActionLoading(null);
     }
@@ -235,8 +239,9 @@ export default function NextGenOperations() {
         },
       );
       setRevealedResult(res.data);
+      success('Author identity revealed and logged in audit trail.');
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Identity reveal failed or unauthorized');
+      toastError(err instanceof Error ? err.message : 'Identity reveal failed or unauthorized');
     } finally {
       setRevealLoading(false);
     }

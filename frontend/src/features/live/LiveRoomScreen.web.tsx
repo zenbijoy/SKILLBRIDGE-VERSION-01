@@ -16,11 +16,12 @@ import {
   decodeLivePacket,
   LiveReactionPacket,
   LiveHandRaisePacket,
-  LiveChatPacket,
 } from "./liveDataPacket";
 import { api } from "@/lib/api";
+import { RoomLiveStage } from "../room/live/RoomLiveStage";
 
 interface LiveCreds {
+  provider?: "livekit" | "webrtc";
   url: string;
   token: string;
   canPublish: boolean;
@@ -29,6 +30,7 @@ interface LiveCreds {
   sessionId?: string;
   roomName?: string;
   participantName?: string;
+  iceServers?: any[];
 }
 
 export default function LiveRoomScreenWeb() {
@@ -60,8 +62,10 @@ export default function LiveRoomScreenWeb() {
   }, []);
 
   const fetchToken = useCallback(() => {
-    const target = sessionId || roomId;
-    if (!target) return;
+    const rawTarget = sessionId || roomId;
+    if (!rawTarget) return;
+    const target = rawTarget.replace(/^qa-stage-/, "");
+    const cleanRoomId = roomId ? roomId.replace(/^qa-stage-/, "") : "";
     setLoading(true);
     setError(null);
 
@@ -72,8 +76,8 @@ export default function LiveRoomScreenWeb() {
       })
       .catch((e: any) => {
         const msg = e.message || "Failed to join live room";
-        if (msg.includes("Join the learning room first") && roomId) {
-          api(`/rooms/${roomId}/join`, { method: "POST" })
+        if (msg.includes("Join the learning room first") && cleanRoomId) {
+          api(`/rooms/${cleanRoomId}/join`, { method: "POST" })
             .then(() => {
               return api<LiveCreds>(`/live/token/${target}`, { method: "POST" });
             })
@@ -94,12 +98,13 @@ export default function LiveRoomScreenWeb() {
   }, [roomId, sessionId]);
 
   const joinAndRetry = useCallback(async () => {
-    if (!roomId) {
+    const cleanRoomId = roomId ? roomId.replace(/^qa-stage-/, "") : "";
+    if (!cleanRoomId) {
       fetchToken();
       return;
     }
     try {
-      await api(`/rooms/${roomId}/join`, { method: "POST" });
+      await api(`/rooms/${cleanRoomId}/join`, { method: "POST" });
       fetchToken();
     } catch (joinErr: any) {
       const msg = joinErr?.message || "";
@@ -110,7 +115,7 @@ export default function LiveRoomScreenWeb() {
         msg.toLowerCase().includes("invit")
       ) {
         window.alert("This room requires host approval. Please request access from the room lobby.");
-        router.replace(`/room/${roomId}` as any);
+        router.replace(`/room/${cleanRoomId}` as any);
       } else {
         setError(msg || "Failed to join room");
       }
@@ -162,6 +167,21 @@ export default function LiveRoomScreenWeb() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // If LiveKit is unconfigured or WebRTC provider is chosen, render ultra-reliable RoomLiveStage
+  if (creds.provider === "webrtc" || !creds.url) {
+    return (
+      <RoomLiveStage
+        roomId={roomId || creds.sessionId || ""}
+        roomTitle={creds.roomName || "Live Study Space"}
+        currentUserId={creds.participantName || "user"}
+        currentUserName={creds.participantName || "Member"}
+        currentUserRole={creds.role || "member"}
+        isHost={Boolean(creds.isHost)}
+        onLeave={() => router.back()}
+      />
     );
   }
 
@@ -226,8 +246,96 @@ function LiveMeetingView({
   const [copiedToast, setCopiedToast] = useState(false);
   const [showRoster, setShowRoster] = useState(false);
   const [showHostMenu, setShowHostMenu] = useState(false);
+  const [showReactionsBar, setShowReactionsBar] = useState(false);
+  const [isHandRaised, setIsHandRaised] = useState(false);
+  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  const [reactions, setReactions] = useState<
+    { id: string; emoji: string; senderName: string; xPercent: number }[]
+  >([]);
   const [rosterSearch, setRosterSearch] = useState("");
   const [page, setPage] = useState(0);
+
+  const triggerReaction = useCallback((emoji: string, senderName: string) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    const xPercent = 20 + Math.random() * 60;
+    setReactions((prev) => [...prev.slice(-12), { id, emoji, senderName, xPercent }]);
+    setTimeout(() => {
+      setReactions((prev) => prev.filter((r) => r.id !== id));
+    }, 2500);
+  }, []);
+
+  // Listen to LiveKit Data Channel Events (Reactions, Hand Raises)
+  useEffect(() => {
+    if (!room) return;
+
+    const onDataReceived = (payload: Uint8Array, participant?: Participant) => {
+      const packet = decodeLivePacket(payload);
+      if (!packet) return;
+
+      if (packet.type === "reaction") {
+        triggerReaction(packet.emoji, packet.senderName || participant?.name || "Participant");
+      } else if (packet.type === "hand_raise") {
+        const id = packet.senderId || participant?.identity;
+        if (id) {
+          setRaisedHands((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          });
+        }
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, onDataReceived);
+    return () => {
+      room.off(RoomEvent.DataReceived, onDataReceived);
+    };
+  }, [room, triggerReaction]);
+
+  // Publish Reaction via LiveKit Data Channel
+  const sendReaction = (emoji: string) => {
+    if (!room?.localParticipant) return;
+    const senderName = localParticipant.name || "You";
+    const packet: LiveReactionPacket = {
+      version: 1,
+      type: "reaction",
+      emoji,
+      senderId: localParticipant.identity,
+      senderName,
+      timestamp: Date.now(),
+    };
+    try {
+      room.localParticipant.publishData(encodeLivePacket(packet) as any, { reliable: true });
+    } catch {}
+    triggerReaction(emoji, "You");
+  };
+
+  // Toggle Hand Raise via LiveKit Data Channel
+  const toggleHandRaise = () => {
+    if (!room?.localParticipant) return;
+    const nextState = !isHandRaised;
+    setIsHandRaised(nextState);
+
+    const packet: LiveHandRaisePacket = {
+      version: 1,
+      type: "hand_raise",
+      senderId: localParticipant.identity,
+      senderName: localParticipant.name || "You",
+      isRaised: nextState,
+      timestamp: Date.now(),
+    };
+    try {
+      room.localParticipant.publishData(encodeLivePacket(packet) as any, { reliable: true });
+    } catch {}
+
+    setRaisedHands((prev) => {
+      const next = new Set(prev);
+      if (nextState) next.add(localParticipant.identity);
+      else next.delete(localParticipant.identity);
+      return next;
+    });
+  };
 
   // Identify active screenshare track (if any participant is sharing screen)
   const screenShareTrack = useMemo(() => {
@@ -268,7 +376,7 @@ function LiveMeetingView({
   const handleToggleMic = async () => {
     try {
       await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
-    } catch (err: any) {
+    } catch {
       alert("Could not access microphone. Please check your browser audio permissions.");
     }
   };
@@ -276,7 +384,7 @@ function LiveMeetingView({
   const handleToggleCam = async () => {
     try {
       await localParticipant.setCameraEnabled(!isCameraEnabled);
-    } catch (err: any) {
+    } catch {
       alert("Could not access camera. Please check your browser video permissions.");
     }
   };
@@ -416,7 +524,10 @@ function LiveMeetingView({
             <div style={styles.screenStrip}>
               {currentPageTracks.map((tr) => (
                 <div key={tr.publication?.trackSid || tr.participant?.identity} style={styles.stripTile}>
-                  <ParticipantTile trackRef={tr} />
+                  <ParticipantTile
+                    trackRef={tr}
+                    isHandRaised={raisedHands.has(tr.participant?.identity || "")}
+                  />
                 </div>
               ))}
             </div>
@@ -432,7 +543,10 @@ function LiveMeetingView({
             >
               {currentPageTracks.map((tr) => (
                 <div key={tr.publication?.trackSid || tr.participant?.identity} style={styles.gridCell}>
-                  <ParticipantTile trackRef={tr} />
+                  <ParticipantTile
+                    trackRef={tr}
+                    isHandRaised={raisedHands.has(tr.participant?.identity || "")}
+                  />
                 </div>
               ))}
             </div>
@@ -585,6 +699,67 @@ function LiveMeetingView({
             <span style={styles.btnLabel}>{participants.length}</span>
           </button>
 
+          {/* Raise / Lower Hand */}
+          <button
+            onClick={toggleHandRaise}
+            style={isHandRaised ? styles.controlBtnActive : styles.controlBtn}
+            title={isHandRaised ? "Lower Hand" : "Raise Hand"}
+          >
+            <span style={styles.btnIcon}>{isHandRaised ? "✋" : "👋"}</span>
+            <span style={styles.btnLabel}>{isHandRaised ? "Lower" : "Raise"}</span>
+          </button>
+
+          {/* Reactions */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowReactionsBar((prev) => !prev)}
+              style={showReactionsBar ? styles.controlBtnActive : styles.controlBtn}
+              title="React with Emoji"
+            >
+              <span style={styles.btnIcon}>✨</span>
+              <span style={styles.btnLabel}>React</span>
+            </button>
+
+            {showReactionsBar && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "64px",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  display: "flex",
+                  gap: "8px",
+                  background: "#1E293B",
+                  padding: "8px 12px",
+                  borderRadius: "9999px",
+                  boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  zIndex: 100,
+                }}
+              >
+                {["❤️", "👏", "🔥", "🎉", "💡", "😂"].map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      sendReaction(emoji);
+                      setShowReactionsBar(false);
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      fontSize: "20px",
+                      cursor: "pointer",
+                      padding: "4px 6px",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Host Controls Menu (if Host) */}
           {creds.isHost && (
             <div style={{ position: "relative" }}>
@@ -640,6 +815,34 @@ function LiveMeetingView({
           </button>
         </div>
       </footer>
+
+      {/* Floating Reactions Overlay */}
+      {reactions.length > 0 && (
+        <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999, overflow: "hidden" }}>
+          {reactions.map((r) => (
+            <div
+              key={r.id}
+              style={{
+                position: "absolute",
+                bottom: "90px",
+                left: `${r.xPercent}%`,
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "rgba(15, 23, 42, 0.85)",
+                padding: "6px 12px",
+                borderRadius: "9999px",
+                border: "1px solid rgba(255, 255, 255, 0.15)",
+                color: "#FFFFFF",
+                fontSize: "14px",
+              }}
+            >
+              <span style={{ fontSize: "20px" }}>{r.emoji}</span>
+              <span style={{ fontSize: "11px", fontWeight: 600 }}>{r.senderName}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -647,7 +850,13 @@ function LiveMeetingView({
 // ---------------------------------------------------------------------------
 // Participant Tile with Active Speaker Highlighting
 // ---------------------------------------------------------------------------
-function ParticipantTile({ trackRef }: { trackRef: any }) {
+function ParticipantTile({
+  trackRef,
+  isHandRaised = false,
+}: {
+  trackRef: any;
+  isHandRaised?: boolean;
+}) {
   const p: Participant = trackRef.participant;
   const isVideoPublished =
     trackRef.publication &&
@@ -661,8 +870,16 @@ function ParticipantTile({ trackRef }: { trackRef: any }) {
     <div
       style={{
         ...styles.tileWrapper,
-        border: isSpeaking ? "2px solid #10B981" : "1px solid rgba(255,255,255,0.08)",
-        boxShadow: isSpeaking ? "0 0 16px rgba(16, 185, 129, 0.4)" : "none",
+        border: isSpeaking
+          ? "2px solid #10B981"
+          : isHandRaised
+          ? "2px solid #F59E0B"
+          : "1px solid rgba(255,255,255,0.08)",
+        boxShadow: isSpeaking
+          ? "0 0 16px rgba(16, 185, 129, 0.4)"
+          : isHandRaised
+          ? "0 0 16px rgba(245, 158, 11, 0.4)"
+          : "none",
       }}
     >
       {isVideoPublished ? (
@@ -679,6 +896,11 @@ function ParticipantTile({ trackRef }: { trackRef: any }) {
       {/* Name and Mic Overlay */}
       <div style={styles.nameplate}>
         <span style={styles.nameplateText}>{displayName}</span>
+        {isHandRaised && (
+          <span style={{ fontSize: "12px", marginLeft: "4px" }} title="Hand Raised">
+            ✋
+          </span>
+        )}
         {isMuted ? (
           <span style={styles.micMutedBadge} title="Microphone Muted">
             🔇

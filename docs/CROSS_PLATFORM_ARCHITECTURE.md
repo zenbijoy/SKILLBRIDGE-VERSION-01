@@ -74,11 +74,12 @@ Both platforms notify users of incoming calls, new messages, session reminders, 
 * **Android (`notifications.native.ts`)**:
   * Registers Expo push / FCM device tokens with backend `/notifications/devices`.
   * Handles deep link intents when notifications are tapped.
-* **Web (`notifications.web.ts`)**:
-  * Prompts for browser notification permissions via `Notification.requestPermission()`.
-  * Registers browser client fingerprint with `/notifications/devices`.
-  * Displays rich browser notifications when calls or messages arrive while the tab is blurred/backgrounded.
-  * Routes click actions directly to `/call/:id`, `/chat/:id`, or `/broadcast/:id`.
+* **Web (`notifications.web.ts` & `public/sw.js`)**:
+  * Registers Service Worker (`sw.js`) with standards-compliant Push API & notification click handlers.
+  * Subscribes browser to Web Push using server VAPID public key (`registration.pushManager.subscribe`).
+  * Registers full PushSubscription token with backend `/notifications/devices`.
+  * Displays background push alerts via Service Worker and in-app notifications via Web Notifications API + sockets.
+  * Routes click actions directly to `/call/:id`, `/chat/:id`, or `/notifications`.
 
 ### E. YouTube Live Broadcasts & Q&A Stages
 Club seminars and large live lectures are broadcast via YouTube with SkillBridge's interactive live Q&A queue and stage promotion system.

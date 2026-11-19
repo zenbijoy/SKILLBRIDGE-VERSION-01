@@ -22,6 +22,8 @@ import { LiveSessionHost } from "@/features/room/live/LiveSessionHost";
 import { useI18n } from "@/i18n";
 import { SkillBridgeLoader } from "@/components/ui";
 import { AutoHideNavigationProvider } from "@/navigation/AutoHideNavigationContext";
+import { WebResponsiveShell } from "@/components/navigation/WebResponsiveShell";
+import { AppUpdateChecker } from "@/components/AppUpdateChecker";
 
 // Prevent native splash screen from hiding prematurely until session initialization completes
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -122,10 +124,14 @@ function Gate() {
 
     socket.on("notification:new", handleNewNotification);
     socket.on("chat:message", handleNewChatMessage);
+    socket.on("conversation:read", handleNewChatMessage);
+    socket.on("message:deleted", handleNewChatMessage);
 
     return () => {
       socket.off("notification:new", handleNewNotification);
       socket.off("chat:message", handleNewChatMessage);
+      socket.off("conversation:read", handleNewChatMessage);
+      socket.off("message:deleted", handleNewChatMessage);
     };
   }, [queryClient]);
 
@@ -172,7 +178,7 @@ function Gate() {
     } else if (!loading && !session) {
       disconnectSocket();
     }
-  }, [loading, session?.access_token]);
+  }, [loading, session]);
 
   // Hide native splash screen once initial session resolution completes
   useEffect(() => {
@@ -187,58 +193,62 @@ function Gate() {
 
   return (
     <TourProvider enabled={Boolean(session) && canAccessMainApp && guidedTourEnabled}>
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.bg },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          contentStyle: { backgroundColor: colors.bg },
-        }}
-      >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="search/index" options={{ headerShown: false }} />
-        <Stack.Screen name="notifications" options={{ headerShown: false }} />
-        <Stack.Screen name="settings/index" options={{ headerShown: false }} />
-        <Stack.Screen name="settings/profile" options={{ title: t("settings.profile") }} />
-        <Stack.Screen name="settings/skills" options={{ title: t("settings.skills") }} />
-        <Stack.Screen name="settings/privacy" options={{ title: t("settings.privacy") }} />
-        <Stack.Screen name="settings/language" options={{ title: t("settings.languageTitle") }} />
-        <Stack.Screen name="settings/appearance" options={{ title: t("settings.appearanceTitle") }} />
-        <Stack.Screen name="settings/notifications" options={{ title: t("settings.notificationsTitle") }} />
-        <Stack.Screen name="settings/data-storage" options={{ title: t("settings.dataTitle") }} />
-        <Stack.Screen name="settings/accessibility" options={{ title: t("settings.accessibilityTitle") }} />
-        <Stack.Screen name="settings/security" options={{ title: t("settings.securityTitle") }} />
-        <Stack.Screen name="settings/about" options={{ title: t("settings.about") }} />
-        <Stack.Screen name="dashboard/customize" options={{ headerShown: false }} />
-        <Stack.Screen name="feed" options={{ headerShown: false }} />
-        <Stack.Screen name="connections" options={{ headerShown: false }} />
-        <Stack.Screen name="schedule" options={{ headerShown: false }} />
-        <Stack.Screen name="calendar/index" options={{ headerShown: false }} />
-        <Stack.Screen name="clubs" options={{ headerShown: false }} />
-        <Stack.Screen name="quiz" options={{ headerShown: false }} />
-        <Stack.Screen name="events" options={{ headerShown: false }} />
-        <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
-        <Stack.Screen name="saved/index" options={{ headerShown: false }} />
-        <Stack.Screen name="help/questions" options={{ headerShown: false }} />
-        <Stack.Screen name="help/questions/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="room/create" options={{ headerShown: false }} />
-        <Stack.Screen name="research" options={{ headerShown: false }} />
-        <Stack.Screen name="achievements/index" options={{ headerShown: false }} />
-        <Stack.Screen name="bookings/index" options={{ headerShown: false }} />
-        <Stack.Screen name="goals/index" options={{ headerShown: false }} />
-        <Stack.Screen name="planner/index" options={{ headerShown: false }} />
-        <Stack.Screen name="progress/index" options={{ headerShown: false }} />
-        <Stack.Screen name="challenges/index" options={{ headerShown: false }} />
-        <Stack.Screen name="settings/integrations" options={{ headerShown: false }} />
-        <Stack.Screen name="admin" options={{ headerShown: false }} />
-        <Stack.Screen name="room/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="live/[roomId]" options={{ headerShown: false }} />
-        <Stack.Screen name="call/[id]" options={{ headerShown: false }} />
-      </Stack>
+      <WebResponsiveShell>
+        <AppUpdateChecker />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: colors.bg },
+          }}
+        >
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="search/index" options={{ headerShown: false }} />
+          <Stack.Screen name="notifications" options={{ headerShown: false }} />
+          <Stack.Screen name="settings/index" options={{ headerShown: false }} />
+          <Stack.Screen name="settings/profile" options={{ title: t("settings.profile") }} />
+          <Stack.Screen name="settings/skills" options={{ title: t("settings.skills") }} />
+          <Stack.Screen name="settings/privacy" options={{ title: t("settings.privacy") }} />
+          <Stack.Screen name="settings/language" options={{ title: t("settings.languageTitle") }} />
+          <Stack.Screen name="settings/appearance" options={{ title: t("settings.appearanceTitle") }} />
+          <Stack.Screen name="settings/notifications" options={{ title: t("settings.notificationsTitle") }} />
+          <Stack.Screen name="settings/data-storage" options={{ title: t("settings.dataTitle") }} />
+          <Stack.Screen name="settings/accessibility" options={{ title: t("settings.accessibilityTitle") }} />
+          <Stack.Screen name="settings/security" options={{ title: t("settings.securityTitle") }} />
+          <Stack.Screen name="settings/about" options={{ title: t("settings.about") }} />
+          <Stack.Screen name="dashboard/customize" options={{ headerShown: false }} />
+          <Stack.Screen name="feed" options={{ headerShown: false }} />
+          <Stack.Screen name="connections" options={{ headerShown: false }} />
+          <Stack.Screen name="schedule" options={{ headerShown: false }} />
+          <Stack.Screen name="calendar/index" options={{ headerShown: false }} />
+          <Stack.Screen name="clubs" options={{ headerShown: false }} />
+          <Stack.Screen name="quiz" options={{ headerShown: false }} />
+          <Stack.Screen name="events" options={{ headerShown: false }} />
+          <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+          <Stack.Screen name="saved/index" options={{ headerShown: false }} />
+          <Stack.Screen name="help/questions" options={{ headerShown: false }} />
+          <Stack.Screen name="help/questions/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="room/create" options={{ headerShown: false }} />
+          <Stack.Screen name="research" options={{ headerShown: false }} />
+          <Stack.Screen name="achievements/index" options={{ headerShown: false }} />
+          <Stack.Screen name="bookings/index" options={{ headerShown: false }} />
+          <Stack.Screen name="goals/index" options={{ headerShown: false }} />
+          <Stack.Screen name="planner/index" options={{ headerShown: false }} />
+          <Stack.Screen name="progress/index" options={{ headerShown: false }} />
+          <Stack.Screen name="challenges/index" options={{ headerShown: false }} />
+          <Stack.Screen name="settings/integrations" options={{ headerShown: false }} />
+          <Stack.Screen name="admin" options={{ headerShown: false }} />
+          <Stack.Screen name="room/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="live/index" options={{ headerShown: false }} />
+          <Stack.Screen name="live/[roomId]" options={{ headerShown: false }} />
+          <Stack.Screen name="call/[id]" options={{ headerShown: false }} />
+        </Stack>
+      </WebResponsiveShell>
       <TourOverlay />
       <IncomingCallModal />
       <ActiveCallBanner />

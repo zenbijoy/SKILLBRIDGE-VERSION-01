@@ -13,7 +13,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
-import type { Profile, Room } from "@/types";
+import type { Room } from "@/types";
 import {
   Empty,
   ErrorState,

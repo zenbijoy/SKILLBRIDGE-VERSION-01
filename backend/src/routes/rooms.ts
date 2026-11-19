@@ -1441,6 +1441,13 @@ rooms.post(
       isAnonymous: false,
     });
 
+    try {
+      const { broadcastRoomQA } = await import("../socket.js");
+      broadcastRoomQA(roomId, "new", { question: data });
+    } catch {
+      // non-fatal
+    }
+
     res.status(201).json({ question: data });
   }),
 );
@@ -1559,6 +1566,18 @@ rooms.post(
       .update({ upvotes_count: count ?? 0 })
       .eq("id", qId);
 
+    try {
+      const { broadcastRoomQA } = await import("../socket.js");
+      broadcastRoomQA(roomId, "voted", {
+        questionId: qId,
+        upvotes_count: count ?? 0,
+        voted,
+        voterId: req.userId,
+      });
+    } catch {
+      // non-fatal
+    }
+
     res.json({ success: true, voted, upvotes_count: count ?? 0 });
   }),
 );
@@ -1657,6 +1676,17 @@ rooms.patch(
       questionId: qId,
       answerId: aId,
     });
+
+    try {
+      const { broadcastRoomQA } = await import("../socket.js");
+      broadcastRoomQA(roomId, "resolved", {
+        questionId: qId,
+        answerId: aId,
+        question: updatedQuestion,
+      });
+    } catch {
+      // non-fatal
+    }
 
     res.json({ success: true, question: updatedQuestion, accepted_answer_id: aId });
   }),

@@ -12,7 +12,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Room } from "@/types";
 import { triggerHaptic } from "@/components/ui";
 import { WEB_URL } from "@/lib/config";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 
 export type RoomOSHeaderProps = {
   room: Room;

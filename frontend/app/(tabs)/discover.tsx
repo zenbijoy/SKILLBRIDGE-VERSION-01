@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -11,7 +10,7 @@ import {
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { EventItem, Profile, Room } from "@/types";
 import { AppHeader } from "@/components/navigation/AppHeader";
@@ -113,11 +112,9 @@ export default function DiscoverScreen() {
     enabled: activeTab === "for_you" || activeTab === "events",
   });
 
-  const qc = useQueryClient();
   const {
     connections,
     incoming,
-    outgoing,
     getConnectionStatus,
     sendRequest,
     promptWithdrawRequest,
@@ -1130,23 +1127,34 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     // @ts-ignore – gap not in RN 0.69 types
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    gap: 7,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
     borderRadius: radius.pill,
     borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   catTabText: {
     fontSize: 13,
+    letterSpacing: 0.2,
   },
   compactRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    borderRadius: radius.md,
+    padding: 13,
+    borderRadius: 16,
     borderWidth: 1,
     // @ts-ignore – gap not in RN 0.69 types
     gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   avatar: {
     width: 42,

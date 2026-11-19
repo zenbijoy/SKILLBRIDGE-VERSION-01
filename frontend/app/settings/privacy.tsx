@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Alert, Switch, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";

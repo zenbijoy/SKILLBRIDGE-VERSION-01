@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View, Platform, useWindowDimensions } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -43,6 +43,12 @@ export function HomeNavbar() {
 
   const initial = (cachedProfile?.full_name?.trim()?.[0] ?? "U").toUpperCase();
   const avatarUrl = cachedProfile?.avatar_url;
+  const { width } = useWindowDimensions();
+
+  // On Web Desktop/Tablet, WebHeader provides the full professional top bar
+  if (Platform.OS === "web" && width >= 768) {
+    return null;
+  }
 
   return (
     <View style={s.container}>
@@ -120,6 +126,16 @@ export function HomeNavbar() {
             router.push("/connections" as any);
           }}
         />
+
+        {/* Direct P2P Call Launcher */}
+        <IconButton
+          icon="phone-outline"
+          label="Direct Call"
+          onPress={() => {
+            triggerHaptic();
+            setShowDirectCall(true);
+          }}
+        />
       </View>
 
       {/* Right: Actions Cluster (Search, Notifications) */}
@@ -142,6 +158,8 @@ export function HomeNavbar() {
           }}
         />
       </View>
+
+      <DirectCallModal visible={showDirectCall} onClose={() => setShowDirectCall(false)} />
     </View>
   );
 }
@@ -155,9 +173,9 @@ const s = StyleSheet.create({
     gap: 8,
   },
   avatarButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1.5,
     overflow: "hidden",
     alignItems: "center",
@@ -166,12 +184,12 @@ const s = StyleSheet.create({
   avatarImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 19,
+    borderRadius: 20,
   },
   avatarFallback: {
     width: "100%",
     height: "100%",
-    borderRadius: 19,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -189,22 +207,28 @@ const s = StyleSheet.create({
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
   },
   streakPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 16,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
     borderWidth: 1,
+    shadowColor: "#F97316",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 1,
   },
   fireIcon: {
-    fontSize: 13,
+    fontSize: 14,
   },
   streakText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: "800",
+    letterSpacing: 0.2,
   },
 });

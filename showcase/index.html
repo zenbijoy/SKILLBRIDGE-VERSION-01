@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillBridge — The Academic & Collaborative Super-App for University Students</title>
+  <meta name="description" content="Connect, collaborate, and excel in campus life. Real-time study rooms, peer tutoring, academic vault, routine sync, and verified campus communities. Download the Android APK or launch the Web App.">
+  <meta name="theme-color" content="#0f172a">
+
+  <!-- Open Graph / Meta -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="SkillBridge — University Academic Super-App">
+  <meta property="og:description" content="Real-time study rooms, academic vault, peer tutoring, and automated routine sync for university students.">
+  <meta property="og:image" content="https://ruetskillbridgeweb.duckdns.org/assets/icon.png">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              200: '#a7f3d0',
+              300: '#6ee7b7',
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#064e3b',
+              950: '#022c22',
+            },
+            accent: {
+              cyan: '#06b6d4',
+              indigo: '#6366f1',
+              amber: '#f59e0b',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & QR Code library -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card-hover:hover {
+      border-color: rgba(16, 185, 129, 0.4);
+      box-shadow: 0 10px 30px -10px rgba(16, 185, 129, 0.2);
+    }
+    .mesh-gradient {
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.12) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(99, 102, 241, 0.12) 0px, transparent 50%);
+    }
+    .phone-mockup {
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px -10px rgba(16, 185, 129, 0.3);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-brand-500 selection:text-white">
+
+  <!-- Top Announcement Bar -->
+  <div class="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white text-xs sm:text-sm py-2 px-4 text-center font-semibold tracking-wide flex items-center justify-center gap-2">
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-white/20 text-white animate-pulse">LATEST</span>
+    <span id="announcement-text">SkillBridge v2.0.10 is now live on VPS — Live Study Rooms, Vault & Routine Sync!</span>
+    <a href="#download" class="underline hover:text-emerald-100 ml-2 font-bold flex items-center gap-1">Download APK &rarr;</a>
+  </div>
+
+  <!-- Navigation Bar -->
+  <header class="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <!-- Brand Logo -->
+      <a href="#" class="flex items-center gap-3 group">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-lg shadow-brand-500/20 group-hover:scale-105 transition-transform duration-300">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+          </svg>
+        </div>
+        <div>
+          <span class="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-400">SkillBridge</span>
+          <span class="block text-[10px] font-bold text-brand-400 tracking-wider uppercase">RUET Campus Platform</span>
+        </div>
+      </a>
+
+      <!-- Desktop Links -->
+      <nav class="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-300">
+        <a href="#features" class="hover:text-brand-400 transition">Features</a>
+        <a href="#ui-showcase" class="hover:text-brand-400 transition">App Interface</a>
+        <a href="#architecture" class="hover:text-brand-400 transition">Architecture</a>
+        <a href="#download" class="hover:text-brand-400 transition">Download APK</a>
+        <a href="https://ruetskillbridgeadmin.duckdns.org" target="_blank" class="hover:text-cyan-400 transition flex items-center gap-1.5">
+          <span>⚙️ Admin Panel</span>
+        </a>
+      </nav>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-3">
+        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 hover:border-slate-600 transition shadow-sm">
+          <span>🌐 Launch Web App</span>
+        </a>
+        <a href="#download" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition hover:scale-[1.02] active:scale-[0.98]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span>Get APK</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="relative pt-12 pb-24 overflow-hidden mesh-gradient">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        
+        <!-- Left Hero Copy -->
+        <div class="lg:col-span-7 space-y-6 text-center lg:text-left">
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/30 text-brand-400 text-xs font-bold tracking-wide">
+            <span class="w-2 h-2 rounded-full bg-brand-400 animate-ping"></span>
+            <span id="hero-badge">v2.0.10 Stable Release Ready</span>
+          </div>
+
+          <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight text-white leading-[1.12]">
+            Connect, Collaborate & <br class="hidden sm:inline">
+            <span class="bg-clip-text text-transparent bg-gradient-to-r from-brand-400 via-teal-300 to-cyan-400">Excel in University Life</span>
+          </h1>
+
+          <p class="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+            SkillBridge is RUET's student-driven learning and community ecosystem. Featuring peer-to-peer tutoring, WebRTC audio/video study spaces, a central academic question vault, AI routine extraction, and encrypted campus messaging.
+          </p>
+
+          <!-- Dual Primary CTAs -->
+          <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
+            <a href="https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk" id="hero-download-btn" class="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-base font-extrabold bg-gradient-to-r from-brand-500 via-emerald-600 to-teal-600 hover:from-brand-600 hover:to-teal-700 text-white shadow-xl shadow-brand-500/30 hover:shadow-brand-500/50 hover:scale-[1.02] active:scale-[0.98] transition">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span>Download Android APK</span>
+              <span id="hero-apk-size" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-black/20 text-brand-100">62.1 MB</span>
+            </a>
+
+            <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-base font-bold bg-slate-900/90 hover:bg-slate-800 text-slate-100 border border-slate-700 hover:border-slate-600 transition shadow-lg">
+              <span>🌐 Open Web Version</span>
+              <span class="text-xs text-slate-400 font-mono">No Install</span>
+            </a>
+          </div>
+
+          <!-- Feature Quick Stats -->
+          <div class="pt-8 grid grid-cols-3 gap-4 border-t border-slate-800/80 max-w-lg mx-auto lg:mx-0">
+            <div>
+              <div class="text-2xl sm:text-3xl font-extrabold text-white">100%</div>
+              <div class="text-xs text-slate-400 font-medium">Free & Student-Led</div>
+            </div>
+            <div>
+              <div class="text-2xl sm:text-3xl font-extrabold text-brand-400">Real-time</div>
+              <div class="text-xs text-slate-400 font-medium">Live Study Rooms</div>
+            </div>
+            <div>
+              <div class="text-2xl sm:text-3xl font-extrabold text-cyan-400">Direct</div>
+              <div class="text-xs text-slate-400 font-medium">In-App Auto Update</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Hero Mockup -->
+        <div class="lg:col-span-5 flex justify-center">
+          <div class="relative w-[300px] sm:w-[340px] rounded-[48px] bg-slate-900 p-3 ring-1 ring-white/20 phone-mockup">
+            <!-- Notch -->
+            <div class="absolute top-5 left-1/2 -translate-x-1/2 w-28 h-5 bg-black rounded-full z-20 flex items-center justify-end px-3">
+              <div class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            </div>
+
+            <!-- Inner Screen -->
+            <div class="relative rounded-[38px] overflow-hidden bg-slate-950 border border-slate-800 p-4 pt-9 space-y-4">
+              
+              <!-- Screen Header -->
+              <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center font-bold text-white text-xs">SB</div>
+                  <div>
+                    <div class="text-xs font-bold text-white">SkillBridge Live</div>
+                    <div class="text-[10px] text-brand-400">CSE • EEE • ME • CE</div>
+                  </div>
+                </div>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">ONLINE</span>
+              </div>
+
+              <!-- Live Room Mockup Card -->
+              <div class="rounded-xl bg-slate-900/90 border border-emerald-500/30 p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                    CSE 3100: Algorithms Room
+                  </span>
+                  <span class="text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded font-mono font-bold">LIVE AUDIO</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-tight">Graph Theory & Dynamic Programming revision before semester exams.</p>
+                <div class="flex items-center justify-between pt-1">
+                  <div class="flex -space-x-1.5">
+                    <div class="w-6 h-6 rounded-full bg-blue-500 border border-slate-900 flex items-center justify-center text-[9px] font-bold">RK</div>
+                    <div class="w-6 h-6 rounded-full bg-purple-500 border border-slate-900 flex items-center justify-center text-[9px] font-bold">MS</div>
+                    <div class="w-6 h-6 rounded-full bg-emerald-500 border border-slate-900 flex items-center justify-center text-[9px] font-bold">+18</div>
+                  </div>
+                  <button class="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-bold shadow hover:bg-emerald-600">Join Space</button>
+                </div>
+              </div>
+
+              <!-- Vault Quick Access -->
+              <div class="rounded-xl bg-slate-900/90 border border-slate-800 p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold text-white flex items-center gap-1">
+                    <span>📚</span> Academic Vault
+                  </span>
+                  <span class="text-[10px] text-cyan-400 font-semibold">2,400+ Files</span>
+                </div>
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px] bg-slate-800/60 p-2 rounded-lg">
+                    <span class="truncate max-w-[180px] text-slate-300">CSE-2201_Final_2025.pdf</span>
+                    <span class="text-[10px] text-emerald-400 font-mono">PDF</span>
+                  </div>
+                  <div class="flex items-center justify-between text-[11px] bg-slate-800/60 p-2 rounded-lg">
+                    <span class="truncate max-w-[180px] text-slate-300">Math-1205_Fourier_Notes.pdf</span>
+                    <span class="text-[10px] text-emerald-400 font-mono">PDF</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Routine Alert -->
+              <div class="rounded-xl bg-gradient-to-r from-blue-900/40 to-slate-900 border border-blue-500/30 p-2.5 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">⏰</span>
+                  <div>
+                    <div class="text-[11px] font-bold text-white">Next: Database Lab</div>
+                    <div class="text-[9px] text-blue-300">10:30 AM • Room 304, CSE Building</div>
+                  </div>
+                </div>
+                <span class="text-[10px] font-mono text-emerald-400">In 25m</span>
+              </div>
+
+              <!-- Bottom Nav Bar -->
+              <div class="pt-2 flex items-center justify-around border-t border-slate-800 text-slate-400 text-xs">
+                <span class="text-brand-400 font-bold flex flex-col items-center"><span>🏠</span>Home</span>
+                <span class="flex flex-col items-center"><span>🧭</span>Discover</span>
+                <span class="flex flex-col items-center"><span>👥</span>Rooms</span>
+                <span class="flex flex-col items-center"><span>⚡</span>Tools</span>
+                <span class="flex flex-col items-center"><span>👤</span>Profile</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Version & Dynamic Download Section -->
+  <section id="download" class="py-20 bg-slate-900/60 border-y border-slate-800/80 relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center max-w-3xl mx-auto mb-16 space-y-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+          Automatic Version Sync
+        </div>
+        <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+          Direct APK Download & Auto-Updates
+        </h2>
+        <p class="text-slate-300 text-base sm:text-lg">
+          No waiting for app store reviews. SkillBridge on your VPS directly distributes verified releases with seamless in-app version checks.
+        </p>
+      </div>
+
+      <!-- Main Download Card -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center max-w-5xl mx-auto">
+        
+        <!-- Left: Download Actions & Specs -->
+        <div class="lg:col-span-7 glass-card rounded-3xl p-8 sm:p-10 space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-3">
+                <h3 class="text-2xl font-bold text-white">SkillBridge for Android</h3>
+                <span id="version-pill" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-brand-500/20 text-brand-400 border border-brand-500/30">
+                  v2.0.10 Stable
+                </span>
+              </div>
+              <p class="text-sm text-slate-400 mt-1">Official Production Build • Hosted on RUET VPS</p>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>Direct Link Active</span>
+            </div>
+          </div>
+
+          <!-- Specs Table -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 py-4 border-y border-slate-800 text-xs">
+            <div>
+              <div class="text-slate-500">File Name</div>
+              <div id="spec-filename" class="font-bold text-slate-200 mt-0.5 font-mono">SkillBridge.apk</div>
+            </div>
+            <div>
+              <div class="text-slate-500">Package Size</div>
+              <div id="spec-size" class="font-bold text-emerald-400 mt-0.5 font-mono">62.1 MB</div>
+            </div>
+            <div>
+              <div class="text-slate-500">OS Support</div>
+              <div class="font-bold text-slate-200 mt-0.5">Android 8.0+</div>
+            </div>
+            <div>
+              <div class="text-slate-500">Architecture</div>
+              <div class="font-bold text-slate-200 mt-0.5">ARM64 & x86_64</div>
+            </div>
+          </div>
+
+          <!-- What's New in this Build -->
+          <div class="space-y-2">
+            <div class="text-xs font-bold text-slate-300 uppercase tracking-wider">Release Highlights</div>
+            <ul id="release-notes-list" class="space-y-1.5 text-xs text-slate-300">
+              <li class="flex items-start gap-2">
+                <span class="text-emerald-400 font-bold">✓</span>
+                <span>Live Audio/Video Study Rooms with WebRTC and LiveKit screen-share</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-emerald-400 font-bold">✓</span>
+                <span>Central Academic Vault for past question papers & slides</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-emerald-400 font-bold">✓</span>
+                <span>Smart Timetable Routine extraction synced directly into Calendar</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-emerald-400 font-bold">✓</span>
+                <span>In-app automatic update notification system</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Download Buttons -->
+          <div class="pt-4 flex flex-col sm:flex-row gap-3">
+            <a href="https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk" id="main-download-btn" class="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-extrabold bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 hover:to-emerald-700 text-white shadow-lg shadow-brand-500/30 transition hover:scale-[1.01]">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span>Download SkillBridge.apk</span>
+            </a>
+
+            <a href="https://ruetskillbridge.duckdns.org/download/SkillBridge.apk" class="inline-flex items-center justify-center px-4 py-4 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Direct Download Mirror">
+              <span>Mirror 2</span>
+            </a>
+          </div>
+
+          <!-- SHA256 Checksum -->
+          <div class="text-[11px] text-slate-500 font-mono truncate">
+            <span>SHA-256: </span>
+            <span id="apk-sha256" class="text-slate-400 select-all">A4584C450C3B1C0B0E9600EE26ED99176E1957E17C318E15593E5754FE48354C</span>
+          </div>
+        </div>
+
+        <!-- Right: QR Code for Phone Scan -->
+        <div class="lg:col-span-5 glass-card rounded-3xl p-8 text-center space-y-6">
+          <div>
+            <h4 class="text-lg font-bold text-white">Scan with Phone</h4>
+            <p class="text-xs text-slate-400 mt-1">Point your camera to download APK straight to Android</p>
+          </div>
+
+          <!-- QR Code Container -->
+          <div class="inline-block p-4 bg-white rounded-2xl shadow-xl">
+            <div id="qrcode" class="flex items-center justify-center"></div>
+          </div>
+
+          <!-- 3-Step Install Guide -->
+          <div class="text-left space-y-3 pt-2 text-xs">
+            <div class="flex items-center gap-3">
+              <span class="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 font-bold flex items-center justify-center text-xs">1</span>
+              <span class="text-slate-300">Download the <b>SkillBridge.apk</b> file</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 font-bold flex items-center justify-center text-xs">2</span>
+              <span class="text-slate-300">Allow "Install Unknown Apps" in phone settings</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 font-bold flex items-center justify-center text-xs">3</span>
+              <span class="text-slate-300">Launch app & log in with your university account</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid Section -->
+  <section id="features" class="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="text-center max-w-3xl mx-auto mb-20 space-y-4">
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold uppercase tracking-wider">
+        Comprehensive University Toolset
+      </div>
+      <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+        Engineered for Academic Excellence
+      </h2>
+      <p class="text-slate-300 text-base sm:text-lg">
+        Explore the six core pillars that make SkillBridge the definitive platform for university students and educators.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      
+      <!-- Feature 1 -->
+      <div class="glass-card rounded-3xl p-8 space-y-4 glass-card-hover transition duration-300">
+        <div class="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-3xl">
+          🎥
+        </div>
+        <h3 class="text-xl font-bold text-white">Live Study Rooms</h3>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          Spin up peer revision rooms in seconds. Powered by LiveKit Cloud and WebRTC for sub-second low-latency audio, video grids, shared whiteboard, and host knock moderation.
+        </p>
+        <div class="text-xs font-semibold text-emerald-400 flex items-center gap-1 pt-2">
+          <span>WebRTC • LiveKit • HD Screen Share</span>
+        </div>
+      </div>
+
+      <!-- Feature 2 -->
+      <div class="glass-card rounded-3xl p-8 space-y-4 glass-card-hover transition duration-300">
+        <div class="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-3xl">
+          📚
+        </div>
+        <h3 class="text-xl font-bold text-white">Central Study Vault</h3>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          Access thousands of curated previous semester examination questions, lecture presentations, lab manuals, and solution sheets organized by semester, department, and course code.
+        </p>
+        <div class="text-xs font-semibold text-cyan-400 flex items-center gap-1 pt-2">
+          <span>Cloudflare R2 • PDF Preview • Instant Search</span>
+        </div>
+      </div>
+
+      <!-- Feature 3 -->
+      <div class="glass-card rounded-3xl p-8 space-y-4 glass-card-hover transition duration-300">
+        <div class="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-3xl">
+          🤝
+        </div>
+        <h3 class="text-xl font-bold text-white">Peer Tutoring & Marketplace</h3>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          Book sessions with verified senior students and mentors across engineering departments. Offer skills, get peer assistance in tough subjects, and build real-world mentorship.
+        </p>
+        <div class="text-xs font-semibold text-indigo-400 flex items-center gap-1 pt-2">
+          <span>Student Rating • Verified Badges • Booking Cal</span>
+        </div>
+      </div>
+
+      <!-- Feature 4 -->
+      <div class="glass-card rounded-3xl p-8 space-y-4 glass-card-hover transition duration-300">
+        <div class="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-3xl">
+          📅
+        </div>
+        <h3 class="text-xl font-bold text-white">Smart Routine & Timetable Sync</h3>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          Upload routine PDFs and let our AI parser automatically extract your section's weekly timetable, exam schedules, and lab sessions right into your academic calendar with alerts.
+        </p>
+        <div class="text-xs font-semibold text-amber-400 flex items-center gap-1 pt-2">
+          <span>OCR Parsing • Class Reminders • Calendar Export</span>
+        </div>
+      </div>
+
+      <!-- Feature 5 -->
+      <div class="glass-card rounded-3xl p-8 space-y-4 glass-card-hover transition duration-300">
+        <div class="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-3xl">
+          🏆
+        </div>
+        <h3 class="text-xl font-bold text-white">Gamified Quizzes & Leaderboards</h3>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          Reinforce subject knowledge through weekly chapter quizzes, maintain study streaks, earn achievement badges, and climb the university department leaderboard.
+        </p>
+        <div class="text-xs font-semibold text-rose-400 flex items-center gap-1 pt-2">
+          <span>Daily Streaks • Department Ranks • AI Quiz</span>
+        </div>
+      </div>
+
+      <!-- Feature 6 -->
+      <div class="glass-card rounded-3xl p-8 space-y-4 glass-card-hover transition duration-300">
+        <div class="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-3xl">
+          🏛️
+        </div>
+        <h3 class="text-xl font-bold text-white">Campus Clubs & Communities</h3>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          Connect with university robotics, programming, cultural, and sports clubs. View official announcements, event registrations, and club member directories in one feed.
+        </p>
+        <div class="text-xs font-semibold text-purple-400 flex items-center gap-1 pt-2">
+          <span>Club Events • Member Directories • Feeds</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Interactive App Interface Showcase -->
+  <section id="ui-showcase" class="py-24 bg-slate-900/40 border-t border-slate-800/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center max-w-3xl mx-auto mb-16 space-y-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+          Visual Interface
+        </div>
+        <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+          Designed for Mobile & Web Harmony
+        </h2>
+        <p class="text-slate-300 text-base sm:text-lg">
+          Consistent cross-platform UI built with React Native and Expo Router. Seamless transitions between Android mobile app, tablet, and desktop web browser.
+        </p>
+      </div>
+
+      <!-- Interactive Tab Selector for App Screens -->
+      <div class="flex items-center justify-center gap-2 flex-wrap mb-12" id="ui-tab-buttons">
+        <button onclick="switchTab('feed')" id="tab-btn-feed" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition">
+          Campus Home & Feed
+        </button>
+        <button onclick="switchTab('live')" id="tab-btn-live" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+          Live Study Space
+        </button>
+        <button onclick="switchTab('vault')" id="tab-btn-vault" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+          Academic Vault
+        </button>
+        <button onclick="switchTab('routine')" id="tab-btn-routine" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+          Class Routine
+        </button>
+      </div>
+
+      <!-- UI Preview Container -->
+      <div class="glass-card rounded-3xl p-6 sm:p-10 max-w-4xl mx-auto border border-slate-800 shadow-2xl">
+        
+        <!-- Feed Tab Content -->
+        <div id="tab-content-feed" class="space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <h4 class="text-xl font-bold text-white">Personalized Student Home Feed</h4>
+              <p class="text-xs text-slate-400 mt-0.5">Dynamic timetable widget, live rooms ticker, trending questions</p>
+            </div>
+            <span class="text-xs px-2.5 py-1 rounded-md bg-brand-500/20 text-brand-400 font-mono font-bold">App Path: /(tabs)</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div class="space-y-4 text-sm text-slate-300">
+              <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <div class="text-xs font-bold text-brand-400 uppercase">⚡ Routine Radar Widget</div>
+                <div class="text-sm font-semibold text-white mt-1">CSE 3103: Microprocessors & Microcontrollers</div>
+                <div class="text-xs text-slate-400 mt-1">Room 205 • Today 11:30 AM - 1:00 PM • Prof. Dr. Al-Amin</div>
+              </div>
+
+              <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <div class="text-xs font-bold text-red-400 uppercase">🔴 Active Live Strip</div>
+                <div class="text-sm font-semibold text-white mt-1">4 Study Spaces Broadcasting Now</div>
+                <div class="text-xs text-slate-400 mt-1">Physics Lab Prep (14 online) • Circuit Theory Doubts (8 online)</div>
+              </div>
+
+              <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <div class="text-xs font-bold text-cyan-400 uppercase">🏆 Streak & Gamification</div>
+                <div class="text-sm font-semibold text-white mt-1">7 Days Study Streak Active! 🔥</div>
+                <div class="text-xs text-slate-400 mt-1">+150 XP gained this week • Rank #4 in CSE Department</div>
+              </div>
+            </div>
+
+            <!-- Graphic Preview -->
+            <div class="rounded-2xl bg-slate-950 p-4 border border-slate-800 space-y-3 font-mono text-xs">
+              <div class="text-slate-400 pb-2 border-b border-slate-800 flex justify-between">
+                <span>MOBILE / WEB SHELL</span>
+                <span class="text-emerald-400">ACTIVE</span>
+              </div>
+              <div class="text-emerald-400">[Navbar] SkillBridge RUET Edition</div>
+              <div class="text-slate-300">[Stories] Department Announcements (CSE, EEE, ME)</div>
+              <div class="text-slate-300">[PostComposer] Ask question or share lecture resource</div>
+              <div class="text-slate-400">[FeedStream] Verified peer notes & group study invites</div>
+              <div class="p-3 bg-slate-900 rounded-lg text-slate-400 border border-slate-800 text-[11px]">
+                "Has anyone completed the Verilog assignment for CSE 3104? Discussion room is open in Live Study tab!"
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Tab Content -->
+        <div id="tab-content-live" class="space-y-6 hidden">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <h4 class="text-xl font-bold text-white">LiveKit & WebRTC Collaborative Room</h4>
+              <p class="text-xs text-slate-400 mt-0.5">Sub-second audio/video relay with participant knock approval</p>
+            </div>
+            <span class="text-xs px-2.5 py-1 rounded-md bg-red-500/20 text-red-400 font-mono font-bold">App Path: /room/[id]</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div class="space-y-3 text-sm text-slate-300">
+              <div class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Integrated LiveKit audio bridge & screen capture</div>
+              <div class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Real-time Socket.IO participant state & raised hands</div>
+              <div class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Knocking request approval modal for private study spaces</div>
+              <div class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Shared interactive study whiteboard & live code snippets</div>
+              <div class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Background audio playback on Android native</div>
+            </div>
+
+            <div class="rounded-2xl bg-slate-950 p-4 border border-slate-800 space-y-3">
+              <div class="grid grid-cols-2 gap-2">
+                <div class="h-24 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center text-xs text-slate-400">
+                  <span>Host (Video / Audio)</span>
+                </div>
+                <div class="h-24 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center text-xs text-slate-400">
+                  <span>Participant 1</span>
+                </div>
+              </div>
+              <div class="h-20 bg-emerald-950/30 rounded-xl border border-emerald-500/30 flex items-center justify-center text-xs text-emerald-300 font-semibold">
+                <span>🖥️ Screen Share Active: CSE3100_Slide7.pdf</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vault Tab Content -->
+        <div id="tab-content-vault" class="space-y-6 hidden">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <h4 class="text-xl font-bold text-white">Academic Study Vault</h4>
+              <p class="text-xs text-slate-400 mt-0.5">High-speed global repository backed by Cloudflare R2</p>
+            </div>
+            <span class="text-xs px-2.5 py-1 rounded-md bg-cyan-500/20 text-cyan-400 font-mono font-bold">App Path: /vault</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div class="space-y-3 text-sm text-slate-300">
+              <div class="flex items-center gap-2"><span class="text-cyan-400 font-bold">✓</span> Filter by Department (CSE, EEE, ME, CE, ETE, IPE, etc.)</div>
+              <div class="flex items-center gap-2"><span class="text-cyan-400 font-bold">✓</span> Filter by Semester (1-1, 1-2, 2-1, 2-2, 3-1, 3-2, 4-1, 4-2)</div>
+              <div class="flex items-center gap-2"><span class="text-cyan-400 font-bold">✓</span> Direct PDF in-browser and in-app viewing</div>
+              <div class="flex items-center gap-2"><span class="text-cyan-400 font-bold">✓</span> Offline download caching for exam week preparation</div>
+            </div>
+
+            <div class="rounded-2xl bg-slate-950 p-4 border border-slate-800 space-y-2 text-xs">
+              <div class="p-2.5 bg-slate-900 rounded-lg flex justify-between items-center text-slate-200">
+                <span>📄 CSE-3101_Compiler_2024.pdf</span>
+                <span class="text-emerald-400">Download</span>
+              </div>
+              <div class="p-2.5 bg-slate-900 rounded-lg flex justify-between items-center text-slate-200">
+                <span>📄 EEE-2101_Signals_Mid_2025.pdf</span>
+                <span class="text-emerald-400">Download</span>
+              </div>
+              <div class="p-2.5 bg-slate-900 rounded-lg flex justify-between items-center text-slate-200">
+                <span>📄 Math-2105_Numerical_Analysis.pdf</span>
+                <span class="text-emerald-400">Download</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Routine Tab Content -->
+        <div id="tab-content-routine" class="space-y-6 hidden">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <h4 class="text-xl font-bold text-white">Smart Timetable & Routine Sync</h4>
+              <p class="text-xs text-slate-400 mt-0.5">AI OCR processing of complex campus routine PDFs</p>
+            </div>
+            <span class="text-xs px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-400 font-mono font-bold">App Path: /schedule</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div class="space-y-3 text-sm text-slate-300">
+              <div class="flex items-center gap-2"><span class="text-amber-400 font-bold">✓</span> Upload campus class routine image or PDF</div>
+              <div class="flex items-center gap-2"><span class="text-amber-400 font-bold">✓</span> AI extracts time slots, course code, teachers & classrooms</div>
+              <div class="flex items-center gap-2"><span class="text-amber-400 font-bold">✓</span> Routine Verification Modal before committing to database</div>
+              <div class="flex items-center gap-2"><span class="text-amber-400 font-bold">✓</span> Daily schedule reminder push notifications</div>
+            </div>
+
+            <div class="rounded-2xl bg-slate-950 p-4 border border-slate-800 space-y-2 text-xs">
+              <div class="text-slate-400 pb-1">TODAY'S SCHEDULE (MONDAY)</div>
+              <div class="p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-200">
+                08:00 AM - CSE 3105 (Software Engineering) • Gallery 2
+              </div>
+              <div class="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-300">
+                09:40 AM - CSE 3107 (Operating Systems) • Room 402
+              </div>
+              <div class="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-200">
+                11:20 AM - CSE 3108 (OS Sessional Lab) • Lab 3
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Technical Infrastructure & System Links -->
+  <section id="architecture" class="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="text-center max-w-3xl mx-auto mb-16 space-y-4">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold uppercase tracking-wider">
+        Full Stack Deployment
+      </div>
+      <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+        VPS Deployment Topology
+      </h2>
+      <p class="text-slate-300 text-base sm:text-lg">
+        SkillBridge is deployed on high-performance Oracle Cloud VPS architecture with auto-renewing SSL certificates, containerized microservices, and edge caching.
+      </p>
+    </div>
+
+    <!-- 4 Direct Service Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      
+      <!-- Card 1: Student Web App -->
+      <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="glass-card rounded-2xl p-6 space-y-4 glass-card-hover transition duration-300 block group">
+        <div class="flex items-center justify-between">
+          <span class="text-3xl">🌐</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white group-hover:text-brand-400 transition">Student Web App</h3>
+          <p class="text-xs text-slate-400 mt-1">Full Expo Web client with responsive sidebar, live rooms, and study feed.</p>
+        </div>
+        <div class="text-xs font-mono text-brand-400 truncate">
+          ruetskillbridgeweb.duckdns.org
+        </div>
+      </a>
+
+      <!-- Card 2: Admin Panel -->
+      <a href="https://ruetskillbridgeadmin.duckdns.org" target="_blank" class="glass-card rounded-2xl p-6 space-y-4 glass-card-hover transition duration-300 block group">
+        <div class="flex items-center justify-between">
+          <span class="text-3xl">⚙️</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white group-hover:text-cyan-400 transition">Admin Operations</h3>
+          <p class="text-xs text-slate-400 mt-1">Command palette, user 360, app version controller, rules engine, and audits.</p>
+        </div>
+        <div class="text-xs font-mono text-cyan-400 truncate">
+          ruetskillbridgeadmin.duckdns.org
+        </div>
+      </a>
+
+      <!-- Card 3: Backend API -->
+      <a href="https://ruetskillbridge.duckdns.org/api/v1/health" target="_blank" class="glass-card rounded-2xl p-6 space-y-4 glass-card-hover transition duration-300 block group">
+        <div class="flex items-center justify-between">
+          <span class="text-3xl">⚡</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white group-hover:text-indigo-400 transition">Backend API Engine</h3>
+          <p class="text-xs text-slate-400 mt-1">Node 22 Express microservice with Redis, LiveKit, Push workers, and OpenAPI.</p>
+        </div>
+        <div class="text-xs font-mono text-indigo-400 truncate">
+          ruetskillbridge.duckdns.org
+        </div>
+      </a>
+
+      <!-- Card 4: Android App Distribution -->
+      <a href="https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk" class="glass-card rounded-2xl p-6 space-y-4 glass-card-hover transition duration-300 block group border-brand-500/30">
+        <div class="flex items-center justify-between">
+          <span class="text-3xl">📱</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-brand-400 animate-pulse"></span>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white group-hover:text-brand-400 transition">Android APK (v2.0.10)</h3>
+          <p class="text-xs text-slate-400 mt-1">Direct APK download link for students. Fast VPS download with resume support.</p>
+        </div>
+        <div class="text-xs font-mono text-brand-400 truncate">
+          /download/SkillBridge.apk
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-slate-950 border-t border-slate-900 py-12 text-slate-400 text-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-xs">SB</div>
+        <span class="font-bold text-slate-200">SkillBridge RUET Student Ecosystem</span>
+      </div>
+
+      <div class="flex items-center gap-6">
+        <a href="https://ruetskillbridgeweb.duckdns.org" class="hover:text-white transition">Web App</a>
+        <a href="https://ruetskillbridgeadmin.duckdns.org" class="hover:text-white transition">Admin Console</a>
+        <a href="https://ruetskillbridge.duckdns.org/api-docs" class="hover:text-white transition">API Docs</a>
+        <a href="#download" class="hover:text-white transition">Download APK</a>
+      </div>
+
+      <div>
+        <p>&copy; 2026 SkillBridge. Running live on VPS 80.225.247.237</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Dynamic JS Script for Live Version Loading and QR Code Generation -->
+  <script>
+    // Tab switcher logic
+    function switchTab(tabKey) {
+      const tabs = ['feed', 'live', 'vault', 'routine'];
+      tabs.forEach(k => {
+        const content = document.getElementById(`tab-content-${k}`);
+        const btn = document.getElementById(`tab-btn-${k}`);
+        if (k === tabKey) {
+          content.classList.remove('hidden');
+          btn.className = "px-5 py-2.5 rounded-xl text-sm font-bold bg-brand-500 text-white shadow-lg shadow-brand-500/30 transition";
+        } else {
+          content.classList.add('hidden');
+          btn.className = "px-5 py-2.5 rounded-xl text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+        }
+      });
+    }
+
+    // Dynamic Version Auto-updater
+    const APK_DOWNLOAD_URL = "https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk";
+
+    // Generate QR Code
+    try {
+      new QRCode(document.getElementById("qrcode"), {
+        text: APK_DOWNLOAD_URL,
+        width: 156,
+        height: 156,
+        colorDark: "#022c22",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } catch (e) {
+      console.warn("QR code generator unavailable", e);
+    }
+
+    // Fetch version dynamically from API
+    async function fetchLiveVersion() {
+      try {
+        const res = await fetch("https://ruetskillbridge.duckdns.org/api/v1/app/version");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.version) return;
+
+        // Update DOM elements dynamically
+        const versionStr = `v${data.version} Stable`;
+        document.getElementById("announcement-text").textContent = `SkillBridge v${data.version} is now live on VPS — Live Study Rooms, Vault & Routine Sync!`;
+        document.getElementById("hero-badge").textContent = `v${data.version} Stable Release Ready`;
+        document.getElementById("version-pill").textContent = versionStr;
+
+        if (data.apk) {
+          if (data.apk.filename) {
+            document.getElementById("spec-filename").textContent = data.apk.filename;
+          }
+          if (data.apk.file_size_formatted) {
+            document.getElementById("spec-size").textContent = data.apk.file_size_formatted;
+            document.getElementById("hero-apk-size").textContent = data.apk.file_size_formatted;
+          }
+          if (data.apk.sha256) {
+            document.getElementById("apk-sha256").textContent = data.apk.sha256;
+          }
+        }
+
+        if (data.download_url) {
+          document.getElementById("hero-download-btn").href = data.download_url;
+          document.getElementById("main-download-btn").href = data.download_url;
+        }
+
+        if (Array.isArray(data.release_notes) && data.release_notes.length > 0) {
+          const list = document.getElementById("release-notes-list");
+          list.innerHTML = "";
+          data.release_notes.slice(0, 5).forEach(note => {
+            const li = document.createElement("li");
+            li.className = "flex items-start gap-2";
+            li.innerHTML = `<span class="text-emerald-400 font-bold">✓</span><span>${note}</span>`;
+            list.appendChild(li);
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to query dynamic app version, falling back to static config", err);
+      }
+    }
+
+    fetchLiveVersion();
+  </script>
+</body>
+</html>

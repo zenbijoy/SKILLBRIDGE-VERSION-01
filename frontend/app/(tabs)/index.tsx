@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Alert, Image, Linking, Pressable, StyleSheet, Text, View, TextInput } from "react-native";
-import Animated, { FadeInUp, useSharedValue, useAnimatedProps, withTiming, withDelay } from "react-native-reanimated";
+import { Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { Dashboard, Profile } from "@/types";
-import { Button, Card, H2, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
+import { Button, Card, Muted, Pill, Row, Screen, SectionHeader, Skeleton, triggerHaptic } from "@/components/ui";
 import { RoomCard } from "@/components/RoomCard";
 import { ProfileCard } from "@/components/ProfileCard";
 import { FeatureGrid } from "@/components/FeatureGrid";
@@ -495,37 +495,6 @@ export default function HomeScreen() {
       }}
     />
   </View>
-  );
-}
-
-const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
-
-function Stat({ n, label }: { n: number; label: string }) {
-  const { colors } = useTheme();
-  
-  // Animated number counter
-  const animatedValue = useSharedValue(0);
-  
-  useEffect(() => {
-    animatedValue.value = withDelay(300, withTiming(n, { duration: 1200 }));
-  }, [n, animatedValue]);
-
-  const animatedProps = useAnimatedProps(() => {
-    return {
-      text: `${Math.round(animatedValue.value)}`,
-    } as any;
-  });
-
-  return (
-    <View style={styles.statBox}>
-      <AnimatedTextInput 
-        animatedProps={animatedProps}
-        editable={false}
-        style={[styles.statNum, { color: colors.primary, padding: 0, margin: 0, height: 26, textAlign: "center" }]} 
-        defaultValue="0"
-      />
-      <Text style={[styles.statLabel, { color: colors.muted }]}>{label}</Text>
-    </View>
   );
 }
 

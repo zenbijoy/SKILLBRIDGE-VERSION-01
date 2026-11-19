@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { z } from "zod";
 import { admin as db } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
@@ -196,18 +197,98 @@ adminRoutes.get(
 adminRoutes.get(
   "/users",
   wrap(async (req, res) => {
+    const isCsvExport = req.query.export === "csv";
     const { page, limit, from, to } = pagination(req.query as Record<string, unknown>);
     const q = z.string().trim().max(120).optional().parse(req.query.q);
+    const status = z.enum(["active", "deactivated", "suspended", "banned"]).optional().parse(req.query.status);
+    const role = z.string().trim().max(40).optional().parse(req.query.role);
 
     let query = db.from("profiles").select("*", { count: "exact" });
     if (q) {
       const safe = sanitizeIlike(q);
       if (safe) query = query.or(`full_name.ilike.%${safe}%,username.ilike.%${safe}%,university.ilike.%${safe}%`);
     }
+    if (status) {
+      query = query.eq("account_status", status);
+    }
+    if (role && role !== "all") {
+      query = query.contains("roles", [role]);
+    }
+
+    if (isCsvExport) {
+      const { data, error } = await query.order("created_at", { ascending: false }).limit(2000);
+      if (error) throw error;
+      const headers = ["id", "full_name", "username", "email", "university", "department", "account_status", "roles", "reputation", "created_at"];
+      const escapeCsv = (val: unknown) => {
+        if (val === null || val === undefined) return '""';
+        const str = typeof val === "object" ? JSON.stringify(val) : String(val);
+        return `"${str.replace(/"/g, '""')}"`;
+      };
+      const csv = [
+        headers.join(","),
+        ...(data ?? []).map((row) =>
+          [
+            escapeCsv(row.id),
+            escapeCsv(row.full_name),
+            escapeCsv(row.username),
+            escapeCsv(row.email),
+            escapeCsv(row.university),
+            escapeCsv(row.department),
+            escapeCsv(row.account_status),
+            escapeCsv((row.roles ?? []).join(";")),
+            escapeCsv(row.reputation),
+            escapeCsv(row.created_at),
+          ].join(","),
+        ),
+      ].join("\n");
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", 'attachment; filename="skillbridge_users.csv"');
+      return res.send(csv);
+    }
 
     const { data, count, error } = await query.order("created_at", { ascending: false }).range(from, to);
     if (error) throw error;
     res.json({ users: data ?? [], total: count ?? 0, page, limit });
+  }),
+);
+
+adminRoutes.post(
+  "/users/:id/reset-password",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        customPassword: z.string().min(8).max(100).optional(),
+      })
+      .optional()
+      .parse(req.body);
+
+    const tempPassword = body?.customPassword ?? `SB_${crypto.randomBytes(5).toString("hex")}!9`;
+
+    try {
+      const { data: updated, error: authError } = await db.auth.admin.updateUserById(id, {
+        password: tempPassword,
+      });
+
+      if (authError) {
+        return res.status(400).json({ error: authError.message });
+      }
+
+      await audit(req.userId!, "admin.user.reset_password", "user", id, {
+        generatedTemporary: !body?.customPassword,
+      });
+
+      res.json({
+        success: true,
+        userId: id,
+        email: updated?.user?.email,
+        temporaryPassword: tempPassword,
+        message: "Temporary access password has been configured. Instruct user to sign in and update their password.",
+      });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || "Failed to reset password for user" });
+    }
   }),
 );
 

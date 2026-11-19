@@ -12,6 +12,7 @@ export type LiveHandRaisePacket = {
   timestamp: number;
   senderId?: string;
   senderName?: string;
+  isRaised?: boolean;
 };
 
 export type LiveChatPacket = {

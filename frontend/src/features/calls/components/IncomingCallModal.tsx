@@ -87,8 +87,26 @@ export const IncomingCallModal: React.FC = () => {
     };
   }, [incomingCall, pulse1, pulse2, buttonPulse]);
 
-  // Robust Socket Event Listeners for Incoming Call
+  // Fix C-1/C-6/C-7: Robust Socket Event Listeners for Incoming Call
+  // - Busy guard: If already in an active call, auto-reject new incoming call with "busy"
+  // - Multi-tab (Web): Use BroadcastChannel so only one tab rings at a time
   useEffect(() => {
+    // Web: BroadcastChannel so only the tab that answers the call rings.
+    // Other tabs dismiss their incoming call modal when one tab picks up.
+    let broadcastChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      broadcastChannel = new BroadcastChannel("skillbridge-call");
+      broadcastChannel.onmessage = (event) => {
+        if (event.data?.type === "call:answered" || event.data?.type === "call:dismissed") {
+          const current = useCallStore.getState().incomingCall;
+          if (current && current.callId === event.data.callId) {
+            callSounds.stopAll();
+            setIncomingCall(null);
+          }
+        }
+      };
+    }
+
     const unsubIncoming = onSocket("call:incoming", (data: {
       callId: string;
       callerId: string;
@@ -97,6 +115,17 @@ export const IncomingCallModal: React.FC = () => {
       type: "audio" | "video";
       provider?: "webrtc" | "livekit";
     }) => {
+      // Fix C-7/C-10: If already in an active call, auto-reject with "busy"
+      const { activeCall } = useCallStore.getState();
+      if (activeCall && activeCall.status !== "ended" && activeCall.status !== "declined" && activeCall.status !== "failed") {
+        const socket = getSocket();
+        socket?.emit("call:reject", { callId: data.callId, reason: "busy" });
+        import("../services/callApi").then(({ rejectCallApi }) => {
+          rejectCallApi(data.callId, "busy").catch(() => {});
+        }).catch(() => {});
+        return;
+      }
+
       triggerHaptic();
       setIncomingCall({
         callId: data.callId,
@@ -128,6 +157,7 @@ export const IncomingCallModal: React.FC = () => {
       unsubIncoming();
       unsubReject();
       unsubEnd();
+      broadcastChannel?.close();
     };
   }, [setIncomingCall]);
 
@@ -154,6 +184,12 @@ export const IncomingCallModal: React.FC = () => {
         providerConfig: res.providerConfig,
       });
       setIncomingCall(null);
+      // Fix C-1: Notify other browser tabs that this tab answered the call
+      if (typeof BroadcastChannel !== "undefined") {
+        const bc = new BroadcastChannel("skillbridge-call");
+        bc.postMessage({ type: "call:answered", callId: call.callId });
+        bc.close();
+      }
       router.push(`/call/${call.callId}?callId=${call.callId}` as any);
     } catch (err) {
       console.error("Failed to accept incoming call:", err);

@@ -9,21 +9,15 @@ import { RemoteAudioProps } from "./RemoteAudio";
  */
 export const RemoteAudio: React.FC<RemoteAudioProps> = ({ isSpeakerOn }) => {
   useEffect(() => {
-    let isActive = true;
-
     (async () => {
       try {
         await AudioSession.startAudioSession();
-        if (isActive && isSpeakerOn !== undefined) {
-          await AudioSession.selectAudioOutput(isSpeakerOn ? "speaker" : "earpiece");
-        }
       } catch (err) {
         console.warn("[RemoteAudio] Native AudioSession initialization:", err);
       }
     })();
 
     return () => {
-      isActive = false;
       try {
         AudioSession.stopAudioSession();
       } catch {}

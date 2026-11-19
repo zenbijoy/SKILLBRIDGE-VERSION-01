@@ -21,7 +21,17 @@ interface ImportRoutineModalProps {
   visible: boolean;
   onClose: () => void;
   profile?: AcademicProfile | null;
-  onExtractionSuccess: (draftRoutine: AcademicRoutine) => void;
+  onExtractionSuccess: (
+    draftRoutine: AcademicRoutine,
+    uploadedFile?: {
+      uri: string;
+      name: string;
+      mimeType: string;
+      size?: number;
+      base64?: string;
+    } | null,
+    extractionMeta?: any
+  ) => void;
 }
 
 export function ImportRoutineModal({
@@ -45,7 +55,7 @@ export function ImportRoutineModal({
   // Academic context form
   const [university, setUniversity] = useState(profile?.university ?? "RUET");
   const [department, setDepartment] = useState(profile?.department ?? "CSE");
-  const [semester, setSemester] = useState(profile?.semester ?? "2-1");
+  const [semester, setSemester] = useState(profile?.semester ?? "2nd Year Even");
   const [section, setSection] = useState(profile?.section ?? "A");
   const [batch, setBatch] = useState(profile?.batch ?? "2024");
   const [additionalContext, setAdditionalContext] = useState("");
@@ -189,7 +199,11 @@ export function ImportRoutineModal({
 
       setIsProcessing(false);
       if (resp?.routine) {
-        onExtractionSuccess(resp.routine);
+        onExtractionSuccess(
+          resp.routine,
+          selectedFile ? { ...selectedFile, base64: base64ToSend } : null,
+          resp.extraction
+        );
       } else {
         throw new Error("No routine returned from extraction");
       }

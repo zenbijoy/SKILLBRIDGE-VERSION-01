@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, Text, View, Dimensions, Platform } from "react-native";
+import { StyleSheet, Text, View, Platform } from "react-native";
 import Animated, {
   Easing,
   FadeIn,
@@ -157,6 +157,7 @@ export function AICraftingLoader({
       -1,
       false
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Animated Styles ───────────────────────────────────────────────────────

@@ -94,7 +94,21 @@ adminAlertsRoutes.get(
       });
     }
 
-    // 5. Filter dismissed
+    // 5. Check Maintenance Mode
+    const { data: versionConfig } = await db.from("app_version_control").select("maintenance_mode").eq("id", "default").maybeSingle();
+    if (versionConfig?.maintenance_mode) {
+      alerts.push({
+        id: "alert-maintenance-active",
+        title: "Platform Maintenance Mode Is Active",
+        description: "Public access is paused. Non-admin users see the scheduled maintenance screen.",
+        category: "system",
+        severity: "critical",
+        link: "/rules",
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // 6. Filter dismissed
     const activeAlerts = alerts.filter((a) => !dismissedAlertIds.has(a.id));
 
     res.json({

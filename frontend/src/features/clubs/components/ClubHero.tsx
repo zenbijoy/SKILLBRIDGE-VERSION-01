@@ -36,7 +36,7 @@ export function ClubHero({
         message: `Join ${club.name} on SkillBridge: Check out their projects, events, and community!`,
         title: club.name,
       });
-    } catch (err: unknown) {
+    } catch {
       // User cancelled share dialog or platform share failed
     }
   };

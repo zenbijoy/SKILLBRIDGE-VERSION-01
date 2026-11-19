@@ -23,10 +23,9 @@ import {
   VideoTrack,
   useRoomContext,
   useTracks,
-  useParticipant,
   useParticipants,
 } from "@livekit/react-native";
-import { Track, ConnectionQuality, RoomEvent, Participant } from "livekit-client";
+import { Track, RoomEvent, Participant } from "livekit-client";
 import {
   encodeLivePacket,
   decodeLivePacket,
@@ -35,9 +34,10 @@ import {
   LiveChatPacket,
 } from "./liveDataPacket";
 import { api } from "@/lib/api";
-import { darkColors as colors } from "@/theme";
+import { RoomLiveStage } from "../room/live/RoomLiveStage";
 
 interface LiveCreds {
+  provider?: "livekit" | "webrtc";
   url: string;
   token: string;
   canPublish: boolean;
@@ -46,6 +46,7 @@ interface LiveCreds {
   sessionId?: string;
   roomName?: string;
   participantName?: string;
+  iceServers?: any[];
 }
 
 function getParticipantDisplayName(participant: any): string {
@@ -81,8 +82,10 @@ export default function LiveRoomScreen() {
   }, []);
 
   const fetchToken = useCallback(() => {
-    const target = sessionId || roomId;
-    if (!target) return;
+    const rawTarget = sessionId || roomId;
+    if (!rawTarget) return;
+    const target = rawTarget.replace(/^qa-stage-/, "");
+    const cleanRoomId = roomId ? roomId.replace(/^qa-stage-/, "") : "";
     setLoading(true);
     setError(null);
     api<LiveCreds>(`/live/token/${target}`, { method: "POST" })
@@ -93,8 +96,8 @@ export default function LiveRoomScreen() {
       .catch((e) => {
         const msg = e.message || "Failed to join live room.";
         // If membership is required in an open room, attempt auto-join once
-        if (msg.includes("Join the learning room first") && roomId) {
-          api(`/rooms/${roomId}/join`, { method: "POST" })
+        if (msg.includes("Join the learning room first") && cleanRoomId) {
+          api(`/rooms/${cleanRoomId}/join`, { method: "POST" })
             .then(() => {
               // Re-fetch token after auto-join
               return api<LiveCreds>(`/live/token/${target}`, { method: "POST" });
@@ -116,7 +119,8 @@ export default function LiveRoomScreen() {
   }, [roomId, sessionId]);
 
   const joinAndRetry = useCallback(async () => {
-    const targetRoom = roomId || (sessionId ? creds?.sessionId : null);
+    const rawRoom = roomId || (sessionId ? creds?.sessionId : null);
+    const targetRoom = rawRoom ? rawRoom.replace(/^qa-stage-/, "") : null;
     if (!targetRoom) {
       fetchToken();
       return;
@@ -208,6 +212,21 @@ export default function LiveRoomScreen() {
           </View>
         </View>
       </View>
+    );
+  }
+
+  // If LiveKit is unconfigured or WebRTC provider is chosen, render ultra-reliable RoomLiveStage
+  if (creds.provider === "webrtc" || !creds.url) {
+    return (
+      <RoomLiveStage
+        roomId={roomId || creds.sessionId || ""}
+        roomTitle={creds.roomName || "Live Study Space"}
+        currentUserId={creds.participantName || "user"}
+        currentUserName={creds.participantName || "Member"}
+        currentUserRole={creds.role || "member"}
+        isHost={Boolean(creds.isHost)}
+        onLeave={() => router.back()}
+      />
     );
   }
 

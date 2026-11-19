@@ -493,7 +493,7 @@ calendar.post(
 
     let uni = "RUET";
     let dept = "CSE";
-    let sem = "2-1";
+    let sem = "2nd Year";
     let sec = "A";
     let batch = "2024";
     let notes = "";
@@ -501,12 +501,13 @@ calendar.post(
     let fileBase64: string | undefined;
     let fileName: string | undefined;
     let rawText: string | undefined;
+    let selectedSection: string | undefined;
 
     try {
       const parsedBody = req.body || {};
       uni = String(parsedBody.university || parsedBody.context?.university || "RUET").trim();
       dept = String(parsedBody.department || parsedBody.context?.department || "CSE").trim();
-      sem = String(parsedBody.semester || parsedBody.context?.semester || "2-1").trim();
+      sem = String(parsedBody.semester || parsedBody.context?.semester || "2nd Year").trim();
       sec = String(parsedBody.section || parsedBody.context?.section || "A").trim();
       batch = String(parsedBody.batch || parsedBody.context?.batch || "2024").trim();
       notes = String(parsedBody.additionalContext || parsedBody.userNotes || parsedBody.context?.userNotes || "").trim();
@@ -514,6 +515,7 @@ calendar.post(
       fileBase64 = typeof parsedBody.fileBase64 === "string" ? parsedBody.fileBase64 : undefined;
       fileName = typeof parsedBody.fileName === "string" ? parsedBody.fileName : undefined;
       rawText = typeof parsedBody.rawText === "string" ? parsedBody.rawText : undefined;
+      selectedSection = typeof parsedBody.selectedSection === "string" ? parsedBody.selectedSection : undefined;
     } catch {
       // Safe defaults already populated
     }
@@ -525,6 +527,7 @@ calendar.post(
       section: sec,
       batch,
       userNotes: notes,
+      selectedSection,
     };
 
     // Call Gemini / Multi-page AI pipeline with guaranteed rescue
@@ -540,7 +543,7 @@ calendar.post(
     } catch (extractErr) {
       logger.warn(
         { err: (extractErr as Error).message },
-        "Routine extraction pipeline threw error; using heuristic fallback",
+        "Routine extraction pipeline threw error; using dynamic fallback",
       );
       extraction = heuristicFallback(rawText || "", extractionContext);
     }
@@ -549,7 +552,8 @@ calendar.post(
       extraction = heuristicFallback(rawText || "", extractionContext);
     }
 
-    const group = buildAcademicGroup(uni, dept, sem, sec);
+    const finalTitle = extraction.routineTitle || `${dept} ${sem} Sec ${sec} Routine`;
+    const finalGroup = extraction.matchedSection || buildAcademicGroup(uni, dept, sem, sec);
     let routineRecord: any = null;
     let entryRows: any[] = [];
 
@@ -559,13 +563,13 @@ calendar.post(
         .from("academic_routines")
         .insert({
           user_id: userId,
-          title: `${dept} ${sem} Sec ${sec} Routine (AI Draft)`,
-          university: uni,
+          title: finalTitle,
+          university: extraction.institution || uni,
           department: dept,
           semester: sem,
           section: sec,
           batch: batch || null,
-          academic_group: group,
+          academic_group: finalGroup,
           version: 1,
           is_active: false,
           is_public: false,
@@ -575,8 +579,14 @@ calendar.post(
             conflicts: extraction.conflicts || [],
             hasAmbiguity: Boolean(extraction.hasAmbiguity),
             overallConfidence: extraction.overallConfidence || "high",
-            source: extraction.source || "heuristic_fallback",
+            source: extraction.source || "gemini_vision",
             totalDetected: extraction.classes?.length || 0,
+            matchedSection: extraction.matchedSection,
+            availableSections: extraction.availableSections || [],
+            routineTitle: extraction.routineTitle,
+            fileName,
+            fileMimeType: mime,
+            notes: extraction.notes || "",
           },
         })
         .select()
@@ -644,13 +654,13 @@ calendar.post(
       routineRecord = {
         id: routineId,
         user_id: userId,
-        title: `${dept} ${sem} Sec ${sec} Routine (AI Draft)`,
-        university: uni,
+        title: finalTitle,
+        university: extraction.institution || uni,
         department: dept,
         semester: sem,
         section: sec,
         batch: batch || null,
-        academic_group: group,
+        academic_group: finalGroup,
         version: 1,
         is_active: false,
         is_public: false,
@@ -662,8 +672,14 @@ calendar.post(
           conflicts: extraction.conflicts || [],
           hasAmbiguity: Boolean(extraction.hasAmbiguity),
           overallConfidence: extraction.overallConfidence || "high",
-          source: extraction.source || "heuristic_fallback",
+          source: extraction.source || "gemini_vision",
           totalDetected: extraction.classes?.length || 0,
+          matchedSection: extraction.matchedSection,
+          availableSections: extraction.availableSections || [],
+          routineTitle: extraction.routineTitle,
+          fileName,
+          fileMimeType: mime,
+          notes: extraction.notes || "",
         },
       };
     }

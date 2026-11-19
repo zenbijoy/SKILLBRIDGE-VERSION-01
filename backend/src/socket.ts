@@ -74,6 +74,25 @@ export function broadcastRoomPresence(
   }
 }
 
+/**
+ * Broadcast real-time Q&A actions (new questions, votes, status changes) to everyone watching the room.
+ */
+export function broadcastRoomQA(
+  roomId: string,
+  event: "new" | "voted" | "resolved" | "stage_status",
+  payload: Record<string, any>,
+): void {
+  if (!ioRef) return;
+  try {
+    ioRef.to(roomPresenceRoom(roomId)).emit(`room:qa:${event}`, { ...payload, roomId });
+  } catch (err) {
+    logger.warn(
+      { event: "qa_broadcast_failed", roomId, qaEvent: event, err: (err as Error).message },
+      "Failed to broadcast room Q&A update",
+    );
+  }
+}
+
 export const userConnections = new Map<string, number>();
 
 // In-memory per-socket rate limiter for signaling abuse protection
@@ -98,6 +117,24 @@ export interface BufferedCallSignaling {
 }
 
 export const callSignalingBuffer = new Map<string, BufferedCallSignaling>();
+
+// Multi-party Room WebRTC Mesh Peer Model
+export interface RoomWebRTCPeer {
+  socketId: string;
+  userId: string;
+  name: string;
+  avatarUrl?: string | null;
+  role: string;
+  media: "audio" | "video";
+  isMuted: boolean;
+  isVideoEnabled: boolean;
+  isSpeaking: boolean;
+  isHandRaised: boolean;
+  joinedAt: number;
+}
+
+// Map<roomId, Map<socketId, RoomWebRTCPeer>>
+export const roomWebRTCParticipants = new Map<string, Map<string, RoomWebRTCPeer>>();
 
 // Clean up stale buffered call signaling entries older than 30 seconds
 const SIGNALING_BUFFER_TTL_MS = 30_000;
@@ -176,6 +213,27 @@ export function setupSocket(io: SocketServer) {
           });
       } else {
         userConnections.set(userId, newCount);
+      }
+
+      // Auto-cleanup any Room WebRTC Participation upon disconnect
+      for (const [roomId, peers] of roomWebRTCParticipants.entries()) {
+        if (peers.has(socket.id)) {
+          peers.delete(socket.id);
+          const count = peers.size;
+          io.to(`room:${roomId}:webrtc`).emit("room:webrtc:peer-left", {
+            socketId: socket.id,
+            userId,
+            participantCount: count,
+          });
+          io.to(roomPresenceRoom(roomId)).emit("room:presence", {
+            sessionId: roomId,
+            liveParticipantCount: count,
+            isLive: count > 0,
+          });
+          if (count === 0) {
+            roomWebRTCParticipants.delete(roomId);
+          }
+        }
       }
     });
 
@@ -664,6 +722,274 @@ export function setupSocket(io: SocketServer) {
       const peerId = await getAuthorizedCallPeer(callId);
       if (!peerId) return;
       io.to(`user:${peerId}`).emit("call:reconnect", { callId });
+    });
+
+    // =========================================================================
+    // Multi-Party Room WebRTC Mesh & Co-Study Audio/Video Protocol Handlers
+    // (High-performance, zero external dependency, robust LiveKit alternative)
+    // =========================================================================
+
+    socket.on("room:webrtc:join", async (payload: {
+      roomId?: string;
+      name?: string;
+      avatarUrl?: string;
+      media?: "audio" | "video";
+      role?: string;
+    }, callback?: (res: any) => void) => {
+      const roomId = payload?.roomId;
+      if (!roomId || typeof roomId !== "string") {
+        if (typeof callback === "function") callback({ error: "Invalid roomId" });
+        return;
+      }
+
+      // Check room access
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const { data: roomData } = await admin
+        .from("rooms")
+        .select("id, owner_id, visibility, is_locked, knock_mode_enabled")
+        .eq("id", roomId)
+        .maybeSingle();
+
+      if (!roomData) {
+        if (typeof callback === "function") callback({ error: "Room not found" });
+        return;
+      }
+
+      const isOwner = roomData.owner_id === userId;
+      let effectiveRole = member?.role || (isOwner ? "owner" : null);
+
+      if (!effectiveRole && roomData.visibility === "public" && !roomData.is_locked && !roomData.knock_mode_enabled) {
+        effectiveRole = "member";
+      }
+
+      if (!effectiveRole) {
+        if (typeof callback === "function") callback({ error: "Access denied to room" });
+        return;
+      }
+
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("full_name, username, avatar_url")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const peerInfo: RoomWebRTCPeer = {
+        socketId: socket.id,
+        userId,
+        name: payload?.name || profile?.full_name || (profile?.username ? `@${profile.username}` : "Member"),
+        avatarUrl: payload?.avatarUrl || profile?.avatar_url || null,
+        role: effectiveRole,
+        media: payload?.media === "video" ? "video" : "audio",
+        isMuted: false,
+        isVideoEnabled: payload?.media === "video",
+        isSpeaking: false,
+        isHandRaised: false,
+        joinedAt: Date.now(),
+      };
+
+      const webrtcRoom = `room:${roomId}:webrtc`;
+      socket.join(webrtcRoom);
+
+      if (!roomWebRTCParticipants.has(roomId)) {
+        roomWebRTCParticipants.set(roomId, new Map());
+      }
+      const roomMap = roomWebRTCParticipants.get(roomId)!;
+
+      // Existing peers in this room
+      const existingPeers = Array.from(roomMap.values());
+
+      roomMap.set(socket.id, peerInfo);
+
+      // Notify others in room
+      socket.to(webrtcRoom).emit("room:webrtc:peer-joined", {
+        peer: peerInfo,
+        participantCount: roomMap.size,
+      });
+
+      // Update room presence for all viewers
+      io.to(roomPresenceRoom(roomId)).emit("room:presence", {
+        sessionId: roomId,
+        liveParticipantCount: roomMap.size,
+        isLive: true,
+      });
+
+      if (typeof callback === "function") {
+        callback({
+          success: true,
+          self: peerInfo,
+          peers: existingPeers,
+          participantCount: roomMap.size,
+        });
+      }
+    });
+
+    socket.on("room:webrtc:signal", (payload: {
+      roomId?: string;
+      toSocketId?: string;
+      signal?: any;
+      type?: "offer" | "answer" | "candidate";
+    }) => {
+      if (!checkSignalingRateLimit(socket.id)) return;
+      const { roomId, toSocketId, signal, type } = payload || {};
+      if (!roomId || !toSocketId || !signal) return;
+
+      io.to(toSocketId).emit("room:webrtc:signal", {
+        fromSocketId: socket.id,
+        fromUserId: userId,
+        signal,
+        type,
+        roomId,
+      });
+    });
+
+    socket.on("room:webrtc:state", (payload: {
+      roomId?: string;
+      isMuted?: boolean;
+      isVideoEnabled?: boolean;
+      isSpeaking?: boolean;
+      isHandRaised?: boolean;
+      audioLevel?: number;
+    }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      const roomMap = roomWebRTCParticipants.get(roomId);
+      if (roomMap && roomMap.has(socket.id)) {
+        const peer = roomMap.get(socket.id)!;
+        if (typeof payload.isMuted === "boolean") peer.isMuted = payload.isMuted;
+        if (typeof payload.isVideoEnabled === "boolean") peer.isVideoEnabled = payload.isVideoEnabled;
+        if (typeof payload.isSpeaking === "boolean") peer.isSpeaking = payload.isSpeaking;
+        if (typeof payload.isHandRaised === "boolean") peer.isHandRaised = payload.isHandRaised;
+      }
+
+      socket.to(`room:${roomId}:webrtc`).emit("room:webrtc:state", {
+        socketId: socket.id,
+        userId,
+        ...payload,
+      });
+    });
+
+    socket.on("room:webrtc:reaction", (payload: {
+      roomId?: string;
+      emoji?: string;
+      senderName?: string;
+    }) => {
+      const roomId = payload?.roomId;
+      if (!roomId || !payload?.emoji) return;
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:reaction", {
+        emoji: payload.emoji,
+        senderId: userId,
+        senderName: payload.senderName || "Member",
+        timestamp: Date.now(),
+      });
+    });
+
+    socket.on("room:webrtc:raise-hand", (payload: {
+      roomId?: string;
+      isHandRaised?: boolean;
+    }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      const isRaised = Boolean(payload.isHandRaised);
+      const roomMap = roomWebRTCParticipants.get(roomId);
+      let peerName = "Member";
+      if (roomMap && roomMap.has(socket.id)) {
+        const peer = roomMap.get(socket.id)!;
+        peer.isHandRaised = isRaised;
+        peerName = peer.name;
+      }
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:hand-changed", {
+        socketId: socket.id,
+        userId,
+        isHandRaised: isRaised,
+        name: peerName,
+      });
+    });
+
+    socket.on("room:webrtc:media-sync", (payload: {
+      roomId?: string;
+      type: "PLAY" | "PAUSE" | "SEEK" | "LOAD_MEDIA";
+      currentTime?: number;
+      mediaUrl?: string;
+      mediaTitle?: string;
+    }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      socket.to(`room:${roomId}:webrtc`).emit("room:webrtc:media-sync", {
+        ...payload,
+        senderId: userId,
+        timestamp: Date.now(),
+      });
+    });
+
+    socket.on("room:webrtc:moderation", async (payload: {
+      roomId?: string;
+      targetUserId?: string;
+      targetSocketId?: string;
+      action: "mute" | "kick" | "spotlight" | "end_room";
+    }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const { data: roomData } = await admin
+        .from("rooms")
+        .select("owner_id")
+        .eq("id", roomId)
+        .maybeSingle();
+
+      const isHost = roomData?.owner_id === userId || ["owner", "teacher", "moderator"].includes(member?.role || "");
+      if (!isHost) return;
+
+      if (payload.action === "mute" && payload.targetSocketId) {
+        io.to(payload.targetSocketId).emit("room:webrtc:force-mute", { byUserId: userId });
+        io.to(`room:${roomId}:webrtc`).emit("room:webrtc:state", {
+          socketId: payload.targetSocketId,
+          userId: payload.targetUserId,
+          isMuted: true,
+        });
+      } else if (payload.action === "kick" && payload.targetSocketId) {
+        io.to(payload.targetSocketId).emit("room:webrtc:kicked", { byUserId: userId });
+      } else if (payload.action === "end_room") {
+        io.to(`room:${roomId}:webrtc`).emit("room:webrtc:room-ended", { byUserId: userId, roomId });
+        roomWebRTCParticipants.delete(roomId);
+      } else if (payload.action === "spotlight" && payload.targetUserId) {
+        io.to(`room:${roomId}:webrtc`).emit("room:webrtc:spotlight", { targetUserId: payload.targetUserId });
+      }
+    });
+
+    socket.on("room:webrtc:leave", (payload: { roomId?: string }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      socket.leave(`room:${roomId}:webrtc`);
+      const roomMap = roomWebRTCParticipants.get(roomId);
+      if (roomMap && roomMap.has(socket.id)) {
+        roomMap.delete(socket.id);
+        const count = roomMap.size;
+        socket.to(`room:${roomId}:webrtc`).emit("room:webrtc:peer-left", {
+          socketId: socket.id,
+          userId,
+          participantCount: count,
+        });
+        io.to(roomPresenceRoom(roomId)).emit("room:presence", {
+          sessionId: roomId,
+          liveParticipantCount: count,
+          isLive: count > 0,
+        });
+        if (count === 0) {
+          roomWebRTCParticipants.delete(roomId);
+        }
+      }
     });
   });
 }

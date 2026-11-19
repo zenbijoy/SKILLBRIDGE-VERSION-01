@@ -34,7 +34,7 @@ interface CallStoreState {
     providerConfig?: ProviderConfig;
   }) => void;
   setCallStatus: (status: CallStatus) => void;
-  setDurationSeconds: (seconds: number) => void;
+  setDurationSeconds: (seconds: number | ((prev: number) => number)) => void;
   toggleMute: () => void;
   toggleVideo: () => void;
   toggleSpeaker: () => void;
@@ -75,7 +75,14 @@ export const useCallStore = create<CallStoreState>((set) => ({
     set((state) => (state.activeCall ? { activeCall: { ...state.activeCall, status } } : {})),
 
   setDurationSeconds: (durationSeconds) =>
-    set((state) => (state.activeCall ? { activeCall: { ...state.activeCall, durationSeconds } } : {})),
+    set((state) => {
+      if (!state.activeCall) return {};
+      const next =
+        typeof durationSeconds === "function"
+          ? durationSeconds(state.activeCall.durationSeconds || 0)
+          : durationSeconds;
+      return { activeCall: { ...state.activeCall, durationSeconds: next } };
+    }),
 
   toggleMute: () =>
     set((state) =>

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { LoadingState, ErrorState } from '../components/States';
+import { useToast } from '../components/ToastContext';
 
 interface AlertItem {
   id: string;
@@ -17,6 +18,7 @@ interface AlertItem {
 
 export default function Alerts() {
   const navigate = useNavigate();
+  const { success, error: toastError } = useToast();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,14 +45,20 @@ export default function Alerts() {
     try {
       await api.post('/admin/alerts/dismiss', { id });
       setAlerts((prev) => prev.filter((a) => a.id !== id));
-    } catch {}
+      success('Alert dismissed.');
+    } catch (err: any) {
+      toastError(err?.message || 'Failed to dismiss alert.');
+    }
   };
 
   const handleDismissAll = async () => {
     try {
       await api.post('/admin/alerts/dismiss-all');
       setAlerts([]);
-    } catch {}
+      success('All operational alerts dismissed.');
+    } catch (err: any) {
+      toastError(err?.message || 'Failed to dismiss all alerts.');
+    }
   };
 
   const filtered = filterCategory === 'all'

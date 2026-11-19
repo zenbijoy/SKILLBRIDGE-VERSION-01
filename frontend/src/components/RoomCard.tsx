@@ -179,6 +179,11 @@ export function RoomCard({ room }: { room: Room }) {
                     : isFull
                     ? isDark ? "#23283E" : "#E5E7EB"
                     : colors.primary,
+                  shadowColor: isLive ? colors.danger : colors.primary,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: isFull && !isLive ? 0 : 0.28,
+                  shadowRadius: 6,
+                  elevation: isFull && !isLive ? 0 : 2,
                 },
               ]}
             >

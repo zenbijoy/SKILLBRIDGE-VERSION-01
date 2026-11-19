@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Modal,
   Pressable,
@@ -189,7 +188,7 @@ function formatPoolBytes(bytes?: number): string {
 }
 
 export default function AdminConsoleScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const qc = useQueryClient();
 
 const [activeTab, setActiveTab] = useState<"reports" | "users" | "widgets" | "announcements" | "storage" | "system" | "analytics" | "rooms" | "audit" | "clubs" | "apiKeys">("reports");

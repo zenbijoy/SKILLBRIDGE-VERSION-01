@@ -1,6 +1,33 @@
 import { admin } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { getFirebaseMessaging } from "./firebase.js";
+import * as webpush from "web-push";
+
+// Default standard VAPID public/private key pair if not configured in environment
+export const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:support@skillbridge.com";
+export const VAPID_PUBLIC_KEY =
+  process.env.VAPID_PUBLIC_KEY ||
+  "BJfp0fcWglvLTUaqXICJR5WMn_WgxEvPfurRCHFc7WlQfkLgDwuftq4Jee7OfnRHvjliYFt-Nms_dG5RlRMyL4c";
+export const VAPID_PRIVATE_KEY =
+  process.env.VAPID_PRIVATE_KEY || "_ep4F3Svjftw0brTxC5DnZx9iET4FP2gs9EsAVHsj0s";
+
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  } catch (err) {
+    logger.warn({ err }, "Failed to configure WebPush VAPID details");
+  }
+}
+
+let webPushSender = webpush.sendNotification;
+
+export function setWebPushSender(sender: typeof webpush.sendNotification) {
+  webPushSender = sender;
+}
+
+export function getVapidPublicKey(): string {
+  return VAPID_PUBLIC_KEY;
+}
 
 export interface PushMessage {
   title: string;
@@ -302,15 +329,87 @@ export class ExpoPushProvider implements PushProvider {
   }
 }
 
+export class WebPushProvider implements PushProvider {
+  async sendNotification(userId: string, message: PushMessage): Promise<void> {
+    if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) return;
+
+    const { data: tokens } = await admin
+      .from("device_tokens")
+      .select("token")
+      .eq("user_id", userId)
+      .eq("enabled", true)
+      .or("provider.eq.web,platform.eq.web");
+
+    if (!tokens || tokens.length === 0) return;
+
+    const isHighPriority = message.priority === "high";
+    const payload = JSON.stringify({
+      title: message.title,
+      body: message.body,
+      icon: "/favicon.png",
+      badge: "/favicon.png",
+      tag: message.data?.tag || `notif_${Date.now()}`,
+      data: message.data || {},
+      requireInteraction: isHighPriority,
+    });
+
+    const invalidTokens: string[] = [];
+
+    await Promise.allSettled(
+      tokens.map(async ({ token }) => {
+        try {
+          let subscription: webpush.PushSubscription;
+          try {
+            subscription = JSON.parse(token);
+          } catch {
+            invalidTokens.push(token);
+            return;
+          }
+
+          if (!subscription || !subscription.endpoint) {
+            invalidTokens.push(token);
+            return;
+          }
+
+          await webPushSender(subscription, payload, {
+            urgency: isHighPriority ? "high" : "normal",
+            TTL: isHighPriority ? 60 : 24 * 60 * 60,
+          });
+        } catch (err: any) {
+          if (err?.statusCode === 404 || err?.statusCode === 410) {
+            invalidTokens.push(token);
+          } else {
+            logger.warn(
+              {
+                event: "web_push_item_send_failed",
+                userId,
+                statusCode: err?.statusCode,
+                err: err?.message || err,
+              },
+              "Web push notification delivery failed for token",
+            );
+          }
+        }
+      }),
+    );
+
+    if (invalidTokens.length > 0) {
+      await admin.from("device_tokens").update({ enabled: false }).in("token", invalidTokens);
+    }
+  }
+}
+
 export class DualPushProvider implements PushProvider {
   private expo = new ExpoPushProvider();
   private fcm = new FirebasePushProvider();
+  private web = new WebPushProvider();
 
   async sendNotification(userId: string, message: PushMessage): Promise<void> {
-    // Parallel dual delivery: if one fails or has no tokens for user, the other delivers!
+    // Parallel delivery across all enabled channels: FCM, Expo, and Web Push
     await Promise.allSettled([
       this.fcm.sendNotification(userId, message),
       this.expo.sendNotification(userId, message),
+      this.web.sendNotification(userId, message),
     ]);
   }
 

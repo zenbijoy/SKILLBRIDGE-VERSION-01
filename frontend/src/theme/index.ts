@@ -99,15 +99,15 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
 
   if (isDark) {
     return {
-      bg: "#07111F",
-      background: "#07111F",
-      surface: "#0C192A",
-      surface2: "#11243A",
-      surfaceMuted: "#11243A",
-      surfaceElevated: "#102036",
-      border: "#1D3550",
-      borderStrong: "#2A4B70",
-      divider: "#152B45",
+      bg: "#08101E",
+      background: "#08101E",
+      surface: "#0F1A2E",
+      surface2: "#15243C",
+      surfaceMuted: "#15243C",
+      surfaceElevated: "#182844",
+      border: "#1E3250",
+      borderStrong: "#2E4A74",
+      divider: "#172840",
       primary: accent.primary,
       primary2: accent.primary2,
       primaryPressed: accent.primary2,
@@ -117,29 +117,29 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
       warning: "#FFB44C",
       danger: "#FF5D7A",
       info: "#38BDF8",
-      text: "#F5F8FF",
-      textPrimary: "#F5F8FF",
-      textSecondary: "#D9E3F0",
-      muted: "#91A4BD",
-      textMuted: "#91A4BD",
-      textInverse: "#07111F",
+      text: "#F8FAFC",
+      textPrimary: "#F8FAFC",
+      textSecondary: "#CBD5E1",
+      muted: "#94A3B8",
+      textMuted: "#94A3B8",
+      textInverse: "#08101E",
       white: "#FFFFFF",
       black: "#000000",
-      overlay: "rgba(2, 8, 23, 0.68)",
-      tabBar: "#0A1626",
+      overlay: "rgba(2, 8, 23, 0.72)",
+      tabBar: "#0B1322",
     };
   }
 
   return {
-    bg: "#F7F9FC",
-    background: "#F7F9FC",
+    bg: "#F8FAFC",
+    background: "#F8FAFC",
     surface: "#FFFFFF",
-    surface2: "#F0F4FA",
-    surfaceMuted: "#F0F4FA",
+    surface2: "#F1F5F9",
+    surfaceMuted: "#F1F5F9",
     surfaceElevated: "#FFFFFF",
     border: "#E2E8F0",
     borderStrong: "#CBD5E1",
-    divider: "#EEF2F6",
+    divider: "#F1F5F9",
     primary: accent.primary,
     primary2: accent.primary2,
     primaryPressed: accent.primary2,
@@ -149,15 +149,15 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
     warning: "#F59E0B",
     danger: "#E5484D",
     info: "#0284C7",
-    text: "#101828",
-    textPrimary: "#101828",
-    textSecondary: "#344054",
-    muted: "#667085",
-    textMuted: "#667085",
+    text: "#0F172A",
+    textPrimary: "#0F172A",
+    textSecondary: "#334155",
+    muted: "#64748B",
+    textMuted: "#64748B",
     textInverse: "#FFFFFF",
     white: "#FFFFFF",
     black: "#000000",
-    overlay: "rgba(15, 23, 42, 0.42)",
+    overlay: "rgba(15, 23, 42, 0.45)",
     tabBar: "#FFFFFF",
   };
 }
@@ -165,6 +165,23 @@ export function getPalette(isDark: boolean, isOled: boolean, accentKey: AccentCo
 export const lightColors = getPalette(false, false, "ocean");
 export const darkColors = getPalette(true, false, "ocean");
 export const colors = lightColors;
+
+export const brandGradients = {
+  brand: ["#53A9FE", "#703AF0", "#C23DBD"] as const,
+  brandLight: ["#57B3FE", "#844FF5", "#F765B6"] as const,
+  primary: ["#2563EB", "#4F46E5"] as const,
+  primaryDark: ["#3B82F6", "#6366F1"] as const,
+  accent: ["#0F9F75", "#2563EB"] as const,
+  accentDark: ["#10B981", "#3B82F6"] as const,
+  fire: ["#F97316", "#EF4444"] as const,
+  gold: ["#F59E0B", "#D97706"] as const,
+  emerald: ["#10B981", "#059669"] as const,
+  purple: ["#8B5CF6", "#6D28D9"] as const,
+  pink: ["#EC4899", "#BE185D"] as const,
+  cyber: ["#06B6D4", "#3B82F6"] as const,
+  darkCard: ["#131B2E", "#0B111E"] as const,
+  glassOverlay: ["rgba(255,255,255,0.08)", "rgba(255,255,255,0.02)"] as const,
+};
 
 export const spacing = { xxs: 4, xs: 6, sm: 10, md: 16, lg: 24, xl: 32, xxl: 48 } as const;
 

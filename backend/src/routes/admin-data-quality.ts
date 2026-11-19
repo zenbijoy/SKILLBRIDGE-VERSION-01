@@ -1,6 +1,10 @@
 import { Router } from "express";
+import { z } from "zod";
 import { admin as db } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
+import { audit } from "../services/audit.js";
+import { requireRole } from "../middleware/auth.js";
+import { cacheDelPattern } from "../lib/redis.js";
 
 export const adminDataQualityRoutes = Router();
 
@@ -81,6 +85,127 @@ adminDataQualityRoutes.get(
       readOnly: true,
       issues,
       totalIssuesCount: issues.reduce((acc, cur) => acc + cur.count, 0),
+    });
+  }),
+);
+
+adminDataQualityRoutes.post(
+  "/repair",
+  requireRole("admin"),
+  wrap(async (req, res) => {
+    const { action } = z
+      .object({
+        action: z.enum(["empty_rooms", "stale_onboarding", "incomplete_profiles", "repair_all"]),
+      })
+      .parse(req.body);
+
+    const results: Record<string, { fixed: number; details: string }> = {};
+
+    // 1. Repair empty rooms: archive active rooms with 0 members
+    if (action === "empty_rooms" || action === "repair_all") {
+      const { data: rooms } = await db.from("rooms").select("id").eq("status", "active").limit(200);
+      const roomIds = (rooms ?? []).map((r) => r.id);
+      if (roomIds.length > 0) {
+        const { data: members } = await db.from("room_members").select("room_id").in("room_id", roomIds);
+        const activeMembersMap = new Set((members ?? []).map((m) => m.room_id));
+        const emptyRoomIds = roomIds.filter((id) => !activeMembersMap.has(id));
+
+        if (emptyRoomIds.length > 0) {
+          const { error: updateErr } = await db
+            .from("rooms")
+            .update({ status: "archived" })
+            .in("id", emptyRoomIds);
+          if (updateErr) throw updateErr;
+
+          results.empty_rooms = {
+            fixed: emptyRoomIds.length,
+            details: `Archived ${emptyRoomIds.length} empty orphaned rooms.`,
+          };
+          await audit(req.userId!, "admin.data_quality.archive_empty_rooms", "room", undefined, {
+            count: emptyRoomIds.length,
+            emptyRoomIds,
+          });
+        } else {
+          results.empty_rooms = { fixed: 0, details: "No empty active rooms found." };
+        }
+      } else {
+        results.empty_rooms = { fixed: 0, details: "No active rooms to check." };
+      }
+    }
+
+    // 2. Repair stale onboarding: transition stale in-progress onboarding (>7 days) to 'deferred'
+    if (action === "stale_onboarding" || action === "repair_all") {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: staleProfiles } = await db
+        .from("profiles")
+        .select("id")
+        .eq("onboarding_status", "in_progress")
+        .lt("updated_at", sevenDaysAgo)
+        .limit(100);
+
+      const staleIds = (staleProfiles ?? []).map((p) => p.id);
+      if (staleIds.length > 0) {
+        const { error: staleErr } = await db
+          .from("profiles")
+          .update({ onboarding_status: "deferred" })
+          .in("id", staleIds);
+        if (staleErr) throw staleErr;
+
+        results.stale_onboarding = {
+          fixed: staleIds.length,
+          details: `Transitioned ${staleIds.length} stale onboarding accounts to deferred.`,
+        };
+        await audit(req.userId!, "admin.data_quality.repair_stale_onboarding", "profile", undefined, {
+          count: staleIds.length,
+          staleIds,
+        });
+      } else {
+        results.stale_onboarding = { fixed: 0, details: "No stale onboarding sessions found." };
+      }
+    }
+
+    // 3. Repair incomplete profiles: assign fallback username for accounts with null username
+    if (action === "incomplete_profiles" || action === "repair_all") {
+      const { data: incomplete } = await db
+        .from("profiles")
+        .select("id, full_name, username")
+        .or("username.is.null,full_name.eq.New member")
+        .limit(50);
+
+      let repairedCount = 0;
+      for (const p of incomplete ?? []) {
+        const patch: Record<string, string> = {};
+        if (!p.username) {
+          patch.username = `user_${p.id.slice(0, 8)}`;
+        }
+        if (p.full_name === "New member") {
+          patch.full_name = "Community Member";
+        }
+        if (Object.keys(patch).length > 0) {
+          await db.from("profiles").update(patch).eq("id", p.id);
+          repairedCount++;
+        }
+      }
+
+      results.incomplete_profiles = {
+        fixed: repairedCount,
+        details: `Updated ${repairedCount} incomplete profiles with valid username/name fallbacks.`,
+      };
+      if (repairedCount > 0) {
+        await audit(req.userId!, "admin.data_quality.repair_incomplete_profiles", "profile", undefined, {
+          count: repairedCount,
+        });
+      }
+    }
+
+    await cacheDelPattern("dashboard:*");
+    await cacheDelPattern("catalog:*");
+
+    res.json({
+      success: true,
+      action,
+      repairedAt: new Date().toISOString(),
+      results,
     });
   }),
 );

@@ -502,10 +502,13 @@ export function useWebRTCCall(callId?: string) {
   }, [activeCall?.role, activeCall?.status]);
 
   // 7. Duration Timer & Stats Polling
+  // Fix C-4: Use functional update to avoid stale closure on durationSeconds.
+  // Do NOT put activeCall.durationSeconds in the dependency array — that caused
+  // the effect to re-run every second, spawning an unbounded number of timers.
   useEffect(() => {
     if (activeCall?.status === "connected") {
       timerRef.current = setInterval(() => {
-        setDurationSeconds((activeCall.durationSeconds || 0) + 1);
+        setDurationSeconds((prev: number) => prev + 1);
       }, 1000);
 
       statsTimerRef.current = setInterval(() => {
@@ -520,7 +523,8 @@ export function useWebRTCCall(callId?: string) {
       if (timerRef.current) clearInterval(timerRef.current);
       if (statsTimerRef.current) clearInterval(statsTimerRef.current);
     };
-  }, [activeCall?.status, activeCall?.durationSeconds, setDurationSeconds, updateStats]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCall?.status, setDurationSeconds, updateStats]);
 
   // Helper to create and send WebRTC SDP Offer (Idempotent, re-send safe & renegotiation safe)
   const sendOffer = useCallback(

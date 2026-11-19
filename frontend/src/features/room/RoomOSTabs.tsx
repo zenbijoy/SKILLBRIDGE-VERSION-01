@@ -5,13 +5,14 @@ import { triggerHaptic } from "@/components/ui";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 
-export type RoomOSTabKey = "posts" | "chat" | "learn" | "media" | "more";
+export type RoomOSTabKey = "stage" | "posts" | "chat" | "learn" | "media" | "more";
 
 type RoomOSTabsProps = {
   activeTab: RoomOSTabKey;
   onTabChange: (tab: RoomOSTabKey) => void;
   chatUnreadCount?: number;
   isEducator?: boolean;
+  hasLiveSession?: boolean;
 };
 
 export function RoomOSTabs({
@@ -19,6 +20,7 @@ export function RoomOSTabs({
   onTabChange,
   chatUnreadCount,
   isEducator = false,
+  hasLiveSession = false,
 }: RoomOSTabsProps) {
   const { colors, isDark } = useTheme();
   const { t } = useI18n();
@@ -29,7 +31,17 @@ export function RoomOSTabs({
     label: string;
     isIconOnly?: boolean;
     iconName?: keyof typeof MaterialCommunityIcons.glyphMap;
+    isLiveBadge?: boolean;
   }[] = [
+    ...(hasLiveSession || activeTab === "stage"
+      ? [
+          {
+            key: "stage" as RoomOSTabKey,
+            label: "🔴 Live Stage",
+            isLiveBadge: true,
+          },
+        ]
+      : []),
     {
       key: "posts",
       label: t("room.posts") || "Posts",

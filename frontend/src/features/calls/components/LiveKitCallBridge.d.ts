@@ -11,6 +11,7 @@ export interface LiveKitCallBridgeProps {
   peerAvatar?: string | null;
   onConnected?: () => void;
   onDisconnected?: () => void;
+  onError?: (err: any) => void;
 }
 
 export declare const LiveKitCallBridge: React.FC<LiveKitCallBridgeProps>;

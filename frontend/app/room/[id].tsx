@@ -23,10 +23,10 @@ import { RoomPinnedHub } from "@/features/room/more/RoomPinnedHub";
 import { RoomModerationCenter } from "@/features/room/more/RoomModerationCenter";
 import { RoomAnalyticsView } from "@/features/room/more/RoomAnalyticsView";
 import { RoomSettingsModal } from "@/features/room/more/RoomSettingsModal";
-import { RoomVoiceSheet } from "@/features/room/voice/RoomVoiceSheet";
-import { useActiveRoomSession } from "@/features/room/voice/useActiveRoomSession";
+import { useLiveSessionStore } from "@/features/room/live/useLiveSessionStore";
 import { RoomLiveStrip } from "@/features/room/live/RoomLiveStrip";
 import { RoomStudyPermissionsModal } from "@/features/room/live/RoomStudyPermissionsModal";
+import { RoomLiveStage } from "@/features/room/live/RoomLiveStage";
 import { RoomKnockLobbyScreen } from "@/features/room/knock/RoomKnockLobbyScreen";
 import { RoomKnockRequestsModal } from "@/features/room/knock/RoomKnockRequestsModal";
 import { RoomMonitoringCenterModal } from "@/features/room/monitoring/RoomMonitoringCenterModal";
@@ -66,8 +66,7 @@ export default function RoomDetailScreen() {
   const [analyticsVisible, setAnalyticsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [studyPermissionsVisible, setStudyPermissionsVisible] = useState(false);
-  const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
-  const voiceSession = useActiveRoomSession();
+  const liveStore = useLiveSessionStore();
   const [knockRequestsVisible, setKnockRequestsVisible] = useState(false);
   const [monitoringVisible, setMonitoringVisible] = useState(false);
   const [hasInitializedLandingTab, setHasInitializedLandingTab] = useState(false);
@@ -325,12 +324,13 @@ export default function RoomDetailScreen() {
           onLeave={() => leaveMutation.mutate()}
           onOpenMore={() => setActiveTab("more")}
           onJoinLiveSession={() => router.push(`/live/${room.id}` as any)}
-          onOpenVoice={async () => {
+          onOpenVoice={() => {
             triggerHaptic();
-            if (!voiceSession.isVoiceActive) {
-              await voiceSession.joinVoiceSession(room.id, room.title);
+            if (liveStore.status === "connected" && liveStore.roomId === room.id) {
+              liveStore.setSheetOpen(true);
+            } else {
+              void liveStore.joinSession({ roomId: room.id, roomTitle: room.title, media: "audio" });
             }
-            setVoiceSheetVisible(true);
           }}
           onSearch={undefined}
           onToggleRolePreview={handleToggleRolePreview}
@@ -375,24 +375,19 @@ export default function RoomDetailScreen() {
         userFullName={userFullName}
         hasActiveLiveSession={hasLiveSession}
         liveParticipantsCount={liveParticipantCount}
-        attendancePercent={80}
         onJoin={() => joinMutation.mutate()}
         onLeave={() => leaveMutation.mutate()}
         onOpenMore={() => setActiveTab("more")}
         onJoinLiveSession={() => {
-          // Pass the concrete session id so the live screen joins the right room.
-          router.push(
-            liveSessionId
-              ? ({ pathname: "/live/[roomId]", params: { roomId: room.id, sessionId: liveSessionId } } as any)
-              : (`/live/${room.id}` as any),
-          );
+          setActiveTab("stage");
         }}
-        onOpenVoice={async () => {
+        onOpenVoice={() => {
           triggerHaptic();
-          if (!voiceSession.isVoiceActive) {
-            await voiceSession.joinVoiceSession(room.id, room.title);
+          if (liveStore.status === "connected" && liveStore.roomId === room.id) {
+            liveStore.setSheetOpen(true);
+          } else {
+            void liveStore.joinSession({ roomId: room.id, roomTitle: room.title, media: "audio" });
           }
-          setVoiceSheetVisible(true);
         }}
         onSearch={() => setSearchModalVisible(true)}
         onPostAnnouncement={() => {
@@ -448,16 +443,32 @@ export default function RoomDetailScreen() {
         </Pressable>
       )}
 
-      {/* 2. ROOM OS 5-TAB BAR */}
+      {/* 2. ROOM OS TAB BAR */}
       <RoomOSTabs
         activeTab={activeTab}
         onTabChange={setActiveTab}
         chatUnreadCount={unreadCount}
         isEducator={isEducator}
+        hasLiveSession={hasLiveSession}
       />
 
       {/* 3. ACTIVE DESTINATION VIEW (With state preservation) */}
       <View style={s.contentArea}>
+        {activeTab === "stage" && (
+          <RoomLiveStage
+            roomId={room.id}
+            roomTitle={room.title}
+            initialMedia="video"
+            currentUserId={session?.user.id || ""}
+            currentUserName={userFullName || session?.user.email || "Member"}
+            currentUserAvatar={userAvatarUrl}
+            currentUserRole={permissions.role || "member"}
+            isHost={isEducator}
+            onLeave={() => setActiveTab("posts")}
+            onOpenChat={() => setActiveTab("chat")}
+            unreadChatCount={unreadCount}
+          />
+        )}
         {activeTab === "posts" && (
           <RoomPostsView
             room={room}
@@ -484,7 +495,14 @@ export default function RoomDetailScreen() {
             isMember={isMember}
             canManageChannels={permissions.canManageChannels}
             onOpenSearch={() => setSearchModalVisible(true)}
-            onJoinVoice={() => setVoiceSheetVisible(true)}
+            onJoinVoice={() => {
+              triggerHaptic();
+              if (liveStore.status === "connected" && liveStore.roomId === room.id) {
+                liveStore.setSheetOpen(true);
+              } else {
+                void liveStore.joinSession({ roomId: room.id, roomTitle: room.title, media: "audio" });
+              }
+            }}
           />
         )}
 
@@ -583,17 +601,6 @@ export default function RoomDetailScreen() {
         onClose={() => setSettingsVisible(false)}
         onRoomUpdated={() => {
           qc.invalidateQueries({ queryKey: ["room", id] });
-        }}
-      />
-
-      {/* Real-time Voice Room Sheet */}
-      <RoomVoiceSheet
-        visible={voiceSheetVisible}
-        roomId={room.id}
-        roomTitle={room.title}
-        isHostOrMod={permissions.isOwner || permissions.canModerate}
-        onClose={() => {
-          setVoiceSheetVisible(false);
         }}
       />
 

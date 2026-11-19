@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { StyleSheet, Alert, View, Text, TextInput, Image, Pressable } from "react-native";
+import { StyleSheet, Alert, View, Text, TextInput, Image, Pressable, Platform } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -58,7 +58,7 @@ export function PostCard({
   onAuthorPress,
   isPreview = false,
 }: PostCardProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const qc = useQueryClient();
   const [showMenu, setShowMenu] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -128,7 +128,23 @@ export function PostCard({
   };
 
   return (
-    <Card style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+    <Card
+      style={[
+        styles.card,
+        {
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+          ...(Platform.OS === "web"
+            ? {
+                boxShadow: isDark
+                  ? "0 4px 16px rgba(0, 0, 0, 0.28)"
+                  : "0 2px 10px rgba(0, 0, 0, 0.05)",
+                transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+              }
+            : {}),
+        },
+      ]}
+    >
       {/* 1. Header */}
       <PostHeader
         post={post}

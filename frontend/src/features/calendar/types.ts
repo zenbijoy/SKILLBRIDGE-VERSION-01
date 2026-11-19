@@ -82,6 +82,14 @@ export interface AcademicRoutine {
     overallConfidence?: RoutineConfidence;
     source?: string;
     totalDetected?: number;
+    matchedSection?: string;
+    availableSections?: string[];
+    routineTitle?: string;
+    fileName?: string;
+    fileMimeType?: string;
+    notes?: string;
+    fileBase64?: string;
+    previewUri?: string;
   };
   created_at: string;
   updated_at: string;
@@ -92,6 +100,14 @@ export interface AcademicRoutine {
   entries?: RoutineEntry[];
   confirmedCount?: number;
   reportedCount?: number;
+}
+
+export interface UploadedRoutineFile {
+  uri: string;
+  name: string;
+  mimeType: string;
+  size?: number;
+  base64?: string;
 }
 
 export interface UserRoutineOverride {

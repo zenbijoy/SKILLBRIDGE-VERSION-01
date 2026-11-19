@@ -1,10 +1,10 @@
+import { RoomLiveStrip } from "./RoomLiveStrip";
+import { useRoomLiveStatus, type RoomLiveStatusPayload } from "./useRoomLiveStatus";
+
 jest.mock("@/components/ui", () => ({
   triggerHaptic: jest.fn(),
   Row: ({ children }: any) => children,
 }));
-
-import { RoomLiveStrip } from "./RoomLiveStrip";
-import { useRoomLiveStatus, type RoomLiveStatusPayload } from "./useRoomLiveStatus";
 
 describe("RoomLiveStrip Architecture & State Logic", () => {
   it("exports RoomLiveStrip component cleanly", () => {

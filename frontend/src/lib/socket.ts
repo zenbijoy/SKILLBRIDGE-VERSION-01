@@ -4,7 +4,6 @@ import { supabase } from "@/lib/supabase";
 import { SOCKET_URL } from "./config";
 
 let socketInstance: Socket | null = null;
-let activeScreenUsers = 0;
 let idleDisconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export function getSocket(): Socket | null {
@@ -62,7 +61,6 @@ export function disconnectSocket(): void {
     socketInstance.disconnect();
     socketInstance = null;
   }
-  activeScreenUsers = 0;
 }
 
 /**

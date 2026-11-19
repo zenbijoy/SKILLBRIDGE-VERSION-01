@@ -108,7 +108,7 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
       setLoadingAnalytics(true);
       const res = await api.get(`/clubs/${club.id}/analytics`);
       setAnalytics(res.data?.analytics || null);
-    } catch (_err: unknown) {
+    } catch {
       setAnalytics(null);
     } finally {
       setLoadingAnalytics(false);
@@ -120,7 +120,7 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
       setLoadingApps(true);
       const res = await api.get(`/clubs/${club.id}/applications`);
       setApplications(res.data?.applications || []);
-    } catch (_err: unknown) {
+    } catch {
       setApplications([]);
     } finally {
       setLoadingApps(false);
@@ -132,7 +132,7 @@ export const ClubAdminModal: React.FC<ClubAdminModalProps> = ({
       setLoadingTeams(true);
       const res = await api.get<{ teams: ClubTeam[] }>(`/clubs/${club.id}/teams`);
       setTeams(res.data?.teams || []);
-    } catch (_err: unknown) {
+    } catch {
       setTeams([]);
     } finally {
       setLoadingTeams(false);

@@ -21,6 +21,8 @@ export interface LiveSessionState {
   sessionId: string | null;
   kind: LiveSessionKind | null;
   media: LiveSessionMedia;
+  provider: "livekit" | "webrtc";
+  iceServers: any[];
   livekitUrl: string | null;
   token: string | null;
   roomName: string | null;
@@ -74,6 +76,8 @@ export const useLiveSessionStore = create<LiveSessionState>((set, get) => ({
   sessionId: null,
   kind: null,
   media: "audio",
+  provider: "webrtc",
+  iceServers: [],
   livekitUrl: null,
   token: null,
   roomName: null,
@@ -107,7 +111,9 @@ export const useLiveSessionStore = create<LiveSessionState>((set, get) => ({
     try {
       let res: {
         token: string;
-        url: string;
+        url?: string;
+        provider?: "livekit" | "webrtc";
+        iceServers?: any[];
         sessionId: string;
         roomName?: string;
         participantName?: string;
@@ -127,7 +133,9 @@ export const useLiveSessionStore = create<LiveSessionState>((set, get) => ({
         const openRes = await api<{
           session: { id: string; media: LiveSessionMedia; hostId: string };
           token: string;
-          url: string;
+          url?: string;
+          provider?: "livekit" | "webrtc";
+          iceServers?: any[];
           isHost?: boolean;
           role?: string;
         }>(`/rooms/${roomId}/live/open`, {
@@ -138,6 +146,8 @@ export const useLiveSessionStore = create<LiveSessionState>((set, get) => ({
         res = {
           token: openRes.token,
           url: openRes.url,
+          provider: openRes.provider,
+          iceServers: openRes.iceServers,
           sessionId: openRes.session.id,
           isHost: openRes.isHost,
           role: openRes.role,
@@ -147,8 +157,10 @@ export const useLiveSessionStore = create<LiveSessionState>((set, get) => ({
         };
       }
 
-      if (!res.token || !res.url) {
-        throw new Error("LiveKit server is not configured or token could not be minted.");
+      const effectiveProvider = res.provider || (res.url ? "livekit" : "webrtc");
+
+      if (!res.token && effectiveProvider === "livekit" && !res.url) {
+        throw new Error("Live stream server is temporarily unavailable.");
       }
 
       // Transition to connecting
@@ -156,7 +168,9 @@ export const useLiveSessionStore = create<LiveSessionState>((set, get) => ({
         status: "connecting",
         sessionId: res.sessionId,
         token: res.token,
-        livekitUrl: res.url,
+        provider: effectiveProvider,
+        iceServers: res.iceServers || [],
+        livekitUrl: res.url || null,
         roomName: res.roomName || `skillbridge-open-${res.sessionId}`,
         participantName: res.participantName || null,
         isHost: Boolean(res.isHost),
@@ -207,6 +221,17 @@ export const useLiveSessionStore = create<LiveSessionState>((set, get) => ({
   },
 
   onError: (errMsg) => {
+    const current = get();
+    if (current.provider === "livekit") {
+      // Seamless automatic fallback to native WebRTC mesh
+      set({
+        provider: "webrtc",
+        livekitUrl: null,
+        status: "connected",
+        error: null,
+      });
+      return;
+    }
     set({
       status: "failed",
       error: errMsg,

@@ -1,3 +1,6 @@
+import { AppPermissionsModal } from "./AppPermissionsModal";
+import { usePreferencesStore } from "@/state/usePreferencesStore";
+
 jest.mock("@/components/ui", () => ({
   Button: () => null,
   triggerHaptic: jest.fn(),
@@ -14,9 +17,6 @@ jest.mock("expo-image-picker", () => ({
   getMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ granted: false }),
   requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
 }));
-
-import { AppPermissionsModal } from "./AppPermissionsModal";
-import { usePreferencesStore } from "@/state/usePreferencesStore";
 
 describe("AppPermissionsModal", () => {
   it("exports the AppPermissionsModal component", () => {

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
@@ -49,7 +49,7 @@ export interface RoomLiveStatusPayload {
 export function useRoomLiveStatus(roomId: string | undefined | null) {
   const queryClient = useQueryClient();
 
-  const queryKey = ["room-live-status", roomId];
+  const queryKey = useMemo(() => ["room-live-status", roomId] as const, [roomId]);
 
   const query = useQuery<RoomLiveStatusPayload>({
     queryKey,
@@ -108,7 +108,7 @@ export function useRoomLiveStatus(roomId: string | undefined | null) {
       socket.off("room:live:participants", handleLiveParticipants);
       socket.emit("room:presence:unsubscribe", { roomId });
     };
-  }, [roomId, queryClient]);
+  }, [roomId, queryClient, queryKey]);
 
   return query;
 }

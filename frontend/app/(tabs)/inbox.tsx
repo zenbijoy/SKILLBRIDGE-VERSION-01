@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import {
@@ -22,6 +22,8 @@ import { useI18n } from "@/i18n";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import { ActiveDot } from "@/features/presence/ActiveDot";
+import { useBatchPresence } from "@/features/presence/usePresence";
+import { getSocket } from "@/lib/socket";
 
 type TabType = "chats" | "calls";
 type ChatFilter = "all" | "unread" | "groups" | "archived";
@@ -120,6 +122,37 @@ export default function Inbox() {
     queryFn: () => api<{ conversations: ConversationItem[] }>("/chat/conversations"),
     refetchInterval: 12_000,
   });
+
+  // Real-time peer active status synchronization (batch query)
+  const peerIds = useMemo(() => {
+    return (conversationsQuery.data?.conversations || [])
+      .map((c) => c.peer_id)
+      .filter((id): id is string => Boolean(id));
+  }, [conversationsQuery.data?.conversations]);
+
+  useBatchPresence(peerIds);
+
+  // Real-time synchronization for new messages, read receipts, and deleted messages
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const onUpdate = () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    };
+
+    socket.on("chat:message", onUpdate);
+    socket.on("message:new", onUpdate);
+    socket.on("conversation:read", onUpdate);
+    socket.on("message:deleted", onUpdate);
+
+    return () => {
+      socket.off("chat:message", onUpdate);
+      socket.off("message:new", onUpdate);
+      socket.off("conversation:read", onUpdate);
+      socket.off("message:deleted", onUpdate);
+    };
+  }, [queryClient]);
 
   // 2. Call History Query
   const callsQuery = useQuery({
@@ -281,6 +314,15 @@ export default function Inbox() {
         key={item.id}
         onPress={() => {
           triggerHaptic();
+          // Optimistically clear unread count for immediate UI feedback
+          queryClient.setQueryData<{ conversations: ConversationItem[] }>(["conversations"], (old) => {
+            if (!old) return old;
+            return {
+              conversations: old.conversations.map((c) =>
+                c.id === item.id ? { ...c, unread_count: 0 } : c
+              ),
+            };
+          });
           router.push(`/chat/${item.id}` as any);
         }}
         onLongPress={() => {
@@ -1400,9 +1442,9 @@ const styles = StyleSheet.create({
   },
   segmentedTrack: {
     flexDirection: "row",
-    height: 38,
+    height: 42,
     borderRadius: radius.pill,
-    padding: 3,
+    padding: 3.5,
   },
   segmentItem: {
     flex: 1,
@@ -1413,17 +1455,18 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   segmentActive: {
-    shadowOffset: { width: 0, height: 1 },
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 5,
+    elevation: 3,
   },
   segmentText: {
     fontSize: 14,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   segmentTextBold: {
-    fontWeight: "700",
+    fontWeight: "800",
   },
   tabBadge: {
     minWidth: 18,

@@ -9,6 +9,7 @@ import {
   Text,
   View,
   useWindowDimensions,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -35,9 +36,10 @@ type WelcomeSlide = {
 };
 
 export default function WelcomeCarouselScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { t, language } = useI18n();
   const { width, height } = useWindowDimensions();
+  const carouselWidth = Platform.OS === "web" ? Math.min(width, 520) : width;
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList<WelcomeSlide>>(null);
 
@@ -86,7 +88,7 @@ export default function WelcomeCarouselScreen() {
   ];
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const slideIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+    const slideIndex = Math.round(event.nativeEvent.contentOffset.x / carouselWidth);
     if (slideIndex !== activeIndex && slideIndex >= 0 && slideIndex < slides.length) {
       setActiveIndex(slideIndex);
     }
@@ -138,11 +140,11 @@ export default function WelcomeCarouselScreen() {
         showsHorizontalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        getItemLayout={(_, index) => ({ length: carouselWidth, offset: carouselWidth * index, index })}
         renderItem={({ item }) => (
-          <View style={[styles.slide, { width }]}>
+          <View style={[styles.slide, { width: carouselWidth }]}>
             {/* Real App UI Screen Mockup Preview */}
-            <View style={[styles.imageWrapper, { width: Math.min(width * 0.88, 360), height: Math.min(height * 0.44, 340) }]}>
+            <View style={[styles.imageWrapper, { width: Math.min(carouselWidth * 0.88, 360), height: Math.min(height * 0.44, 340) }]}>
               <WelcomeUIMockup slideId={item.id} />
             </View>
 
@@ -240,11 +242,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "900",
+    letterSpacing: -0.6,
     textAlign: "center",
     marginBottom: 10,
-    lineHeight: 30,
+    lineHeight: 32,
   },
   subtitle: {
     fontSize: 15,
@@ -269,7 +272,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   activeDot: {
-    width: 24,
+    width: 28,
     borderRadius: 4,
   },
   actionButtonContainer: {

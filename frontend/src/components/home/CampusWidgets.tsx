@@ -1,9 +1,9 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
-import { radius, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
 import { useI18n } from "@/i18n";
 import type { Room } from "@/types";
@@ -170,17 +170,25 @@ export function MomentumWidget({ stats }: MomentumWidgetProps) {
               style={({ pressed }) => [
                 styles.metricCard,
                 {
-                  backgroundColor: isDark ? "#131926" : "#FFFFFF",
-                  borderColor: isDark ? "#1F293D" : "#E2E8F0",
-                  opacity: pressed ? 0.85 : 1,
+                  borderColor: isDark ? `${item.iconColor}33` : `${item.iconColor}2E`,
+                  shadowColor: item.iconColor,
+                  shadowOpacity: isDark ? 0.18 : 0.08,
+                  opacity: pressed ? 0.88 : 1,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
                 },
               ]}
             >
+              <LinearGradient
+                colors={item.bgGradient as any}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[StyleSheet.absoluteFill, { borderRadius: 18 }]}
+              />
               <View style={styles.metricTopRow}>
-                <View style={[styles.metricIconWrap, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#FFF" }]}>
+                <View style={[styles.metricIconWrap, { backgroundColor: isDark ? "rgba(0,0,0,0.35)" : "#FFFFFF" }]}>
                   <MaterialCommunityIcons name={item.icon as any} size={18} color={item.iconColor} />
                 </View>
-                <View style={[styles.metricBadge, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
+                <View style={[styles.metricBadge, { backgroundColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.7)" }]}>
                   <Text style={[styles.metricBadgeText, { color: item.iconColor }]}>{item.badge}</Text>
                 </View>
               </View>
@@ -248,21 +256,44 @@ export function CampusFeatureDock() {
           style={({ pressed }) => [
             styles.dockItem,
             {
-              backgroundColor: isDark ? "#131926" : "#FFFFFF",
-              borderColor: isDark ? "#1F293D" : "#E2E8F0",
-              opacity: pressed ? 0.8 : 1,
+              backgroundColor: isDark ? "#111827" : "#FFFFFF",
+              borderColor: isDark ? `${item.color}33` : colors.border,
+              shadowColor: item.color,
+              shadowOpacity: isDark ? 0.16 : 0.06,
+              opacity: pressed ? 0.82 : 1,
+              transform: [{ scale: pressed ? 0.96 : 1 }],
             },
           ]}
         >
-          <View style={[styles.dockIconCircle, { backgroundColor: item.color }]}>
-            <Ionicons name={item.icon as any} size={18} color="#FFFFFF" />
+          <View
+            style={[
+              styles.dockIconCircle,
+              {
+                backgroundColor: item.color,
+                shadowColor: item.color,
+                shadowOpacity: 0.35,
+                shadowRadius: 8,
+                elevation: 3,
+              },
+            ]}
+          >
+            <Ionicons name={item.icon as any} size={19} color="#FFFFFF" />
           </View>
 
           <Text style={[styles.dockLabel, { color: colors.text }]} numberOfLines={1}>
             {item.label}
           </Text>
 
-          <View style={[styles.dockTag, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+          <View
+            style={[
+              styles.dockTag,
+              {
+                backgroundColor: isDark ? `${item.tagColor}1F` : `${item.tagColor}14`,
+                borderColor: `${item.tagColor}33`,
+                borderWidth: 0.5,
+              },
+            ]}
+          >
             <Text style={[styles.dockTagText, { color: item.tagColor }]}>{item.tag}</Text>
           </View>
         </Pressable>
