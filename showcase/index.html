@@ -1,42 +1,42 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth bg-[#08090C] text-slate-100 antialiased">
+<html lang="en" class="scroll-smooth bg-[#F9FAFB] text-zinc-900 antialiased">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SkillBridge — Next-Gen Campus Super-App | Download Android APK</title>
-  <meta name="description" content="Next-Gen university super-app. Real-time study rooms, academic vault, automated routines, and peer tutoring. Download APK directly or launch Web App.">
-  <meta name="theme-color" content="#08090C">
+  <title>SkillBridge — The Campus Super-App | Download Android APK</title>
+  <meta name="description" content="SkillBridge: The official all-in-one super-app for university students. Live study rooms, past paper vault, class routine sync, and peer tutoring.">
+  <meta name="theme-color" content="#FFDC00">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="SkillBridge — Next-Gen Campus Super-App">
-  <meta property="og:description" content="Study Smarter. Connect Faster. Download the official Android APK or launch the Web App.">
+  <meta property="og:title" content="SkillBridge — Campus Super-App">
+  <meta property="og:description" content="Study Smarter. Connect Faster. Download the official Android APK.">
   <meta property="og:image" content="https://skillbridgeapk.duckdns.org/assets/materials-vault.png">
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      darkMode: 'class',
       theme: {
         extend: {
           colors: {
             brand: {
-              yellow: '#FFE600',
-              neon: '#FDE047',
-              gold: '#EAB308',
-              dark: '#08090C',
-              card: '#10121A',
-              border: 'rgba(255, 255, 255, 0.08)'
+              yellow: '#FFDC00',
+              yellowLight: '#FFE817',
+              yellowDark: '#F5C400',
+              black: '#0F1015',
+              darkCard: '#151720',
+              border: 'rgba(0, 0, 0, 0.08)'
             }
           },
           fontFamily: {
             sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
           },
           boxShadow: {
-            'glow-yellow': '0 0 50px -10px rgba(254, 224, 71, 0.35)',
-            'glow-sm': '0 0 20px -5px rgba(254, 224, 71, 0.25)',
-            'phone': '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 30px rgba(254, 224, 71, 0.15)'
+            'glow-yellow': '0 10px 40px -10px rgba(255, 220, 0, 0.6)',
+            'phone': '0 25px 60px -15px rgba(15, 16, 21, 0.35)',
+            'card': '0 10px 30px -5px rgba(0, 0, 0, 0.05)',
+            'card-hover': '0 20px 40px -10px rgba(0, 0, 0, 0.12)'
           }
         }
       }
@@ -46,289 +46,244 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- Custom Styles for Cyber/Neon Aesthetics -->
   <style>
-    @keyframes pulse-subtle {
-      0%, 100% { opacity: 0.15; transform: scale(1); }
-      50% { opacity: 0.28; transform: scale(1.05); }
+    /* Curved wave divider */
+    .curve-divider {
+      position: relative;
+      background: #FFDC00;
+      height: 60px;
     }
-    .animate-ambient {
-      animation: pulse-subtle 8s ease-in-out infinite;
+    .curve-divider::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: #F9FAFB;
+      border-top-left-radius: 50% 100%;
+      border-top-right-radius: 50% 100%;
     }
-    .grid-bg {
-      background-size: 40px 40px;
-      background-image: 
-        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-    }
-    .text-stroke {
-      -webkit-text-stroke: 1px rgba(255, 255, 255, 0.2);
-    }
-    .glass-nav {
-      background: rgba(8, 9, 12, 0.75);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-    }
-    .glass-card {
-      background: rgba(16, 18, 26, 0.7);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-    }
-    .glass-card:hover {
-      border-color: rgba(254, 224, 71, 0.3);
+    .phone-glass {
+      background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 50%);
     }
   </style>
 </head>
-<body class="bg-[#08090C] text-white selection:bg-yellow-400 selection:text-black">
+<body class="bg-[#F9FAFB] text-zinc-900 selection:bg-black selection:text-[#FFDC00]">
 
-  <!-- Ambient Glowing Background Blobs -->
-  <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-    <div class="absolute -top-[20%] left-1/2 -translate-x-1/2 w-[700px] h-[700px] rounded-full bg-yellow-400/10 blur-[140px] animate-ambient"></div>
-    <div class="absolute top-[40%] -left-[10%] w-[500px] h-[500px] rounded-full bg-amber-500/10 blur-[130px] animate-ambient"></div>
-    <div class="absolute bottom-[10%] -right-[10%] w-[600px] h-[600px] rounded-full bg-yellow-500/10 blur-[150px] animate-ambient"></div>
-    <div class="absolute inset-0 grid-bg opacity-70"></div>
-  </div>
-
-  <!-- STICKY PROFESSIONAL NAVBAR -->
-  <nav class="sticky top-0 z-50 glass-nav border-b border-white/5 transition-all duration-300">
+  <!-- ========================================================================= -->
+  <!-- 1. FULL PROFESSIONAL PROMINENT MENU BAR (White & Yellow & Black)        -->
+  <!-- ========================================================================= -->
+  <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-sm transition-all duration-200">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
       
       <!-- Brand Logo -->
       <a href="#" class="flex items-center gap-3 group">
-        <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-yellow-500 to-yellow-300 p-0.5 shadow-glow-sm group-hover:scale-105 transition-transform duration-300">
-          <div class="w-full h-full bg-[#08090C] rounded-[10px] flex items-center justify-center">
-            <i data-lucide="zap" class="w-6 h-6 text-yellow-400 fill-yellow-400"></i>
-          </div>
+        <div class="w-11 h-11 rounded-2xl bg-[#FFDC00] p-1 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+          <i data-lucide="zap" class="w-6 h-6 text-black fill-black"></i>
         </div>
         <div>
-          <span class="text-xl font-black tracking-wider text-white">SKILL<span class="text-yellow-400">BRIDGE</span></span>
-          <div class="text-[10px] tracking-widest uppercase font-semibold text-zinc-400 -mt-1">CAMPUS SUPER-APP</div>
+          <span class="text-xl font-black tracking-tight text-black">SKILL<span class="text-amber-500">BRIDGE</span></span>
+          <div class="text-[10px] tracking-widest uppercase font-bold text-zinc-400 -mt-1">CAMPUS SUPER-APP</div>
         </div>
       </a>
 
-      <!-- Center Nav Links -->
-      <div class="hidden md:flex items-center gap-8 text-sm font-semibold tracking-wide">
-        <a href="#features" class="text-zinc-300 hover:text-yellow-400 transition-colors">Features</a>
-        <a href="#screens" class="text-zinc-300 hover:text-yellow-400 transition-colors">App Screens</a>
-        <a href="#vault" class="text-zinc-300 hover:text-yellow-400 transition-colors">Study Vault</a>
-        <a href="#rooms" class="text-zinc-300 hover:text-yellow-400 transition-colors">Live Rooms</a>
-        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="text-zinc-300 hover:text-yellow-400 transition-colors flex items-center gap-1.5">
+      <!-- Desktop Navigation Menu Links -->
+      <nav class="hidden md:flex items-center gap-7 text-sm font-bold tracking-wide text-zinc-700">
+        <a href="#overview" class="hover:text-amber-600 transition-colors">Overview</a>
+        <a href="#screens" class="hover:text-amber-600 transition-colors">App Screens</a>
+        <a href="#features" class="hover:text-amber-600 transition-colors">Features</a>
+        <a href="#vault" class="hover:text-amber-600 transition-colors">Study Vault</a>
+        <a href="#rooms" class="hover:text-amber-600 transition-colors">Live Rooms</a>
+        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="flex items-center gap-1.5 hover:text-amber-600 transition-colors">
           <span>Web App</span>
-          <i data-lucide="external-link" class="w-3.5 h-3.5 opacity-60"></i>
+          <i data-lucide="external-link" class="w-3.5 h-3.5 text-zinc-400"></i>
         </a>
-        <a href="https://ruetskillbridgeadmin.duckdns.org" target="_blank" class="text-zinc-400 hover:text-zinc-200 transition-colors">Admin</a>
+      </nav>
+
+      <!-- Desktop Action Buttons -->
+      <div class="hidden sm:flex items-center gap-3">
+        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="px-4 py-2.5 rounded-xl text-xs font-black tracking-wider uppercase border-2 border-black/10 hover:border-black text-black hover:bg-black/5 transition-all">
+          Web App
+        </a>
+        <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black tracking-wider uppercase bg-[#FFDC00] hover:bg-[#FFE817] text-black shadow-md hover:shadow-lg active:scale-95 transition-all">
+          <i data-lucide="download" class="w-4 h-4 stroke-[2.5]"></i>
+          <span>DOWNLOAD APK</span>
+        </a>
       </div>
 
-      <!-- Action Buttons -->
-      <div class="flex items-center gap-3">
-        <a href="#download" class="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold tracking-wider uppercase border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white transition-all">
-          <i data-lucide="qr-code" class="w-4 h-4 text-yellow-400"></i>
-          <span>Scan QR</span>
+      <!-- Mobile Hamburger Button -->
+      <div class="flex items-center gap-2 md:hidden">
+        <a href="/download/SkillBridge.apk" class="px-3.5 py-2 rounded-xl text-xs font-black bg-[#FFDC00] text-black shadow-sm flex items-center gap-1">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>APK</span>
         </a>
-        <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-extrabold text-black bg-gradient-to-r from-yellow-400 via-yellow-300 to-amber-400 hover:from-yellow-300 hover:to-yellow-200 shadow-glow-yellow hover:scale-[1.02] active:scale-95 transition-all">
-          <i data-lucide="download" class="w-4 h-4 stroke-[2.5]"></i>
-          <span>GET APK <span class="opacity-80 font-semibold text-xs ml-0.5">v2.1</span></span>
-        </a>
+        <button id="mobile-menu-btn" onclick="toggleMobileMenu()" class="p-2.5 rounded-xl bg-zinc-100 text-zinc-800 hover:bg-zinc-200">
+          <i data-lucide="menu" id="menu-icon" class="w-6 h-6"></i>
+        </button>
       </div>
 
     </div>
-  </nav>
 
-  <!-- HERO SECTION: MINIMAL TEXT, MASSIVE VISUAL IMPACT -->
-  <section class="relative z-10 pt-12 pb-20 lg:pt-16 lg:pb-32 overflow-hidden">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      
-      <!-- Top Badge -->
-      <div class="flex justify-center mb-6">
-        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-yellow-400/30 text-yellow-400 text-xs font-bold tracking-widest uppercase">
-          <span class="w-2 h-2 rounded-full bg-yellow-400 animate-ping"></span>
-          <span>NEXT-GEN CAMPUS OS • v2.1.0 STABLE</span>
-        </div>
-      </div>
-
-      <!-- Bold Headline -->
-      <div class="text-center max-w-4xl mx-auto mb-6">
-        <h1 class="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.08] uppercase">
-          STUDY SMARTER.<br>
-          <span class="bg-gradient-to-r from-yellow-300 via-yellow-400 to-amber-300 bg-clip-text text-transparent drop-shadow-sm">CONNECT FASTER.</span>
-        </h1>
-        <p class="mt-4 text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto font-normal">
-          The all-in-one mobile workspace for real-time study rooms, academic vault, routine sync, and verified campus peers.
-        </p>
-      </div>
-
-      <!-- Action Buttons -->
-      <div class="flex flex-wrap items-center justify-center gap-4 mb-14">
-        <a href="/download/SkillBridge.apk" id="hero-download-btn" class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-black text-black bg-gradient-to-r from-yellow-400 via-yellow-300 to-amber-400 hover:from-yellow-300 hover:to-yellow-200 shadow-glow-yellow hover:scale-105 active:scale-95 transition-all">
-          <i data-lucide="smartphone" class="w-5 h-5 stroke-[2.5]"></i>
-          <span>DOWNLOAD APK <span class="text-xs font-bold text-black/70 ml-1">(62 MB)</span></span>
-        </a>
-        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="inline-flex items-center gap-2 px-7 py-4 rounded-2xl text-base font-bold bg-white/5 hover:bg-white/10 border border-white/10 hover:border-yellow-400/40 text-white hover:text-yellow-400 transition-all">
-          <i data-lucide="globe" class="w-5 h-5"></i>
+    <!-- Mobile Slide-out Menu -->
+    <div id="mobile-menu" class="hidden md:hidden bg-white border-b border-zinc-200 px-6 py-5 space-y-4 shadow-lg animate-fadeIn">
+      <div class="flex flex-col space-y-3 font-bold text-sm text-zinc-800">
+        <a href="#overview" onclick="toggleMobileMenu()" class="py-1 hover:text-amber-600">Overview</a>
+        <a href="#screens" onclick="toggleMobileMenu()" class="py-1 hover:text-amber-600">App Screens</a>
+        <a href="#features" onclick="toggleMobileMenu()" class="py-1 hover:text-amber-600">Features</a>
+        <a href="#vault" onclick="toggleMobileMenu()" class="py-1 hover:text-amber-600">Study Vault</a>
+        <a href="#rooms" onclick="toggleMobileMenu()" class="py-1 hover:text-amber-600">Live Rooms</a>
+        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="py-1 hover:text-amber-600 flex items-center justify-between">
           <span>Launch Web App</span>
+          <i data-lucide="external-link" class="w-4 h-4"></i>
+        </a>
+        <a href="https://ruetskillbridgeadmin.duckdns.org" target="_blank" class="py-1 hover:text-amber-600 flex items-center justify-between">
+          <span>Admin Portal</span>
+          <i data-lucide="shield" class="w-4 h-4"></i>
         </a>
       </div>
-
-      <!-- Stats Bar (Inspired by Luxury Sports Car / WFORCE specs) -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mb-16">
-        <div class="glass-card p-4 rounded-2xl text-center">
-          <div class="text-2xl sm:text-3xl font-black text-yellow-400">62 MB</div>
-          <div class="text-xs uppercase tracking-wider text-zinc-400 font-medium mt-0.5">Fast Download</div>
-        </div>
-        <div class="glass-card p-4 rounded-2xl text-center">
-          <div class="text-2xl sm:text-3xl font-black text-white">0-LAG</div>
-          <div class="text-xs uppercase tracking-wider text-zinc-400 font-medium mt-0.5">Live Audio & Video</div>
-        </div>
-        <div class="glass-card p-4 rounded-2xl text-center">
-          <div class="text-2xl sm:text-3xl font-black text-yellow-400">Android 8+</div>
-          <div class="text-xs uppercase tracking-wider text-zinc-400 font-medium mt-0.5">Universal Support</div>
-        </div>
-        <div class="glass-card p-4 rounded-2xl text-center">
-          <div class="text-2xl sm:text-3xl font-black text-white">100% FREE</div>
-          <div class="text-xs uppercase tracking-wider text-zinc-400 font-medium mt-0.5">Open For Students</div>
-        </div>
+      <div class="pt-3 border-t border-zinc-100 flex flex-col gap-2">
+        <a href="/download/SkillBridge.apk" class="w-full py-3 rounded-xl bg-[#FFDC00] font-black text-center text-black text-xs tracking-wider uppercase shadow-md">
+          DOWNLOAD APK (v2.1.0 • 62 MB)
+        </a>
       </div>
+    </div>
+  </header>
 
-      <!-- DUAL 3D SMARTPHONE SHOWCASE (Inspired by User's Reference Image 2) -->
-      <div class="relative max-w-5xl mx-auto flex items-center justify-center pt-4 pb-8">
+
+  <!-- ========================================================================= -->
+  <!-- 2. HERO: VIBRANT YELLOW + BLACK (Directly Inspired by User Reference 3 & 1) -->
+  <!-- ========================================================================= -->
+  <section id="overview" class="relative bg-gradient-to-b from-[#FFE817] via-[#FFDC00] to-[#FFD000] pt-12 pb-24 overflow-hidden">
+    
+    <!-- Background Design Elements -->
+    <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(#000 1.5px, transparent 1.5px); background-size: 28px 28px;"></div>
+    
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
         
-        <!-- Glow Backlight -->
-        <div class="absolute inset-0 bg-gradient-to-b from-yellow-400/15 via-transparent to-transparent blur-3xl -z-10 rounded-full"></div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center w-full">
+        <!-- Hero Left Column (6 cols): Bold Typography & Minimal Copy -->
+        <div class="lg:col-span-7 space-y-6 text-center lg:text-left">
           
-          <!-- Phone 1: Live Study Rooms -->
-          <div class="relative group mx-auto">
-            <div class="w-[300px] sm:w-[320px] rounded-[48px] p-3 bg-gradient-to-b from-zinc-700 via-zinc-900 to-black shadow-phone border border-yellow-400/20 group-hover:border-yellow-400/50 transition-all duration-500">
-              <!-- Phone Bezel & Screen -->
-              <div class="rounded-[40px] overflow-hidden bg-[#0D0E14] relative border border-white/10 aspect-[9/19.5]">
-                
-                <!-- Dynamic Island / Speaker Notch -->
-                <div class="absolute top-2.5 left-1/2 -translate-x-1/2 w-28 h-5 bg-black rounded-full z-30 flex items-center justify-center">
-                  <div class="w-2.5 h-2.5 rounded-full bg-zinc-900 mr-2 border border-white/5"></div>
-                  <div class="w-1.5 h-1.5 rounded-full bg-yellow-400/60"></div>
-                </div>
+          <!-- Pill Badge -->
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/10 border border-black/10 text-black text-xs font-black tracking-widest uppercase">
+            <span class="w-2 h-2 rounded-full bg-black animate-ping"></span>
+            <span>NEXT-GEN CAMPUS APP • v2.1.0</span>
+          </div>
 
-                <!-- Live Screen Content -->
-                <div class="w-full h-full flex flex-col justify-between p-4 pt-10 relative">
-                  <!-- Header -->
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <div class="w-7 h-7 rounded-lg bg-yellow-400/20 flex items-center justify-center text-yellow-400">
-                        <i data-lucide="radio" class="w-4 h-4"></i>
-                      </div>
-                      <div>
-                        <div class="text-xs font-bold text-white">Live Study Room</div>
-                        <div class="text-[9px] text-yellow-400 font-semibold flex items-center gap-1">
-                          <span class="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-ping"></span>
-                          <span>CSE 2201 • 14 Online</span>
-                        </div>
-                      </div>
-                    </div>
-                    <span class="px-2 py-0.5 rounded-full bg-yellow-400 text-black text-[9px] font-black uppercase">LIVE</span>
-                  </div>
+          <!-- Massive Headline -->
+          <h1 class="text-5xl sm:text-7xl font-black text-black tracking-tight leading-[1.05] uppercase">
+            THE CAMPUS<br>
+            <span class="bg-black text-[#FFDC00] px-3 py-1 rounded-2xl inline-block mt-1">SUPER-APP.</span>
+          </h1>
 
-                  <!-- Central Visual: App Image -->
-                  <div class="relative rounded-2xl overflow-hidden my-3 border border-white/10 shadow-lg group-hover:scale-[1.02] transition-transform">
-                    <img src="/assets/live-class.png" alt="Live Study Room" class="w-full h-44 object-cover">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
-                      <div class="flex items-center gap-2 w-full justify-between">
-                        <span class="text-[11px] font-bold text-white">Live Screen Share</span>
-                        <span class="text-[10px] text-yellow-400 font-bold bg-black/60 px-2 py-0.5 rounded-md">60 FPS</span>
-                      </div>
-                    </div>
-                  </div>
+          <!-- Ultra-Short 1-Line Description (Minimal Text) -->
+          <p class="text-base sm:text-lg text-black/80 font-semibold max-w-xl mx-auto lg:mx-0">
+            Live study rooms, academic vault, automated routines & peer tutoring.
+          </p>
 
-                  <!-- Quick Stats & Participants -->
-                  <div class="space-y-2">
-                    <div class="bg-white/5 rounded-xl p-2.5 flex items-center justify-between border border-white/5">
-                      <div class="flex items-center gap-2">
-                        <i data-lucide="mic" class="w-3.5 h-3.5 text-yellow-400"></i>
-                        <span class="text-[11px] text-zinc-300 font-medium">HD Voice Active</span>
-                      </div>
-                      <span class="text-[10px] text-emerald-400 font-bold">12ms Latency</span>
-                    </div>
+          <!-- Action Buttons (High Contrast Black & White) -->
+          <div class="flex flex-wrap items-center justify-center lg:justify-start gap-4 pt-2">
+            <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-black text-[#FFDC00] bg-black hover:bg-zinc-800 shadow-2xl hover:scale-105 active:scale-95 transition-all">
+              <i data-lucide="download" class="w-5 h-5 stroke-[2.5]"></i>
+              <span>DOWNLOAD APK <span class="text-xs font-bold text-[#FFDC00]/80 ml-1">(62 MB)</span></span>
+            </a>
+            <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="inline-flex items-center gap-2 px-7 py-4 rounded-2xl text-base font-black text-black bg-white hover:bg-zinc-100 shadow-md hover:scale-105 active:scale-95 transition-all">
+              <i data-lucide="globe" class="w-5 h-5"></i>
+              <span>Launch Web</span>
+            </a>
+          </div>
 
-                    <!-- Bottom Action Button inside phone -->
-                    <a href="/download/SkillBridge.apk" class="w-full py-2.5 rounded-xl bg-yellow-400 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md">
-                      <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                      <span>Join in App</span>
-                    </a>
-                  </div>
-
-                </div>
-              </div>
+          <!-- Quick Specs Strip (Minimal Text, Icons only) -->
+          <div class="pt-6 flex flex-wrap items-center justify-center lg:justify-start gap-6 text-xs font-black text-black uppercase tracking-wider">
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
+              <span>Android 8.0+</span>
             </div>
-
-            <!-- Floating Badge Left -->
-            <div class="absolute -bottom-4 -left-4 glass-card px-3.5 py-2 rounded-xl flex items-center gap-2.5 shadow-xl border border-yellow-400/30">
-              <div class="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse"></div>
-              <span class="text-xs font-bold text-white">LiveKit WebRTC Inside</span>
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
+              <span>0-Lag WebRTC</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
+              <span>100% Free</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
+              <span>Auto-Updates</span>
             </div>
           </div>
 
-          <!-- Phone 2: Academic Vault & Routine -->
-          <div class="relative group mx-auto">
-            <div class="w-[300px] sm:w-[320px] rounded-[48px] p-3 bg-gradient-to-b from-zinc-700 via-zinc-900 to-black shadow-phone border border-yellow-400/20 group-hover:border-yellow-400/50 transition-all duration-500">
-              <!-- Phone Bezel & Screen -->
-              <div class="rounded-[40px] overflow-hidden bg-[#0D0E14] relative border border-white/10 aspect-[9/19.5]">
-                
-                <!-- Dynamic Island / Speaker Notch -->
-                <div class="absolute top-2.5 left-1/2 -translate-x-1/2 w-28 h-5 bg-black rounded-full z-30 flex items-center justify-center">
-                  <div class="w-2.5 h-2.5 rounded-full bg-zinc-900 mr-2 border border-white/5"></div>
-                  <div class="w-1.5 h-1.5 rounded-full bg-yellow-400/60"></div>
+        </div>
+
+        <!-- Hero Right Column (5 cols): Large 3D Phone Mockup (User Image 2 & 5) -->
+        <div class="lg:col-span-5 flex justify-center relative">
+          
+          <!-- Outer Floating Phone Frame -->
+          <div class="w-[310px] sm:w-[330px] rounded-[52px] p-3.5 bg-black shadow-phone border-4 border-black/80 relative group hover:rotate-1 transition-transform duration-500">
+            
+            <!-- Dynamic Island -->
+            <div class="absolute top-6 left-1/2 -translate-x-1/2 w-28 h-5 bg-black rounded-full z-30 flex items-center justify-center">
+              <div class="w-2.5 h-2.5 rounded-full bg-zinc-900 mr-2"></div>
+              <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+            </div>
+
+            <!-- Phone Screen -->
+            <div class="rounded-[42px] overflow-hidden bg-[#0F1015] aspect-[9/19] flex flex-col justify-between p-4 pt-10 text-white relative">
+              
+              <!-- Screen Top Bar -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-xl bg-[#FFDC00] flex items-center justify-center text-black font-black text-xs">
+                    SB
+                  </div>
+                  <div>
+                    <div class="text-xs font-black">Live Study Room</div>
+                    <div class="text-[9px] text-[#FFDC00] font-bold">CSE 2201 • 14 Peers</div>
+                  </div>
                 </div>
+                <span class="px-2 py-0.5 rounded-md bg-red-500 text-white text-[9px] font-black uppercase">LIVE</span>
+              </div>
 
-                <!-- Live Screen Content -->
-                <div class="w-full h-full flex flex-col justify-between p-4 pt-10 relative">
-                  <!-- Header -->
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <div class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Academic Vault</div>
-                      <div class="text-xs font-bold text-white">Past Papers & Slides</div>
-                    </div>
-                    <div class="w-7 h-7 rounded-lg bg-yellow-400/20 flex items-center justify-center text-yellow-400">
-                      <i data-lucide="book-open" class="w-4 h-4"></i>
-                    </div>
-                  </div>
-
-                  <!-- Central Visual: App Image -->
-                  <div class="relative rounded-2xl overflow-hidden my-3 border border-white/10 shadow-lg group-hover:scale-[1.02] transition-transform">
-                    <img src="/assets/materials-vault.png" alt="Materials Vault" class="w-full h-44 object-cover">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
-                      <div class="flex items-center justify-between w-full">
-                        <span class="text-[11px] font-bold text-white">Instant PDF Search</span>
-                        <span class="text-[10px] text-yellow-400 font-bold bg-black/60 px-2 py-0.5 rounded-md">1-Tap View</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Routine Snippet -->
-                  <div class="space-y-2">
-                    <div class="bg-white/5 rounded-xl p-2.5 flex items-center justify-between border border-white/5">
-                      <div class="flex items-center gap-2">
-                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-yellow-400"></i>
-                        <span class="text-[11px] text-zinc-300 font-medium">Auto Routine Extractor</span>
-                      </div>
-                      <span class="text-[10px] text-yellow-400 font-bold">Today 10:15 AM</span>
-                    </div>
-
-                    <!-- Bottom Action Button inside phone -->
-                    <a href="/download/SkillBridge.apk" class="w-full py-2.5 rounded-xl bg-white/10 hover:bg-yellow-400 hover:text-black border border-white/10 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors">
-                      <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-                      <span>Explore Vault</span>
-                    </a>
-                  </div>
-
+              <!-- Main Visual Image inside Screen -->
+              <div class="relative rounded-2xl overflow-hidden my-3 border border-white/10 shadow-lg">
+                <img src="/assets/live-class.png" alt="Live Class" class="w-full h-44 object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
+                  <span class="text-[11px] font-black text-[#FFDC00]">60 FPS Screen Share</span>
                 </div>
               </div>
+
+              <!-- Action Card inside phone -->
+              <div class="space-y-2">
+                <div class="bg-white/5 rounded-xl p-2.5 flex items-center justify-between border border-white/10">
+                  <div class="flex items-center gap-2 text-xs">
+                    <i data-lucide="mic" class="w-4 h-4 text-[#FFDC00]"></i>
+                    <span class="text-zinc-300 font-bold">HD Voice Active</span>
+                  </div>
+                  <span class="text-[10px] text-emerald-400 font-black">12ms Latency</span>
+                </div>
+
+                <a href="/download/SkillBridge.apk" class="w-full py-3 rounded-xl bg-[#FFDC00] text-black font-black text-xs flex items-center justify-center gap-2 shadow-md">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                  <span>Install to Join</span>
+                </a>
+              </div>
+
             </div>
 
-            <!-- Floating Badge Right -->
-            <div class="absolute -top-4 -right-4 glass-card px-3.5 py-2 rounded-xl flex items-center gap-2.5 shadow-xl border border-yellow-400/30">
-              <i data-lucide="shield-check" class="w-4 h-4 text-yellow-400"></i>
-              <span class="text-xs font-bold text-white">Verified RUET Database</span>
+            <!-- Floating Badge Top Left -->
+            <div class="absolute -top-3 -left-4 bg-white text-black px-3.5 py-1.5 rounded-xl shadow-xl flex items-center gap-2 border border-zinc-100">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span class="text-xs font-black">1-Tap Connect</span>
             </div>
+
+            <!-- Floating Badge Bottom Right -->
+            <div class="absolute -bottom-3 -right-4 bg-black text-[#FFDC00] px-3.5 py-1.5 rounded-xl shadow-xl flex items-center gap-2 border border-[#FFDC00]/30">
+              <i data-lucide="zap" class="w-3.5 h-3.5 fill-[#FFDC00]"></i>
+              <span class="text-xs font-black">v2.1.0 Ready</span>
+            </div>
+
           </div>
 
         </div>
@@ -338,76 +293,83 @@
     </div>
   </section>
 
-  <!-- INTERACTIVE SCREEN EXPLORER (Image Heavy, Minimal Text) -->
-  <section id="screens" class="relative z-10 py-16 border-t border-white/5 bg-[#0A0C11]">
+  <!-- Curve Transition from Yellow Hero to Clean White Background -->
+  <div class="curve-divider"></div>
+
+
+  <!-- ========================================================================= -->
+  <!-- 3. APP SCREEN EXPLORER (Image-First, Minimal Text - User Image 5 & 6)     -->
+  <!-- ========================================================================= -->
+  <section id="screens" class="py-16 bg-[#F9FAFB]">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       
       <div class="text-center max-w-2xl mx-auto mb-10">
-        <span class="text-yellow-400 text-xs font-black tracking-widest uppercase">APP UI PREVIEW</span>
-        <h2 class="text-3xl sm:text-4xl font-black uppercase tracking-tight mt-1">INSIDE THE APPLICATION</h2>
+        <span class="text-xs font-black tracking-widest uppercase bg-[#FFDC00] text-black px-3 py-1 rounded-md">SCREEN SHOWCASE</span>
+        <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-black mt-3">EXPLORE THE UI</h2>
       </div>
 
-      <!-- Category Filter Pills -->
-      <div class="flex flex-wrap items-center justify-center gap-2.5 mb-12">
-        <button onclick="switchScreen('vault')" id="tab-vault" class="screen-tab px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-yellow-400 text-black shadow-glow-sm transition-all">
+      <!-- Navigation Tabs (Pill style) -->
+      <div class="flex flex-wrap items-center justify-center gap-2 mb-10">
+        <button onclick="setPreview('vault')" id="tab-vault" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-black text-[#FFDC00] shadow-md transition-all">
           📚 Study Vault
         </button>
-        <button onclick="switchScreen('rooms')" id="tab-rooms" class="screen-tab px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/5 transition-all">
+        <button onclick="setPreview('rooms')" id="tab-rooms" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
           🎙️ Live Rooms
         </button>
-        <button onclick="switchScreen('routine')" id="tab-routine" class="screen-tab px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/5 transition-all">
-          📅 Routine & Calendar
+        <button onclick="setPreview('routine')" id="tab-routine" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
+          📅 Class Routine
         </button>
-        <button onclick="switchScreen('quiz')" id="tab-quiz" class="screen-tab px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/5 transition-all">
+        <button onclick="setPreview('quiz')" id="tab-quiz" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
           🏆 Quizzes & XP
         </button>
-        <button onclick="switchScreen('mentor')" id="tab-mentor" class="screen-tab px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/5 transition-all">
-          🤝 Peer Tutoring
+        <button onclick="setPreview('mentor')" id="tab-mentor" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
+          🤝 Peer Mentors
         </button>
       </div>
 
-      <!-- Main Showcase Display Card -->
-      <div class="glass-card rounded-3xl p-6 lg:p-8 max-w-4xl mx-auto border border-yellow-400/20 shadow-2xl">
+      <!-- Big Image Display Box -->
+      <div class="max-w-4xl mx-auto bg-white rounded-3xl p-6 sm:p-8 shadow-card border border-zinc-200/80">
         <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
           
-          <!-- Image Container (takes 7 cols) -->
-          <div class="md:col-span-7 rounded-2xl overflow-hidden border border-white/10 bg-black/50 shadow-lg relative group">
-            <img id="active-screen-img" src="/assets/materials-vault.png" alt="App Screen" class="w-full h-80 object-cover transition-opacity duration-300">
-            <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-4">
-              <span id="active-screen-badge" class="px-3 py-1 rounded-lg bg-yellow-400 text-black text-xs font-black uppercase tracking-wider">
-                CENTRAL STUDY VAULT
+          <!-- Image (7 cols) -->
+          <div class="md:col-span-7 rounded-2xl overflow-hidden bg-zinc-100 border border-zinc-200 relative shadow-inner">
+            <img id="preview-img" src="/assets/materials-vault.png" alt="Screen Preview" class="w-full h-80 object-cover transition-opacity duration-200">
+            <div class="absolute bottom-3 left-3">
+              <span id="preview-badge" class="px-3 py-1 rounded-lg bg-black text-[#FFDC00] text-xs font-black uppercase tracking-wider shadow">
+                ACADEMIC STUDY VAULT
               </span>
             </div>
           </div>
 
-          <!-- Feature Bullets (takes 5 cols) -->
+          <!-- Info (5 cols): MINIMAL TEXT ONLY -->
           <div class="md:col-span-5 space-y-4">
-            <h3 id="active-screen-title" class="text-2xl font-black uppercase text-white">
-              Instant Notes & Question Bank
+            <h3 id="preview-title" class="text-2xl font-black uppercase text-black">
+              Questions & Slide Archive
             </h3>
-            <p id="active-screen-desc" class="text-sm text-zinc-400 leading-relaxed">
-              Organized by Department, Series, and Subject. Find lab reports, past questions, and lecture slides in seconds.
+            <p id="preview-desc" class="text-sm font-semibold text-zinc-500">
+              Department, series & subject filter with instant in-app PDF viewer.
             </p>
 
-            <div class="space-y-2.5 pt-2" id="active-screen-chips">
-              <div class="flex items-center gap-2 text-xs font-semibold text-zinc-300">
-                <i data-lucide="check-circle" class="w-4 h-4 text-yellow-400"></i>
-                <span>Fast in-app PDF preview & download</span>
+            <!-- 3 Clean Checkmark Bullets -->
+            <div class="space-y-2 pt-2" id="preview-chips">
+              <div class="flex items-center gap-2 text-xs font-bold text-zinc-800">
+                <i data-lucide="check" class="w-4 h-4 text-emerald-600 stroke-[3]"></i>
+                <span>Instant PDF search & offline view</span>
               </div>
-              <div class="flex items-center gap-2 text-xs font-semibold text-zinc-300">
-                <i data-lucide="check-circle" class="w-4 h-4 text-yellow-400"></i>
-                <span>Verified student uploads & moderation</span>
+              <div class="flex items-center gap-2 text-xs font-bold text-zinc-800">
+                <i data-lucide="check" class="w-4 h-4 text-emerald-600 stroke-[3]"></i>
+                <span>Moderated student uploads</span>
               </div>
-              <div class="flex items-center gap-2 text-xs font-semibold text-zinc-300">
-                <i data-lucide="check-circle" class="w-4 h-4 text-yellow-400"></i>
-                <span>Filter by Course Code & Teacher</span>
+              <div class="flex items-center gap-2 text-xs font-bold text-zinc-800">
+                <i data-lucide="check" class="w-4 h-4 text-emerald-600 stroke-[3]"></i>
+                <span>Past 5 years question bank</span>
               </div>
             </div>
 
             <div class="pt-4">
-              <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider bg-yellow-400 hover:bg-yellow-300 text-black shadow-glow-sm transition-all">
+              <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase bg-[#FFDC00] hover:bg-[#FFE817] text-black shadow-md transition-all">
                 <i data-lucide="download" class="w-4 h-4"></i>
-                <span>Download to Explore</span>
+                <span>Download APK</span>
               </a>
             </div>
           </div>
@@ -418,99 +380,102 @@
     </div>
   </section>
 
-  <!-- BENTO GRID: VISUAL FEATURE TILES (Inspired by Reference Images 1, 5, 6) -->
-  <section id="features" class="relative z-10 py-20 border-t border-white/5">
+
+  <!-- ========================================================================= -->
+  <!-- 4. VISUAL BENTO TILES (Multicolor Gradient, Yellow & White - User Image 6) -->
+  <!-- ========================================================================= -->
+  <section id="features" class="py-20 bg-white border-t border-zinc-200/80">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       
       <div class="text-center max-w-2xl mx-auto mb-14">
-        <span class="text-yellow-400 text-xs font-black tracking-widest uppercase">POWERFUL MODULES</span>
-        <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight mt-1">BUILT FOR CAMPUS LIFE</h2>
+        <span class="text-xs font-black tracking-widest uppercase bg-[#FFDC00] text-black px-3 py-1 rounded-md">CORE CAPABILITIES</span>
+        <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-black mt-3">BUILT FOR STUDENTS</h2>
       </div>
 
-      <!-- Bento Grid (Visual-first cards) -->
+      <!-- Bento Grid (Visual-Heavy, Minimal Text) -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        <!-- Tile 1: Live Classrooms -->
-        <div class="glass-card rounded-3xl overflow-hidden group hover:scale-[1.01] transition-all">
+        <!-- Card 1: Live Classrooms -->
+        <div class="bg-[#F9FAFB] rounded-3xl overflow-hidden border border-zinc-200 shadow-card hover:shadow-card-hover hover:scale-[1.01] transition-all group">
           <div class="h-48 overflow-hidden relative">
-            <img src="/assets/live-class.png" alt="Live Classrooms" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-            <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-yellow-400 text-black text-[10px] font-black uppercase">
-              WEBRTC
-            </div>
+            <img src="/assets/live-class.png" alt="Live Rooms" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            <span class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black text-[#FFDC00] text-[10px] font-black uppercase">
+              WEBRTC 60FPS
+            </span>
           </div>
-          <div class="p-6">
-            <h3 class="text-lg font-black uppercase text-white mb-1">Live Study Rooms</h3>
-            <p class="text-xs text-zinc-400">Real-time voice & video rooms with screen sharing and live interactive polls.</p>
+          <div class="p-5">
+            <h3 class="text-base font-black uppercase text-black">Live Study Rooms</h3>
+            <p class="text-xs font-semibold text-zinc-500 mt-1">Real-time voice & video rooms with screen sharing.</p>
           </div>
         </div>
 
-        <!-- Tile 2: Academic Vault -->
-        <div class="glass-card rounded-3xl overflow-hidden group hover:scale-[1.01] transition-all">
+        <!-- Card 2: Academic Vault -->
+        <div class="bg-[#F9FAFB] rounded-3xl overflow-hidden border border-zinc-200 shadow-card hover:shadow-card-hover hover:scale-[1.01] transition-all group">
           <div class="h-48 overflow-hidden relative">
-            <img src="/assets/materials-vault.png" alt="Materials Vault" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-            <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-yellow-400 text-black text-[10px] font-black uppercase">
-              ARCHIVE
-            </div>
+            <img src="/assets/materials-vault.png" alt="Vault" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            <span class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-[#FFDC00] text-black text-[10px] font-black uppercase">
+              QUESTION BANK
+            </span>
           </div>
-          <div class="p-6">
-            <h3 class="text-lg font-black uppercase text-white mb-1">Study Vault</h3>
-            <p class="text-xs text-zinc-400">Centralized question bank, slide decks, and lab manuals organized by series.</p>
+          <div class="p-5">
+            <h3 class="text-base font-black uppercase text-black">Study Vault</h3>
+            <p class="text-xs font-semibold text-zinc-500 mt-1">Past questions, lab manuals & lecture slides.</p>
           </div>
         </div>
 
-        <!-- Tile 3: Routine Sync -->
-        <div class="glass-card rounded-3xl overflow-hidden group hover:scale-[1.01] transition-all">
+        <!-- Card 3: Routine Sync -->
+        <div class="bg-[#F9FAFB] rounded-3xl overflow-hidden border border-zinc-200 shadow-card hover:shadow-card-hover hover:scale-[1.01] transition-all group">
           <div class="h-48 overflow-hidden relative">
-            <img src="/assets/03-unified-calendar.png" alt="Routine Sync" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-            <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-yellow-400 text-black text-[10px] font-black uppercase">
-              SMART SYNC
-            </div>
+            <img src="/assets/03-unified-calendar.png" alt="Routine" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            <span class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black text-[#FFDC00] text-[10px] font-black uppercase">
+              AUTO SYNC
+            </span>
           </div>
-          <div class="p-6">
-            <h3 class="text-lg font-black uppercase text-white mb-1">Smart Routine & Calendar</h3>
-            <p class="text-xs text-zinc-400">Never miss a class or quiz with automated timetable extraction and alerts.</p>
+          <div class="p-5">
+            <h3 class="text-base font-black uppercase text-black">Class Routine</h3>
+            <p class="text-xs font-semibold text-zinc-500 mt-1">Automated timetable extraction and alerts.</p>
           </div>
         </div>
 
-        <!-- Tile 4: Gamification & Quizzes -->
-        <div class="glass-card rounded-3xl overflow-hidden group hover:scale-[1.01] transition-all">
+        <!-- Card 4: Quizzes & Badges -->
+        <div class="bg-[#F9FAFB] rounded-3xl overflow-hidden border border-zinc-200 shadow-card hover:shadow-card-hover hover:scale-[1.01] transition-all group">
           <div class="h-48 overflow-hidden relative">
-            <img src="/assets/07-verified-achievement.png" alt="Quizzes & XP" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-            <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-yellow-400 text-black text-[10px] font-black uppercase">
-              GAMIFIED
-            </div>
+            <img src="/assets/07-verified-achievement.png" alt="Quizzes" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            <span class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-[#FFDC00] text-black text-[10px] font-black uppercase">
+              GAMIFIED XP
+            </span>
           </div>
-          <div class="p-6">
-            <h3 class="text-lg font-black uppercase text-white mb-1">Quizzes & Streaks</h3>
-            <p class="text-xs text-zinc-400">Earn XP, complete daily academic challenges, and top the campus leaderboards.</p>
+          <div class="p-5">
+            <h3 class="text-base font-black uppercase text-black">Quizzes & Streaks</h3>
+            <p class="text-xs font-semibold text-zinc-500 mt-1">Earn badges and compete on university leaderboards.</p>
           </div>
         </div>
 
-        <!-- Tile 5: Peer Tutoring -->
-        <div class="glass-card rounded-3xl overflow-hidden group hover:scale-[1.01] transition-all">
+        <!-- Card 5: Peer Tutoring -->
+        <div class="bg-[#F9FAFB] rounded-3xl overflow-hidden border border-zinc-200 shadow-card hover:shadow-card-hover hover:scale-[1.01] transition-all group">
           <div class="h-48 overflow-hidden relative">
-            <img src="/assets/04-tutor-booking.png" alt="Peer Tutoring" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-            <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-yellow-400 text-black text-[10px] font-black uppercase">
+            <img src="/assets/04-tutor-booking.png" alt="Tutoring" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            <span class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black text-[#FFDC00] text-[10px] font-black uppercase">
               1-ON-1
-            </div>
+            </span>
           </div>
-          <div class="p-6">
-            <h3 class="text-lg font-black uppercase text-white mb-1">Peer Tutoring</h3>
-            <p class="text-xs text-zinc-400">Connect with senior department toppers for targeted 1-on-1 tutoring sessions.</p>
+          <div class="p-5">
+            <h3 class="text-base font-black uppercase text-black">Peer Tutoring</h3>
+            <p class="text-xs font-semibold text-zinc-500 mt-1">Book experienced senior students for 1-on-1 tutoring.</p>
           </div>
         </div>
 
-        <!-- Tile 6: Campus Community Feed -->
-        <div class="glass-card rounded-3xl overflow-hidden group hover:scale-[1.01] transition-all">
+        <!-- Card 6: Community Feed -->
+        <div class="bg-[#F9FAFB] rounded-3xl overflow-hidden border border-zinc-200 shadow-card hover:shadow-card-hover hover:scale-[1.01] transition-all group">
           <div class="h-48 overflow-hidden relative">
-            <img src="/assets/social-feed.png" alt="Campus Community Feed" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-            <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-yellow-400 text-black text-[10px] font-black uppercase">
-              CAMPUS SOCIAL
-            </div>
+            <img src="/assets/social-feed.png" alt="Community" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            <span class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-[#FFDC00] text-black text-[10px] font-black uppercase">
+              RUET VERIFIED
+            </span>
           </div>
-          <div class="p-6">
-            <h3 class="text-lg font-black uppercase text-white mb-1">Community Feed</h3>
-            <p class="text-xs text-zinc-400">Club updates, research discussions, and campus events all in one verified feed.</p>
+          <div class="p-5">
+            <h3 class="text-base font-black uppercase text-black">Community Feed</h3>
+            <p class="text-xs font-semibold text-zinc-500 mt-1">Club notices, campus events and discussions.</p>
           </div>
         </div>
 
@@ -519,71 +484,61 @@
     </div>
   </section>
 
-  <!-- DIRECT APK DOWNLOAD & QR CODE HUB -->
-  <section id="download" class="relative z-10 py-20 border-t border-white/5 bg-gradient-to-b from-[#0A0C11] to-[#08090C]">
+
+  <!-- ========================================================================= -->
+  <!-- 5. DIRECT DOWNLOAD & QR CODE (High Contrast Black & Yellow Box)          -->
+  <!-- ========================================================================= -->
+  <section id="download" class="py-20 bg-[#0F1015] text-white">
     <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
       
-      <div class="glass-card rounded-[36px] p-8 sm:p-12 border border-yellow-400/30 relative overflow-hidden shadow-glow-yellow">
+      <div class="rounded-[36px] p-8 sm:p-12 bg-[#151720] border-2 border-[#FFDC00]/30 relative overflow-hidden shadow-2xl">
         
-        <!-- Glow Blob in Card -->
-        <div class="absolute -right-20 -bottom-20 w-80 h-80 rounded-full bg-yellow-400/15 blur-3xl pointer-events-none"></div>
-
         <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
           
           <!-- Download CTA Info (7 cols) -->
-          <div class="md:col-span-7 space-y-6">
-            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 text-xs font-black tracking-widest uppercase">
+          <div class="md:col-span-7 space-y-5 text-center md:text-left">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FFDC00]/10 border border-[#FFDC00]/30 text-[#FFDC00] text-xs font-black tracking-widest uppercase">
               <i data-lucide="download" class="w-3.5 h-3.5"></i>
-              <span>OFFICIAL ANDROID RELEASE</span>
+              <span>DIRECT VPS DOWNLOAD</span>
             </div>
 
-            <h2 class="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
-              GET SKILLBRIDGE ON YOUR DEVICE
+            <h2 class="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white leading-tight">
+              INSTALL SKILLBRIDGE NOW
             </h2>
 
-            <p class="text-sm text-zinc-400 max-w-md">
-              Download the official APK directly from your VPS server. No app store delays, automatic in-app updates, and zero ads.
+            <p class="text-sm font-medium text-zinc-400 max-w-md mx-auto md:mx-0">
+              Direct download from high-speed VPS. Automatic in-app update notifications enabled.
             </p>
 
-            <!-- Big Download Button -->
+            <!-- Big Yellow Download Button -->
             <div class="pt-2">
-              <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-black text-black bg-gradient-to-r from-yellow-400 via-yellow-300 to-amber-400 hover:from-yellow-300 hover:to-yellow-200 shadow-glow-yellow hover:scale-[1.02] active:scale-95 transition-all">
-                <i data-lucide="download" class="w-5 h-5 stroke-[2.5]"></i>
+              <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-black text-black bg-[#FFDC00] hover:bg-[#FFE817] shadow-glow-yellow hover:scale-105 active:scale-95 transition-all">
+                <i data-lucide="download" class="w-5 h-5 stroke-[3]"></i>
                 <span>DOWNLOAD APK <span class="text-xs font-bold text-black/70 ml-1">(v2.1.0 • 62 MB)</span></span>
               </a>
             </div>
 
             <!-- Verification Metadata -->
-            <div class="pt-4 flex flex-wrap gap-4 text-[11px] text-zinc-400 font-medium">
-              <div class="flex items-center gap-1.5">
-                <i data-lucide="check" class="w-4 h-4 text-yellow-400"></i>
-                <span>Android 8.0+</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <i data-lucide="shield" class="w-4 h-4 text-yellow-400"></i>
-                <span>100% Virus Free</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <i data-lucide="refresh-cw" class="w-4 h-4 text-yellow-400"></i>
-                <span>Auto-Updates Enabled</span>
-              </div>
+            <div class="pt-3 flex flex-wrap items-center justify-center md:justify-start gap-4 text-xs font-semibold text-zinc-400">
+              <span class="flex items-center gap-1.5"><i data-lucide="check" class="w-4 h-4 text-[#FFDC00]"></i> Android 8.0+</span>
+              <span class="flex items-center gap-1.5"><i data-lucide="shield-check" class="w-4 h-4 text-[#FFDC00]"></i> 100% Virus Free</span>
+              <span class="flex items-center gap-1.5"><i data-lucide="refresh-cw" class="w-4 h-4 text-[#FFDC00]"></i> Auto-Updates</span>
             </div>
           </div>
 
           <!-- QR Code Box (5 cols) -->
-          <div class="md:col-span-5 flex flex-col items-center justify-center text-center p-6 rounded-2xl bg-black/60 border border-white/10">
-            <span class="text-xs font-bold uppercase tracking-wider text-zinc-300 mb-3 flex items-center gap-1.5">
-              <i data-lucide="camera" class="w-4 h-4 text-yellow-400"></i>
+          <div class="md:col-span-5 flex flex-col items-center justify-center p-6 rounded-2xl bg-black border border-white/10 text-center">
+            <span class="text-xs font-black uppercase tracking-wider text-[#FFDC00] mb-3 flex items-center gap-1.5">
+              <i data-lucide="camera" class="w-4 h-4"></i>
               <span>SCAN WITH PHONE CAMERA</span>
             </span>
 
-            <!-- SVG QR Code pointing directly to APK download -->
-            <div class="p-3 bg-white rounded-2xl shadow-xl hover:scale-105 transition-transform duration-300">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://skillbridgeapk.duckdns.org/download/SkillBridge.apk&color=0-0-0&bgcolor=255-255-255" alt="Scan QR to Download" class="w-40 h-40">
+            <div class="p-3 bg-white rounded-2xl shadow-xl hover:scale-105 transition-transform duration-200">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://skillbridgeapk.duckdns.org/download/SkillBridge.apk&color=0-0-0&bgcolor=255-255-255" alt="QR Code" class="w-40 h-40">
             </div>
 
-            <div class="text-[11px] font-semibold text-zinc-400 mt-3">
-              Direct VPS Link: <span class="text-yellow-400 font-mono">skillbridgeapk.duckdns.org</span>
+            <div class="text-[11px] font-bold text-zinc-400 mt-3">
+              Direct Link: <span class="text-[#FFDC00]">skillbridgeapk.duckdns.org</span>
             </div>
           </div>
 
@@ -594,139 +549,136 @@
     </div>
   </section>
 
-  <!-- PROFESSIONAL MINIMAL FOOTER -->
-  <footer class="relative z-10 py-12 border-t border-white/5 bg-[#060709] text-zinc-400">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-6">
+
+  <!-- ========================================================================= -->
+  <!-- 6. CLEAN FOOTER                                                           -->
+  <!-- ========================================================================= -->
+  <footer class="py-10 bg-black text-zinc-400 border-t border-white/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
       
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-yellow-400 flex items-center justify-center text-black font-black text-sm">
+        <div class="w-7 h-7 rounded-lg bg-[#FFDC00] flex items-center justify-center text-black font-black text-xs">
           SB
         </div>
-        <span class="text-sm font-bold text-white tracking-wider">SKILL<span class="text-yellow-400">BRIDGE</span></span>
+        <span class="text-sm font-black text-white">SKILL<span class="text-[#FFDC00]">BRIDGE</span></span>
         <span class="text-xs text-zinc-600">|</span>
         <span class="text-xs text-zinc-500">© 2026 RUET SkillBridge Platform</span>
       </div>
 
-      <!-- Links -->
-      <div class="flex items-center gap-6 text-xs font-semibold">
-        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="hover:text-yellow-400 transition-colors">Web App</a>
-        <a href="https://ruetskillbridgeadmin.duckdns.org" target="_blank" class="hover:text-yellow-400 transition-colors">Admin Portal</a>
-        <a href="/download/SkillBridge.apk" class="text-yellow-400 hover:underline">Download APK</a>
+      <div class="flex items-center gap-6 text-xs font-bold">
+        <a href="https://ruetskillbridgeweb.duckdns.org" target="_blank" class="hover:text-[#FFDC00] transition-colors">Web App</a>
+        <a href="https://ruetskillbridgeadmin.duckdns.org" target="_blank" class="hover:text-[#FFDC00] transition-colors">Admin Portal</a>
+        <a href="/download/SkillBridge.apk" class="text-[#FFDC00] hover:underline">Direct APK</a>
       </div>
 
     </div>
   </footer>
 
-  <!-- SCRIPT FOR DYNAMIC DATA & INTERACTIVE SCREEN SWITCHER -->
+
+  <!-- SCRIPT FOR MOBILE MENU & TAB PREVIEW -->
   <script>
     // Initialize Lucide icons
     lucide.createIcons();
 
-    // Data for Interactive Screen Explorer
+    // Mobile Menu Toggle
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobile-menu');
+      menu.classList.toggle('hidden');
+    }
+
+    // Screen Preview Data
     const screenData = {
       vault: {
         img: '/assets/materials-vault.png',
-        badge: 'CENTRAL STUDY VAULT',
-        title: 'Instant Notes & Question Bank',
-        desc: 'Organized by Department, Series, and Subject. Find lab reports, past questions, and lecture slides in seconds.',
+        badge: 'ACADEMIC STUDY VAULT',
+        title: 'Questions & Slide Archive',
+        desc: 'Department, series & subject filter with instant in-app PDF viewer.',
         chips: [
-          'Fast in-app PDF preview & download',
-          'Verified student uploads & moderation',
-          'Filter by Course Code & Teacher'
+          'Instant PDF search & offline view',
+          'Moderated student uploads',
+          'Past 5 years question bank'
         ]
       },
       rooms: {
         img: '/assets/live-class.png',
-        badge: 'WEBRTC HD LIVE ROOMS',
-        title: 'Real-Time Audio & Video Study',
-        desc: 'Low-latency group study with interactive live polls, screen sharing, and automatic noise cancellation.',
+        badge: 'LIVE WEBRTC ROOMS',
+        title: 'Voice & Video Study Rooms',
+        desc: 'Low-latency group study with screen sharing and live polls.',
         chips: [
           'LiveKit WebRTC 60 FPS Video',
-          'Instant Room Creation & PIN Entry',
-          'In-Room Live Polls & Hand Raising'
+          'Instant Room PIN & Invite Links',
+          'In-Room Live Polls'
         ]
       },
       routine: {
         img: '/assets/03-unified-calendar.png',
         badge: 'AI ROUTINE EXTRACTOR',
-        title: 'Automated Timetable & Calendar',
-        desc: 'Upload your semester PDF routine once. The app parses class timings and alerts you before lectures and lab exams.',
+        title: 'Automated Class Timetable',
+        desc: 'Upload class PDF schedule once. Get alerts before lectures.',
         chips: [
-          'Automatic schedule conflict detection',
-          'Exam count-down and quiz reminders',
-          'Syncs across Android and Web app'
+          'Automatic schedule clash detection',
+          'Exam & quiz countdown reminders',
+          'Syncs across Web and Mobile'
         ]
       },
       quiz: {
         img: '/assets/07-verified-achievement.png',
-        badge: 'CAMPUS GAMIFICATION',
-        title: 'Quizzes, Streaks & Leaderboards',
-        desc: 'Compete in chapter-wise multiple choice quizzes, build daily study streaks, and earn verified university badges.',
+        badge: 'GAMIFIED ACHIEVEMENTS',
+        title: 'Quizzes, XP & Badges',
+        desc: 'Compete in chapter-wise quizzes and top the campus leaderboards.',
         chips: [
           'Real-time departmental leaderboard',
-          'Streak protection and XP rewards',
-          'Certificate generation for course completions'
+          'Daily study streak protection',
+          'Verified academic certificates'
         ]
       },
       mentor: {
         img: '/assets/04-tutor-booking.png',
         badge: '1-ON-1 PEER TUTORING',
-        title: 'Book Experienced Senior Tutors',
-        desc: 'Struggling with complex engineering concepts? Book a 1-on-1 tutoring session with verified department toppers.',
+        title: 'Book Senior Student Tutors',
+        desc: 'Direct 1-on-1 tutoring sessions with verified department toppers.',
         chips: [
           'Direct chat & calendar scheduling',
-          'Verified subject-matter expert badges',
-          'Secure escrow payment & review system'
+          'Verified topper badges',
+          'Secure review & rating system'
         ]
       }
     };
 
-    function switchScreen(key) {
+    function setPreview(key) {
       const data = screenData[key];
       if (!data) return;
 
-      // Update Tab Styles
-      document.querySelectorAll('.screen-tab').forEach(tab => {
-        tab.className = 'screen-tab px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/5 transition-all';
+      // Update button classes
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.className = 'tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all';
       });
-      const activeTab = document.getElementById('tab-' + key);
-      if (activeTab) {
-        activeTab.className = 'screen-tab px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-yellow-400 text-black shadow-glow-sm transition-all';
+      const activeBtn = document.getElementById('tab-' + key);
+      if (activeBtn) {
+        activeBtn.className = 'tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-black text-[#FFDC00] shadow-md transition-all';
       }
 
-      // Update Content with Smooth Fade
-      const img = document.getElementById('active-screen-img');
+      // Smooth image transition
+      const img = document.getElementById('preview-img');
       img.style.opacity = '0';
       setTimeout(() => {
         img.src = data.img;
-        document.getElementById('active-screen-badge').innerText = data.badge;
-        document.getElementById('active-screen-title').innerText = data.title;
-        document.getElementById('active-screen-desc').innerText = data.desc;
+        document.getElementById('preview-badge').innerText = data.badge;
+        document.getElementById('preview-title').innerText = data.title;
+        document.getElementById('preview-desc').innerText = data.desc;
 
-        const chipsContainer = document.getElementById('active-screen-chips');
-        chipsContainer.innerHTML = data.chips.map(chip => `
-          <div class="flex items-center gap-2 text-xs font-semibold text-zinc-300">
-            <i data-lucide="check-circle" class="w-4 h-4 text-yellow-400"></i>
-            <span>${chip}</span>
+        const chips = document.getElementById('preview-chips');
+        chips.innerHTML = data.chips.map(c => `
+          <div class="flex items-center gap-2 text-xs font-bold text-zinc-800">
+            <i data-lucide="check" class="w-4 h-4 text-emerald-600 stroke-[3]"></i>
+            <span>${c}</span>
           </div>
         `).join('');
 
         lucide.createIcons();
         img.style.opacity = '1';
-      }, 150);
+      }, 120);
     }
-
-    // Auto-fetch latest version from API
-    fetch('/api/v1/app/version')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.current_version) {
-          const v = data.current_version;
-          const sz = data.apk?.file_size_formatted || '62 MB';
-          console.log('Latest Version:', v, sz);
-        }
-      })
-      .catch(err => console.log('Offline/Local mode'));
   </script>
 
 </body>
