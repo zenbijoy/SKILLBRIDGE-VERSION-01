@@ -345,7 +345,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             ) : null}
 
             <a
-              href="https://ruetskillbridgeweb.duckdns.org/showcase"
+              href="https://skillbridgeapk.duckdns.org"
               target="_blank"
               rel="noreferrer"
               className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition"

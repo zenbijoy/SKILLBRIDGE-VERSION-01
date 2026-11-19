@@ -4,6 +4,51 @@
     }
 }
 
+# ── SkillBridge Dedicated App Downloader & Showcase Platform ──────────────────
+skillbridgeapk.duckdns.org {
+
+    # Direct API proxy so showcase can query local version without CORS
+    handle /api/v1/* {
+        reverse_proxy api:4000
+    }
+
+    # Direct APK downloads
+    handle_path /download/* {
+        root * /srv/release-apk
+        header Content-Disposition "attachment"
+        file_server {
+            browse
+        }
+    }
+
+    handle /SkillBridge.apk {
+        root * /srv/release-apk
+        header Content-Disposition "attachment"
+        file_server
+    }
+
+    handle /apk {
+        redir /download/SkillBridge.apk permanent
+    }
+
+    # Downloader / Showcase Web
+    handle {
+        root * /srv/showcase
+        file_server
+        try_files {path} {path}/ /index.html
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "SAMEORIGIN"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip zstd
+}
+
 # ── SkillBridge Backend API ────────────────────────────────────────────────────
 ruetskillbridge.duckdns.org {
 

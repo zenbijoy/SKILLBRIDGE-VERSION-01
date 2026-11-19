@@ -50,6 +50,69 @@ export interface CoStudyMediaState {
   lastUpdatedBy: string | null;
 }
 
+export interface RoomLivePoll {
+  id: string;
+  roomId: string;
+  question: string;
+  options: { id: number; text: string; votes: number }[];
+  voters: Record<string, number>;
+  creatorName: string;
+  isOpen: boolean;
+  createdAt: number;
+}
+
+export interface RoomSharedResource {
+  id: string;
+  roomId: string;
+  title: string;
+  url: string;
+  type: "link" | "doc" | "pdf" | "code";
+  sharedByName: string;
+  sharedByAvatar?: string | null;
+  timestamp: number;
+}
+
+export interface LiveBroadcastAlert {
+  id: string;
+  message: string;
+  senderId: string;
+  senderName: string;
+  durationMs: number;
+  timestamp: number;
+}
+
+export interface RoomWhisperMessage {
+  id: string;
+  senderSocketId: string;
+  senderUserId: string;
+  senderName: string;
+  senderAvatar?: string | null;
+  message: string;
+  timestamp: number;
+}
+
+export interface BreakoutGroupInfo {
+  roomId: string;
+  groups: { groupId: string; groupName: string; members: string[] }[];
+  durationMinutes: number;
+  startedAt: number;
+}
+
+export interface BookmarkedMoment {
+  id: string;
+  timestampSeconds: number;
+  note: string;
+  createdAt: number;
+}
+
+export interface HandRaiseItem {
+  socketId: string;
+  userId: string;
+  name: string;
+  avatarUrl?: string | null;
+  raisedAt: number;
+}
+
 export interface UseRoomWebRTCOptions {
   roomId: string;
   initialMedia?: "audio" | "video";
@@ -89,6 +152,53 @@ export function useRoomWebRTC({
     mediaTitle: null,
     lastUpdatedBy: null,
   });
+
+  // 1. Network Latency & Quality Monitor
+  const [networkQuality, setNetworkQuality] = useState<"excellent" | "good" | "poor" | "reconnecting">("excellent");
+  const [latencyMs, setLatencyMs] = useState<number>(45);
+
+  // 2. Interactive Live Polls
+  const [currentPoll, setCurrentPoll] = useState<RoomLivePoll | null>(null);
+
+  // 3. Stage Shared Resources Hub
+  const [sharedResources, setSharedResources] = useState<RoomSharedResource[]>([]);
+
+  // 4. Collaborative Live Whiteboard Strokes
+  const [whiteboardStrokes, setWhiteboardStrokes] = useState<any[]>([]);
+
+  // 5. Live Broadcast Alert Ticker
+  const [activeBroadcast, setActiveBroadcast] = useState<LiveBroadcastAlert | null>(null);
+
+  // 6. In-Room Private Whispers
+  const [whispers, setWhispers] = useState<RoomWhisperMessage[]>([]);
+
+  // 7. Breakout Study Groups
+  const [breakoutInfo, setBreakoutInfo] = useState<BreakoutGroupInfo | null>(null);
+
+  // 8. Low-Data Saver Mode
+  const [isLowDataMode, setIsLowDataMode] = useState<boolean>(false);
+
+  // 9. Screen Share State
+  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+
+  // 10. Virtual Backdrop Filter
+  const [virtualBackground, setVirtualBackground] = useState<"none" | "blur" | "library" | "sunset" | "studio">("none");
+
+  // 11. Study Attendance & Focus Streak Tracker
+  const [studyMinutes, setStudyMinutes] = useState<number>(0);
+  const [xpEarned, setXpEarned] = useState<number>(0);
+
+  // 12. Key Moment Bookmarks / Notes
+  const [bookmarkedMoments, setBookmarkedMoments] = useState<BookmarkedMoment[]>([]);
+
+  // 13. Audio Enhancement Filter Mode
+  const [audioFilterMode, setAudioFilterMode] = useState<"standard" | "voice_boost" | "music">("standard");
+
+  // 14. Speaker Spotlight Pinning
+  const [pinnedPeerId, setPinnedPeerId] = useState<string | null>(null);
+
+  // 15. Hand-Raise Queue with Ordered Timestamps
+  const [handRaiseQueue, setHandRaiseQueue] = useState<HandRaiseItem[]>([]);
 
   const localStreamRef = useRef<any | null>(null);
   const peerConnectionsRef = useRef<Map<string, any>>(new Map()); // socketId -> RTCPeerConnection
@@ -314,6 +424,13 @@ export function useRoomWebRTC({
           });
 
           setRemotePeers(Array.from(remotePeersDataRef.current.values()));
+
+          if (response?.poll) {
+            setCurrentPoll(response.poll);
+          }
+          if (Array.isArray(response?.resources)) {
+            setSharedResources(response.resources);
+          }
         },
       );
     } catch (err: any) {
@@ -570,6 +687,70 @@ export function useRoomWebRTC({
     socket.on("room:webrtc:force-mute", handleForceMute);
     socket.on("room:webrtc:room-ended", handleRoomEnded);
 
+    // Latency Ping / Pong
+    const handlePong = (payload: { clientTimestamp: number; serverTimestamp: number }) => {
+      const rtt = Math.max(12, Date.now() - (payload?.clientTimestamp || Date.now()));
+      setLatencyMs(rtt);
+      if (rtt < 120) setNetworkQuality("excellent");
+      else if (rtt < 280) setNetworkQuality("good");
+      else setNetworkQuality("poor");
+    };
+
+    // Collaborative Live Whiteboard
+    const handleWhiteboardDraw = (stroke: any) => {
+      setWhiteboardStrokes((prev) => [...prev, stroke]);
+    };
+    const handleWhiteboardClear = () => {
+      setWhiteboardStrokes([]);
+    };
+
+    // Live Polls
+    const handlePollUpdate = (poll: RoomLivePoll) => {
+      setCurrentPoll(poll);
+      triggerHaptic();
+    };
+
+    // Shared Resources
+    const handleResourceNew = (resource: RoomSharedResource) => {
+      setSharedResources((prev) => [resource, ...prev.filter((r) => r.id !== resource.id)]);
+      triggerHaptic();
+    };
+
+    // Broadcast Alert
+    const handleBroadcast = (alert: LiveBroadcastAlert) => {
+      setActiveBroadcast(alert);
+      triggerHaptic();
+      setTimeout(() => {
+        setActiveBroadcast((curr) => (curr?.id === alert.id ? null : curr));
+      }, alert.durationMs || 8000);
+    };
+
+    // Private Whispers
+    const handleWhisper = (whisper: RoomWhisperMessage) => {
+      setWhispers((prev) => [...prev.slice(-30), whisper]);
+      triggerHaptic();
+    };
+
+    // Breakouts
+    const handleBreakoutStarted = (info: BreakoutGroupInfo) => {
+      setBreakoutInfo(info);
+      triggerHaptic();
+    };
+    const handleBreakoutEnded = () => {
+      setBreakoutInfo(null);
+      triggerHaptic();
+    };
+
+    socket.on("room:webrtc:pong", handlePong);
+    socket.on("room:webrtc:whiteboard:draw", handleWhiteboardDraw);
+    socket.on("room:webrtc:whiteboard:clear", handleWhiteboardClear);
+    socket.on("room:webrtc:poll:update", handlePollUpdate);
+    socket.on("room:webrtc:resource:new", handleResourceNew);
+    socket.on("room:webrtc:broadcast", handleBroadcast);
+    socket.on("room:webrtc:whisper", handleWhisper);
+    socket.on("room:webrtc:breakout:started", handleBreakoutStarted);
+    socket.on("room:webrtc:breakout:ended", handleBreakoutEnded);
+
     return () => {
       socket.off("room:webrtc:peer-joined", handlePeerJoined);
       socket.off("room:webrtc:peer-left", handlePeerLeft);
@@ -580,8 +761,43 @@ export function useRoomWebRTC({
       socket.off("room:webrtc:media-sync", handleMediaSync);
       socket.off("room:webrtc:force-mute", handleForceMute);
       socket.off("room:webrtc:room-ended", handleRoomEnded);
+      socket.off("room:webrtc:pong", handlePong);
+      socket.off("room:webrtc:whiteboard:draw", handleWhiteboardDraw);
+      socket.off("room:webrtc:whiteboard:clear", handleWhiteboardClear);
+      socket.off("room:webrtc:poll:update", handlePollUpdate);
+      socket.off("room:webrtc:resource:new", handleResourceNew);
+      socket.off("room:webrtc:broadcast", handleBroadcast);
+      socket.off("room:webrtc:whisper", handleWhisper);
+      socket.off("room:webrtc:breakout:started", handleBreakoutStarted);
+      socket.off("room:webrtc:breakout:ended", handleBreakoutEnded);
     };
   }, [roomId, createPeer, leave]);
+
+  // Ping Latency Loop
+  useEffect(() => {
+    if (!roomId || connectionStatus !== "connected") return;
+    const interval = setInterval(() => {
+      const socket = getSocket();
+      socket?.emit("room:webrtc:ping", { timestamp: Date.now() });
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [roomId, connectionStatus]);
+
+  // Attendance & Study Streak Tracker
+  useEffect(() => {
+    if (connectionStatus !== "connected") return;
+    const interval = setInterval(() => {
+      setStudyMinutes((prev) => {
+        const next = prev + 1;
+        if (next === 10 || next === 20 || next === 30 || next === 45) {
+          setXpEarned((x) => x + 15);
+          triggerHaptic();
+        }
+        return next;
+      });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [connectionStatus]);
 
   // 5. Controls
   const toggleMicrophone = useCallback(() => {
@@ -624,7 +840,6 @@ export function useRoomWebRTC({
       if (videoTrack?._switchCamera) {
         videoTrack._switchCamera();
       } else {
-        // Fallback: re-acquire with updated facing mode
         try {
           const newStream = await mediaDevices.getUserMedia({
             audio: false,
@@ -717,6 +932,161 @@ export function useRoomWebRTC({
     [roomId],
   );
 
+  const createPoll = useCallback((question: string, options: string[]) => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:poll:create", { roomId, question, options, creatorName: userName });
+    triggerHaptic();
+  }, [roomId, userName]);
+
+  const votePoll = useCallback((optionId: number) => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:poll:vote", { roomId, optionId });
+    triggerHaptic();
+  }, [roomId]);
+
+  const closePoll = useCallback(() => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:poll:close", { roomId });
+    triggerHaptic();
+  }, [roomId]);
+
+  const shareResource = useCallback((title: string, url: string, type: "link" | "doc" | "pdf" | "code" = "link") => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:resource:share", {
+      roomId,
+      title,
+      url,
+      type,
+      sharedByName: userName,
+      sharedByAvatar: userAvatar,
+    });
+    triggerHaptic();
+  }, [roomId, userName, userAvatar]);
+
+  const broadcastStroke = useCallback((stroke: any) => {
+    setWhiteboardStrokes((prev) => [...prev, stroke]);
+    const socket = getSocket();
+    socket?.emit("room:webrtc:whiteboard:draw", { roomId, stroke });
+  }, [roomId]);
+
+  const clearWhiteboard = useCallback(() => {
+    setWhiteboardStrokes([]);
+    const socket = getSocket();
+    socket?.emit("room:webrtc:whiteboard:clear", { roomId });
+    triggerHaptic();
+  }, [roomId]);
+
+  const sendBroadcast = useCallback((message: string, durationMs = 8000) => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:broadcast", { roomId, message, durationMs, senderName: userName });
+    triggerHaptic();
+  }, [roomId, userName]);
+
+  const sendWhisper = useCallback((toSocketId: string, message: string) => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:whisper", {
+      roomId,
+      toSocketId,
+      message,
+      senderName: userName,
+      senderAvatar: userAvatar,
+    });
+    setWhispers((prev) => [
+      ...prev,
+      {
+        id: `sent-${Date.now()}`,
+        senderSocketId: "self",
+        senderUserId: "self",
+        senderName: "You",
+        message,
+        timestamp: Date.now(),
+      },
+    ]);
+    triggerHaptic();
+  }, [roomId, userName, userAvatar]);
+
+  const startBreakout = useCallback((durationMinutes = 10, groupSize = 2) => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:breakout:start", { roomId, durationMinutes, groupSize });
+    triggerHaptic();
+  }, [roomId]);
+
+  const endBreakout = useCallback(() => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:breakout:end", { roomId });
+    triggerHaptic();
+  }, [roomId]);
+
+  const toggleLowDataMode = useCallback(() => {
+    setIsLowDataMode((prev) => {
+      const next = !prev;
+      remotePeersDataRef.current.forEach((peer) => {
+        if (peer.stream?.getVideoTracks) {
+          peer.stream.getVideoTracks().forEach((track: any) => {
+            track.enabled = !next;
+          });
+        }
+      });
+      triggerHaptic();
+      return next;
+    });
+  }, []);
+
+  const toggleScreenShare = useCallback(async () => {
+    if (isScreenSharing) {
+      await setupLocalMedia("video");
+      setIsScreenSharing(false);
+    } else {
+      try {
+        if (typeof (navigator?.mediaDevices as any)?.getDisplayMedia === "function") {
+          const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true, audio: true });
+          const screenTrack = screenStream.getVideoTracks()[0];
+          if (screenTrack) {
+            peerConnectionsRef.current.forEach((pc) => {
+              const senders = pc.getSenders ? pc.getSenders() : [];
+              const videoSender = senders.find((s: any) => s.track?.kind === "video");
+              if (videoSender?.replaceTrack) {
+                videoSender.replaceTrack(screenTrack);
+              }
+            });
+            screenTrack.onended = () => {
+              void setupLocalMedia("video");
+              setIsScreenSharing(false);
+            };
+            setLocalStream(screenStream);
+            setIsScreenSharing(true);
+            triggerHaptic();
+          }
+        }
+      } catch (e) {
+        console.warn("Screen share failed:", e);
+      }
+    }
+  }, [isScreenSharing, setupLocalMedia]);
+
+  const bookmarkMoment = useCallback((note: string) => {
+    const item: BookmarkedMoment = {
+      id: `bm-${Date.now()}`,
+      timestampSeconds: studyMinutes * 60,
+      note: note.trim(),
+      createdAt: Date.now(),
+    };
+    setBookmarkedMoments((prev) => [item, ...prev]);
+    triggerHaptic();
+  }, [studyMinutes]);
+
+  const inviteToSpeak = useCallback((targetSocketId: string) => {
+    const socket = getSocket();
+    socket?.emit("room:webrtc:whisper", {
+      roomId,
+      toSocketId: targetSocketId,
+      message: "🎤 The host invited you to unmute and speak!",
+      senderName: userName,
+      senderAvatar: userAvatar,
+    });
+    triggerHaptic();
+  }, [roomId, userName, userAvatar]);
+
   // Auto connect if configured
   useEffect(() => {
     if (autoConnect) {
@@ -740,6 +1110,26 @@ export function useRoomWebRTC({
     reactions,
     mediaSync,
     participantCount: remotePeers.length + 1,
+    networkQuality,
+    latencyMs,
+    currentPoll,
+    sharedResources,
+    whiteboardStrokes,
+    activeBroadcast,
+    whispers,
+    breakoutInfo,
+    isLowDataMode,
+    isScreenSharing,
+    virtualBackground,
+    studyMinutes,
+    xpEarned,
+    bookmarkedMoments,
+    audioFilterMode,
+    pinnedPeerId,
+    handRaiseQueue,
+    setVirtualBackground,
+    setAudioFilterMode,
+    setPinnedPeerId,
     join,
     leave,
     toggleMicrophone,
@@ -749,5 +1139,19 @@ export function useRoomWebRTC({
     sendReaction,
     sendMediaSync,
     moderatePeer,
+    createPoll,
+    votePoll,
+    closePoll,
+    shareResource,
+    broadcastStroke,
+    clearWhiteboard,
+    sendBroadcast,
+    sendWhisper,
+    startBreakout,
+    endBreakout,
+    toggleLowDataMode,
+    toggleScreenShare,
+    bookmarkMoment,
+    inviteToSpeak,
   };
 }

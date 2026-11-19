@@ -67,9 +67,9 @@ appVersionRouter.get("/version", async (_req, res) => {
         "A brand new update is available with Live Video & Audio sessions, Study Vault, Routine Sync, and performance improvements.",
       download_url:
         config?.store_url_android ||
-        "https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk",
-      direct_apk_url: "https://ruetskillbridge.duckdns.org/download/SkillBridge.apk",
-      showcase_url: "https://ruetskillbridgeweb.duckdns.org/showcase",
+        "https://skillbridgeapk.duckdns.org/download/SkillBridge.apk",
+      direct_apk_url: "https://skillbridgeapk.duckdns.org/download/SkillBridge.apk",
+      showcase_url: "https://skillbridgeapk.duckdns.org",
       web_app_url: "https://ruetskillbridgeweb.duckdns.org",
       admin_url: "https://ruetskillbridgeadmin.duckdns.org",
       apk: {

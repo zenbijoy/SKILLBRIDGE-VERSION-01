@@ -62,10 +62,10 @@ export function AppUpdateChecker() {
   const handleUpdate = () => {
     if (Platform.OS === "web") {
       if (typeof window !== "undefined") {
-        window.open(versionInfo.download_url || "https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk", "_blank");
+        window.open(versionInfo.download_url || "https://skillbridgeapk.duckdns.org/download/SkillBridge.apk", "_blank");
       }
     } else {
-      Linking.openURL(versionInfo.download_url || "https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk");
+      Linking.openURL(versionInfo.download_url || "https://skillbridgeapk.duckdns.org/download/SkillBridge.apk");
     }
   };
 

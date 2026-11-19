@@ -4,8 +4,8 @@
 # API   : https://ruetskillbridge.duckdns.org
 # Admin : https://ruetskillbridgeadmin.duckdns.org
 # Web   : https://ruetskillbridgeweb.duckdns.org
-# Showcase: https://ruetskillbridgeweb.duckdns.org/showcase/
-# APK   : https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk
+# App Downloader : https://skillbridgeapk.duckdns.org
+# APK   : https://skillbridgeapk.duckdns.org/download/SkillBridge.apk
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,14 +30,14 @@ echo "[4/4] Verifying production endpoints..."
 curl -sI https://ruetskillbridge.duckdns.org/api/v1/health | head -n 1
 curl -sI https://ruetskillbridgeadmin.duckdns.org | head -n 1
 curl -sI https://ruetskillbridgeweb.duckdns.org | head -n 1
-curl -sI https://ruetskillbridgeweb.duckdns.org/showcase/ | head -n 1
-curl -sI https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk | head -n 1
+curl -sI https://skillbridgeapk.duckdns.org | head -n 1
+curl -sI https://skillbridgeapk.duckdns.org/download/SkillBridge.apk | head -n 1
 
 echo ""
 echo "✅ All SkillBridge services deployed and healthy!"
-echo "   🌐 Web App      : https://ruetskillbridgeweb.duckdns.org"
-echo "   📱 Showcase Web : https://ruetskillbridgeweb.duckdns.org/showcase/"
-echo "   📥 APK Download : https://ruetskillbridgeweb.duckdns.org/download/SkillBridge.apk"
-echo "   ⚙️ Admin Console: https://ruetskillbridgeadmin.duckdns.org"
-echo "   ⚡ API Engine   : https://ruetskillbridge.duckdns.org/api/v1/health"
-echo "   📡 Version API  : https://ruetskillbridge.duckdns.org/api/v1/app/version"
+echo "   📱 App Downloader: https://skillbridgeapk.duckdns.org"
+echo "   📥 APK Direct    : https://skillbridgeapk.duckdns.org/download/SkillBridge.apk"
+echo "   🌐 Web App       : https://ruetskillbridgeweb.duckdns.org"
+echo "   ⚙️ Admin Console : https://ruetskillbridgeadmin.duckdns.org"
+echo "   ⚡ API Engine    : https://ruetskillbridge.duckdns.org/api/v1/health"
+echo "   📡 Version API   : https://ruetskillbridge.duckdns.org/api/v1/app/version"

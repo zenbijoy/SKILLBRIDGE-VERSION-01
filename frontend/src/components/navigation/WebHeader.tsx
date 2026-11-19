@@ -338,7 +338,7 @@ export function WebHeader() {
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {/* Get Android App Showcase link */}
         <a
-          href="/showcase"
+          href="https://skillbridgeapk.duckdns.org"
           target="_blank"
           rel="noopener noreferrer"
           style={{

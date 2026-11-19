@@ -136,6 +136,32 @@ export interface RoomWebRTCPeer {
 // Map<roomId, Map<socketId, RoomWebRTCPeer>>
 export const roomWebRTCParticipants = new Map<string, Map<string, RoomWebRTCPeer>>();
 
+// Live Poll Model
+export interface RoomLivePoll {
+  id: string;
+  roomId: string;
+  question: string;
+  options: { id: number; text: string; votes: number }[];
+  voters: Record<string, number>; // userId -> optionId
+  creatorName: string;
+  isOpen: boolean;
+  createdAt: number;
+}
+export const roomLivePolls = new Map<string, RoomLivePoll>();
+
+// Shared Stage Resources Model
+export interface RoomSharedResource {
+  id: string;
+  roomId: string;
+  title: string;
+  url: string;
+  type: "link" | "doc" | "pdf" | "code";
+  sharedByName: string;
+  sharedByAvatar?: string | null;
+  timestamp: number;
+}
+export const roomSharedResources = new Map<string, RoomSharedResource[]>();
+
 // Clean up stale buffered call signaling entries older than 30 seconds
 const SIGNALING_BUFFER_TTL_MS = 30_000;
 const signalingCleanupTimer = setInterval(() => {
@@ -825,6 +851,8 @@ export function setupSocket(io: SocketServer) {
           self: peerInfo,
           peers: existingPeers,
           participantCount: roomMap.size,
+          poll: roomLivePolls.get(roomId) || null,
+          resources: roomSharedResources.get(roomId) || [],
         });
       }
     });
@@ -966,6 +994,175 @@ export function setupSocket(io: SocketServer) {
       } else if (payload.action === "spotlight" && payload.targetUserId) {
         io.to(`room:${roomId}:webrtc`).emit("room:webrtc:spotlight", { targetUserId: payload.targetUserId });
       }
+    });
+
+    // Real-time Latency Ping / Pong
+    socket.on("room:webrtc:ping", (payload: { timestamp?: number }) => {
+      socket.emit("room:webrtc:pong", {
+        clientTimestamp: payload?.timestamp || Date.now(),
+        serverTimestamp: Date.now(),
+      });
+    });
+
+    // Collaborative Live Whiteboard
+    socket.on("room:webrtc:whiteboard:draw", (payload: { roomId?: string; stroke?: any }) => {
+      const roomId = payload?.roomId;
+      if (!roomId || !payload?.stroke) return;
+      socket.to(`room:${roomId}:webrtc`).emit("room:webrtc:whiteboard:draw", payload.stroke);
+    });
+
+    socket.on("room:webrtc:whiteboard:clear", (payload: { roomId?: string }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:whiteboard:clear", { byUserId: userId });
+    });
+
+    // Live Interactive Polls
+    socket.on("room:webrtc:poll:create", (payload: { roomId?: string; question?: string; options?: string[]; creatorName?: string }) => {
+      const roomId = payload?.roomId;
+      if (!roomId || !payload?.question || !Array.isArray(payload?.options)) return;
+      const poll: RoomLivePoll = {
+        id: `poll-${Date.now()}`,
+        roomId,
+        question: payload.question.trim().slice(0, 150),
+        options: payload.options.slice(0, 4).map((text, idx) => ({ id: idx, text: String(text).trim().slice(0, 60), votes: 0 })),
+        voters: {},
+        creatorName: payload.creatorName || "Host",
+        isOpen: true,
+        createdAt: Date.now(),
+      };
+      roomLivePolls.set(roomId, poll);
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:poll:update", poll);
+    });
+
+    socket.on("room:webrtc:poll:vote", (payload: { roomId?: string; optionId?: number }) => {
+      const roomId = payload?.roomId;
+      if (!roomId || !userId || typeof payload?.optionId !== "number") return;
+      const poll = roomLivePolls.get(roomId);
+      if (!poll || !poll.isOpen) return;
+
+      const previousVote = poll.voters[userId];
+      const prevOpt = typeof previousVote === "number" ? poll.options[previousVote] : undefined;
+      if (prevOpt) {
+        prevOpt.votes = Math.max(0, prevOpt.votes - 1);
+      }
+      const targetOpt = poll.options[payload.optionId];
+      if (targetOpt) {
+        targetOpt.votes += 1;
+        poll.voters[userId] = payload.optionId;
+      }
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:poll:update", poll);
+    });
+
+    socket.on("room:webrtc:poll:close", (payload: { roomId?: string }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      const poll = roomLivePolls.get(roomId);
+      if (poll) {
+        poll.isOpen = false;
+        io.to(`room:${roomId}:webrtc`).emit("room:webrtc:poll:update", poll);
+      }
+    });
+
+    // Stage Shared Resource Hub
+    socket.on("room:webrtc:resource:share", (payload: {
+      roomId?: string;
+      title?: string;
+      url?: string;
+      type?: "link" | "doc" | "pdf" | "code";
+      sharedByName?: string;
+      sharedByAvatar?: string | null;
+    }) => {
+      const roomId = payload?.roomId;
+      if (!roomId || !payload?.title || !payload?.url) return;
+      const item: RoomSharedResource = {
+        id: `res-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        roomId,
+        title: payload.title.trim().slice(0, 100),
+        url: payload.url.trim().slice(0, 300),
+        type: payload.type || "link",
+        sharedByName: payload.sharedByName || "Member",
+        sharedByAvatar: payload.sharedByAvatar,
+        timestamp: Date.now(),
+      };
+      if (!roomSharedResources.has(roomId)) {
+        roomSharedResources.set(roomId, []);
+      }
+      const list = roomSharedResources.get(roomId)!;
+      list.unshift(item);
+      if (list.length > 25) list.pop();
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:resource:new", item);
+    });
+
+    // Live Urgent Broadcast Announcement
+    socket.on("room:webrtc:broadcast", (payload: { roomId?: string; message?: string; durationMs?: number; senderName?: string }) => {
+      const roomId = payload?.roomId;
+      if (!roomId || !payload?.message) return;
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:broadcast", {
+        id: `bc-${Date.now()}`,
+        message: payload.message.trim().slice(0, 180),
+        senderId: userId,
+        senderName: payload.senderName || "Host",
+        durationMs: payload.durationMs || 8000,
+        timestamp: Date.now(),
+      });
+    });
+
+    // In-Room Private Whisper / Discreet Direct Message
+    socket.on("room:webrtc:whisper", (payload: {
+      roomId?: string;
+      toSocketId?: string;
+      message?: string;
+      senderName?: string;
+      senderAvatar?: string | null;
+    }) => {
+      const { toSocketId, message, senderName, senderAvatar, roomId } = payload || {};
+      if (!toSocketId || !message) return;
+      io.to(toSocketId).emit("room:webrtc:whisper", {
+        senderSocketId: socket.id,
+        senderUserId: userId,
+        senderName: senderName || "Peer",
+        senderAvatar,
+        message: message.trim().slice(0, 200),
+        roomId,
+        timestamp: Date.now(),
+      });
+    });
+
+    // Breakout Groups Generator
+    socket.on("room:webrtc:breakout:start", (payload: {
+      roomId?: string;
+      durationMinutes?: number;
+      groupSize?: number;
+    }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      const roomMap = roomWebRTCParticipants.get(roomId);
+      if (!roomMap) return;
+      const members = Array.from(roomMap.values());
+      const groupSize = Math.max(2, payload.groupSize || 2);
+      const shuffled = [...members].sort(() => 0.5 - Math.random());
+      const groups: { groupId: string; groupName: string; members: string[] }[] = [];
+      for (let i = 0; i < shuffled.length; i += groupSize) {
+        const slice = shuffled.slice(i, i + groupSize);
+        groups.push({
+          groupId: `grp-${Math.floor(i / groupSize) + 1}`,
+          groupName: `Breakout Room ${Math.floor(i / groupSize) + 1}`,
+          members: slice.map(s => s.userId),
+        });
+      }
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:breakout:started", {
+        roomId,
+        groups,
+        durationMinutes: payload.durationMinutes || 10,
+        startedAt: Date.now(),
+      });
+    });
+
+    socket.on("room:webrtc:breakout:end", (payload: { roomId?: string }) => {
+      const roomId = payload?.roomId;
+      if (!roomId) return;
+      io.to(`room:${roomId}:webrtc`).emit("room:webrtc:breakout:ended", { roomId });
     });
 
     socket.on("room:webrtc:leave", (payload: { roomId?: string }) => {
