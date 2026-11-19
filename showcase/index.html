@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth bg-[#F9FAFB] text-zinc-900 antialiased">
+<html lang="en" class="scroll-smooth bg-[#F9FAFB] text-zinc-900 antialiased selection:bg-black selection:text-[#FFDC00]">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SkillBridge — The Campus Super-App | Download Android APK</title>
+  <title>SkillBridge — The Campus Super-App | Official Android APK</title>
   <meta name="description" content="SkillBridge: The official all-in-one super-app for university students. Live study rooms, past paper vault, class routine sync, and peer tutoring.">
   <meta name="theme-color" content="#FFDC00">
 
@@ -34,9 +34,11 @@
           },
           boxShadow: {
             'glow-yellow': '0 10px 40px -10px rgba(255, 220, 0, 0.6)',
-            'phone': '0 25px 60px -15px rgba(15, 16, 21, 0.35)',
+            'glow-cyan': '0 10px 30px -10px rgba(6, 182, 212, 0.5)',
+            'phone-1': '0 30px 80px -20px rgba(0, 0, 0, 0.45), 0 0 40px rgba(255, 220, 0, 0.2)',
+            'phone-2': '0 25px 60px -15px rgba(0, 0, 0, 0.35)',
             'card': '0 10px 30px -5px rgba(0, 0, 0, 0.05)',
-            'card-hover': '0 20px 40px -10px rgba(0, 0, 0, 0.12)'
+            'card-hover': '0 20px 45px -10px rgba(0, 0, 0, 0.12)'
           }
         }
       }
@@ -51,7 +53,7 @@
     .curve-divider {
       position: relative;
       background: #FFDC00;
-      height: 60px;
+      height: 70px;
     }
     .curve-divider::after {
       content: '';
@@ -59,20 +61,69 @@
       bottom: 0;
       left: 0;
       right: 0;
-      height: 60px;
+      height: 70px;
       background: #F9FAFB;
       border-top-left-radius: 50% 100%;
       border-top-right-radius: 50% 100%;
     }
-    .phone-glass {
-      background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 50%);
+    /* 3D Phone Perspective */
+    .perspective-container {
+      perspective: 1200px;
+    }
+    .phone-tilt-left {
+      transform: rotateY(-10deg) rotateX(6deg) rotateZ(-2deg);
+      transition: transform 0.5s ease;
+    }
+    .phone-tilt-left:hover {
+      transform: rotateY(-4deg) rotateX(2deg) rotateZ(0deg) scale(1.02);
+    }
+    .phone-tilt-right {
+      transform: rotateY(10deg) rotateX(6deg) rotateZ(2deg);
+      transition: transform 0.5s ease;
+    }
+    .phone-tilt-right:hover {
+      transform: rotateY(4deg) rotateX(2deg) rotateZ(0deg) scale(1.02);
+    }
+    /* Wave equalizer animation */
+    @keyframes eq-wave {
+      0%, 100% { height: 6px; }
+      50% { height: 22px; }
+    }
+    .eq-bar-1 { animation: eq-wave 0.8s ease-in-out infinite 0.1s; }
+    .eq-bar-2 { animation: eq-wave 0.8s ease-in-out infinite 0.3s; }
+    .eq-bar-3 { animation: eq-wave 0.8s ease-in-out infinite 0.2s; }
+    .eq-bar-4 { animation: eq-wave 0.8s ease-in-out infinite 0.4s; }
+
+    /* Infinite Marquee */
+    @keyframes marquee {
+      0% { transform: translateX(0%); }
+      100% { transform: translateX(-50%); }
+    }
+    .marquee-track {
+      display: flex;
+      width: 200%;
+      animation: marquee 25s linear infinite;
+    }
+    .marquee-track:hover {
+      animation-play-state: paused;
+    }
+
+    /* Auto-switch tab progress bar */
+    .tab-progress {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      background: #FFDC00;
+      width: 0%;
+      transition: width 0.1s linear;
     }
   </style>
 </head>
 <body class="bg-[#F9FAFB] text-zinc-900 selection:bg-black selection:text-[#FFDC00]">
 
   <!-- ========================================================================= -->
-  <!-- 1. FULL PROFESSIONAL PROMINENT MENU BAR (White & Yellow & Black)        -->
+  <!-- 1. FULL PROFESSIONAL PROMINENT MENU BAR (Crisp White & Yellow & Black)    -->
   <!-- ========================================================================= -->
   <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-sm transition-all duration-200">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
@@ -126,7 +177,7 @@
     </div>
 
     <!-- Mobile Slide-out Menu -->
-    <div id="mobile-menu" class="hidden md:hidden bg-white border-b border-zinc-200 px-6 py-5 space-y-4 shadow-lg animate-fadeIn">
+    <div id="mobile-menu" class="hidden md:hidden bg-white border-b border-zinc-200 px-6 py-5 space-y-4 shadow-lg">
       <div class="flex flex-col space-y-3 font-bold text-sm text-zinc-800">
         <a href="#overview" onclick="toggleMobileMenu()" class="py-1 hover:text-amber-600">Overview</a>
         <a href="#screens" onclick="toggleMobileMenu()" class="py-1 hover:text-amber-600">App Screens</a>
@@ -152,38 +203,38 @@
 
 
   <!-- ========================================================================= -->
-  <!-- 2. HERO: VIBRANT YELLOW + BLACK (Directly Inspired by User Reference 3 & 1) -->
+  <!-- 2. DYNAMIC HERO: VIBRANT YELLOW + 3D DUAL PHONES + INTERACTIVE MICRO-UI   -->
   <!-- ========================================================================= -->
   <section id="overview" class="relative bg-gradient-to-b from-[#FFE817] via-[#FFDC00] to-[#FFD000] pt-12 pb-24 overflow-hidden">
     
-    <!-- Background Design Elements -->
+    <!-- Pattern Background -->
     <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(#000 1.5px, transparent 1.5px); background-size: 28px 28px;"></div>
     
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
       
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
         
-        <!-- Hero Left Column (6 cols): Bold Typography & Minimal Copy -->
-        <div class="lg:col-span-7 space-y-6 text-center lg:text-left">
+        <!-- Left Column (6 cols): Bold Typography & Actions -->
+        <div class="lg:col-span-6 space-y-6 text-center lg:text-left">
           
-          <!-- Pill Badge -->
-          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/10 border border-black/10 text-black text-xs font-black tracking-widest uppercase">
-            <span class="w-2 h-2 rounded-full bg-black animate-ping"></span>
-            <span>NEXT-GEN CAMPUS APP • v2.1.0</span>
+          <!-- Pill Badge with Live Indicator -->
+          <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/10 border border-black/10 text-black text-xs font-black tracking-widest uppercase">
+            <span class="w-2.5 h-2.5 rounded-full bg-black animate-ping"></span>
+            <span>NEXT-GEN CAMPUS APP • v2.1.0 STABLE</span>
           </div>
 
-          <!-- Massive Headline -->
+          <!-- Massive Bold Headline -->
           <h1 class="text-5xl sm:text-7xl font-black text-black tracking-tight leading-[1.05] uppercase">
             THE CAMPUS<br>
-            <span class="bg-black text-[#FFDC00] px-3 py-1 rounded-2xl inline-block mt-1">SUPER-APP.</span>
+            <span class="bg-black text-[#FFDC00] px-3.5 py-1 rounded-2xl inline-block mt-1 shadow-md">SUPER-APP.</span>
           </h1>
 
-          <!-- Ultra-Short 1-Line Description (Minimal Text) -->
-          <p class="text-base sm:text-lg text-black/80 font-semibold max-w-xl mx-auto lg:mx-0">
-            Live study rooms, academic vault, automated routines & peer tutoring.
+          <!-- Ultra-Short 1-Line Description -->
+          <p class="text-base sm:text-lg text-black/85 font-semibold max-w-xl mx-auto lg:mx-0">
+            Study rooms, academic vault, automated routines & peer tutoring.
           </p>
 
-          <!-- Action Buttons (High Contrast Black & White) -->
+          <!-- Action Buttons -->
           <div class="flex flex-wrap items-center justify-center lg:justify-start gap-4 pt-2">
             <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-black text-[#FFDC00] bg-black hover:bg-zinc-800 shadow-2xl hover:scale-105 active:scale-95 transition-all">
               <i data-lucide="download" class="w-5 h-5 stroke-[2.5]"></i>
@@ -195,34 +246,58 @@
             </a>
           </div>
 
-          <!-- Quick Specs Strip (Minimal Text, Icons only) -->
-          <div class="pt-6 flex flex-wrap items-center justify-center lg:justify-start gap-6 text-xs font-black text-black uppercase tracking-wider">
-            <div class="flex items-center gap-1.5">
-              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
-              <span>Android 8.0+</span>
+          <!-- Quick Metrics Bar (Minimal Text, Icons only) -->
+          <div class="pt-6 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-lg mx-auto lg:mx-0">
+            <div class="bg-black/10 rounded-2xl p-3 text-center border border-black/10">
+              <div class="text-xl font-black text-black">62 MB</div>
+              <div class="text-[10px] uppercase font-bold text-black/70">Instant APK</div>
             </div>
-            <div class="flex items-center gap-1.5">
-              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
-              <span>0-Lag WebRTC</span>
+            <div class="bg-black/10 rounded-2xl p-3 text-center border border-black/10">
+              <div class="text-xl font-black text-black">0-LAG</div>
+              <div class="text-[10px] uppercase font-bold text-black/70">WebRTC HD</div>
             </div>
-            <div class="flex items-center gap-1.5">
-              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
-              <span>100% Free</span>
+            <div class="bg-black/10 rounded-2xl p-3 text-center border border-black/10">
+              <div class="text-xl font-black text-black">Android 8+</div>
+              <div class="text-[10px] uppercase font-bold text-black/70">All Devices</div>
             </div>
-            <div class="flex items-center gap-1.5">
-              <i data-lucide="check-circle-2" class="w-4 h-4 stroke-[3]"></i>
-              <span>Auto-Updates</span>
+            <div class="bg-black/10 rounded-2xl p-3 text-center border border-black/10">
+              <div class="text-xl font-black text-black">100% FREE</div>
+              <div class="text-[10px] uppercase font-bold text-black/70">Open Campus</div>
             </div>
           </div>
 
         </div>
 
-        <!-- Hero Right Column (5 cols): Large 3D Phone Mockup (User Image 2 & 5) -->
-        <div class="lg:col-span-5 flex justify-center relative">
+        <!-- Right Column (6 cols): DUAL 3D PHONES (User Image 2 & 5) -->
+        <div class="lg:col-span-6 flex justify-center items-center relative perspective-container py-6">
           
-          <!-- Outer Floating Phone Frame -->
-          <div class="w-[310px] sm:w-[330px] rounded-[52px] p-3.5 bg-black shadow-phone border-4 border-black/80 relative group hover:rotate-1 transition-transform duration-500">
-            
+          <!-- Back Phone: Live Study Room (Tilted Left) -->
+          <div class="w-[260px] sm:w-[280px] rounded-[48px] p-3 bg-black shadow-phone-2 border-4 border-black/80 phone-tilt-left absolute -left-2 sm:left-4 z-10 hidden sm:block">
+            <!-- Screen Content -->
+            <div class="rounded-[38px] overflow-hidden bg-[#0F1015] aspect-[9/18.5] flex flex-col justify-between p-3.5 text-white relative">
+              <div class="flex items-center justify-between text-xs font-black">
+                <span class="text-[#FFDC00]">Live Room</span>
+                <span class="px-2 py-0.5 rounded bg-red-500 text-white text-[9px]">LIVE</span>
+              </div>
+              <div class="rounded-xl overflow-hidden my-2 border border-white/10 relative">
+                <img src="/assets/live-class.png" alt="Live Room" class="w-full h-36 object-cover">
+                <!-- Audio Wave Visualizer -->
+                <div class="absolute bottom-2 left-2 flex items-end gap-1 bg-black/70 px-2 py-1 rounded-md">
+                  <div class="w-1 bg-[#FFDC00] rounded eq-bar-1"></div>
+                  <div class="w-1 bg-[#FFDC00] rounded eq-bar-2"></div>
+                  <div class="w-1 bg-[#FFDC00] rounded eq-bar-3"></div>
+                  <div class="w-1 bg-[#FFDC00] rounded eq-bar-4"></div>
+                  <span class="text-[9px] font-bold text-[#FFDC00] ml-1">HD Voice</span>
+                </div>
+              </div>
+              <div class="bg-white/5 rounded-xl p-2 text-center text-[10px] font-bold text-zinc-300">
+                CSE 2201 • 14 Listening
+              </div>
+            </div>
+          </div>
+
+          <!-- Front Phone: Academic Vault (Tilted Right / Forward) -->
+          <div class="w-[280px] sm:w-[310px] rounded-[52px] p-3.5 bg-black shadow-phone-1 border-4 border-black/80 phone-tilt-right relative z-20">
             <!-- Dynamic Island -->
             <div class="absolute top-6 left-1/2 -translate-x-1/2 w-28 h-5 bg-black rounded-full z-30 flex items-center justify-center">
               <div class="w-2.5 h-2.5 rounded-full bg-zinc-900 mr-2"></div>
@@ -232,25 +307,25 @@
             <!-- Phone Screen -->
             <div class="rounded-[42px] overflow-hidden bg-[#0F1015] aspect-[9/19] flex flex-col justify-between p-4 pt-10 text-white relative">
               
-              <!-- Screen Top Bar -->
+              <!-- Screen Header -->
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <div class="w-8 h-8 rounded-xl bg-[#FFDC00] flex items-center justify-center text-black font-black text-xs">
                     SB
                   </div>
                   <div>
-                    <div class="text-xs font-black">Live Study Room</div>
-                    <div class="text-[9px] text-[#FFDC00] font-bold">CSE 2201 • 14 Peers</div>
+                    <div class="text-xs font-black">Academic Vault</div>
+                    <div class="text-[9px] text-[#FFDC00] font-bold">12,400+ Files</div>
                   </div>
                 </div>
-                <span class="px-2 py-0.5 rounded-md bg-red-500 text-white text-[9px] font-black uppercase">LIVE</span>
+                <span class="px-2 py-0.5 rounded-md bg-[#FFDC00] text-black text-[9px] font-black uppercase">RUET</span>
               </div>
 
               <!-- Main Visual Image inside Screen -->
-              <div class="relative rounded-2xl overflow-hidden my-3 border border-white/10 shadow-lg">
-                <img src="/assets/live-class.png" alt="Live Class" class="w-full h-44 object-cover">
+              <div class="relative rounded-2xl overflow-hidden my-3 border border-white/10 shadow-lg group">
+                <img src="/assets/materials-vault.png" alt="Materials Vault" class="w-full h-44 object-cover">
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
-                  <span class="text-[11px] font-black text-[#FFDC00]">60 FPS Screen Share</span>
+                  <span class="text-[11px] font-black text-[#FFDC00]">1-Tap PDF Search</span>
                 </div>
               </div>
 
@@ -258,27 +333,27 @@
               <div class="space-y-2">
                 <div class="bg-white/5 rounded-xl p-2.5 flex items-center justify-between border border-white/10">
                   <div class="flex items-center gap-2 text-xs">
-                    <i data-lucide="mic" class="w-4 h-4 text-[#FFDC00]"></i>
-                    <span class="text-zinc-300 font-bold">HD Voice Active</span>
+                    <i data-lucide="book-open" class="w-4 h-4 text-[#FFDC00]"></i>
+                    <span class="text-zinc-300 font-bold">Past Questions & Slides</span>
                   </div>
-                  <span class="text-[10px] text-emerald-400 font-black">12ms Latency</span>
+                  <span class="text-[10px] text-emerald-400 font-black">Verified</span>
                 </div>
 
                 <a href="/download/SkillBridge.apk" class="w-full py-3 rounded-xl bg-[#FFDC00] text-black font-black text-xs flex items-center justify-center gap-2 shadow-md">
                   <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                  <span>Install to Join</span>
+                  <span>Download in App</span>
                 </a>
               </div>
 
             </div>
 
-            <!-- Floating Badge Top Left -->
+            <!-- Floating Micro-Badge Top Left -->
             <div class="absolute -top-3 -left-4 bg-white text-black px-3.5 py-1.5 rounded-xl shadow-xl flex items-center gap-2 border border-zinc-100">
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span class="text-xs font-black">1-Tap Connect</span>
+              <span class="text-xs font-black">Instant Sync</span>
             </div>
 
-            <!-- Floating Badge Bottom Right -->
+            <!-- Floating Micro-Badge Bottom Right -->
             <div class="absolute -bottom-3 -right-4 bg-black text-[#FFDC00] px-3.5 py-1.5 rounded-xl shadow-xl flex items-center gap-2 border border-[#FFDC00]/30">
               <i data-lucide="zap" class="w-3.5 h-3.5 fill-[#FFDC00]"></i>
               <span class="text-xs font-black">v2.1.0 Ready</span>
@@ -298,50 +373,102 @@
 
 
   <!-- ========================================================================= -->
-  <!-- 3. APP SCREEN EXPLORER (Image-First, Minimal Text - User Image 5 & 6)     -->
+  <!-- 3. INFINITE TICKER STRIP (Dynamic & High Energy)                          -->
   <!-- ========================================================================= -->
-  <section id="screens" class="py-16 bg-[#F9FAFB]">
+  <div class="bg-black text-[#FFDC00] py-3 overflow-hidden border-y border-[#FFDC00]/20 -mt-1 relative z-20">
+    <div class="marquee-track text-xs font-black uppercase tracking-widest flex items-center gap-8">
+      <span>⚡ LIVE STUDY ROOMS ACTIVE</span>
+      <span class="text-white">•</span>
+      <span>📚 PAST 5 YEARS QUESTION PAPERS</span>
+      <span class="text-white">•</span>
+      <span>📅 AUTOMATED TIMETABLE PARSER</span>
+      <span class="text-white">•</span>
+      <span>📦 62 MB HIGH-SPEED DIRECT APK</span>
+      <span class="text-white">•</span>
+      <span>🏆 GAMIFIED QUIZZES & STREAKS</span>
+      <span class="text-white">•</span>
+      <span>🤝 1-ON-1 PEER TUTORING</span>
+      <span class="text-white">•</span>
+      <span>🛡️ 100% VIRUS-FREE & VERIFIED</span>
+      <span class="text-white">•</span>
+      <!-- Loop mirror for seamless scrolling -->
+      <span>⚡ LIVE STUDY ROOMS ACTIVE</span>
+      <span class="text-white">•</span>
+      <span>📚 PAST 5 YEARS QUESTION PAPERS</span>
+      <span class="text-white">•</span>
+      <span>📅 AUTOMATED TIMETABLE PARSER</span>
+      <span class="text-white">•</span>
+      <span>📦 62 MB HIGH-SPEED DIRECT APK</span>
+      <span class="text-white">•</span>
+      <span>🏆 GAMIFIED QUIZZES & STREAKS</span>
+      <span class="text-white">•</span>
+      <span>🤝 1-ON-1 PEER TUTORING</span>
+      <span class="text-white">•</span>
+      <span>🛡️ 100% VIRUS-FREE & VERIFIED</span>
+      <span class="text-white">•</span>
+    </div>
+  </div>
+
+
+  <!-- ========================================================================= -->
+  <!-- 4. INTERACTIVE AUTO-PLAYING SCREEN SIMULATOR (Dynamic Showcase)           -->
+  <!-- ========================================================================= -->
+  <section id="screens" class="py-20 bg-[#F9FAFB]">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       
-      <div class="text-center max-w-2xl mx-auto mb-10">
-        <span class="text-xs font-black tracking-widest uppercase bg-[#FFDC00] text-black px-3 py-1 rounded-md">SCREEN SHOWCASE</span>
-        <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-black mt-3">EXPLORE THE UI</h2>
+      <div class="text-center max-w-2xl mx-auto mb-12">
+        <span class="text-xs font-black tracking-widest uppercase bg-[#FFDC00] text-black px-3.5 py-1.5 rounded-lg shadow-sm">
+          INTERACTIVE SIMULATOR
+        </span>
+        <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-black mt-3">
+          EXPLORE APP FEATURES
+        </h2>
       </div>
 
-      <!-- Navigation Tabs (Pill style) -->
-      <div class="flex flex-wrap items-center justify-center gap-2 mb-10">
-        <button onclick="setPreview('vault')" id="tab-vault" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-black text-[#FFDC00] shadow-md transition-all">
-          📚 Study Vault
+      <!-- Tab Buttons with Dynamic Auto-Progress Bar -->
+      <div class="flex flex-wrap items-center justify-center gap-2.5 mb-10 max-w-4xl mx-auto">
+        <button onclick="selectScreen(0)" id="tab-0" class="tab-btn relative overflow-hidden px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-black text-[#FFDC00] shadow-md transition-all">
+          <span>📚 Study Vault</span>
+          <div id="tab-progress-0" class="tab-progress"></div>
         </button>
-        <button onclick="setPreview('rooms')" id="tab-rooms" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
-          🎙️ Live Rooms
+        <button onclick="selectScreen(1)" id="tab-1" class="tab-btn relative overflow-hidden px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
+          <span>🎙️ Live Rooms</span>
+          <div id="tab-progress-1" class="tab-progress"></div>
         </button>
-        <button onclick="setPreview('routine')" id="tab-routine" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
-          📅 Class Routine
+        <button onclick="selectScreen(2)" id="tab-2" class="tab-btn relative overflow-hidden px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
+          <span>📅 Class Routine</span>
+          <div id="tab-progress-2" class="tab-progress"></div>
         </button>
-        <button onclick="setPreview('quiz')" id="tab-quiz" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
-          🏆 Quizzes & XP
+        <button onclick="selectScreen(3)" id="tab-3" class="tab-btn relative overflow-hidden px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
+          <span>🏆 Quizzes & XP</span>
+          <div id="tab-progress-3" class="tab-progress"></div>
         </button>
-        <button onclick="setPreview('mentor')" id="tab-mentor" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
-          🤝 Peer Mentors
+        <button onclick="selectScreen(4)" id="tab-4" class="tab-btn relative overflow-hidden px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all">
+          <span>🤝 Peer Tutoring</span>
+          <div id="tab-progress-4" class="tab-progress"></div>
         </button>
       </div>
 
-      <!-- Big Image Display Box -->
-      <div class="max-w-4xl mx-auto bg-white rounded-3xl p-6 sm:p-8 shadow-card border border-zinc-200/80">
+      <!-- Main Showcase Interactive Frame -->
+      <div class="max-w-4xl mx-auto bg-white rounded-[32px] p-6 sm:p-10 shadow-card border border-zinc-200/80">
         <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
           
-          <!-- Image (7 cols) -->
-          <div class="md:col-span-7 rounded-2xl overflow-hidden bg-zinc-100 border border-zinc-200 relative shadow-inner">
-            <img id="preview-img" src="/assets/materials-vault.png" alt="Screen Preview" class="w-full h-80 object-cover transition-opacity duration-200">
+          <!-- Image Box (7 cols) -->
+          <div class="md:col-span-7 rounded-2xl overflow-hidden bg-zinc-100 border border-zinc-200 relative shadow-inner group">
+            <img id="preview-img" src="/assets/materials-vault.png" alt="Screen Preview" class="w-full h-84 object-cover transition-all duration-300 group-hover:scale-105">
             <div class="absolute bottom-3 left-3">
               <span id="preview-badge" class="px-3 py-1 rounded-lg bg-black text-[#FFDC00] text-xs font-black uppercase tracking-wider shadow">
                 ACADEMIC STUDY VAULT
               </span>
             </div>
+            <!-- Auto-Play Indicator -->
+            <button onclick="toggleAutoPlay()" id="autoplay-btn" class="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-black/60 hover:bg-black text-white text-[10px] font-bold flex items-center gap-1 backdrop-blur-sm">
+              <i data-lucide="play" id="autoplay-icon" class="w-3 h-3 text-[#FFDC00]"></i>
+              <span id="autoplay-text">Auto</span>
+            </button>
           </div>
 
-          <!-- Info (5 cols): MINIMAL TEXT ONLY -->
+          <!-- Info Box (5 cols): ZERO PARAGRAPHS, BULLETS ONLY -->
           <div class="md:col-span-5 space-y-4">
             <h3 id="preview-title" class="text-2xl font-black uppercase text-black">
               Questions & Slide Archive
@@ -351,7 +478,7 @@
             </p>
 
             <!-- 3 Clean Checkmark Bullets -->
-            <div class="space-y-2 pt-2" id="preview-chips">
+            <div class="space-y-2.5 pt-2" id="preview-chips">
               <div class="flex items-center gap-2 text-xs font-bold text-zinc-800">
                 <i data-lucide="check" class="w-4 h-4 text-emerald-600 stroke-[3]"></i>
                 <span>Instant PDF search & offline view</span>
@@ -369,7 +496,7 @@
             <div class="pt-4">
               <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase bg-[#FFDC00] hover:bg-[#FFE817] text-black shadow-md transition-all">
                 <i data-lucide="download" class="w-4 h-4"></i>
-                <span>Download APK</span>
+                <span>Download to Explore</span>
               </a>
             </div>
           </div>
@@ -382,14 +509,18 @@
 
 
   <!-- ========================================================================= -->
-  <!-- 4. VISUAL BENTO TILES (Multicolor Gradient, Yellow & White - User Image 6) -->
+  <!-- 5. VISUAL BENTO TILES (Multicolor Gradient, Yellow & White - User Image 6) -->
   <!-- ========================================================================= -->
   <section id="features" class="py-20 bg-white border-t border-zinc-200/80">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       
       <div class="text-center max-w-2xl mx-auto mb-14">
-        <span class="text-xs font-black tracking-widest uppercase bg-[#FFDC00] text-black px-3 py-1 rounded-md">CORE CAPABILITIES</span>
-        <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-black mt-3">BUILT FOR STUDENTS</h2>
+        <span class="text-xs font-black tracking-widest uppercase bg-[#FFDC00] text-black px-3.5 py-1.5 rounded-lg shadow-sm">
+          CORE CAPABILITIES
+        </span>
+        <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-black mt-3">
+          BUILT FOR STUDENTS
+        </h2>
       </div>
 
       <!-- Bento Grid (Visual-Heavy, Minimal Text) -->
@@ -486,7 +617,7 @@
 
 
   <!-- ========================================================================= -->
-  <!-- 5. DIRECT DOWNLOAD & QR CODE (High Contrast Black & Yellow Box)          -->
+  <!-- 6. DIRECT DOWNLOAD & QR CODE (High Contrast Black & Yellow Box)          -->
   <!-- ========================================================================= -->
   <section id="download" class="py-20 bg-[#0F1015] text-white">
     <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -497,7 +628,7 @@
           
           <!-- Download CTA Info (7 cols) -->
           <div class="md:col-span-7 space-y-5 text-center md:text-left">
-            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FFDC00]/10 border border-[#FFDC00]/30 text-[#FFDC00] text-xs font-black tracking-widest uppercase">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#FFDC00]/10 border border-[#FFDC00]/30 text-[#FFDC00] text-xs font-black tracking-widest uppercase">
               <i data-lucide="download" class="w-3.5 h-3.5"></i>
               <span>DIRECT VPS DOWNLOAD</span>
             </div>
@@ -551,7 +682,32 @@
 
 
   <!-- ========================================================================= -->
-  <!-- 6. CLEAN FOOTER                                                           -->
+  <!-- 7. STICKY FLOATING DOWNLOAD BAR (Appears on Scroll)                       -->
+  <!-- ========================================================================= -->
+  <div id="sticky-bar" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-black/90 backdrop-blur-xl text-white px-5 py-3 rounded-full border border-white/10 shadow-2xl flex items-center gap-4 transition-all duration-300 opacity-0 translate-y-10 pointer-events-none">
+    <div class="flex items-center gap-2.5">
+      <div class="w-7 h-7 rounded-lg bg-[#FFDC00] flex items-center justify-center text-black font-black text-xs">
+        SB
+      </div>
+      <div class="text-xs font-black hidden sm:block">
+        <span>SkillBridge</span>
+        <span class="text-[#FFDC00] text-[10px] ml-1">v2.1.0 (62 MB)</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="#download" class="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-bold text-zinc-300">
+        QR Code
+      </a>
+      <a href="/download/SkillBridge.apk" class="px-4 py-1.5 rounded-full bg-[#FFDC00] hover:bg-[#FFE817] text-black text-xs font-black flex items-center gap-1 shadow-sm">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        <span>DOWNLOAD</span>
+      </a>
+    </div>
+  </div>
+
+
+  <!-- ========================================================================= -->
+  <!-- 8. CLEAN FOOTER                                                           -->
   <!-- ========================================================================= -->
   <footer class="py-10 bg-black text-zinc-400 border-t border-white/10">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -575,9 +731,8 @@
   </footer>
 
 
-  <!-- SCRIPT FOR MOBILE MENU & TAB PREVIEW -->
+  <!-- SCRIPTS: DYNAMIC INTERACTIVE SIMULATOR & FLOATING BAR -->
   <script>
-    // Initialize Lucide icons
     lucide.createIcons();
 
     // Mobile Menu Toggle
@@ -586,9 +741,9 @@
       menu.classList.toggle('hidden');
     }
 
-    // Screen Preview Data
-    const screenData = {
-      vault: {
+    // Screens Data Array
+    const screens = [
+      {
         img: '/assets/materials-vault.png',
         badge: 'ACADEMIC STUDY VAULT',
         title: 'Questions & Slide Archive',
@@ -599,7 +754,7 @@
           'Past 5 years question bank'
         ]
       },
-      rooms: {
+      {
         img: '/assets/live-class.png',
         badge: 'LIVE WEBRTC ROOMS',
         title: 'Voice & Video Study Rooms',
@@ -610,7 +765,7 @@
           'In-Room Live Polls'
         ]
       },
-      routine: {
+      {
         img: '/assets/03-unified-calendar.png',
         badge: 'AI ROUTINE EXTRACTOR',
         title: 'Automated Class Timetable',
@@ -621,7 +776,7 @@
           'Syncs across Web and Mobile'
         ]
       },
-      quiz: {
+      {
         img: '/assets/07-verified-achievement.png',
         badge: 'GAMIFIED ACHIEVEMENTS',
         title: 'Quizzes, XP & Badges',
@@ -632,7 +787,7 @@
           'Verified academic certificates'
         ]
       },
-      mentor: {
+      {
         img: '/assets/04-tutor-booking.png',
         badge: '1-ON-1 PEER TUTORING',
         title: 'Book Senior Student Tutors',
@@ -643,22 +798,36 @@
           'Secure review & rating system'
         ]
       }
-    };
+    ];
 
-    function setPreview(key) {
-      const data = screenData[key];
-      if (!data) return;
+    let currentIdx = 0;
+    let autoPlay = true;
+    let autoPlayTimer = null;
+    let progressTimer = null;
+    let progress = 0;
 
-      // Update button classes
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.className = 'tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all';
+    function selectScreen(idx) {
+      currentIdx = idx;
+      updateUI();
+      resetAutoPlay();
+    }
+
+    function updateUI() {
+      const data = screens[currentIdx];
+      
+      // Update Tab Styles
+      screens.forEach((_, i) => {
+        const btn = document.getElementById('tab-' + i);
+        const prog = document.getElementById('tab-progress-' + i);
+        if (i === currentIdx) {
+          btn.className = 'tab-btn relative overflow-hidden px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-black text-[#FFDC00] shadow-md transition-all';
+        } else {
+          btn.className = 'tab-btn relative overflow-hidden px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200 transition-all';
+          if (prog) prog.style.width = '0%';
+        }
       });
-      const activeBtn = document.getElementById('tab-' + key);
-      if (activeBtn) {
-        activeBtn.className = 'tab-btn px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-black text-[#FFDC00] shadow-md transition-all';
-      }
 
-      // Smooth image transition
+      // Smooth Image Transition
       const img = document.getElementById('preview-img');
       img.style.opacity = '0';
       setTimeout(() => {
@@ -679,6 +848,62 @@
         img.style.opacity = '1';
       }, 120);
     }
+
+    function toggleAutoPlay() {
+      autoPlay = !autoPlay;
+      const icon = document.getElementById('autoplay-icon');
+      const text = document.getElementById('autoplay-text');
+      if (autoPlay) {
+        text.innerText = 'Auto';
+        startAutoPlay();
+      } else {
+        text.innerText = 'Paused';
+        stopAutoPlay();
+      }
+    }
+
+    function startAutoPlay() {
+      stopAutoPlay();
+      progress = 0;
+      progressTimer = setInterval(() => {
+        if (!autoPlay) return;
+        progress += 2.5;
+        const pBar = document.getElementById('tab-progress-' + currentIdx);
+        if (pBar) pBar.style.width = Math.min(progress, 100) + '%';
+        if (progress >= 100) {
+          progress = 0;
+          currentIdx = (currentIdx + 1) % screens.length;
+          updateUI();
+        }
+      }, 100);
+    }
+
+    function stopAutoPlay() {
+      if (progressTimer) clearInterval(progressTimer);
+      const pBar = document.getElementById('tab-progress-' + currentIdx);
+      if (pBar) pBar.style.width = '0%';
+    }
+
+    function resetAutoPlay() {
+      if (autoPlay) {
+        startAutoPlay();
+      }
+    }
+
+    // Start on load
+    startAutoPlay();
+
+    // Sticky Floating Download Bar on Scroll
+    window.addEventListener('scroll', () => {
+      const bar = document.getElementById('sticky-bar');
+      if (window.scrollY > 400) {
+        bar.classList.remove('opacity-0', 'translate-y-10', 'pointer-events-none');
+        bar.classList.add('opacity-100', 'translate-y-0', 'pointer-events-auto');
+      } else {
+        bar.classList.remove('opacity-100', 'translate-y-0', 'pointer-events-auto');
+        bar.classList.add('opacity-0', 'translate-y-10', 'pointer-events-none');
+      }
+    });
   </script>
 
 </body>
