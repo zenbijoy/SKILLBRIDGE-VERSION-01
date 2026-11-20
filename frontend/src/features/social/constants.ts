@@ -12,6 +12,33 @@ export interface VisualThemePreset {
 
 export const VISUAL_THEMES: VisualThemePreset[] = [
   {
+    id: "light_yellow",
+    name: "Light Yellow",
+    backgroundType: "solid",
+    gradientColors: ["#FEF9C3", "#FEF08A", "#FDE047"],
+    textColor: "#451A03",
+    accentColor: "#CA8A04",
+    borderColor: "#FACC15",
+  },
+  {
+    id: "solid_yellow",
+    name: "Solid Yellow",
+    backgroundType: "solid",
+    gradientColors: ["#EAB308", "#CA8A04"],
+    textColor: "#1C1917",
+    accentColor: "#78350F",
+    borderColor: "#B45309",
+  },
+  {
+    id: "quad_mixed",
+    name: "Mixed Quad",
+    backgroundType: "gradient",
+    gradientColors: ["#EAB308", "#EF4444", "#F97316", "#22C55E"],
+    textColor: "#FFFFFF",
+    accentColor: "#FEF08A",
+    borderColor: "#EAB308",
+  },
+  {
     id: "default",
     name: "Classic Clean",
     backgroundType: "solid",

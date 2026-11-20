@@ -38,6 +38,9 @@ export type ReactionType =
 
 export interface PostAppearance {
   theme?:
+    | "light_yellow"
+    | "solid_yellow"
+    | "quad_mixed"
     | "default"
     | "midnight"
     | "ocean"

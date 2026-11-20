@@ -103,6 +103,7 @@ export default function HelpQuestionsScreen() {
         <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
           <Row style={{ gap: 6, alignItems: "center", flexShrink: 1 }}>
             {item.subject ? <Pill tone="primary">#{item.subject}</Pill> : null}
+            {item.imageUrl ? <Pill tone="accent">📷 Photo</Pill> : null}
             {item.urgency !== "normal" ? <Pill tone={urgency.tone}>{urgency.label}</Pill> : null}
             {needsAnswer && (
               <Pill tone="warning">⚡ +{DOUBT_REWARDS.ANSWER_DOUBT} Rep Bounty</Pill>

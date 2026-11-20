@@ -39,6 +39,18 @@ const accents: Record<
     dark: { primary: string; primary2: string; primarySoft: string; accent: string };
   }
 > = {
+  light_yellow: {
+    light: { primary: "#CA8A04", primary2: "#EAB308", primarySoft: "#FEF9C3", accent: "#FDE047" },
+    dark: { primary: "#FDE047", primary2: "#FEF08A", primarySoft: "#3F3204", accent: "#FEF9C3" },
+  },
+  solid_yellow: {
+    light: { primary: "#EAB308", primary2: "#CA8A04", primarySoft: "#FEF08A", accent: "#F59E0B" },
+    dark: { primary: "#FACC15", primary2: "#EAB308", primarySoft: "#422006", accent: "#FDE047" },
+  },
+  mixed_quad: {
+    light: { primary: "#EAB308", primary2: "#EF4444", primarySoft: "#FFF7ED", accent: "#22C55E" },
+    dark: { primary: "#FACC15", primary2: "#F87171", primarySoft: "#3B1812", accent: "#4ADE80" },
+  },
   ocean: {
     light: { primary: "#2563EB", primary2: "#4F46E5", primarySoft: "#EAF1FF", accent: "#0F9F75" },
     dark: { primary: "#5B8CFF", primary2: "#755BFF", primarySoft: "#172B4D", accent: "#22D3A6" },
@@ -169,6 +181,9 @@ export const colors = lightColors;
 export const brandGradients = {
   brand: ["#53A9FE", "#703AF0", "#C23DBD"] as const,
   brandLight: ["#57B3FE", "#844FF5", "#F765B6"] as const,
+  lightYellow: ["#FEF9C3", "#FDE047"] as const,
+  solidYellow: ["#FACC15", "#EAB308"] as const,
+  quadCombo: ["#EAB308", "#EF4444", "#F97316", "#22C55E"] as const,
   primary: ["#2563EB", "#4F46E5"] as const,
   primaryDark: ["#3B82F6", "#6366F1"] as const,
   accent: ["#0F9F75", "#2563EB"] as const,

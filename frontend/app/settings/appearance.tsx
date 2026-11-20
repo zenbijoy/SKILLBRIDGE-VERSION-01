@@ -20,7 +20,36 @@ export default function AppearanceSettings() {
     { value: "oled", label: "OLED Black", icon: "circle-slice-8" },
   ];
 
-  const accentOptions: { key: AccentColor; label: string; color: string; secondary: string }[] = [
+  const accentOptions: {
+    key: AccentColor;
+    label: string;
+    color: string;
+    secondary: string;
+    multiColors?: string[];
+    subtitle?: string;
+  }[] = [
+    {
+      key: "light_yellow",
+      label: "Light Yellow",
+      color: "#FDE047",
+      secondary: "#FEF08A",
+      subtitle: "#FDE047 • Soft Warm Yellow",
+    },
+    {
+      key: "solid_yellow",
+      label: "Solid Yellow",
+      color: "#EAB308",
+      secondary: "#CA8A04",
+      subtitle: "#EAB308 • Pure Solid Yellow",
+    },
+    {
+      key: "mixed_quad",
+      label: "Mixed Spectrum",
+      color: "#EAB308",
+      secondary: "#EF4444",
+      multiColors: ["#EAB308", "#EF4444", "#F97316", "#22C55E"],
+      subtitle: "Solid Yellow, Red, Orange & Green",
+    },
     { key: "ocean", label: "Ocean Blue", color: "#2563EB", secondary: "#4F46E5" },
     { key: "emerald", label: "Emerald Mint", color: "#059669", secondary: "#047857" },
     { key: "violet", label: "Royal Violet", color: "#7C3AED", secondary: "#6D28D9" },
@@ -98,12 +127,25 @@ export default function AppearanceSettings() {
               },
             ]}
           >
-            <View style={[s.swatch, { backgroundColor: acc.color }]}>
-              <View style={[s.swatchHalf, { backgroundColor: acc.secondary }]} />
-            </View>
+            {acc.multiColors ? (
+              <View style={s.swatch}>
+                <View style={{ flex: 1, flexDirection: "row" }}>
+                  <View style={{ flex: 1, backgroundColor: acc.multiColors[0] }} />
+                  <View style={{ flex: 1, backgroundColor: acc.multiColors[1] }} />
+                </View>
+                <View style={{ flex: 1, flexDirection: "row" }}>
+                  <View style={{ flex: 1, backgroundColor: acc.multiColors[2] }} />
+                  <View style={{ flex: 1, backgroundColor: acc.multiColors[3] }} />
+                </View>
+              </View>
+            ) : (
+              <View style={[s.swatch, { backgroundColor: acc.color }]}>
+                <View style={[s.swatchHalf, { backgroundColor: acc.secondary }]} />
+              </View>
+            )}
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={{ color: colors.text, fontWeight: "800", fontSize: 15 }}>{acc.label}</Text>
-              <Muted>{acc.color}</Muted>
+              <Muted>{acc.subtitle || acc.color}</Muted>
             </View>
             {accent === acc.key ? (
               <MaterialCommunityIcons name="check-circle" size={22} color={colors.primary} />

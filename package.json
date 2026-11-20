@@ -18,6 +18,7 @@
     "web": "npm run web --prefix frontend",
     "admin": "npm run dev --prefix admin",
     "build": "npm run build --prefix backend && npm run build --prefix admin",
+    "build:web": "npm run build:web --prefix frontend",
     "test": "npm run test --prefix backend",
     "test:coverage": "npm run test:coverage --prefix backend",
     "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix backend && npm run typecheck --prefix admin",

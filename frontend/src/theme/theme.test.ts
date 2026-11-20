@@ -1,8 +1,17 @@
 import { getPalette, getRadius } from "./index";
 
 describe("Theme Engine", () => {
-  it("provides distinct palettes for all 5 accent themes in light and dark mode", () => {
-    const accents = ["ocean", "emerald", "violet", "sunset", "cyberpunk"] as const;
+  it("provides distinct palettes for all accent themes in light and dark mode", () => {
+    const accents = [
+      "light_yellow",
+      "solid_yellow",
+      "mixed_quad",
+      "ocean",
+      "emerald",
+      "violet",
+      "sunset",
+      "cyberpunk",
+    ] as const;
 
     for (const accent of accents) {
       const light = getPalette(false, false, accent);

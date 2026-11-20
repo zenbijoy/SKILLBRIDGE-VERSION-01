@@ -72,22 +72,113 @@ export function FullScreenPdfReader({
     total: 1,
   });
 
-  // Reset loading whenever URL changes
+  // Reset loading and page info whenever URL or engine changes
   useEffect(() => {
     if (visible) {
       setIsLoading(true);
       setZoomLevel(100);
+      setPageInfo({ current: 1, total: 1 });
     }
   }, [visible, url, engine]);
 
   if (!visible || !url) return null;
 
   // Build viewer URL
-  // PDF.js Mozilla Official Viewer or Google Docs Viewer
+  // For PDF.js: use a self-contained inline HTML viewer to avoid cross-origin
+  // restrictions from Mozilla's hosted pdf.js which blocks external file URLs.
+  // Google Docs viewer is used as a fallback engine.
   const encodedUrl = encodeURIComponent(url);
-  const pdfJsViewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUrl}`;
   const gdocsViewerUrl = `https://docs.google.com/viewer?embedded=true&url=${encodedUrl}`;
-  const activeViewerUrl = engine === "pdfjs" ? pdfJsViewerUrl : gdocsViewerUrl;
+
+  // Self-hosted inline PDF.js viewer HTML – avoids cross-origin block from
+  // mozilla.github.io which only allows files hosted on that same origin.
+  const pdfJsInlineHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #fff; overflow: hidden; }
+  #pdf-container {
+    width: 100%; height: 100%; overflow-y: auto; overflow-x: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 10px 0;
+  }
+  canvas { display: block; margin: 6px auto; box-shadow: 0 1px 6px rgba(0,0,0,0.18); }
+  #status {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-family: sans-serif; font-size: 15px; color: #444; text-align: center;
+  }
+  #error { color: #c00; font-family: sans-serif; padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="status">Loading PDF\u2026</div>
+<div id="pdf-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+(function() {
+  var pdfUrl = ${JSON.stringify(url)};
+  var container = document.getElementById('pdf-container');
+  var statusEl = document.getElementById('status');
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  pdfjsLib.getDocument({ url: pdfUrl, withCredentials: false }).promise.then(function(pdf) {
+    statusEl.style.display = 'none';
+    var totalPages = pdf.numPages;
+
+    // Notify RN with total pages
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'pageChange', page: 1, total: totalPages
+      }));
+    }
+
+    // Render pages sequentially
+    function renderPage(num) {
+      pdf.getPage(num).then(function(page) {
+        var viewport = page.getViewport({ scale: window.devicePixelRatio > 1 ? 1.8 : 1.5 });
+        var canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = Math.min(viewport.width, window.innerWidth - 20) + 'px';
+        canvas.style.height = 'auto';
+        container.appendChild(canvas);
+        var ctx = canvas.getContext('2d');
+        page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
+          if (num < totalPages) renderPage(num + 1);
+        });
+      });
+    }
+    renderPage(1);
+
+    // Track scroll-based current page
+    container.addEventListener('scroll', function() {
+      var canvases = container.querySelectorAll('canvas');
+      var scrollTop = container.scrollTop;
+      var approxPage = Math.floor(scrollTop / (container.scrollHeight / totalPages)) + 1;
+      approxPage = Math.max(1, Math.min(approxPage, totalPages));
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'pageChange', page: approxPage, total: totalPages
+        }));
+      }
+    });
+  }).catch(function(err) {
+    statusEl.style.display = 'none';
+    container.innerHTML = '<div id="error">Could not load PDF.<br><small>' + err.message + '</small></div>';
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: err.message }));
+    }
+  });
+})();
+</script>
+</body>
+</html>`;
+
+  const activeViewerUrl = engine === "gdocs" ? gdocsViewerUrl : "";
 
   // CSS injection for Night / Dark Mode and Sepia eye care
   const themeFilterCss =
@@ -134,7 +225,13 @@ export function FullScreenPdfReader({
     setZoomLevel(newZoom);
     if (webViewRef.current) {
       webViewRef.current.injectJavaScript(`
-        if (window.PDFViewerApplication) {
+        var scale = ${newZoom / 100};
+        // canvas-based inline viewer
+        var container = document.getElementById('pdf-container');
+        if (container) {
+          container.style.transform = 'scale(' + scale + ')';
+          container.style.transformOrigin = 'top center';
+        } else if (window.PDFViewerApplication) {
           window.PDFViewerApplication.zoomIn();
         } else {
           document.body.style.zoom = '${newZoom / 100}';
@@ -150,7 +247,12 @@ export function FullScreenPdfReader({
     setZoomLevel(newZoom);
     if (webViewRef.current) {
       webViewRef.current.injectJavaScript(`
-        if (window.PDFViewerApplication) {
+        var scale = ${newZoom / 100};
+        var container = document.getElementById('pdf-container');
+        if (container) {
+          container.style.transform = 'scale(' + scale + ')';
+          container.style.transformOrigin = 'top center';
+        } else if (window.PDFViewerApplication) {
           window.PDFViewerApplication.zoomOut();
         } else {
           document.body.style.zoom = '${newZoom / 100}';
@@ -165,7 +267,10 @@ export function FullScreenPdfReader({
     setZoomLevel(100);
     if (webViewRef.current) {
       webViewRef.current.injectJavaScript(`
-        if (window.PDFViewerApplication) {
+        var container = document.getElementById('pdf-container');
+        if (container) {
+          container.style.transform = 'scale(1)';
+        } else if (window.PDFViewerApplication) {
           window.PDFViewerApplication.pdfViewer.currentScaleValue = 'page-width';
         } else {
           document.body.style.zoom = '1.0';
@@ -566,11 +671,11 @@ export function FullScreenPdfReader({
         {/* MAIN VIEWER CANVAS */}
         <View style={styles.viewerWrapper}>
           {Platform.OS === "web" ? (
-            // Web In-App iframe
+            // Web In-App iframe – use Google Docs for cross-origin PDFs on web
             <View style={{ flex: 1, width: "100%", height: "100%" }}>
               {/* @ts-ignore - web iframe */}
               <iframe
-                src={activeViewerUrl}
+                src={engine === "gdocs" ? gdocsViewerUrl : `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUrl}`}
                 style={{
                   width: "100%",
                   height: "100%",
@@ -586,11 +691,11 @@ export function FullScreenPdfReader({
                 onLoad={() => setIsLoading(false)}
               />
             </View>
-          ) : (
-            // Native React Native WebView
+          ) : engine === "pdfjs" ? (
+            // Native: Inline self-hosted PDF.js (avoids cross-origin block)
             <WebView
               ref={webViewRef}
-              source={{ uri: activeViewerUrl }}
+              source={{ html: pdfJsInlineHtml, baseUrl: "https://cdn.jsdelivr.net" }}
               style={[
                 styles.webView,
                 {
@@ -607,12 +712,45 @@ export function FullScreenPdfReader({
               startInLoadingState
               allowFileAccess
               allowUniversalAccessFromFileURLs
+              mixedContentMode="always"
+              onLoadStart={() => setIsLoading(true)}
+              onLoadEnd={() => setIsLoading(false)}
+              onMessage={(event) => {
+                try {
+                  const data = JSON.parse(event.nativeEvent.data);
+                  if (data.type === "pageChange") {
+                    setPageInfo({
+                      current: data.page || 1,
+                      total: data.total || 1,
+                    });
+                  }
+                } catch {}
+              }}
+            />
+          ) : (
+            // Native: Google Docs viewer (fallback engine)
+            <WebView
+              ref={webViewRef}
+              source={{ uri: gdocsViewerUrl }}
+              style={[
+                styles.webView,
+                {
+                  backgroundColor:
+                    themeMode === "dark"
+                      ? "#121212"
+                      : themeMode === "sepia"
+                      ? "#fbf0d9"
+                      : "#ffffff",
+                },
+              ]}
+              javaScriptEnabled
+              domStorageEnabled
+              startInLoadingState
               scalesPageToFit
               injectedJavaScript={injectedJavaScript}
               onLoadStart={() => setIsLoading(true)}
               onLoadEnd={() => {
                 setIsLoading(false);
-                // Reapply styling upon load complete
                 webViewRef.current?.injectJavaScript(injectedJavaScript);
               }}
               onMessage={(event) => {

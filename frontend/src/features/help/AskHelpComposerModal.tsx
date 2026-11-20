@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -10,9 +11,11 @@ import {
   Text,
   TextInput,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { api } from "@/lib/api";
 import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import { Button, H2, Muted, Row, triggerHaptic } from "@/components/ui";
@@ -62,6 +65,11 @@ export function AskHelpComposerModal({
   const [selectedRoomId, setSelectedRoomId] = useState<string | undefined>(defaultRoomId);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Image state
+  const [pickedImageUri, setPickedImageUri] = useState<string | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
   // Fetch user's joined rooms for target selection
   const myRoomsQuery = useQuery({
     queryKey: ["my-rooms"],
@@ -73,6 +81,70 @@ export function AskHelpComposerModal({
 
   // Compute effective text to avoid empty body blocks
   const resolved = useMemo(() => resolveQuestionPayload(title, body), [title, body]);
+
+  // --- Image picker ---
+  const pickImage = async () => {
+    triggerHaptic();
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please allow access to your photo library to attach an image.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const uri = asset.uri;
+      const base64 = asset.base64;
+      const mimeType = asset.mimeType || "image/jpeg";
+
+      if (!base64) {
+        Alert.alert("Image Error", "Could not read image data. Please try another image.");
+        return;
+      }
+
+      setPickedImageUri(uri);
+      setUploadedImageUrl(null);
+      setIsUploadingImage(true);
+
+      try {
+        const uploadRes = await api<{ imageUrl: string }>("/help/questions/upload-image", {
+          method: "POST",
+          body: JSON.stringify({
+            fileBase64: `data:${mimeType};base64,${base64}`,
+            contentType: mimeType,
+            fileName: uri.split("/").pop() || "question-image",
+          }),
+        });
+        setUploadedImageUrl(uploadRes.imageUrl);
+      } catch (uploadErr: any) {
+        setPickedImageUri(null);
+        Alert.alert(
+          "Image Upload Failed",
+          uploadErr?.message || "Could not upload the image. You can still post without it.",
+        );
+      } finally {
+        setIsUploadingImage(false);
+      }
+    } catch (err: any) {
+      setIsUploadingImage(false);
+      Alert.alert("Image Error", err?.message || "Failed to pick image.");
+    }
+  };
+
+  const removeImage = () => {
+    triggerHaptic();
+    setPickedImageUri(null);
+    setUploadedImageUrl(null);
+  };
 
   const createQuestionMutation = useMutation({
     mutationFn: async () => {
@@ -87,6 +159,7 @@ export function AskHelpComposerModal({
           urgency,
           target: targetType,
           roomId: targetType === "room" ? selectedRoomId : undefined,
+          imageUrl: uploadedImageUrl || undefined,
         }),
       });
     },
@@ -106,7 +179,7 @@ export function AskHelpComposerModal({
       );
     },
     onError: (err: any) => {
-      Alert.alert("Could not post question", err.message || "Failed to submit help question.");
+      Alert.alert("Could not post question", err.message || "Internal server error");
     },
   });
 
@@ -120,6 +193,9 @@ export function AskHelpComposerModal({
     setTargetType(defaultRoomId ? "room" : "campus");
     setSelectedRoomId(defaultRoomId);
     setValidationError(null);
+    setPickedImageUri(null);
+    setUploadedImageUrl(null);
+    setIsUploadingImage(false);
   };
 
   const validateAndProceed = () => {
@@ -149,6 +225,8 @@ export function AskHelpComposerModal({
     if (!validateAndProceed()) return;
     createQuestionMutation.mutate();
   };
+
+  const isSubmitting = createQuestionMutation.isPending || isUploadingImage;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -304,6 +382,52 @@ export function AskHelpComposerModal({
                     <Muted style={{ fontSize: 11, marginTop: 4 }}>
                       💡 Tip: Clear questions with context or error codes get solved 3x faster!
                     </Muted>
+                  </View>
+
+                  {/* Image Attachment */}
+                  <View>
+                    <Text style={[s.inputLabel, { color: colors.text }]}>Attach an Image (Optional)</Text>
+
+                    {pickedImageUri ? (
+                      <View style={[s.imagePreviewContainer, { borderColor: colors.border, backgroundColor: colors.bg }]}>
+                        <Image source={{ uri: pickedImageUri }} style={s.imagePreview} resizeMode="cover" />
+                        {isUploadingImage && (
+                          <View style={s.imageUploadOverlay}>
+                            <ActivityIndicator color="#FFFFFF" size="small" />
+                            <Text style={s.imageUploadText}>Uploading...</Text>
+                          </View>
+                        )}
+                        {!isUploadingImage && uploadedImageUrl && (
+                          <View style={s.imageSuccessBadge}>
+                            <MaterialCommunityIcons name="check-circle" size={16} color="#FFFFFF" />
+                            <Text style={s.imageUploadText}>Uploaded</Text>
+                          </View>
+                        )}
+                        {!isUploadingImage && !uploadedImageUrl && (
+                          <View style={[s.imageSuccessBadge, { backgroundColor: "rgba(255,80,80,0.85)" }]}>
+                            <MaterialCommunityIcons name="alert-circle" size={16} color="#FFFFFF" />
+                            <Text style={s.imageUploadText}>Upload failed</Text>
+                          </View>
+                        )}
+                        <Pressable onPress={removeImage} style={s.removeImageBtn} hitSlop={8}>
+                          <MaterialCommunityIcons name="close-circle" size={22} color={colors.danger} />
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Pressable
+                        onPress={pickImage}
+                        style={[
+                          s.imagePickerBtn,
+                          { borderColor: colors.border, backgroundColor: colors.bg },
+                        ]}
+                      >
+                        <MaterialCommunityIcons name="image-plus" size={24} color={colors.primary} />
+                        <Text style={[s.imagePickerText, { color: colors.text }]}>
+                          Tap to attach a photo or screenshot
+                        </Text>
+                        <Muted style={{ fontSize: 11 }}>JPEG, PNG, WebP · Max 10 MB</Muted>
+                      </Pressable>
+                    )}
                   </View>
 
                   {/* Subject / Course */}
@@ -501,6 +625,19 @@ export function AskHelpComposerModal({
                       </View>
                     )}
                   </View>
+
+                  {/* Image summary on step 2 */}
+                  {uploadedImageUrl && (
+                    <Row style={[s.imageSummaryRow, { backgroundColor: `${colors.success}12`, borderColor: `${colors.success}33` }]}>
+                      <MaterialCommunityIcons name="image-check" size={18} color={colors.success} />
+                      <Text style={[s.imageSummaryText, { color: colors.success }]}>
+                        Image attached and ready to publish
+                      </Text>
+                      <Pressable onPress={removeImage} hitSlop={8}>
+                        <MaterialCommunityIcons name="close" size={16} color={colors.muted} />
+                      </Pressable>
+                    </Row>
+                  )}
                 </View>
               )}
             </ScrollView>
@@ -516,14 +653,14 @@ export function AskHelpComposerModal({
                     <Button
                       title="Quick Post 🚀"
                       variant="secondary"
-                      loading={createQuestionMutation.isPending}
+                      loading={isSubmitting}
                       onPress={handleQuickPost}
                     />
                   </View>
                   <View style={{ flex: 1.3 }}>
                     <Button
                       title="Next Step →"
-                      loading={createQuestionMutation.isPending}
+                      loading={isSubmitting}
                       onPress={handleNext}
                     />
                   </View>
@@ -535,8 +672,8 @@ export function AskHelpComposerModal({
                   </View>
                   <View style={{ flex: 2 }}>
                     <Button
-                      title={createQuestionMutation.isPending ? "Publishing..." : "Publish Doubt 🎓"}
-                      loading={createQuestionMutation.isPending}
+                      title={isSubmitting ? "Publishing..." : "Publish Doubt 🎓"}
+                      loading={isSubmitting}
                       onPress={handleNext}
                     />
                   </View>
@@ -565,7 +702,7 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     paddingHorizontal: 20,
     paddingTop: 12,
-    maxHeight: "90%",
+    maxHeight: "92%",
   },
   grabber: {
     width: 44,
@@ -625,7 +762,7 @@ const s = StyleSheet.create({
     borderRadius: 2,
   },
   bodyScroll: {
-    maxHeight: 390,
+    maxHeight: 420,
   },
   scrollContent: {
     paddingBottom: 14,
@@ -659,6 +796,76 @@ const s = StyleSheet.create({
   textArea: {
     height: 110,
     textAlignVertical: "top",
+  },
+  // Image picker styles
+  imagePickerBtn: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    gap: 6,
+  },
+  imagePickerText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  imagePreviewContainer: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+    height: 180,
+    position: "relative",
+  },
+  imagePreview: {
+    width: "100%",
+    height: "100%",
+  },
+  imageUploadOverlay: {
+    position: "absolute",
+    inset: 0,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  imageSuccessBadge: {
+    position: "absolute",
+    bottom: 8,
+    left: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,160,0,0.85)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  imageUploadText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  removeImageBtn: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderRadius: 11,
+  },
+  imageSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  imageSummaryText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
   },
   pillBtn: {
     paddingHorizontal: 12,

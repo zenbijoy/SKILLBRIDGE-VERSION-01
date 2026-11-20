@@ -518,7 +518,11 @@ export function WebHomeBentoGrid({
                     color: isDark ? "#CBD5E1" : "#78350F",
                   }}
                 >
-                  <MaterialCommunityIcons name="close" size={18} />
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={18}
+                    color={isDark ? "#CBD5E1" : "#78350F"}
+                  />
                 </button>
               ) : null}
             </div>
@@ -687,7 +691,7 @@ export function WebHomeBentoGrid({
                     border: "none",
                   }}
                 >
-                  <MaterialCommunityIcons name="video" size={16} />
+                  <MaterialCommunityIcons name="video" size={16} color="#FFFFFF" />
                   <span>Join Live Broadcast</span>
                 </button>
               </div>
@@ -851,7 +855,7 @@ export function WebHomeBentoGrid({
                   border: "none",
                 }}
               >
-                <MaterialCommunityIcons name="plus" size={15} />
+                <MaterialCommunityIcons name="plus" size={15} color="#FFFFFF" />
                 <span>Create Post</span>
               </button>
             </div>

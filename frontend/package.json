@@ -12,6 +12,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "build:web": "expo export -p web",
+    "export": "expo export -p web",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "jest",

@@ -3,7 +3,15 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 export type ThemePreference = "system" | "light" | "dark" | "oled";
-export type AccentColor = "ocean" | "emerald" | "violet" | "sunset" | "cyberpunk";
+export type AccentColor =
+  | "light_yellow"
+  | "solid_yellow"
+  | "mixed_quad"
+  | "ocean"
+  | "emerald"
+  | "violet"
+  | "sunset"
+  | "cyberpunk";
 export type CardStyle = "rounded" | "smooth" | "pill";
 export type AppLanguage = "en" | "bn";
 export type DataSaverMode = "off" | "standard" | "extreme";

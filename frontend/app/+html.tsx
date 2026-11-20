@@ -1,47 +1,14 @@
 import { ScrollViewStyleReset } from "expo-router/html";
 import type { PropsWithChildren } from "react";
 import { generateCssVariables, darkSemanticColors } from "../src/theme/tokens";
+import { generateWebIconCss } from "../src/lib/web-icons";
 
 // Web styling resets and dynamic professional animations
 const webGlobalStyles = `
 ${generateCssVariables(darkSemanticColors)}
 
-/* Safety Icon Font-Face declarations for React Native Web */
-@font-face {
-  font-family: 'material-community';
-  src: url('/fonts/MaterialCommunityIcons.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'MaterialCommunityIcons';
-  src: url('/fonts/MaterialCommunityIcons.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Material Design Icons';
-  src: url('/fonts/MaterialCommunityIcons.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'ionicons';
-  src: url('/fonts/Ionicons.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Ionicons';
-  src: url('/fonts/Ionicons.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'feather';
-  src: url('/fonts/Feather.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Feather';
-  src: url('/fonts/Feather.ttf') format('truetype');
-  font-display: swap;
-}
+/* Safety & Ultra-Resilient Icon Font-Face declarations for React Native Web (Local + CDN fallback) */
+${generateWebIconCss()}
 
 /* CSS Resets for React Native Web */
 html, body, #root {
@@ -334,6 +301,28 @@ export default function Root({ children }: PropsWithChildren) {
         />
         <meta name="description" content="SkillBridge - Peer-to-Peer Academic & Skill Exchange Platform" />
         <title>SkillBridge | Campus Skill & Knowledge Exchange</title>
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
+        <link
+          rel="preload"
+          href="https://cdn.jsdelivr.net/npm/@expo/vector-icons@15.0.2/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf"
+          as="font"
+          type="font/ttf"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preload"
+          href="https://cdn.jsdelivr.net/npm/@expo/vector-icons@15.0.2/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"
+          as="font"
+          type="font/ttf"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preload"
+          href="https://cdn.jsdelivr.net/npm/@expo/vector-icons@15.0.2/build/vendor/react-native-vector-icons/Fonts/Feather.ttf"
+          as="font"
+          type="font/ttf"
+          crossOrigin="anonymous"
+        />
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: webGlobalStyles }} />
       </head>

@@ -5,6 +5,10 @@ node_modules/
 !.env.example
 .expo/
 dist/
+!frontend/dist/
+!frontend/dist/**
+frontend/dist/**/*.map
+!frontend/dist/assets/node_modules/**
 build/
 web-build/
 .DS_Store

@@ -12,6 +12,15 @@ describe("usePreferencesStore", () => {
   it("updates accent color correctly", () => {
     usePreferencesStore.getState().setAccentColor("sunset");
     expect(usePreferencesStore.getState().accentColor).toBe("sunset");
+
+    usePreferencesStore.getState().setAccentColor("light_yellow");
+    expect(usePreferencesStore.getState().accentColor).toBe("light_yellow");
+
+    usePreferencesStore.getState().setAccentColor("solid_yellow");
+    expect(usePreferencesStore.getState().accentColor).toBe("solid_yellow");
+
+    usePreferencesStore.getState().setAccentColor("mixed_quad");
+    expect(usePreferencesStore.getState().accentColor).toBe("mixed_quad");
   });
 
   it("updates card geometry style correctly", () => {

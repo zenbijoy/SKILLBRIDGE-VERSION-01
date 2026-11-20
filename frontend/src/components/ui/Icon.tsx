@@ -143,7 +143,28 @@ export function Icon({
   const mapping = SEMANTIC_ICON_MAP[name];
 
   if (!mapping) {
-    // Direct MaterialCommunityIcons fallback if not in semantic map
+    if (name in MaterialCommunityIcons.glyphMap) {
+      return (
+        <View style={[styles.container, { width: size, height: size }, style]} aria-label={ariaLabel}>
+          <MaterialCommunityIcons name={name as any} size={size} color={iconColor} />
+        </View>
+      );
+    }
+    if (name in Feather.glyphMap) {
+      return (
+        <View style={[styles.container, { width: size, height: size }, style]} aria-label={ariaLabel}>
+          <Feather name={name as any} size={size} color={iconColor} />
+        </View>
+      );
+    }
+    if (name in Ionicons.glyphMap) {
+      return (
+        <View style={[styles.container, { width: size, height: size }, style]} aria-label={ariaLabel}>
+          <Ionicons name={name as any} size={size} color={iconColor} />
+        </View>
+      );
+    }
+    // Direct MaterialCommunityIcons fallback if not found in any map
     return (
       <View style={[styles.container, { width: size, height: size }, style]} aria-label={ariaLabel}>
         <MaterialCommunityIcons name={name as any} size={size} color={iconColor} />

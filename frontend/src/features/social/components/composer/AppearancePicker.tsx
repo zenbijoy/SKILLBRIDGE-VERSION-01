@@ -107,9 +107,9 @@ export function AppearancePicker({ appearance, onChangeAppearance, onClose }: Ap
                   styles.swatchLabel,
                   { color: isSelected ? colors.primary : colors.muted, fontWeight: isSelected ? "700" : "500" },
                 ]}
-                numberOfLines={1}
+                numberOfLines={2}
               >
-                {theme.name.split(" ")[0]}
+                {theme.name.length <= 14 ? theme.name : theme.name.split(" ")[0]}
               </Text>
             </Pressable>
           );

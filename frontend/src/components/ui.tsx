@@ -411,13 +411,21 @@ export function Button({
     if (Platform.OS === 'web') opacity.value = withTiming(1, { duration: 150 });
   };
 
+  const isYellowPrimary =
+    colors.primary === "#EAB308" ||
+    colors.primary === "#FACC15" ||
+    colors.primary === "#FDE047" ||
+    colors.primary === "#CA8A04";
+
   const getTextColor = () => {
     if (variant === "secondary" || variant === "ghost" || variant === "social") return colors.text;
+    if (isYellowPrimary) return "#0F172A";
     return colors.white;
   };
 
   const getIconColor = () => {
     if (variant === "secondary" || variant === "ghost" || variant === "social") return colors.text;
+    if (isYellowPrimary) return "#0F172A";
     return colors.white;
   };
 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { Image, Pressable, StyleSheet, Text, View, Platform, useWindowDimensions } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -7,15 +7,12 @@ import { IconButton, triggerHaptic } from "@/components/ui";
 import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { useAppStore } from "@/state/useAppStore";
-import { DirectCallModal } from "@/features/calls/components/DirectCallModal";
-
 type NotificationItem = { id: string; read_at?: string | null };
 
 export function HomeNavbar() {
   const { colors, isDark } = useTheme();
   const { t } = useI18n();
   const { cachedProfile } = useAppStore();
-  const [showDirectCall, setShowDirectCall] = useState(false);
 
   const notifications = useQuery({
     queryKey: ["notifications"],
@@ -127,15 +124,6 @@ export function HomeNavbar() {
           }}
         />
 
-        {/* Direct P2P Call Launcher */}
-        <IconButton
-          icon="phone-outline"
-          label="Direct Call"
-          onPress={() => {
-            triggerHaptic();
-            setShowDirectCall(true);
-          }}
-        />
       </View>
 
       {/* Right: Actions Cluster (Search, Notifications) */}
@@ -159,7 +147,6 @@ export function HomeNavbar() {
         />
       </View>
 
-      <DirectCallModal visible={showDirectCall} onClose={() => setShowDirectCall(false)} />
     </View>
   );
 }

@@ -1,4 +1,5 @@
 import "@/lib/livekit-init";
+import "@/lib/web-icons";
 import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,7 +37,7 @@ LogBox.ignoreLogs([
   "Push token registration",
 ]);
 
-// Global error listener for web production diagnostic reporting
+// Global error listener for web diagnostic reporting
 if (Platform.OS === "web" && typeof window !== "undefined") {
   window.addEventListener("error", (e) => {
     console.error("[SkillBridge Web Diagnostic Error]", e.error || e.message);
@@ -62,11 +63,15 @@ const client = new QueryClient({
 function Gate() {
   const { session, initializing } = useAuth();
   const [minSplashElapsed, setMinSplashElapsed] = useState(false);
-  const [fontsLoaded] = useFonts({
-    ...MaterialCommunityIcons.font,
-    ...Ionicons.font,
-    ...Feather.font,
-  });
+  const [fontsLoaded] = useFonts(
+    Platform.OS === "web"
+      ? {}
+      : {
+          ...MaterialCommunityIcons.font,
+          ...Ionicons.font,
+          ...Feather.font,
+        }
+  );
 
   useEffect(() => {
     // Hide native static splash immediately once React Native root mounts
@@ -80,7 +85,7 @@ function Gate() {
     return () => clearTimeout(timer);
   }, []);
 
-  const loading = initializing || !minSplashElapsed || !fontsLoaded;
+  const loading = initializing || !minSplashElapsed || (!fontsLoaded && Platform.OS !== "web");
   const segments = useSegments();
   const router = useRouter();
   const pushEnabled = usePreferencesStore((state) => state.pushEnabled);

@@ -75,6 +75,7 @@ type QuestionDetail = {
   subject?: string | null;
   topic?: string | null;
   urgency: "normal" | "today" | "exam_soon";
+  imageUrl?: string | null;
 };
 
 export default function QuestionDetailScreen() {
@@ -301,6 +302,16 @@ export default function QuestionDetailScreen() {
 
         <Text style={[s.mainTitle, { color: colors.text }]}>{question.title}</Text>
         <Text style={[s.mainBody, { color: colors.text }]}>{question.body}</Text>
+
+        {question.imageUrl && (
+          <View style={[s.questionImageContainer, { borderColor: colors.border, backgroundColor: colors.surface2 }]}>
+            <Image
+              source={{ uri: question.imageUrl }}
+              style={s.questionImage}
+              resizeMode="contain"
+            />
+          </View>
+        )}
 
         <Pressable
           onPress={() => router.push(`/user/${question.author.id}` as any)}
@@ -542,6 +553,20 @@ const s = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     marginBottom: 14,
+  },
+  questionImageContainer: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginVertical: 12,
+    maxHeight: 280,
+    minHeight: 160,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  questionImage: {
+    width: "100%",
+    height: 260,
   },
   authorRow: {
     flexDirection: "row",

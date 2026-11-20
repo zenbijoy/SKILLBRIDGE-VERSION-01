@@ -34,6 +34,7 @@ export type HelpQuestionSummary = {
   subject?: string | null;
   topic?: string | null;
   urgency: HelpUrgency;
+  imageUrl?: string | null;
   author: {
     id: string;
     full_name: string;

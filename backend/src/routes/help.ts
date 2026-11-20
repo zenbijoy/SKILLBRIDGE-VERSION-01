@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { admin } from "../lib/db.js";
@@ -8,6 +9,57 @@ import { NotificationService } from "../services/notificationService.js";
 import { logger } from "../lib/logger.js";
 
 export const help = Router();
+
+// Allowed MIME types for question images
+const ALLOWED_IMAGE_MIME = /^image\/(jpeg|jpg|png|webp|gif)$/i;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_IMAGE_BASE64 = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 4096;
+
+// POST /api/v1/help/questions/upload-image - Upload an image for a question (base64)
+help.post(
+  "/questions/upload-image",
+  wrap(async (req, res) => {
+    const { fileBase64, contentType, fileName } = z
+      .object({
+        fileBase64: z.string().min(10).max(MAX_IMAGE_BASE64),
+        contentType: z
+          .string()
+          .regex(ALLOWED_IMAGE_MIME, { message: "Only image files (jpeg, png, webp, gif) are allowed" }),
+        fileName: z.string().max(160).optional().default("question-image"),
+      })
+      .parse(req.body);
+
+    const buffer = Buffer.from(fileBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+    if (buffer.byteLength > MAX_IMAGE_BYTES) {
+      return res.status(413).json({ error: `Image too large. Maximum size is ${MAX_IMAGE_BYTES / (1024 * 1024)}MB.` });
+    }
+
+    const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : contentType.includes("gif") ? "gif" : "jpg";
+    const sanitizedName = (fileName || "question-image").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `help-questions/${req.userId}/${Date.now()}_${crypto.randomUUID()}_${sanitizedName}.${ext}`;
+
+    const { getStorageProvider } = await import("../services/storage.js");
+    const provider = getStorageProvider();
+
+    try {
+      await provider.uploadBuffer("attachments", storagePath, buffer, contentType, "public, max-age=31536000, immutable");
+    } catch (uploadErr) {
+      logger.error({ err: (uploadErr as Error).message, storagePath }, "Failed to upload question image to storage");
+      return res.status(500).json({ error: "Failed to upload image. Please try again." });
+    }
+
+    // Build public URL (R2 public domain or signed URL for Supabase)
+    let imageUrl: string;
+    try {
+      imageUrl = await provider.createSignedDownloadUrl("attachments", storagePath, 60 * 60 * 24 * 365); // 1-year URL
+    } catch {
+      imageUrl = await provider.createSignedDownloadUrl("attachments", storagePath, 3600);
+    }
+
+    logger.info({ userId: req.userId, storagePath, provider: provider.name }, "Question image uploaded");
+    res.json({ imageUrl, storagePath, provider: provider.name });
+  }),
+);
 
 // GET /api/v1/help/questions - Canonical question listing across spaces
 help.get(
@@ -23,7 +75,7 @@ help.get(
       .from("room_questions")
       .select(`
         id, room_id, title, body, is_resolved, upvotes_count, created_at,
-        subject, topic, urgency, tags,
+        subject, topic, urgency, tags, image_url,
         author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url, university),
         room:rooms!room_questions_room_id_fkey(id, title, visibility),
         answers:room_question_answers(
@@ -109,6 +161,7 @@ help.get(
         subject: (q as any).subject || null,
         topic: (q as any).topic || null,
         urgency: (q as any).urgency || "normal",
+        imageUrl: (q as any).image_url || null,
       };
     });
 
@@ -147,6 +200,7 @@ help.post(
         target: z.enum(["campus", "room"]).default("campus"),
         roomId: z.string().uuid().optional(),
         tags: z.array(z.string()).default([]),
+        imageUrl: z.string().url().optional(),
       })
       .parse({
         ...req.body,
@@ -175,16 +229,36 @@ help.post(
         .eq("id", req.userId!)
         .maybeSingle();
 
-      targetRoomId = await ensureCampusHelpWorkspace(profile?.university || "Campus", req.userId);
-      // Auto-ensure membership in campus help room
-      await admin.from("room_members").upsert(
-        {
-          room_id: targetRoomId,
-          user_id: req.userId!,
-          role: "member",
-        } as any,
-        { onConflict: "room_id,user_id" },
-      );
+      try {
+        targetRoomId = await ensureCampusHelpWorkspace(profile?.university || "Campus", req.userId);
+      } catch (wsErr) {
+        logger.warn({ err: (wsErr as Error).message, userId: req.userId }, "ensureCampusHelpWorkspace failed, trying fallback room");
+        // Fallback: find any public room to attach the question to
+        const { data: anyRoom } = await admin
+          .from("rooms")
+          .select("id")
+          .eq("visibility", "public")
+          .limit(1)
+          .maybeSingle();
+        if (!anyRoom?.id) {
+          throw new Error("Could not find or create a campus help workspace. Please try again.");
+        }
+        targetRoomId = anyRoom.id;
+      }
+
+      // Auto-ensure membership in campus help room (non-fatal)
+      try {
+        await admin.from("room_members").upsert(
+          {
+            room_id: targetRoomId,
+            user_id: req.userId!,
+            role: "member",
+          } as any,
+          { onConflict: "room_id,user_id" },
+        );
+      } catch {
+        // non-fatal
+      }
     }
 
     const title = body.title?.trim() || body.body.slice(0, 80).trim();
@@ -202,10 +276,11 @@ help.post(
         urgency: body.urgency,
         tags: body.tags,
         is_campus_wide: body.target === "campus",
+        image_url: body.imageUrl || null,
       } as any)
       .select(`
         id, room_id, title, body, is_resolved, upvotes_count, created_at,
-        subject, topic, urgency, tags,
+        subject, topic, urgency, tags, image_url,
         author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url)
       `)
       .single();
@@ -292,6 +367,7 @@ help.post(
         subject: body.subject || null,
         topic: body.topic || null,
         urgency: body.urgency,
+        imageUrl: body.imageUrl || null,
       },
       reward: rewardResult,
     });
@@ -308,7 +384,7 @@ help.get(
       .from("room_questions")
       .select(`
         id, room_id, title, body, is_resolved, upvotes_count, created_at, accepted_answer_id,
-        subject, topic, urgency, tags,
+        subject, topic, urgency, tags, image_url,
         author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url, university, department),
         room:rooms!room_questions_room_id_fkey(id, title, visibility),
         answers:room_question_answers(
@@ -367,6 +443,7 @@ help.get(
         subject: (q as any).subject || null,
         topic: (q as any).topic || null,
         urgency: (q as any).urgency || "normal",
+        imageUrl: (q as any).image_url || null,
       },
     });
   }),
@@ -394,12 +471,19 @@ help.post(
       return res.status(404).json({ error: "Question not found" });
     }
 
-    // Auto-ensure user membership in question's room
-    await admin.from("room_members").upsert({
-      room_id: q.room_id,
-      user_id: req.userId!,
-      role: "member",
-    } as any);
+    // Auto-ensure user membership in question's room (non-fatal)
+    try {
+      await admin.from("room_members").upsert(
+        {
+          room_id: q.room_id,
+          user_id: req.userId!,
+          role: "member",
+        } as any,
+        { onConflict: "room_id,user_id" },
+      );
+    } catch {
+      // Non-fatal
+    }
 
     const { data: answer, error } = await admin
       .from("room_question_answers")

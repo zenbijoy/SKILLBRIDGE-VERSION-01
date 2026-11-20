@@ -1296,7 +1296,7 @@ export default function ToolsScreen() {
                   id: "tutor",
                   name: `${profile?.full_name || "Member"} · Tutor`,
                   role: "Teaching, Availability, Lectures & Bookings",
-                  icon: "teach",
+                  icon: "account-school",
                   tag: "👨‍🏫 Teacher Mode",
                   filter: "teacher" as const,
                   allowed: isEducator,
