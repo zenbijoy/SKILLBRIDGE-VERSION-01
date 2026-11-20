@@ -94,4 +94,32 @@ test("Research Real-Time Papers API Test Suite", async (t) => {
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(res.body.sources));
   });
+
+  await t.test("GET /api/v1/research/papers/:paperId - handles undefined/null paperId defensively", async () => {
+    const res1 = await request.get("/api/v1/research/papers/undefined").set(authHeader);
+    assert.strictEqual(res1.status, 400);
+
+    const res2 = await request.get("/api/v1/research/papers/null").set(authHeader);
+    assert.strictEqual(res2.status, 400);
+  });
+
+  await t.test("GET /api/v1/research/papers/search - validates short queries", async () => {
+    const res = await request.get("/api/v1/research/papers/search?q=a").set(authHeader);
+    assert.strictEqual(res.status, 400);
+  });
+
+  await t.test("GET /api/v1/research/papers/search - handles exotic characters without crashing", async () => {
+    const res = await request.get("/api/v1/research/papers/search?q=%21%40%23%24%25%5E%26").set(authHeader);
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(res.body.data));
+  });
+
+  await t.test("GET /api/v1/research/papers/latest - handles unknown disciplines gracefully", async () => {
+    const res = await request
+      .get("/api/v1/research/papers/latest?discipline=CompletelyUnknownField")
+      .set(authHeader);
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(res.body.data));
+    assert.ok(res.body.data.length > 0);
+  });
 });
