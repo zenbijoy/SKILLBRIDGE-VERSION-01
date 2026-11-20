@@ -1577,6 +1577,25 @@ rooms.post(
       throw rpcError;
     }
 
+    // Ensure member is enrolled in conversation_members for room and all public channels
+    try {
+      const { data: rm } = await admin.from("rooms").select("conversation_id").eq("id", id).maybeSingle();
+      const { data: chans } = await admin.from("room_channels").select("conversation_id, is_private").eq("room_id", id);
+      const convIds = new Set<string>();
+      if (rm?.conversation_id) convIds.add(rm.conversation_id);
+      for (const ch of chans || []) {
+        if (!ch.is_private && ch.conversation_id) convIds.add(ch.conversation_id);
+      }
+      if (convIds.size > 0) {
+        const rows = Array.from(convIds).map((cId) => ({
+          conversation_id: cId,
+          user_id: req.userId!,
+          role: "member",
+        }));
+        await admin.from("conversation_members").upsert(rows, { onConflict: "conversation_id,user_id" });
+      }
+    } catch {}
+
     await invalidateRoomCache();
     res.json({ joined: true, role: "member", member_count: rpcData?.member_count ?? 1 });
   }),
@@ -1603,6 +1622,25 @@ rooms.post(
       }
       throw rpcError;
     }
+
+    // Ensure member is enrolled in conversation_members for room and all public channels
+    try {
+      const { data: rm } = await admin.from("rooms").select("conversation_id").eq("id", id).maybeSingle();
+      const { data: chans } = await admin.from("room_channels").select("conversation_id, is_private").eq("room_id", id);
+      const convIds = new Set<string>();
+      if (rm?.conversation_id) convIds.add(rm.conversation_id);
+      for (const ch of chans || []) {
+        if (!ch.is_private && ch.conversation_id) convIds.add(ch.conversation_id);
+      }
+      if (convIds.size > 0) {
+        const rows = Array.from(convIds).map((cId) => ({
+          conversation_id: cId,
+          user_id: req.userId!,
+          role: "member",
+        }));
+        await admin.from("conversation_members").upsert(rows, { onConflict: "conversation_id,user_id" });
+      }
+    } catch {}
 
     await invalidateRoomCache();
     res.json({ left: true, member_count: rpcData?.member_count ?? 1 });
@@ -3126,6 +3164,16 @@ rooms.get(
 
     const isOwner = req.userId === room.owner_id;
     const isEducator = isOwner || ["owner", "teacher", "moderator", "admin", "host"].includes(member?.role || "");
+
+    // Ensure caller is enrolled in conversation_members for the primary room conversation
+    if (roomConvId && req.userId && (member || isOwner || room.visibility === "public")) {
+      try {
+        await admin.from("conversation_members").upsert(
+          { conversation_id: roomConvId, user_id: req.userId, role: member?.role || (isOwner ? "owner" : "member") },
+          { onConflict: "conversation_id,user_id" },
+        );
+      } catch {}
+    }
 
     const { data: existingChannels, error } = await admin
       .from("room_channels")

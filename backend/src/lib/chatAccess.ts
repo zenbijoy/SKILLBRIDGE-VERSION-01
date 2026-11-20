@@ -137,6 +137,18 @@ export async function ensureConversationMember(
           error: "You must join this room to participate in chat",
         };
       }
+    } else if (!roomMember && !isOwner && room?.visibility === "public") {
+      // In public rooms, auto-enroll active chatting participant into room_members
+      try {
+        await admin.from("room_members").upsert(
+          {
+            room_id: roomId,
+            user_id: userId,
+            role: "member",
+          } as any,
+          { onConflict: "room_id,user_id" },
+        );
+      } catch {}
     }
 
     const assignedRole = userRole || "member";
