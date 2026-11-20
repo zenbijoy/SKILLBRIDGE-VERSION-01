@@ -197,6 +197,19 @@ export function getRadius(cardStyle: CardStyle = "smooth") {
 
 export const radius = getRadius("smooth");
 
+import {
+  darkSemanticColors,
+  oledSemanticColors,
+  lightSemanticColors,
+  spacingTokens,
+  radiusTokens,
+  typographyTokens,
+  elevationTokens,
+  motionTokens,
+  breakpointTokens,
+  type SemanticColors,
+} from "./tokens";
+
 export function useTheme() {
   const system = useColorScheme();
   const preference = usePreferencesStore((state) => state.theme);
@@ -208,6 +221,12 @@ export function useTheme() {
   const currentColors = getPalette(isDark, isOled, accent);
   const currentRadius = getRadius(cardStyle);
 
+  const semanticTokens: SemanticColors = isOled
+    ? oledSemanticColors
+    : isDark
+    ? darkSemanticColors
+    : lightSemanticColors;
+
   return {
     isDark,
     isOled,
@@ -216,7 +235,17 @@ export function useTheme() {
     radius: currentRadius,
     accent,
     cardStyle,
+    tokens: {
+      colors: semanticTokens,
+      spacing: spacingTokens,
+      radius: radiusTokens,
+      typography: typographyTokens,
+      elevation: elevationTokens,
+      motion: motionTokens,
+      breakpoints: breakpointTokens,
+    },
   } as const;
 }
 
 export * from "./brand";
+export * from "./tokens";

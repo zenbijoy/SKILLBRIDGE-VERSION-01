@@ -31,6 +31,7 @@ test("Learning & Growth Hub API Tests", async (t) => {
       lt: () => chain,
       gt: () => chain,
       order: () => chain,
+      limit: () => chain,
       range: () => Promise.resolve({ data, count, error }),
       single: () => Promise.resolve({ data, error }),
       maybeSingle: () => Promise.resolve({
@@ -168,6 +169,9 @@ test("Learning & Growth Hub API Tests", async (t) => {
       if (fn === "complete_booking_atomic") {
         return { data: { success: true, status: "completed" }, error: null };
       }
+      if (fn === "submit_booking_review_atomic") {
+        return { data: { success: true, rating: params.p_rating, review_id: "rev1" }, error: null };
+      }
       if (fn === "claim_challenge_reward_atomic") {
         return { data: { success: true, status: "claimed", points_awarded: 50 }, error: null };
       }
@@ -242,6 +246,32 @@ test("Learning & Growth Hub API Tests", async (t) => {
       });
     assert.strictEqual(res.status, 201);
     assert.strictEqual(res.body.booking_id, BOOKING_ID);
+  });
+
+  await t.test("GET /api/v1/bookings/tutors returns searchable tutors list", async () => {
+    const res = await request(app).get("/api/v1/bookings/tutors?q=test").set(authHeader);
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(res.body.tutors));
+  });
+
+  await t.test("GET /api/v1/bookings/tutor/:id/availability returns slots with smart fallback", async () => {
+    const res = await request(app).get(`/api/v1/bookings/tutor/${TUTOR_ID}/availability`).set(authHeader);
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(res.body.slots));
+    assert.strictEqual(res.body.supports_custom_booking, true);
+  });
+
+  await t.test("POST /api/v1/bookings/:id/review submits 5-star review via atomic RPC", async () => {
+    const res = await request(app)
+      .post(`/api/v1/bookings/${BOOKING_ID}/review`)
+      .set(authHeader)
+      .send({
+        rating: 5,
+        comment: "Outstanding explanation of complex topics!",
+      });
+    assert.strictEqual(res.status, 201);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.rating, 5);
   });
 
   await t.test("GET /api/v1/saved/collections lists user collections", async () => {

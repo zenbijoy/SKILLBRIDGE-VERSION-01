@@ -12,23 +12,17 @@ skillbridgeapk.duckdns.org {
         reverse_proxy api:4000
     }
 
-    # Direct APK downloads
+    # Direct APK downloads - redirect to high-speed Cloudflare R2 CDN releases
     handle_path /download/* {
-        root * /srv/release-apk
-        header Content-Disposition "attachment"
-        file_server {
-            browse
-        }
+        redir https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/{path} 302
     }
 
     handle /SkillBridge.apk {
-        root * /srv/release-apk
-        header Content-Disposition "attachment"
-        file_server
+        redir https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/SkillBridge.apk 302
     }
 
     handle /apk {
-        redir /download/SkillBridge.apk permanent
+        redir https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/SkillBridge.apk 302
     }
 
     # Downloader / Showcase Web
@@ -55,9 +49,7 @@ ruetskillbridge.duckdns.org {
 
     # Direct APK downloads mirror
     handle_path /download/* {
-        root * /srv/release-apk
-        header Content-Disposition "attachment"
-        file_server
+        redir https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/{path} 302
     }
 
     # Demo Showcase / Landing Web mirror

@@ -274,6 +274,7 @@ export interface SessionBooking {
   learner_note?: string | null;
   tutor_note?: string | null;
   cancellation_reason?: string | null;
+  room_id?: string | null;
   created_at: string;
   skill?: { id: string; name: string } | null;
   tutor?: { id: string; full_name: string; username?: string; avatar_url?: string } | null;
@@ -304,10 +305,36 @@ export interface TutorAvailabilityException {
   reason?: string | null;
 }
 
-export async function fetchTutorAvailability(tutorId: string, startDate?: string, days?: number): Promise<TutorSlot[]> {
+export async function fetchTutorAvailability(
+  tutorId: string,
+  startDate?: string,
+  days?: number,
+): Promise<{ slots: TutorSlot[]; supports_custom_booking?: boolean; has_custom_rules?: boolean }> {
   const query = qs({ start_date: startDate, days });
-  const res = await api<{ slots: TutorSlot[] }>(`/bookings/tutor/${tutorId}/availability${query ? `?${query}` : ""}`);
-  return res.slots ?? [];
+  const res = await api<{
+    slots: TutorSlot[];
+    supports_custom_booking?: boolean;
+    has_custom_rules?: boolean;
+  }>(`/bookings/tutor/${tutorId}/availability${query ? `?${query}` : ""}`);
+  return {
+    slots: res.slots ?? [],
+    supports_custom_booking: res.supports_custom_booking ?? true,
+    has_custom_rules: res.has_custom_rules ?? false,
+  };
+}
+
+export async function fetchTutors(params?: {
+  query?: string;
+  skill_id?: string;
+  department?: string;
+}): Promise<any[]> {
+  const query = qs({
+    q: params?.query,
+    skill_id: params?.skill_id,
+    department: params?.department,
+  });
+  const res = await api<{ tutors: any[] }>(`/bookings/tutors${query ? `?${query}` : ""}`);
+  return res.tutors ?? [];
 }
 
 export async function fetchMyBookings(role: "all" | "learner" | "tutor" = "all", status?: string): Promise<SessionBooking[]> {
@@ -329,8 +356,19 @@ export async function requestBooking(payload: {
   mode: string;
   offline_location?: string;
   learner_note?: string;
+  is_custom_proposal?: boolean;
 }): Promise<{ booking_id: string; status: string }> {
   return api("/bookings", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function submitBookingReview(
+  bookingId: string,
+  payload: { rating: number; comment?: string },
+): Promise<{ success: boolean; review?: any; bonus_points?: number }> {
+  return api(`/bookings/${bookingId}/review`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

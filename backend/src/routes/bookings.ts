@@ -16,6 +16,7 @@ const requestBookingSchema = z.object({
   offline_location: z.string().max(300).optional(),
   learner_note: z.string().max(1000).optional(),
   idempotency_key: z.string().max(128).optional(),
+  is_custom_proposal: z.boolean().optional(),
 });
 
 const availabilityRuleSchema = z.object({
@@ -37,47 +38,97 @@ const exceptionSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
-// GET /api/v1/bookings/tutors - Discover peer tutors
+// GET /api/v1/bookings/tutors - Discover peer tutors with search & filter
 bookings.get(
   "/tutors",
   wrap(async (req, res) => {
-    const { data: profiles, error } = await admin
+    const { q, query, skill_id, department } = req.query;
+    const searchTerm = (typeof q === "string" ? q : typeof query === "string" ? query : "").trim().toLowerCase();
+    const departmentFilter = typeof department === "string" ? department.trim().toLowerCase() : "";
+    const skillFilter = typeof skill_id === "string" ? skill_id.trim() : "";
+
+    let profilesQuery = admin
       .from("profiles")
       .select("id, full_name, username, avatar_url, university, department, headline, roles, reputation")
-      .limit(40);
+      .limit(60);
 
+    const { data: profiles, error } = await profilesQuery;
     if (error) throw error;
 
-    const tutorProfiles = profiles ?? [];
+    const tutorProfiles = Array.isArray(profiles) ? profiles : profiles ? [profiles] : [];
     const tutorIds = tutorProfiles.map((p) => p.id);
     const reviewsByReviewee: Record<string, { total: number; count: number }> = {};
+    const skillsByTutor: Record<string, Array<{ id: string; name: string }>> = {};
 
     if (tutorIds.length > 0) {
-      const { data: reviewsData } = await admin
-        .from("reviews")
-        .select("reviewee_id, rating")
-        .in("reviewee_id", tutorIds);
+      const [reviewsRes, userSkillsRes] = await Promise.all([
+        admin.from("reviews").select("reviewee_id, rating").in("reviewee_id", tutorIds),
+        admin.from("user_skills").select("user_id, skill:skills(id, name)").in("user_id", tutorIds),
+      ]);
 
-      if (reviewsData) {
-        for (const rev of reviewsData) {
+      if (reviewsRes.data) {
+        for (const rev of reviewsRes.data) {
           const existing = reviewsByReviewee[rev.reviewee_id] ?? { total: 0, count: 0 };
           existing.total += rev.rating;
           existing.count += 1;
           reviewsByReviewee[rev.reviewee_id] = existing;
         }
       }
+
+      if (userSkillsRes.data) {
+        for (const item of userSkillsRes.data as any[]) {
+          if (item?.user_id && item?.skill) {
+            const list = skillsByTutor[item.user_id] ?? [];
+            list.push({ id: item.skill.id, name: item.skill.name });
+            skillsByTutor[item.user_id] = list;
+          }
+        }
+      }
     }
 
-    const tutors = tutorProfiles.map((p) => {
+    let tutors = tutorProfiles.map((p) => {
       const stats = reviewsByReviewee[p.id];
       const reviewsCount = stats ? stats.count : 0;
       const rating = stats && stats.count > 0 ? Number((stats.total / stats.count).toFixed(1)) : null;
+      const tutorSkills = skillsByTutor[p.id] ?? [];
+      const hasTutorRole = (p.roles || []).includes("tutor") || (p.roles || []).includes("peer_tutor");
+
       return {
         ...p,
-        is_tutor: (p.roles || []).includes("tutor") || (p.roles || []).includes("peer_tutor") || (p.roles || []).includes("student"),
+        is_tutor: hasTutorRole || (p.roles || []).includes("student"),
         rating,
         reviewsCount,
+        skills: tutorSkills,
       };
+    });
+
+    // Apply filters
+    if (departmentFilter) {
+      tutors = tutors.filter((t) => t.department?.toLowerCase().includes(departmentFilter));
+    }
+
+    if (skillFilter) {
+      tutors = tutors.filter((t) => t.skills.some((s) => s.id === skillFilter || s.name.toLowerCase().includes(skillFilter.toLowerCase())));
+    }
+
+    if (searchTerm) {
+      tutors = tutors.filter((t) => {
+        const matchesName = t.full_name?.toLowerCase().includes(searchTerm);
+        const matchesUser = t.username?.toLowerCase().includes(searchTerm);
+        const matchesHead = t.headline?.toLowerCase().includes(searchTerm);
+        const matchesDept = t.department?.toLowerCase().includes(searchTerm);
+        const matchesUni = t.university?.toLowerCase().includes(searchTerm);
+        const matchesSkill = t.skills.some((s) => s.name.toLowerCase().includes(searchTerm));
+        return Boolean(matchesName || matchesUser || matchesHead || matchesDept || matchesUni || matchesSkill);
+      });
+    }
+
+    // Sort: Verified tutors first, then highest rating / reputation
+    tutors.sort((a, b) => {
+      const aIsTutor = (a.roles || []).includes("tutor") || (a.roles || []).includes("peer_tutor") ? 1 : 0;
+      const bIsTutor = (b.roles || []).includes("tutor") || (b.roles || []).includes("peer_tutor") ? 1 : 0;
+      if (bIsTutor !== aIsTutor) return bIsTutor - aIsTutor;
+      return (b.rating || b.reputation || 0) - (a.rating || a.reputation || 0);
     });
 
     res.json({ tutors });
@@ -131,6 +182,20 @@ bookings.get(
     // Compute discrete slots
     const availableSlots: any[] = [];
     const now = new Date();
+    const hasCustomRules = Boolean(rules && rules.length > 0);
+    const activeRules = hasCustomRules
+      ? rules
+      : [
+          // Mon - Fri default afternoon / evening hours (14:00 - 18:00 UTC)
+          { day_of_week: 1, start_time_utc: "14:00", end_time_utc: "18:00", slot_duration_minutes: 60, buffer_minutes: 15, mode: "online" },
+          { day_of_week: 2, start_time_utc: "14:00", end_time_utc: "18:00", slot_duration_minutes: 60, buffer_minutes: 15, mode: "online" },
+          { day_of_week: 3, start_time_utc: "14:00", end_time_utc: "18:00", slot_duration_minutes: 60, buffer_minutes: 15, mode: "online" },
+          { day_of_week: 4, start_time_utc: "14:00", end_time_utc: "18:00", slot_duration_minutes: 60, buffer_minutes: 15, mode: "online" },
+          { day_of_week: 5, start_time_utc: "14:00", end_time_utc: "18:00", slot_duration_minutes: 60, buffer_minutes: 15, mode: "online" },
+          // Sat - Sun weekend hours (11:00 - 16:00 UTC)
+          { day_of_week: 6, start_time_utc: "11:00", end_time_utc: "16:00", slot_duration_minutes: 60, buffer_minutes: 15, mode: "online" },
+          { day_of_week: 0, start_time_utc: "11:00", end_time_utc: "16:00", slot_duration_minutes: 60, buffer_minutes: 15, mode: "online" },
+        ];
 
     for (let d = 0; d < numDays; d++) {
       const currentDay = new Date(baseDate);
@@ -144,7 +209,7 @@ bookings.get(
       if (isFullDayBlackout) continue;
 
       // Find matching rule for this day of week
-      const matchingRules = (rules || []).filter((r) => r.day_of_week === dayOfWeek);
+      const matchingRules = (activeRules || []).filter((r: any) => r.day_of_week === dayOfWeek);
 
       for (const rule of matchingRules) {
         const [startH, startM] = rule.start_time_utc.split(":").map(Number);
@@ -191,6 +256,8 @@ bookings.get(
       tutor_id: tutorId,
       total_slots: availableSlots.length,
       slots: availableSlots,
+      has_custom_rules: hasCustomRules,
+      supports_custom_booking: true,
     });
   }),
 );
@@ -327,18 +394,57 @@ bookings.post(
       return res.status(400).json({ error: error.message });
     }
 
-    // Notify the other party asynchronously
+    // Asynchronous notification and 1:1 room provisioning
     void (async () => {
       try {
         const { data: bookingRecord } = await admin
           .from("session_bookings")
-          .select("id, tutor_id, learner_id, start_time")
+          .select("id, tutor_id, learner_id, start_time, mode, room_id, learner_note")
           .eq("id", id)
           .maybeSingle();
 
         if (bookingRecord) {
-          const recipientId = userId === bookingRecord.tutor_id ? bookingRecord.learner_id : bookingRecord.tutor_id;
           const isConfirmed = status === "accepted" || status === "confirmed";
+
+          // Auto-provision private 1:1 room if not already attached
+          if (isConfirmed && !bookingRecord.room_id) {
+            try {
+              const { data: newRoom, error: rErr } = await admin
+                .from("rooms")
+                .insert({
+                  owner_id: bookingRecord.tutor_id,
+                  title: "1:1 Tutoring Session",
+                  description: bookingRecord.learner_note || "SkillBridge 1:1 Peer Tutoring Room",
+                  topic: "Peer Tutoring",
+                  tags: ["tutoring", "1-on-1"],
+                  visibility: "private",
+                  mode: bookingRecord.mode || "online",
+                  capacity: 2,
+                  scheduled_at: bookingRecord.start_time,
+                  status: "scheduled",
+                })
+                .select("id")
+                .single();
+
+              if (!rErr && newRoom) {
+                await admin
+                  .from("session_bookings")
+                  .update({ room_id: newRoom.id })
+                  .eq("id", id);
+
+                await admin
+                  .from("room_members")
+                  .upsert([
+                    { room_id: newRoom.id, user_id: bookingRecord.tutor_id, role: "teacher" },
+                    { room_id: newRoom.id, user_id: bookingRecord.learner_id, role: "member" },
+                  ], { onConflict: "room_id,user_id" });
+              }
+            } catch (roomErr) {
+              logger.warn({ err: (roomErr as Error).message, bookingId: id }, "Could not auto-provision room for booking");
+            }
+          }
+
+          const recipientId = userId === bookingRecord.tutor_id ? bookingRecord.learner_id : bookingRecord.tutor_id;
           const notifType = isConfirmed ? "BOOKING_CONFIRMED" : "BOOKING_CANCELLED";
           const notifTitle = isConfirmed ? "Session Confirmed! ✅" : `Session Update: ${status}`;
           const notifBody = isConfirmed
@@ -381,6 +487,70 @@ bookings.post(
     }
 
     res.json(data);
+  }),
+);
+
+// POST /api/v1/bookings/:id/review - Submit rating & review for completed session
+bookings.post(
+  "/:id/review",
+  wrap(async (req, res) => {
+    const userId = req.userId!;
+    const { id } = req.params;
+    const body = z.object({
+      rating: z.number().int().min(1).max(5),
+      comment: z.string().max(1000).optional(),
+    }).parse(req.body);
+
+    // Call atomic RPC
+    const { data: rpcData, error: rpcError } = await admin.rpc("submit_booking_review_atomic", {
+      p_booking_id: id,
+      p_reviewer_id: userId,
+      p_rating: body.rating,
+      p_comment: body.comment ?? null,
+    });
+
+    if (rpcError) {
+      // Fallback: verify booking and write to reviews table directly
+      const { data: booking, error: bErr } = await admin
+        .from("session_bookings")
+        .select("id, learner_id, tutor_id, status")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (bErr || !booking) return res.status(404).json({ error: "Booking not found" });
+      if (booking.learner_id !== userId) return res.status(403).json({ error: "Only the learner can review this session" });
+      if (booking.status !== "completed") return res.status(400).json({ error: "Can only review completed sessions" });
+
+      const { data: newReview, error: revErr } = await admin
+        .from("reviews")
+        .insert({
+          booking_id: id,
+          reviewer_id: userId,
+          reviewee_id: booking.tutor_id,
+          rating: body.rating,
+          comment: body.comment ?? null,
+        })
+        .select()
+        .single();
+
+      if (revErr) {
+        return res.status(400).json({ error: revErr.message });
+      }
+
+      if (body.rating >= 4) {
+        const bonus = body.rating === 5 ? 10 : 5;
+        await admin.from("points_ledger").insert({
+          user_id: booking.tutor_id,
+          points: bonus,
+          action: `tutor_rating_bonus:${id}`,
+          reference_id: id,
+        });
+      }
+
+      return res.status(201).json({ success: true, review: newReview });
+    }
+
+    res.status(201).json(rpcData);
   }),
 );
 

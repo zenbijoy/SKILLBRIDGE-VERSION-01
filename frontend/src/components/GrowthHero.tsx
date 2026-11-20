@@ -20,6 +20,7 @@ interface GrowthHeroProps {
   illustrationSize?: number;
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
+  compact?: boolean;
 }
 
 export function GrowthHero({
@@ -30,12 +31,13 @@ export function GrowthHero({
   illustrationSize,
   children,
   style,
+  compact = false,
 }: GrowthHeroProps) {
   const { colors, isDark, isOled } = useTheme();
   const { width } = useWindowDimensions();
   const isWide = width >= 640;
 
-  const defaultImgSize = isWide ? 160 : 130;
+  const defaultImgSize = compact ? 64 : isWide ? 160 : 130;
   const imgSize = illustrationSize || defaultImgSize;
 
   const gradientColors = isOled
@@ -44,6 +46,12 @@ export function GrowthHero({
     ? ([colors.surfaceElevated, colors.surface, colors.bg] as const)
     : ([`${colors.primary}12`, `${colors.primary2}08`, colors.surface] as const);
 
+  const layoutStyle = compact
+    ? styles.compactLayout
+    : isWide
+    ? styles.wideLayout
+    : styles.stackedLayout;
+
   return (
     <LinearGradient
       colors={gradientColors}
@@ -51,28 +59,47 @@ export function GrowthHero({
       end={{ x: 1, y: 1 }}
       style={[
         styles.heroContainer,
+        compact && styles.compactHeroContainer,
         {
           borderColor: isDark ? `${colors.white}18` : `${colors.primary}25`,
           backgroundColor: colors.surface,
         },
-        isWide ? styles.wideLayout : styles.stackedLayout,
+        layoutStyle,
         style,
       ]}
     >
-      <View style={[styles.textBlock, isWide && { flex: 1 }]}>
+      <View style={[styles.textBlock, (isWide || compact) && { flex: 1 }, compact && styles.compactTextBlock]}>
         {eyebrow ? (
           <Text
             style={[
               styles.eyebrow,
+              compact && styles.compactEyebrow,
               { color: isDark ? colors.accent : colors.primary },
             ]}
+            numberOfLines={compact ? 1 : undefined}
           >
             {eyebrow}
           </Text>
         ) : null}
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        <Text
+          style={[
+            styles.title,
+            compact && styles.compactTitle,
+            { color: colors.text },
+          ]}
+          numberOfLines={compact ? 1 : undefined}
+        >
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+          <Text
+            style={[
+              styles.subtitle,
+              compact && styles.compactSubtitle,
+              { color: colors.textSecondary },
+            ]}
+            numberOfLines={compact ? 2 : undefined}
+          >
             {subtitle}
           </Text>
         ) : null}
@@ -99,6 +126,33 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     overflow: "hidden",
+  },
+  compactHeroContainer: {
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  compactLayout: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  compactTextBlock: {
+    gap: 2,
+  },
+  compactEyebrow: {
+    fontSize: 10,
+    letterSpacing: 0.8,
+  },
+  compactTitle: {
+    fontSize: 16,
+    lineHeight: 20,
+    letterSpacing: -0.3,
+  },
+  compactSubtitle: {
+    fontSize: 11,
+    lineHeight: 15,
   },
   stackedLayout: {
     flexDirection: "column-reverse",

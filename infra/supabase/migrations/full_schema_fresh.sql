@@ -5852,8 +5852,7 @@ ALTER TABLE public.room_session_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.room_session_request_upvotes ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Room members can read session requests" ON public.room_session_requests;
-CREATE POLICY "Room members can read session requests"
-  ON public.room_session_requests FOR SELECT
+CREATE POLICY "Room members can read session requests" ON public.room_session_requests FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM public.room_members rm 
@@ -5868,8 +5867,7 @@ CREATE POLICY "Room members can read session requests"
   );
 
 DROP POLICY IF EXISTS "Members can create session requests" ON public.room_session_requests;
-CREATE POLICY "Members can create session requests"
-  ON public.room_session_requests FOR INSERT
+CREATE POLICY "Members can create session requests" ON public.room_session_requests FOR INSERT
   WITH CHECK (
     auth.uid() = user_id
     AND EXISTS (
@@ -5880,8 +5878,7 @@ CREATE POLICY "Members can create session requests"
   );
 
 DROP POLICY IF EXISTS "Authors and room leaders can update session requests" ON public.room_session_requests;
-CREATE POLICY "Authors and room leaders can update session requests"
-  ON public.room_session_requests FOR UPDATE
+CREATE POLICY "Authors and room leaders can update session requests" ON public.room_session_requests FOR UPDATE
   USING (
     auth.uid() = user_id
     OR EXISTS (
@@ -5898,8 +5895,7 @@ CREATE POLICY "Authors and room leaders can update session requests"
   );
 
 DROP POLICY IF EXISTS "Authors and room leaders can delete session requests" ON public.room_session_requests;
-CREATE POLICY "Authors and room leaders can delete session requests"
-  ON public.room_session_requests FOR DELETE
+CREATE POLICY "Authors and room leaders can delete session requests" ON public.room_session_requests FOR DELETE
   USING (
     auth.uid() = user_id
     OR EXISTS (
@@ -5910,12 +5906,10 @@ CREATE POLICY "Authors and room leaders can delete session requests"
   );
 
 DROP POLICY IF EXISTS "Room members can read upvotes" ON public.room_session_request_upvotes;
-CREATE POLICY "Room members can read upvotes"
-  ON public.room_session_request_upvotes FOR SELECT
+CREATE POLICY "Room members can read upvotes" ON public.room_session_request_upvotes FOR SELECT
   USING (true);
 
 DROP POLICY IF EXISTS "Users can manage own upvotes" ON public.room_session_request_upvotes;
-CREATE POLICY "Users can manage own upvotes"
-  ON public.room_session_request_upvotes FOR ALL
+CREATE POLICY "Users can manage own upvotes" ON public.room_session_request_upvotes FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);

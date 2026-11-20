@@ -2207,32 +2207,32 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Anyone can view public notes'
   ) THEN
-    CREATE POLICY "Anyone can view public notes"
-      ON public.vault_notes FOR SELECT
+    DROP POLICY IF EXISTS "Anyone can view public notes" ON public.vault_notes;
+CREATE POLICY "Anyone can view public notes" ON public.vault_notes FOR SELECT
       USING (visibility = 'public' OR uploader_id = auth.uid());
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Authenticated users can upload notes'
   ) THEN
-    CREATE POLICY "Authenticated users can upload notes"
-      ON public.vault_notes FOR INSERT
+    DROP POLICY IF EXISTS "Authenticated users can upload notes" ON public.vault_notes;
+CREATE POLICY "Authenticated users can upload notes" ON public.vault_notes FOR INSERT
       WITH CHECK (auth.uid() = uploader_id);
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Users can update own notes'
   ) THEN
-    CREATE POLICY "Users can update own notes"
-      ON public.vault_notes FOR UPDATE
+    DROP POLICY IF EXISTS "Users can update own notes" ON public.vault_notes;
+CREATE POLICY "Users can update own notes" ON public.vault_notes FOR UPDATE
       USING (auth.uid() = uploader_id);
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'vault_notes' AND policyname = 'Users can delete own notes'
   ) THEN
-    CREATE POLICY "Users can delete own notes"
-      ON public.vault_notes FOR DELETE
+    DROP POLICY IF EXISTS "Users can delete own notes" ON public.vault_notes;
+CREATE POLICY "Users can delete own notes" ON public.vault_notes FOR DELETE
       USING (auth.uid() = uploader_id);
   END IF;
 END $$;
@@ -2263,8 +2263,8 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'storage_pools' AND policyname = 'Admins can view and manage storage pools'
   ) THEN
-    CREATE POLICY "Admins can view and manage storage pools"
-      ON public.storage_pools FOR ALL
+    DROP POLICY IF EXISTS "Admins can view and manage storage pools" ON public.storage_pools;
+CREATE POLICY "Admins can view and manage storage pools" ON public.storage_pools FOR ALL
       USING (
         EXISTS (
           SELECT 1 FROM public.profiles
@@ -2306,8 +2306,8 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'room_knock_requests' AND policyname = 'Requesters can view and submit own knock requests'
   ) THEN
-    CREATE POLICY "Requesters can view and submit own knock requests"
-      ON public.room_knock_requests FOR ALL
+    DROP POLICY IF EXISTS "Requesters can view and submit own knock requests" ON public.room_knock_requests;
+CREATE POLICY "Requesters can view and submit own knock requests" ON public.room_knock_requests FOR ALL
       USING (auth.uid() = user_id)
       WITH CHECK (auth.uid() = user_id);
   END IF;
@@ -2315,8 +2315,8 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'room_knock_requests' AND policyname = 'Room hosts and moderators can manage knock requests'
   ) THEN
-    CREATE POLICY "Room hosts and moderators can manage knock requests"
-      ON public.room_knock_requests FOR ALL
+    DROP POLICY IF EXISTS "Room hosts and moderators can manage knock requests" ON public.room_knock_requests;
+CREATE POLICY "Room hosts and moderators can manage knock requests" ON public.room_knock_requests FOR ALL
       USING (
         EXISTS (
           SELECT 1 FROM public.rooms r
@@ -2346,8 +2346,8 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'room_monitoring_events' AND policyname = 'Room moderators can view monitoring events'
   ) THEN
-    CREATE POLICY "Room moderators can view monitoring events"
-      ON public.room_monitoring_events FOR SELECT
+    DROP POLICY IF EXISTS "Room moderators can view monitoring events" ON public.room_monitoring_events;
+CREATE POLICY "Room moderators can view monitoring events" ON public.room_monitoring_events FOR SELECT
       USING (
         EXISTS (
           SELECT 1 FROM public.rooms r
@@ -2405,8 +2405,8 @@ ALTER TABLE public.calls ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'calls' AND policyname = 'Call participants can view their call records') THEN
-    CREATE POLICY "Call participants can view their call records"
-    ON public.calls FOR SELECT
+    DROP POLICY IF EXISTS "Call participants can view their call records" ON public.calls;
+CREATE POLICY "Call participants can view their call records" ON public.calls FOR SELECT
     USING (
         caller_id = auth.uid() OR
         callee_id = auth.uid() OR
@@ -2417,8 +2417,8 @@ DO $$ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'calls' AND policyname = 'Authenticated users can initiate calls') THEN
-    CREATE POLICY "Authenticated users can initiate calls"
-    ON public.calls FOR INSERT
+    DROP POLICY IF EXISTS "Authenticated users can initiate calls" ON public.calls;
+CREATE POLICY "Authenticated users can initiate calls" ON public.calls FOR INSERT
     WITH CHECK (
         auth.uid() = caller_id AND
         caller_id <> callee_id
@@ -2426,8 +2426,8 @@ DO $$ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'calls' AND policyname = 'Call participants can update call state') THEN
-    CREATE POLICY "Call participants can update call state"
-    ON public.calls FOR UPDATE
+    DROP POLICY IF EXISTS "Call participants can update call state" ON public.calls;
+CREATE POLICY "Call participants can update call state" ON public.calls FOR UPDATE
     USING (
         caller_id = auth.uid() OR
         callee_id = auth.uid()
@@ -2451,20 +2451,20 @@ ALTER TABLE public.blocks ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'blocks' AND policyname = 'Users can view their own blocks') THEN
-    CREATE POLICY "Users can view their own blocks"
-    ON public.blocks FOR SELECT
+    DROP POLICY IF EXISTS "Users can view their own blocks" ON public.blocks;
+CREATE POLICY "Users can view their own blocks" ON public.blocks FOR SELECT
     USING (blocker_id = auth.uid() OR blocked_id = auth.uid());
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'blocks' AND policyname = 'Users can block others') THEN
-    CREATE POLICY "Users can block others"
-    ON public.blocks FOR INSERT
+    DROP POLICY IF EXISTS "Users can block others" ON public.blocks;
+CREATE POLICY "Users can block others" ON public.blocks FOR INSERT
     WITH CHECK (blocker_id = auth.uid() AND blocker_id <> blocked_id);
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'blocks' AND policyname = 'Users can unblock others') THEN
-    CREATE POLICY "Users can unblock others"
-    ON public.blocks FOR DELETE
+    DROP POLICY IF EXISTS "Users can unblock others" ON public.blocks;
+CREATE POLICY "Users can unblock others" ON public.blocks FOR DELETE
     USING (blocker_id = auth.uid());
   END IF;
 END $$;
@@ -3111,3 +3111,517 @@ GRANT EXECUTE ON FUNCTION public.start_study_session_atomic TO service_role;
 
 REVOKE ALL ON FUNCTION public.create_room_full_atomic FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_room_full_atomic TO service_role;
+
+
+-- =============================================================================
+-- MODULE: supabase/migrations/050_room_channels_private_and_access.sql
+-- =============================================================================
+
+-- ==============================================================================
+-- Migration 050: Room Channels Private & Access Control (Common vs Private)
+-- ==============================================================================
+
+BEGIN;
+
+-- 1. Add is_private and allowed_roles to room_channels
+ALTER TABLE public.room_channels 
+ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT false;
+
+ALTER TABLE public.room_channels 
+ADD COLUMN IF NOT EXISTS allowed_roles TEXT[] DEFAULT '{}'::text[];
+
+CREATE INDEX IF NOT EXISTS idx_room_channels_privacy 
+ON public.room_channels(room_id, is_private);
+
+-- 2. Update RLS policies on room_channels so private channels are protected
+DROP POLICY IF EXISTS "Members can view room channels" ON public.room_channels;
+CREATE POLICY "Members can view room channels" ON public.room_channels
+  FOR SELECT USING (
+    -- Common / non-private channels visible to room members or public room viewers
+    ((COALESCE(is_private, false) = false) AND (
+      EXISTS (SELECT 1 FROM public.room_members WHERE room_id = room_channels.room_id AND user_id = auth.uid())
+      OR EXISTS (SELECT 1 FROM public.rooms WHERE id = room_channels.room_id AND visibility = 'public')
+    ))
+    -- Private channels visible only to room educators/staff (owner, teacher, moderator, admin)
+    OR ((is_private IS TRUE) AND (
+      EXISTS (
+        SELECT 1 FROM public.room_members 
+        WHERE room_id = room_channels.room_id 
+          AND user_id = auth.uid() 
+          AND role IN ('owner', 'teacher', 'moderator', 'admin')
+      )
+      OR EXISTS (
+        SELECT 1 FROM public.rooms 
+        WHERE id = room_channels.room_id 
+          AND owner_id = auth.uid()
+      )
+    ))
+  );
+
+COMMIT;
+
+
+-- =============================================================================
+-- MODULE: supabase/migrations/050_room_session_requests_and_live_polls.sql
+-- =============================================================================
+
+-- ==============================================================================
+-- Migration 050: Room Session Requests, Session Types (Voice, Offline, Video), and Live Polls
+-- ==============================================================================
+
+BEGIN;
+
+-- 1. Extend sessions table with session_type
+ALTER TABLE public.sessions 
+  ADD COLUMN IF NOT EXISTS session_type text CHECK (session_type IN ('voice', 'offline', 'video')) DEFAULT 'video';
+
+UPDATE public.sessions 
+SET session_type = CASE 
+  WHEN mode = 'offline' THEN 'offline' 
+  WHEN media = 'audio' THEN 'voice' 
+  ELSE 'video' 
+END 
+WHERE session_type IS NULL;
+
+-- 2. Create room_session_requests table
+CREATE TABLE IF NOT EXISTS public.room_session_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  description text DEFAULT '',
+  session_type text NOT NULL DEFAULT 'video' CHECK (session_type IN ('voice', 'offline', 'video')),
+  preferred_time timestamptz,
+  preferred_time_note text,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'converted_to_poll')),
+  scheduled_session_id uuid REFERENCES public.sessions(id) ON DELETE SET NULL,
+  poll_id uuid REFERENCES public.room_posts(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 3. Create room_session_request_upvotes table
+CREATE TABLE IF NOT EXISTS public.room_session_request_upvotes (
+  request_id uuid NOT NULL REFERENCES public.room_session_requests(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (request_id, user_id)
+);
+
+-- 4. Create indexes for quick retrieval
+CREATE INDEX IF NOT EXISTS idx_room_session_requests_room ON public.room_session_requests(room_id, status);
+CREATE INDEX IF NOT EXISTS idx_room_session_requests_user ON public.room_session_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_room_session_request_upvotes_req ON public.room_session_request_upvotes(request_id);
+
+-- 5. Enable RLS
+ALTER TABLE public.room_session_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.room_session_request_upvotes ENABLE ROW LEVEL SECURITY;
+
+-- 6. RLS Policies for room_session_requests
+DROP POLICY IF EXISTS "Room members can read session requests" ON public.room_session_requests;
+CREATE POLICY "Room members can read session requests" ON public.room_session_requests FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_session_requests.room_id 
+      AND rm.user_id = auth.uid()
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.rooms r 
+      WHERE r.id = room_session_requests.room_id 
+      AND (r.owner_id = auth.uid() OR r.visibility = 'public')
+    )
+  );
+
+DROP POLICY IF EXISTS "Members can create session requests" ON public.room_session_requests;
+CREATE POLICY "Members can create session requests" ON public.room_session_requests FOR INSERT
+  WITH CHECK (
+    auth.uid() = user_id
+    AND EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_session_requests.room_id 
+      AND rm.user_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS "Authors and room leaders can update session requests" ON public.room_session_requests;
+CREATE POLICY "Authors and room leaders can update session requests" ON public.room_session_requests FOR UPDATE
+  USING (
+    auth.uid() = user_id
+    OR EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_session_requests.room_id 
+      AND rm.user_id = auth.uid()
+      AND rm.role IN ('owner', 'admin', 'teacher', 'moderator')
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.rooms r 
+      WHERE r.id = room_session_requests.room_id 
+      AND r.owner_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS "Authors and room leaders can delete session requests" ON public.room_session_requests;
+CREATE POLICY "Authors and room leaders can delete session requests" ON public.room_session_requests FOR DELETE
+  USING (
+    auth.uid() = user_id
+    OR EXISTS (
+      SELECT 1 FROM public.rooms r 
+      WHERE r.id = room_session_requests.room_id 
+      AND r.owner_id = auth.uid()
+    )
+  );
+
+-- 7. RLS Policies for room_session_request_upvotes
+DROP POLICY IF EXISTS "Room members can read upvotes" ON public.room_session_request_upvotes;
+CREATE POLICY "Room members can read upvotes" ON public.room_session_request_upvotes FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS "Users can manage own upvotes" ON public.room_session_request_upvotes;
+CREATE POLICY "Users can manage own upvotes" ON public.room_session_request_upvotes FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- 8. Ensure room_poll_votes policies
+DROP POLICY IF EXISTS "Members can view poll votes" ON public.room_poll_votes;
+CREATE POLICY "Members can view poll votes" ON public.room_poll_votes FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS "Users can vote on polls" ON public.room_poll_votes;
+CREATE POLICY "Users can vote on polls" ON public.room_poll_votes FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+COMMIT;
+
+
+-- =============================================================================
+-- MODULE: supabase/migrations/051_room_assignments_and_submissions.sql
+-- =============================================================================
+
+-- ── 051_room_assignments_and_submissions.sql ─────────────────────────────
+-- Room Assignments & Homework Submissions Platform
+-- Enables teachers/hosts to publish assignments with deadlines and points,
+-- and students to submit PDFs/scans (stored in Cloudflare R2) and receive grades/feedback.
+
+-- 1. Room Assignments Table
+CREATE TABLE IF NOT EXISTS public.room_assignments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  creator_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  description text,
+  total_points integer NOT NULL DEFAULT 100 CHECK (total_points > 0 AND total_points <= 1000),
+  due_date timestamptz NOT NULL,
+  attachment_url text,
+  attachment_path text,
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed', 'archived')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_assignments_room_due 
+  ON public.room_assignments(room_id, due_date DESC);
+
+-- 2. Room Assignment Submissions Table
+CREATE TABLE IF NOT EXISTS public.room_assignment_submissions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_id uuid NOT NULL REFERENCES public.room_assignments(id) ON DELETE CASCADE,
+  room_id uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  student_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  file_url text NOT NULL,
+  storage_path text NOT NULL,
+  file_name text,
+  file_size_bytes integer,
+  student_notes text,
+  grade numeric(5,2) CHECK (grade >= 0),
+  feedback text,
+  graded_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  graded_at timestamptz,
+  status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'graded', 'resubmitted')),
+  submitted_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_assignment_student UNIQUE (assignment_id, student_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_submissions_assignment 
+  ON public.room_assignment_submissions(assignment_id, submitted_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_room_submissions_student 
+  ON public.room_assignment_submissions(student_id);
+
+-- 3. Row Level Security (RLS)
+ALTER TABLE public.room_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.room_assignment_submissions ENABLE ROW LEVEL SECURITY;
+
+-- Assignments RLS Policies:
+-- Any room member can view assignments
+DROP POLICY IF EXISTS room_assignments_read ON public.room_assignments;
+CREATE POLICY room_assignments_read ON public.room_assignments
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_assignments.room_id AND rm.user_id = auth.uid()
+    ) OR EXISTS (
+      SELECT 1 FROM public.rooms r 
+      WHERE r.id = room_assignments.room_id AND (r.owner_id = auth.uid() OR r.visibility = 'public')
+    )
+  );
+
+-- Teachers/moderators/owners can insert, update, delete assignments
+DROP POLICY IF EXISTS room_assignments_manage ON public.room_assignments;
+CREATE POLICY room_assignments_manage ON public.room_assignments
+  FOR ALL USING (
+    creator_id = auth.uid() OR EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_assignments.room_id 
+        AND rm.user_id = auth.uid() 
+        AND rm.role IN ('owner', 'admin', 'teacher', 'moderator')
+    ) OR EXISTS (
+      SELECT 1 FROM public.rooms r 
+      WHERE r.id = room_assignments.room_id AND r.owner_id = auth.uid()
+    )
+  );
+
+-- Submissions RLS Policies:
+-- Students can see their own submission; teachers/owners can see all submissions in the room
+DROP POLICY IF EXISTS room_submissions_read ON public.room_assignment_submissions;
+CREATE POLICY room_submissions_read ON public.room_assignment_submissions
+  FOR SELECT USING (
+    student_id = auth.uid() OR EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_assignment_submissions.room_id 
+        AND rm.user_id = auth.uid() 
+        AND rm.role IN ('owner', 'admin', 'teacher', 'moderator')
+    ) OR EXISTS (
+      SELECT 1 FROM public.rooms r 
+      WHERE r.id = room_assignment_submissions.room_id AND r.owner_id = auth.uid()
+    )
+  );
+
+-- Students can insert/update their own submission
+DROP POLICY IF EXISTS room_submissions_insert ON public.room_assignment_submissions;
+CREATE POLICY room_submissions_insert ON public.room_assignment_submissions
+  FOR INSERT WITH CHECK (
+    student_id = auth.uid() AND EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_assignment_submissions.room_id AND rm.user_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS room_submissions_update ON public.room_assignment_submissions;
+CREATE POLICY room_submissions_update ON public.room_assignment_submissions
+  FOR UPDATE USING (
+    student_id = auth.uid() OR EXISTS (
+      SELECT 1 FROM public.room_members rm 
+      WHERE rm.room_id = room_assignment_submissions.room_id 
+        AND rm.user_id = auth.uid() 
+        AND rm.role IN ('owner', 'admin', 'teacher', 'moderator')
+    ) OR EXISTS (
+      SELECT 1 FROM public.rooms r 
+      WHERE r.id = room_assignment_submissions.room_id AND r.owner_id = auth.uid()
+    )
+  );
+
+-- Permissions Grants
+GRANT ALL ON TABLE public.room_assignments TO authenticated;
+GRANT ALL ON TABLE public.room_assignment_submissions TO authenticated;
+
+
+-- =============================================================================
+-- MODULE: supabase/migrations/052_google_drive_vault_sync.sql
+-- =============================================================================
+
+-- Migration 052: Google Drive Vault Ingestion, Background VPS Worker & R2 Caching
+-- Adds drive provenance and sync state to vault_notes, and creates vault_sync_jobs
+
+-- 1. Extend vault_notes table with Google Drive tracking
+ALTER TABLE IF EXISTS public.vault_notes
+  ADD COLUMN IF NOT EXISTS source_type text DEFAULT 'direct_upload',
+  ADD COLUMN IF NOT EXISTS source_drive_id text,
+  ADD COLUMN IF NOT EXISTS source_drive_url text,
+  ADD COLUMN IF NOT EXISTS sync_status text DEFAULT 'ready',
+  ADD COLUMN IF NOT EXISTS r2_cached_at timestamptz,
+  ADD COLUMN IF NOT EXISTS drive_parent_folder_id text,
+  ADD COLUMN IF NOT EXISTS drive_parent_folder_name text;
+
+CREATE INDEX IF NOT EXISTS idx_vault_notes_source_drive ON public.vault_notes(source_drive_id);
+CREATE INDEX IF NOT EXISTS idx_vault_notes_sync_status ON public.vault_notes(sync_status);
+
+-- 2. Create vault_sync_jobs table for tracking background crawling on VPS
+CREATE TABLE IF NOT EXISTS public.vault_sync_jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  drive_url text NOT NULL,
+  drive_id text NOT NULL,
+  drive_type text NOT NULL DEFAULT 'folder' CHECK (drive_type IN ('folder', 'file')),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  total_files integer DEFAULT 0,
+  processed_files integer DEFAULT 0,
+  cached_files integer DEFAULT 0,
+  manifest_r2_key text,
+  manifest_r2_url text,
+  error_message text,
+  department text,
+  semester text,
+  course_code text,
+  visibility text DEFAULT 'public' CHECK (visibility IN ('public', 'community', 'private')),
+  tags text[] DEFAULT '{}'::text[],
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_sync_jobs_user ON public.vault_sync_jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_vault_sync_jobs_status ON public.vault_sync_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_vault_sync_jobs_created_at ON public.vault_sync_jobs(created_at DESC);
+
+-- Enable RLS on vault_sync_jobs
+ALTER TABLE public.vault_sync_jobs ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'vault_sync_jobs' AND policyname = 'Users can view own sync jobs'
+  ) THEN
+    DROP POLICY IF EXISTS "Users can view own sync jobs" ON public.vault_sync_jobs;
+CREATE POLICY "Users can view own sync jobs" ON public.vault_sync_jobs FOR SELECT
+      USING (auth.uid() = user_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'vault_sync_jobs' AND policyname = 'Users can create sync jobs'
+  ) THEN
+    DROP POLICY IF EXISTS "Users can create sync jobs" ON public.vault_sync_jobs;
+CREATE POLICY "Users can create sync jobs" ON public.vault_sync_jobs FOR INSERT
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'vault_sync_jobs' AND policyname = 'Users can update own sync jobs'
+  ) THEN
+    DROP POLICY IF EXISTS "Users can update own sync jobs" ON public.vault_sync_jobs;
+CREATE POLICY "Users can update own sync jobs" ON public.vault_sync_jobs FOR UPDATE
+      USING (auth.uid() = user_id);
+  END IF;
+END $$;
+
+
+-- =============================================================================
+-- MODULE: supabase/migrations/053_peer_tutoring_evolution.sql
+-- =============================================================================
+
+-- Migration 053: Peer Tutoring Evolution
+-- Adds booking_id to reviews, custom proposals to session_bookings, and atomic booking review RPC
+
+-- 1. Extend reviews table with booking_id and make session_id nullable if it was required
+DO $$ BEGIN
+  ALTER TABLE IF EXISTS public.reviews ALTER COLUMN session_id DROP NOT NULL;
+EXCEPTION
+  WHEN undefined_column THEN NULL;
+END $$;
+
+ALTER TABLE IF EXISTS public.reviews
+  ADD COLUMN IF NOT EXISTS booking_id uuid REFERENCES public.session_bookings(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_reviews_booking_id ON public.reviews(booking_id);
+
+-- 2. Extend session_bookings with custom proposal support
+ALTER TABLE IF EXISTS public.session_bookings
+  ADD COLUMN IF NOT EXISTS is_custom_proposal boolean NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_session_bookings_room_id ON public.session_bookings(room_id);
+
+-- 3. Create Atomic Booking Review RPC Function
+CREATE OR REPLACE FUNCTION public.submit_booking_review_atomic(
+  p_booking_id uuid,
+  p_reviewer_id uuid,
+  p_rating integer,
+  p_comment text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_booking record;
+  v_review_id uuid;
+  v_rep_bonus integer := 0;
+BEGIN
+  -- Verify booking exists
+  SELECT * INTO v_booking
+  FROM public.session_bookings
+  WHERE id = p_booking_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Booking not found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Only learner can review the tutor
+  IF v_booking.learner_id <> p_reviewer_id THEN
+    RAISE EXCEPTION 'Only the learner can submit a review for this session' USING ERRCODE = '42501';
+  END IF;
+
+  -- Booking must be completed
+  IF v_booking.status <> 'completed' THEN
+    RAISE EXCEPTION 'Can only review completed sessions' USING ERRCODE = '22000';
+  END IF;
+
+  -- Rating range validation
+  IF p_rating < 1 OR p_rating > 5 THEN
+    RAISE EXCEPTION 'Rating must be between 1 and 5' USING ERRCODE = '22000';
+  END IF;
+
+  -- Check if already reviewed
+  IF EXISTS (SELECT 1 FROM public.reviews WHERE booking_id = p_booking_id AND reviewer_id = p_reviewer_id) THEN
+    RAISE EXCEPTION 'You have already reviewed this session' USING ERRCODE = '23505';
+  END IF;
+
+  -- Insert review
+  INSERT INTO public.reviews (
+    booking_id,
+    reviewer_id,
+    reviewee_id,
+    rating,
+    comment,
+    created_at
+  )
+  VALUES (
+    p_booking_id,
+    p_reviewer_id,
+    v_booking.tutor_id,
+    p_rating,
+    p_comment,
+    now()
+  )
+  RETURNING id INTO v_review_id;
+
+  -- Reputation bonus for tutor on quality ratings
+  IF p_rating >= 4 THEN
+    v_rep_bonus := CASE WHEN p_rating = 5 THEN 10 ELSE 5 END;
+    INSERT INTO public.points_ledger (user_id, points, action, reference_id, created_at)
+    VALUES (
+      v_booking.tutor_id,
+      v_rep_bonus,
+      'tutor_rating_bonus:' || p_booking_id::text,
+      p_booking_id,
+      now()
+    )
+    ON CONFLICT (action) DO NOTHING;
+
+    -- Update tutor reputation score
+    UPDATE public.profiles
+    SET reputation_score = (SELECT coalesce(sum(points), 0) FROM public.points_ledger WHERE user_id = v_booking.tutor_id)
+    WHERE id = v_booking.tutor_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'review_id', v_review_id,
+    'rating', p_rating,
+    'bonus_points', v_rep_bonus
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_booking_review_atomic(uuid, uuid, integer, text) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.submit_booking_review_atomic(uuid, uuid, integer, text) TO authenticated, service_role;

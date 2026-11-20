@@ -44,6 +44,9 @@ const TABLES = [
   "room_certificates",
   "room_session_requests",
   "room_session_request_upvotes",
+  "room_channels",
+  "room_assignments",
+  "room_assignment_submissions",
   // Clubs & Events
   "clubs",
   "club_members",
@@ -57,7 +60,25 @@ const TABLES = [
   "academic_calendar_events",
   "saved_papers",
   "research_notes",
-  "research_collections"
+  "research_collections",
+  "vault_notes",
+  "vault_sync_jobs",
+  "study_plan_blocks",
+  "study_planner_preferences",
+  // Peer Tutoring & Growth Hub
+  "session_bookings",
+  "tutor_availability_rules",
+  "tutor_availability_exceptions",
+  "booking_status_history",
+  "reviews",
+  "points_ledger",
+  "learning_goals",
+  "goal_milestones",
+  "challenge_definitions",
+  "achievement_definitions",
+  "user_achievements",
+  "saved_collections",
+  "saved_items"
 ];
 
 async function verify() {

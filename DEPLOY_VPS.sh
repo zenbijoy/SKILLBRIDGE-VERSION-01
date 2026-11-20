@@ -16,17 +16,22 @@ echo "  SkillBridge Full Deployment (API + Admin + Web + Showcase + APK)"
 echo "  $(date)"
 echo "================================================================="
 
-echo "[1/4] Building container images..."
+echo "[1/5] Pulling latest production APK from Cloudflare R2 CDN..."
+mkdir -p "$REPO_DIR/release-apk"
+curl -fSL -o "$REPO_DIR/release-apk/SkillBridge.apk" "https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/SkillBridge.apk" || true
+cp -f "$REPO_DIR/release-apk/SkillBridge.apk" "$REPO_DIR/SkillBridge.apk" || true
+
+echo "[2/5] Building container images..."
 docker compose -f "$INFRA_DIR/docker-compose.yml" build
 
-echo "[2/4] Restarting microservices..."
+echo "[3/5] Restarting microservices..."
 docker compose -f "$INFRA_DIR/docker-compose.yml" up -d --remove-orphans
 
-echo "[3/4] Waiting for health status..."
+echo "[4/5] Waiting for health status..."
 sleep 6
 docker compose -f "$INFRA_DIR/docker-compose.yml" ps
 
-echo "[4/4] Verifying production endpoints..."
+echo "[5/5] Verifying production endpoints..."
 curl -sI https://ruetskillbridge.duckdns.org/api/v1/health | head -n 1
 curl -sI https://ruetskillbridgeadmin.duckdns.org | head -n 1
 curl -sI https://ruetskillbridgeweb.duckdns.org | head -n 1

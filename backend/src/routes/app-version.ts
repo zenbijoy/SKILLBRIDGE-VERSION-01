@@ -7,9 +7,9 @@ export const appVersionRouter = Router();
 
 const CURRENT_APP_VERSION = "2.1.0";
 const CURRENT_VERSION_CODE = 12;
-const APK_FILE_SIZE_BYTES = 66692796;
-const APK_FILE_SIZE_FORMATTED = "63.6 MB";
-const APK_SHA256 = "746D2A32FE31FE418EE8A6E4A73B376A239B893F5B8F34826F64502F7FBC0B5C";
+const APK_FILE_SIZE_BYTES = 67056905;
+const APK_FILE_SIZE_FORMATTED = "64.0 MB";
+const APK_SHA256 = "4B3949DE15E6C57CF34BE554280D9DEFBC26BFD450B7CB4F29B5947BAF42CEE2";
 const APK_FILENAME = "SkillBridge.apk";
 
 // Candidate paths for finding the release APK on VPS or local
@@ -67,8 +67,10 @@ appVersionRouter.get("/version", async (_req, res) => {
         "A brand new update is available with Live Video & Audio sessions, Study Vault, Routine Sync, and performance improvements.",
       download_url:
         config?.store_url_android ||
-        "https://skillbridgeapk.duckdns.org/download/SkillBridge.apk",
-      direct_apk_url: "https://skillbridgeapk.duckdns.org/download/SkillBridge.apk",
+        "https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/SkillBridge.apk",
+      direct_apk_url: "https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/SkillBridge.apk",
+      cdn_apk_url: "https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/SkillBridge.apk",
+      vps_apk_url: "https://skillbridgeapk.duckdns.org/download/SkillBridge.apk",
       showcase_url: "https://skillbridgeapk.duckdns.org",
       web_app_url: "https://ruetskillbridgeweb.duckdns.org",
       admin_url: "https://ruetskillbridgeadmin.duckdns.org",
@@ -108,7 +110,7 @@ appVersionRouter.get("/version", async (_req, res) => {
 });
 
 // GET /api/v1/app/download (Direct APK download endpoint)
-appVersionRouter.get("/download", (req, res) => {
+appVersionRouter.get("/download", (_req, res) => {
   const localApk = resolveLocalApk();
   if (localApk) {
     res.setHeader("Content-Disposition", `attachment; filename="${APK_FILENAME}"`);
@@ -116,6 +118,6 @@ appVersionRouter.get("/download", (req, res) => {
     return res.sendFile(localApk);
   }
 
-  // If not locally on filesystem inside container, redirect to Caddy static download
-  return res.redirect(302, "/download/SkillBridge.apk");
+  // High-speed Cloudflare R2 CDN download
+  return res.redirect(302, "https://pub-44498fcb7a6f4c4b83da4e693454b891.r2.dev/releases/SkillBridge.apk");
 });

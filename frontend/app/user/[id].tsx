@@ -192,7 +192,13 @@ export default function UserProfile() {
     );
   }
 
-  const isTutor = d.profile.role === "peer_tutor" || d.skills.some((s) => s.proficiency >= 4);
+  const isTutor =
+    Boolean(
+      (d.profile.roles && d.profile.roles.includes("peer_tutor")) ||
+      (d.profile as any).role === "peer_tutor" ||
+      (d.profile as any).role === "tutor" ||
+      d.skills.some((s) => s.proficiency >= 3)
+    );
 
   const hookStatus = id ? getConnectionStatus(id) : "none";
   const effectiveStatus =
