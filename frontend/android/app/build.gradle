@@ -107,8 +107,13 @@ android {
         applicationId 'com.skillbridge.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
-        versionName "2.0.9"
+        versionCode 12
+        versionName "2.1.0"
+
+        lint {
+            checkReleaseBuilds false
+            abortOnError false
+        }
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
 

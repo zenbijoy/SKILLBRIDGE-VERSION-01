@@ -6,12 +6,40 @@ import type { Server } from "socket.io";
 import { PushService } from "../services/PushService.js";
 import { isBlocked } from "../lib/query-helpers.js";
 import { env } from "../config/env.js";
+import { ensureConversationMember } from "../lib/chatAccess.js";
 
 // Inline (base64) upload guards. The ticket flow allows up to 15MB, but a base64
 // body is ~33% larger in transit, so we cap the encoded string first and the
 // decoded bytes second (prevents unbounded memory allocation).
-const MAX_INLINE_UPLOAD_BYTES = 10 * 1024 * 1024;
-const MAX_INLINE_UPLOAD_BASE64 = Math.ceil((MAX_INLINE_UPLOAD_BYTES * 4) / 3) + 1024;
+const MAX_INLINE_UPLOAD_BYTES = 15 * 1024 * 1024;
+const MAX_INLINE_UPLOAD_BASE64 = Math.ceil((MAX_INLINE_UPLOAD_BYTES * 4) / 3) + 4096;
+
+export const ALLOWED_ATTACHMENT_MIME_REGEX =
+  /^(image\/(jpeg|png|webp|gif|heic|heif)|application\/(pdf|zip|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)|text\/(plain|csv|markdown)|audio\/(m4a|mp4|aac|mpeg|mp3|webm|ogg|wav|x-m4a))$/i;
+
+function normalizeAttachmentContentType(rawContentType?: string, fileName?: string): string {
+  if (rawContentType && rawContentType !== "application/octet-stream" && rawContentType !== "*/*") {
+    return rawContentType;
+  }
+  const ext = fileName ? fileName.split(".").pop()?.toLowerCase() : undefined;
+  switch (ext) {
+    case "pdf": return "application/pdf";
+    case "png": return "image/png";
+    case "jpg":
+    case "jpeg": return "image/jpeg";
+    case "webp": return "image/webp";
+    case "gif": return "image/gif";
+    case "zip": return "application/zip";
+    case "txt": return "text/plain";
+    case "csv": return "text/csv";
+    case "doc": return "application/msword";
+    case "docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "m4a": return "audio/m4a";
+    case "mp3": return "audio/mpeg";
+    case "wav": return "audio/wav";
+    default: return rawContentType || "application/octet-stream";
+  }
+}
 
 export function chat(io: Server) {
   const r = Router();
@@ -215,14 +243,10 @@ export function chat(io: Server) {
     "/conversations/:id/messages",
     wrap(async (req, res) => {
       const id = z.string().uuid().parse(req.params.id);
-      const { data: m } = await admin
-        .from("conversation_members")
-        .select("role")
-        .eq("conversation_id", id)
-        .eq("user_id", req.userId!)
-        .maybeSingle();
-      if (!m)
-        return res.status(403).json({ error: "Not a conversation member" });
+      const access = await ensureConversationMember(id, req.userId!);
+      if (!access.allowed) {
+        return res.status(403).json({ error: access.error || "Not a conversation member" });
+      }
       const before =
         typeof req.query.before === "string"
           ? req.query.before
@@ -256,6 +280,23 @@ export function chat(io: Server) {
           }
         } catch {
           // Non-fatal if table not present in lightweight test mocks
+        }
+
+        // Batch populate sender profiles for every message
+        try {
+          const senderIds = Array.from(new Set(messages.map((m: any) => m.sender_id).filter(Boolean)));
+          if (senderIds.length > 0) {
+            const { data: profiles } = await admin
+              .from("profiles")
+              .select("id, full_name, username, avatar_url")
+              .in("id", senderIds);
+            const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+            for (const msg of messages) {
+              msg.sender = profileMap.get(msg.sender_id) || null;
+            }
+          }
+        } catch {
+          // Non-fatal
         }
       }
 
@@ -304,12 +345,18 @@ export function chat(io: Server) {
 
       if (conv.kind === "dm") {
         const otherMember = (allMembers || []).find((m: any) => m.user_id !== userId);
-        if (otherMember?.profiles) {
-          const p: any = otherMember.profiles;
-          resolvedTitle = p.full_name || p.username || "SkillBridge Student";
-          resolvedAvatarUrl = p.avatar_url || null;
-          resolvedPeerId = p.id;
-          isOnline = userConnections.has(p.id);
+        if (otherMember) {
+          const rawProfile = otherMember.profiles;
+          const p: any = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
+          if (p) {
+            resolvedTitle = p.full_name || p.username || "SkillBridge Student";
+            resolvedAvatarUrl = p.avatar_url || null;
+            resolvedPeerId = p.id || otherMember.user_id;
+            isOnline = Boolean(resolvedPeerId && userConnections.has(resolvedPeerId));
+          } else {
+            resolvedPeerId = otherMember.user_id;
+            isOnline = userConnections.has(otherMember.user_id);
+          }
         }
       }
 
@@ -1216,19 +1263,17 @@ export function chat(io: Server) {
   r.post(
     "/upload",
     wrap(async (req, res) => {
+      const normalizedContentType = normalizeAttachmentContentType(req.body?.contentType, req.body?.fileName);
       const { fileBase64, contentType, fileName } = z
         .object({
           fileBase64: z.string().min(10).max(MAX_INLINE_UPLOAD_BASE64),
           contentType: z
             .string()
-            .regex(
-              /^(image\/(jpeg|png|webp|gif)|application\/pdf|text\/plain)$/i,
-              { message: "Unsupported file type" },
-            )
+            .regex(ALLOWED_ATTACHMENT_MIME_REGEX, { message: "Unsupported file type" })
             .default("image/jpeg"),
           fileName: z.string().max(160).optional().default("attachment"),
         })
-        .parse(req.body);
+        .parse({ ...req.body, contentType: normalizedContentType });
 
       const ext = contentType.includes("png")
         ? "png"
@@ -1238,6 +1283,10 @@ export function chat(io: Server) {
         ? "gif"
         : contentType.includes("pdf")
         ? "pdf"
+        : contentType.includes("zip")
+        ? "zip"
+        : contentType.includes("audio/") || contentType.includes("m4a")
+        ? "m4a"
         : contentType.includes("text/")
         ? "txt"
         : "jpg";
@@ -1258,19 +1307,79 @@ export function chat(io: Server) {
       const provider = getStorageProvider();
       await provider.uploadBuffer("attachments", path, buffer, contentType);
 
-      // Private bucket: hand back a time-limited signed read URL instead of a
-      // permanent public link (minted by R2 SigV4 or Supabase, provider-aware).
       const url = await provider.createSignedDownloadUrl("attachments", path, 3600, {
         forceSigned: true,
       });
+
+      const isImage = contentType.startsWith("image/");
+      const isVoice = contentType.startsWith("audio/");
+      const type = isImage ? "image" : isVoice ? "voice" : "file";
 
       res.json({
         url,
         storagePath: path,
         provider: provider.name,
-        type: contentType.startsWith("image/") ? "image" : "file",
+        type,
         name: fileName,
         size: buffer.byteLength,
+      });
+    }),
+  );
+
+  // Direct Conversation Attachment Upload (Base64) - robust across all mobile & web platforms
+  r.post(
+    "/conversations/:id/upload",
+    wrap(async (req, res) => {
+      const convId = z.string().uuid().parse(req.params.id);
+      const access = await ensureConversationMember(convId, req.userId!);
+      if (!access.allowed) {
+        return res.status(403).json({ error: access.error || "Not authorized to upload to this conversation" });
+      }
+      if (access.isAnnouncementChannel && !access.isEducator) {
+        return res.status(403).json({ error: "Only educators and moderators can post attachments in announcement channels" });
+      }
+
+      const normalizedContentType = normalizeAttachmentContentType(req.body?.contentType, req.body?.fileName);
+      const { fileBase64, contentType, fileName, duration } = z
+        .object({
+          fileBase64: z.string().min(10).max(MAX_INLINE_UPLOAD_BASE64),
+          contentType: z.string().regex(ALLOWED_ATTACHMENT_MIME_REGEX, { message: "Unsupported file type" }),
+          fileName: z.string().max(160).optional().default("attachment"),
+          duration: z.number().optional(),
+        })
+        .parse({ ...req.body, contentType: normalizedContentType });
+
+      const buffer = Buffer.from(fileBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+      if (buffer.byteLength > MAX_INLINE_UPLOAD_BYTES) {
+        return res
+          .status(413)
+          .json({ error: `File too large. Maximum is ${MAX_INLINE_UPLOAD_BYTES / (1024 * 1024)}MB.` });
+      }
+
+      const { getStorageProvider } = await import("../services/storage.js");
+      const provider = getStorageProvider();
+
+      const safeFilename = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${convId}/${req.userId!}/${crypto.randomUUID()}-${safeFilename}`;
+
+      await provider.uploadBuffer("attachments", storagePath, buffer, contentType);
+
+      const url = await provider.createSignedDownloadUrl("attachments", storagePath, 3600, {
+        forceSigned: true,
+      });
+
+      const isImage = contentType.startsWith("image/");
+      const isVoice = contentType.startsWith("audio/");
+      const type = isImage ? "image" : isVoice ? "voice" : "file";
+
+      res.status(201).json({
+        url,
+        storagePath,
+        provider: provider.name,
+        type,
+        name: fileName,
+        size: buffer.byteLength,
+        duration: duration ? Math.round(duration) : undefined,
       });
     }),
   );
@@ -1315,13 +1424,11 @@ export function chat(io: Server) {
         }
       }
 
-      const { data: m } = await admin
-        .from("conversation_members")
-        .select("role")
-        .eq("conversation_id", id)
-        .eq("user_id", req.userId!)
-        .maybeSingle();
-      if (!m) return res.status(403).json({ error: "Not a member" });
+      const access = await ensureConversationMember(id, req.userId!);
+      if (!access.allowed) return res.status(403).json({ error: access.error || "Not a member" });
+      if (access.isAnnouncementChannel && !access.isEducator) {
+        return res.status(403).json({ error: "Only educators and moderators can post in announcement channels" });
+      }
 
       const { data: conv } = await admin
         .from("conversations")
@@ -1378,33 +1485,37 @@ export function chat(io: Server) {
         // Non-fatal if column not yet active
       }
 
-      io.to(`conversation:${id}`).emit("message:new", data);
-      io.to(`conversation:${id}`).emit("new_message", data);
+      let senderProfile = null;
+      try {
+        const { data: prof } = await admin
+          .from("profiles")
+          .select("id, full_name, username, avatar_url")
+          .eq("id", req.userId!)
+          .maybeSingle();
+        if (prof) senderProfile = prof;
+      } catch {
+        // Non-fatal
+      }
+
+      const messageWithSender = {
+        ...data,
+        sender: senderProfile,
+      };
+
+      io.to(`conversation:${id}`).emit("message:new", messageWithSender);
+      io.to(`conversation:${id}`).emit("new_message", messageWithSender);
 
       if (conv) {
         const otherMembers = conv.conversation_members.filter((cm: any) => cm.user_id !== req.userId!);
         
-        let senderName = "New Message";
-        try {
-          const { data: senderProfile } = await admin
-            .from("profiles")
-            .select("full_name")
-            .eq("id", req.userId!)
-            .maybeSingle();
-          if (senderProfile?.full_name) {
-            senderName = senderProfile.full_name;
-          }
-        } catch {
-          // Non-fatal
-        }
-
+        const senderName = senderProfile?.full_name || "New Message";
         const previewText = body.length > 50 ? body.substring(0, 47) + "..." : (body || defaultBody);
 
         for (const member of otherMembers) {
           // Emit user-scoped event so app outside this conversation updates badge/unread counts
           io.to(`user:${member.user_id}`).emit("chat:message", {
             conversationId: id,
-            message: data,
+            message: messageWithSender,
             senderName,
             preview: previewText,
           });
@@ -1431,7 +1542,7 @@ export function chat(io: Server) {
         }
       }
 
-      res.status(201).json(data);
+      res.status(201).json(messageWithSender);
     }),
   );
   r.patch(
@@ -1585,11 +1696,34 @@ export function chat(io: Server) {
       const deleteForAll = req.body && typeof req.body === "object" && req.body.deleteForAll === false ? false : true;
 
       if (deleteForAll) {
+        const { data: existingMsg, error: fetchErr } = await admin
+          .from("messages")
+          .select("id, conversation_id, sender_id")
+          .eq("id", id)
+          .single();
+
+        if (fetchErr || !existingMsg) {
+          return res.status(404).json({ error: "Message not found" });
+        }
+
+        const isSender = !existingMsg.sender_id || existingMsg.sender_id === req.userId!;
+        let canDelete = isSender;
+
+        if (!canDelete && existingMsg.conversation_id) {
+          const access = await ensureConversationMember(existingMsg.conversation_id, req.userId!);
+          if (access.allowed && access.isEducator) {
+            canDelete = true;
+          }
+        }
+
+        if (!canDelete) {
+          return res.status(403).json({ error: "Not authorized to delete this message" });
+        }
+
         const { data, error } = await admin
           .from("messages")
           .update({ soft_deleted: true, body: "This message was deleted." })
           .eq("id", id)
-          .eq("sender_id", req.userId!)
           .select()
           .single();
 
@@ -1619,22 +1753,19 @@ export function chat(io: Server) {
       const b = z
         .object({
           filename: z.string().min(1).max(160),
-          contentType: z.string().regex(/^(image\/(jpeg|png|webp|gif)|application\/pdf|text\/plain|application\/zip|audio\/(m4a|mp4|aac|mpeg|webm|ogg|wav|x-m4a))$/i, {
+          contentType: z.string().regex(ALLOWED_ATTACHMENT_MIME_REGEX, {
             message: "Unsupported file type",
           }),
           sizeBytes: z.number().int().min(1).max(15 * 1024 * 1024), // Max 15MB
         })
         .parse(req.body);
 
-      const { data: member } = await admin
-        .from("conversation_members")
-        .select("role")
-        .eq("conversation_id", convId)
-        .eq("user_id", req.userId!)
-        .maybeSingle();
-
-      if (!member) {
-        return res.status(403).json({ error: "Not authorized to upload to this conversation" });
+      const access = await ensureConversationMember(convId, req.userId!);
+      if (!access.allowed) {
+        return res.status(403).json({ error: access.error || "Not authorized to upload to this conversation" });
+      }
+      if (access.isAnnouncementChannel && !access.isEducator) {
+        return res.status(403).json({ error: "Only educators and moderators can post attachments in announcement channels" });
       }
 
       const { signedUpload, getStorageProvider } = await import("../services/storage.js");
@@ -1669,18 +1800,12 @@ export function chat(io: Server) {
       const convId = z.string().uuid().parse(req.params.id);
       const { storagePath } = z.object({ storagePath: z.string().min(5) }).parse(req.query);
 
-      const { data: member } = await admin
-        .from("conversation_members")
-        .select("role")
-        .eq("conversation_id", convId)
-        .eq("user_id", req.userId!)
-        .maybeSingle();
-
-      if (!member) {
-        return res.status(403).json({ error: "Not authorized to download conversation attachments" });
+      const access = await ensureConversationMember(convId, req.userId!);
+      if (!access.allowed) {
+        return res.status(403).json({ error: access.error || "Not authorized to download conversation attachments" });
       }
 
-      if (!storagePath.startsWith(`${convId}/`)) {
+      if (!storagePath.startsWith(`${convId}/`) && !storagePath.startsWith(`${req.userId!}/`)) {
         return res.status(403).json({ error: "Invalid attachment path for this conversation" });
       }
 

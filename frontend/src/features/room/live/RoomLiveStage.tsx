@@ -16,8 +16,11 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { VideoView } from "@/features/calls/components/VideoView";
+import { RemoteAudio } from "@/features/calls/components/RemoteAudio";
 import { useRoomWebRTC, RoomRemotePeer, FloatingReaction } from "./useRoomWebRTC";
 import { triggerHaptic } from "@/components/ui";
+import { api } from "@/lib/api";
+import { RoomSessionAttendanceModal } from "../attendance/RoomSessionAttendanceModal";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -150,6 +153,8 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
     localStream,
     remotePeers,
     isMuted,
+    isSpeakerOn,
+    isLocalSpeaking,
     isVideoOn,
     isFrontCamera,
     isHandRaised,
@@ -179,6 +184,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
     setPinnedPeerId,
     leave,
     toggleMicrophone,
+    toggleSpeaker,
     toggleCamera,
     toggleCameraFacing,
     toggleRaiseHand,
@@ -219,6 +225,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
   const [selectedPeerMenu, setSelectedPeerMenu] = useState<RoomRemotePeer | null>(null);
 
   // 20 Core Feature States
+  const [attendanceModalVisible, setAttendanceModalVisible] = useState(false);
   const [toolsDrawerVisible, setToolsDrawerVisible] = useState(false);
   const [whiteboardModalVisible, setWhiteboardModalVisible] = useState(false);
   const [pollModalVisible, setPollModalVisible] = useState(false);
@@ -253,6 +260,32 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Periodic attendance tracking and heartbeat while in live session
+  useEffect(() => {
+    if (!roomId) return;
+    const cleanRoomId = roomId.replace(/^qa-stage-/, "");
+    // Record join event
+    api(`/rooms/${cleanRoomId}/attendance/record`, {
+      method: "POST",
+      body: JSON.stringify({ sessionId: cleanRoomId, action: "join" }),
+    }).catch(() => {});
+
+    const interval = setInterval(() => {
+      api(`/rooms/${cleanRoomId}/attendance/heartbeat`, {
+        method: "POST",
+        body: JSON.stringify({ sessionId: cleanRoomId, durationSeconds }),
+      }).catch(() => {});
+    }, 30_000);
+
+    return () => {
+      clearInterval(interval);
+      api(`/rooms/${cleanRoomId}/attendance/record`, {
+        method: "POST",
+        body: JSON.stringify({ sessionId: cleanRoomId, action: "leave", durationSeconds }),
+      }).catch(() => {});
+    };
+  }, [roomId, durationSeconds]);
 
   // Pomodoro Focus Timer countdown
   useEffect(() => {
@@ -298,10 +331,35 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
     return remotePeers.filter((p) => p.isHandRaised);
   }, [remotePeers]);
 
+  const [autoSwitchSpeaker, setAutoSwitchSpeaker] = useState(true);
+
+  // Auto-switch spotlight to active speaker when active speaker changes
+  useEffect(() => {
+    if (!autoSwitchSpeaker) return;
+    if (pinnedPeerId) return; // User manually pinned someone, preserve manual pin
+    if (activeSpeakerId && activeSpeakerId !== "local") {
+      setSpotlightUserId(activeSpeakerId);
+    }
+  }, [activeSpeakerId, pinnedPeerId, autoSwitchSpeaker]);
+
   const spotlightPeer = useMemo(() => {
-    if (!spotlightUserId) return remotePeers[0] || null;
-    return remotePeers.find((p) => p.userId === spotlightUserId) || null;
-  }, [spotlightUserId, remotePeers]);
+    if (pinnedPeerId) {
+      const pinned = remotePeers.find((p) => p.userId === pinnedPeerId);
+      if (pinned) return pinned;
+    }
+    if (autoSwitchSpeaker && activeSpeakerId && activeSpeakerId !== "local") {
+      const active = remotePeers.find((p) => p.userId === activeSpeakerId);
+      if (active) return active;
+    }
+    if (spotlightUserId) {
+      const spot = remotePeers.find((p) => p.userId === spotlightUserId);
+      if (spot) return spot;
+    }
+    const speakingPeer = remotePeers.find((p) => p.isSpeaking);
+    if (speakingPeer) return speakingPeer;
+
+    return remotePeers[0] || null;
+  }, [pinnedPeerId, autoSwitchSpeaker, activeSpeakerId, spotlightUserId, remotePeers]);
 
   const availableReactions = ["🔥", "👏", "💡", "❤️", "🚀", "🎓", "🎉", "💯"];
 
@@ -388,6 +446,22 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
             </Text>
           </Pressable>
 
+          {/* Auto-Switch Speaker Spotlight Toggle */}
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              setAutoSwitchSpeaker((prev) => !prev);
+            }}
+            style={[styles.iconBtnRound, autoSwitchSpeaker && { backgroundColor: "rgba(16, 185, 129, 0.25)" }]}
+            accessibilityLabel="Toggle Auto-Switch Speaker"
+          >
+            <MaterialCommunityIcons
+              name={autoSwitchSpeaker ? "account-voice" : "account-voice-off"}
+              size={17}
+              color={autoSwitchSpeaker ? "#10B981" : "#94A3B8"}
+            />
+          </Pressable>
+
           {/* Layout Mode Switcher */}
           <Pressable
             onPress={() => {
@@ -421,6 +495,22 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
               name="television-play"
               size={18}
               color={mediaSync.mediaUrl ? "#38BDF8" : "#F8FAFC"}
+            />
+          </Pressable>
+
+          {/* Live Session Attendance */}
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              setAttendanceModalVisible(true);
+            }}
+            style={styles.iconBtnRound}
+            accessibilityLabel="Live Attendance"
+          >
+            <MaterialCommunityIcons
+              name="clipboard-check-outline"
+              size={18}
+              color="#10B981"
             />
           </Pressable>
 
@@ -485,6 +575,17 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
 
       {/* ── 2. Stage Video & Audio Arena ─────────────────────────────────── */}
       <View style={styles.arenaContainer}>
+        {/* Real-time WebRTC Audio Playback for all Remote Peers */}
+        {remotePeers.map((peer) =>
+          peer.stream ? (
+            <RemoteAudio
+              key={`remote-audio-${peer.socketId}`}
+              stream={peer.stream}
+              isSpeakerOn={isSpeakerOn}
+            />
+          ) : null
+        )}
+
         {/* Cinema / Spotlight View */}
         {layoutMode === "cinema" && (
           <View style={styles.cinemaContainer}>
@@ -496,11 +597,15 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                   <Animated.View
                     style={[
                       styles.avatarPulseRing,
-                      spotlightPeer?.isSpeaking && { transform: [{ scale: pulseAnim }], borderColor: "#38BDF8" },
+                      (spotlightPeer ? spotlightPeer.isSpeaking : isLocalSpeaking) && {
+                        transform: [{ scale: pulseAnim }],
+                        borderColor: spotlightPeer ? "#38BDF8" : "#10B981",
+                        borderWidth: 3,
+                      },
                     ]}
                   >
-                    {spotlightPeer?.avatarUrl ? (
-                      <Image source={{ uri: spotlightPeer.avatarUrl }} style={styles.largeAvatar} />
+                    {(spotlightPeer?.avatarUrl || currentUserAvatar) ? (
+                      <Image source={{ uri: spotlightPeer?.avatarUrl || currentUserAvatar! }} style={styles.largeAvatar} />
                     ) : (
                       <View style={[styles.largeAvatar, styles.placeholderBg]}>
                         <Text style={styles.largeAvatarText}>
@@ -509,7 +614,15 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                       </View>
                     )}
                   </Animated.View>
-                  <Text style={styles.spotlightName}>{spotlightPeer?.name || currentUserName}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+                    <Text style={styles.spotlightName}>
+                      {spotlightPeer?.name || `${currentUserName} (You)`}{" "}
+                      {(spotlightPeer ? spotlightPeer.isSpeaking : isLocalSpeaking) ? "🎙️ (Speaking)" : ""}
+                    </Text>
+                    {(spotlightPeer ? spotlightPeer.isSpeaking : isLocalSpeaking) && (
+                      <AudioEqualizerBars isSpeaking={true} />
+                    )}
+                  </View>
                 </View>
               )}
             </View>
@@ -578,7 +691,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                 <Animated.View
                   style={[
                     styles.loungeAvatarContainer,
-                    !isMuted && { transform: [{ scale: pulseAnim }], borderColor: "#10B981" },
+                    isLocalSpeaking && { transform: [{ scale: pulseAnim }], borderColor: "#10B981", borderWidth: 3 },
                   ]}
                 >
                   {currentUserAvatar ? (
@@ -596,7 +709,12 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                     />
                   </View>
                 </Animated.View>
-                <Text style={styles.loungeNameText}>You (Host)</Text>
+                <View style={{ alignItems: "center", gap: 2 }}>
+                  <Text style={styles.loungeNameText}>
+                    You {isLocalSpeaking ? "(Speaking)" : isMuted ? "(Muted)" : "(Host)"}
+                  </Text>
+                  {isLocalSpeaking && <AudioEqualizerBars isSpeaking={true} />}
+                </View>
               </View>
 
               {/* Remote Users */}
@@ -611,7 +729,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                   <Animated.View
                     style={[
                       styles.loungeAvatarContainer,
-                      peer.isSpeaking && { transform: [{ scale: pulseAnim }], borderColor: "#38BDF8" },
+                      peer.isSpeaking && { transform: [{ scale: pulseAnim }], borderColor: "#38BDF8", borderWidth: 3 },
                     ]}
                   >
                     {peer.avatarUrl ? (
@@ -629,9 +747,12 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                       />
                     </View>
                   </Animated.View>
-                  <Text style={styles.loungeNameText} numberOfLines={1}>
-                    {peer.name}
-                  </Text>
+                  <View style={{ alignItems: "center", gap: 2 }}>
+                    <Text style={styles.loungeNameText} numberOfLines={1}>
+                      {peer.name} {peer.isSpeaking ? "(Speaking)" : ""}
+                    </Text>
+                    {peer.isSpeaking && <AudioEqualizerBars isSpeaking={true} />}
+                  </View>
                   {peer.isHandRaised && <Text style={styles.loungeHandText}>✋ Hand Raised</Text>}
                 </Pressable>
               ))}
@@ -649,6 +770,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                 remotePeers.length === 0 && styles.gridTileSingle,
                 remotePeers.length === 1 && styles.gridTileHalf,
                 remotePeers.length >= 2 && styles.gridTileQuarter,
+                isLocalSpeaking && styles.gridTileSpeaking,
               ]}
             >
               {localStream && isVideoOn ? (
@@ -663,7 +785,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                   <Animated.View
                     style={[
                       styles.avatarPulseRing,
-                      !isMuted && { transform: [{ scale: pulseAnim }], borderColor: "#10B981" },
+                      isLocalSpeaking && { transform: [{ scale: pulseAnim }], borderColor: "#10B981", borderWidth: 2 },
                     ]}
                   >
                     {currentUserAvatar ? (
@@ -674,15 +796,17 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                       </View>
                     )}
                   </Animated.View>
-                  <Text style={styles.gridParticipantName}>You ({currentUserRole})</Text>
+                  <Text style={styles.gridParticipantName}>
+                    You ({currentUserRole}) {isLocalSpeaking ? "🎙️" : ""}
+                  </Text>
                 </View>
               )}
 
               {/* Status Pills */}
               <View style={styles.tileFooter}>
                 <View style={styles.tileNameTag}>
-                  <Text style={styles.tileNameTagText}>You</Text>
-                  {!isMuted && <AudioEqualizerBars isSpeaking={true} />}
+                  <Text style={styles.tileNameTagText}>You {isLocalSpeaking ? "(Speaking)" : ""}</Text>
+                  {isLocalSpeaking && <AudioEqualizerBars isSpeaking={true} />}
                 </View>
                 <View style={[styles.tileMicPill, { backgroundColor: isMuted ? "#EF4444" : "rgba(16, 185, 129, 0.85)" }]}>
                   <MaterialCommunityIcons name={isMuted ? "microphone-off" : "microphone"} size={12} color="#FFF" />
@@ -716,7 +840,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                     <Animated.View
                       style={[
                         styles.avatarPulseRing,
-                        peer.isSpeaking && { transform: [{ scale: pulseAnim }], borderColor: "#38BDF8" },
+                        peer.isSpeaking && { transform: [{ scale: pulseAnim }], borderColor: "#38BDF8", borderWidth: 2 },
                       ]}
                     >
                       {peer.avatarUrl ? (
@@ -727,7 +851,9 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                         </View>
                       )}
                     </Animated.View>
-                    <Text style={styles.gridParticipantName}>{peer.name}</Text>
+                    <Text style={styles.gridParticipantName}>
+                      {peer.name} {peer.isSpeaking ? "🎙️" : ""}
+                    </Text>
                   </View>
                 )}
 
@@ -735,7 +861,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                 <View style={styles.tileFooter}>
                   <View style={styles.tileNameTag}>
                     <Text style={styles.tileNameTagText} numberOfLines={1}>
-                      {peer.name}
+                      {peer.name} {peer.isSpeaking ? "(Speaking)" : ""}
                     </Text>
                     {peer.isSpeaking && <AudioEqualizerBars isSpeaking={true} />}
                   </View>
@@ -809,6 +935,25 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
             <Text style={styles.dockBtnLabel}>Flip</Text>
           </Pressable>
         )}
+
+        {/* Speaker Output Toggle Button */}
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            toggleSpeaker();
+          }}
+          style={[styles.dockBtnSecondary, !isSpeakerOn && { backgroundColor: "rgba(239, 68, 68, 0.2)" }]}
+          accessibilityLabel="Toggle Speaker Output"
+        >
+          <MaterialCommunityIcons
+            name={isSpeakerOn ? "volume-high" : "volume-medium"}
+            size={20}
+            color={isSpeakerOn ? "#38BDF8" : "#94A3B8"}
+          />
+          <Text style={[styles.dockBtnLabel, { color: isSpeakerOn ? "#38BDF8" : "#94A3B8" }]}>
+            {isSpeakerOn ? "Speaker" : "Ear"}
+          </Text>
+        </Pressable>
 
         {/* Raise Hand Button */}
         <Pressable
@@ -1732,6 +1877,15 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* ── Responsive Live Session Attendance Modal ────────────────────── */}
+      <RoomSessionAttendanceModal
+        visible={attendanceModalVisible}
+        roomId={roomId}
+        roomTitle={roomTitle}
+        isTeacher={Boolean(isHost)}
+        onClose={() => setAttendanceModalVisible(false)}
+      />
     </View>
   );
 };

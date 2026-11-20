@@ -18,6 +18,7 @@ try {
         'conversations', 'conversation_members', 'messages', 'message_reactions', 'message_delivery_receipts',
         'rooms', 'room_members', 'teaching_requests',
         'room_open_sessions', 'room_open_participants', 'room_study_permissions',
+        'room_session_requests', 'room_session_request_upvotes',
         'sessions', 'session_participants', 'livekit_attendance',
         'reviews', 'clubs', 'club_members', 'events', 'event_applications',
         'resources', 'saved_items', 'points_ledger', 'achievements', 'user_achievements',

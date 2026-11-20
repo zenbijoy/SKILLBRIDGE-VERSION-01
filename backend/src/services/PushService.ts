@@ -81,6 +81,7 @@ export class FirebasePushProvider implements PushProvider {
             sound: "default",
             defaultSound: true,
             defaultVibrateTimings: true,
+            clickAction: isHighPriority ? "call" : undefined,
           },
         },
         apns: {
@@ -165,8 +166,10 @@ export class ExpoPushProvider implements PushProvider {
             // Android notification channel for incoming calls (bypasses DND
             // when the channel is configured with importance HIGH).
             channelId: "incoming_calls",
+            categoryId: "call",
+            categoryIdentifier: "call",
             // iOS: play sound & show even when the device is muted.
-            interruptionLevel: "active" as const,
+            interruptionLevel: "time-sensitive" as const,
             _displayInForeground: true,
           }
         : { priority: "default" as const }),

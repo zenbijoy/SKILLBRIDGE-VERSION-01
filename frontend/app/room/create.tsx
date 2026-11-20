@@ -23,6 +23,7 @@ import { radius, useTheme } from "@/theme";
 import MapPicker from "@/components/MapPicker";
 import { optimizeImageForUpload } from "@/lib/imageOptimizer";
 import { ROOM_COVER_PRESETS } from "@/features/room/roomCovers";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 // Mirrors backend env MAX_ROOM_CAPACITY (default 250) so validation never mismatches.
 const MAX_ROOM_CAPACITY = 250;
@@ -105,6 +106,7 @@ const RULE_PRESETS = [
 export default function CreateRoomScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const qc = useQueryClient();
 
   const [selectedPreset, setSelectedPreset] = useState<string>("coding_lab");
@@ -393,13 +395,13 @@ export default function CreateRoomScreen() {
   };
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <ScrollView
         contentContainerStyle={[
           s.scrollContent,
           {
             paddingTop: Math.max(insets.top, 12),
-            paddingBottom: Math.max(insets.bottom + 20, 36),
+            paddingBottom: Math.max(insets.bottom + 20, 36) + (keyboardHeight > 0 ? keyboardHeight : 40),
           },
         ]}
         keyboardShouldPersistTaps="handled"

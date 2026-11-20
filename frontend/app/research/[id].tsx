@@ -224,27 +224,50 @@ export default function ResearchDetailScreen() {
           <Card tone="glow" style={styles.card}>
             <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <H2 style={styles.sectionTitle}>Research Workspace</H2>
-              <Pill tone="accent">PRIVATE LAB</Pill>
+              <Pill tone="accent">LIVE COLLAB LAB</Pill>
             </Row>
             <Text style={[styles.descText, { color: colors.text, marginBottom: 12 }]}>
-              Dedicated Room OS workspace for paper discussion, dataset links, shared media, and team meetings.
+              Dedicated real-time collaboration workspace with live channels, instant team chat, paper discussion, dataset links, and voice stages.
             </Text>
-            <Button
-              title="Open Research Workspace 🔬"
-              onPress={async () => {
-                triggerHaptic();
-                if (d.room_id) {
-                  router.push(`/room/${d.room_id}` as any);
-                } else {
-                  try {
-                    const res = await api<{ roomId: string }>(`/research/projects/${id}/workspace`);
-                    router.push(`/room/${res.roomId}` as any);
-                  } catch (e: any) {
-                    Alert.alert("Workspace", e.message || "Could not access workspace.");
-                  }
-                }
-              }}
-            />
+            <Row style={{ gap: 10, flexWrap: "wrap" }}>
+              <View style={{ flex: 1, minWidth: 160 }}>
+                <Button
+                  title="Workspace Chat 💬"
+                  onPress={async () => {
+                    triggerHaptic();
+                    if (d.room_id) {
+                      router.push(`/room/${d.room_id}?tab=chat` as any);
+                    } else {
+                      try {
+                        const res = await api<{ roomId: string }>(`/research/projects/${id}/workspace`);
+                        router.push(`/room/${res.roomId}?tab=chat` as any);
+                      } catch (e: any) {
+                        Alert.alert("Workspace Chat", e.message || "Could not access workspace chat.");
+                      }
+                    }
+                  }}
+                />
+              </View>
+              <View style={{ flex: 1, minWidth: 160 }}>
+                <Button
+                  title="Open Lab OS 🔬"
+                  variant="ghost"
+                  onPress={async () => {
+                    triggerHaptic();
+                    if (d.room_id) {
+                      router.push(`/room/${d.room_id}` as any);
+                    } else {
+                      try {
+                        const res = await api<{ roomId: string }>(`/research/projects/${id}/workspace`);
+                        router.push(`/room/${res.roomId}` as any);
+                      } catch (e: any) {
+                        Alert.alert("Workspace", e.message || "Could not access workspace.");
+                      }
+                    }
+                  }}
+                />
+              </View>
+            </Row>
           </Card>
         )}
 

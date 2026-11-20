@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -42,8 +42,38 @@ export function PaperCard({ paper, index = 0, isSaved = false, onSaveToggle, com
   });
 
   const primaryField = paper.s2FieldsOfStudy?.[0]?.category || paper.fieldsOfStudy?.[0];
-  const pdfUrl = paper.openAccessPdf?.url;
+  const pdfUrl = paper.pdfUrl || paper.openAccessPdf?.url;
+  const readUrl = paper.readUrl || pdfUrl || paper.url;
   const authorsShort = paper.authors.slice(0, 3).map((a) => a.name).join(", ") + (paper.authors.length > 3 ? " et al." : "");
+
+  const sourceName = paper.source === "arxiv"
+    ? "arXiv ⚡"
+    : paper.source === "openalex"
+    ? "OpenAlex 📚"
+    : paper.source === "europepmc"
+    ? "Europe PMC 🧬"
+    : paper.source === "crossref"
+    ? "Crossref 🏛️"
+    : paper.source === "semanticscholar"
+    ? "Semantic Scholar"
+    : (paper.sourceLabel || null);
+
+  const handleReadDirect = async (e: any) => {
+    e?.stopPropagation?.();
+    triggerHaptic();
+    const target = pdfUrl || readUrl;
+    if (!target) {
+      handlePress();
+      return;
+    }
+    try {
+      await Linking.openURL(target);
+    } catch {
+      Alert.alert("Open Paper", "Opening full paper view in reader...", [
+        { text: "OK", onPress: () => router.push(`/research/paper/${encodeURIComponent(paper.paperId)}` as any) },
+      ]);
+    }
+  };
 
   const handlePress = () => {
     triggerHaptic();
@@ -73,9 +103,16 @@ export function PaperCard({ paper, index = 0, isSaved = false, onSaveToggle, com
           },
         ]}
       >
-        {/* Top row: field pill + year + save button */}
+        {/* Top row: source + field pill + year + save button */}
         <View style={styles.topRow}>
           <View style={styles.topLeft}>
+            {sourceName ? (
+              <View style={[styles.sourceBadge, { backgroundColor: `${colors.accent}18`, borderColor: `${colors.accent}35` }]}>
+                <Text style={[styles.sourceText, { color: colors.accent }]} numberOfLines={1}>
+                  {sourceName}
+                </Text>
+              </View>
+            ) : null}
             {primaryField ? (
               <View style={[styles.fieldPill, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}30` }]}>
                 <Text style={[styles.fieldPillText, { color: colors.primary }]} numberOfLines={1}>
@@ -126,13 +163,15 @@ export function PaperCard({ paper, index = 0, isSaved = false, onSaveToggle, com
           </Text>
         ) : null}
 
-        {/* Bottom row: metrics + PDF */}
+        {/* Bottom row: metrics + direct Read actions */}
         <View style={styles.bottomRow}>
           <View style={styles.metrics}>
             {paper.citationCount != null ? (
               <View style={styles.metric}>
                 <MaterialCommunityIcons name="format-quote-close" size={13} color={colors.accent} />
-                <Text style={[styles.metricText, { color: colors.accent }]}>{paper.citationCount >= 1000 ? `${(paper.citationCount / 1000).toFixed(1)}K` : paper.citationCount}</Text>
+                <Text style={[styles.metricText, { color: colors.accent }]}>
+                  {paper.citationCount >= 1000 ? `${(paper.citationCount / 1000).toFixed(1)}K` : paper.citationCount}
+                </Text>
               </View>
             ) : null}
             {paper.referenceCount != null ? (
@@ -147,12 +186,41 @@ export function PaperCard({ paper, index = 0, isSaved = false, onSaveToggle, com
               </Text>
             ) : null}
           </View>
-          {pdfUrl ? (
-            <View style={[styles.pdfBadge, { backgroundColor: `${colors.info}15`, borderColor: `${colors.info}30` }]}>
-              <MaterialCommunityIcons name="file-pdf-box" size={12} color={colors.info} />
-              <Text style={[styles.pdfText, { color: colors.info }]}>PDF</Text>
-            </View>
-          ) : null}
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Pressable
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                triggerHaptic();
+                router.push(`/research/paper/${encodeURIComponent(paper.paperId)}` as any);
+              }}
+              hitSlop={6}
+              style={[styles.readBtn, { backgroundColor: `${colors.primary}15`, borderColor: `${colors.primary}35` }]}
+            >
+              <MaterialCommunityIcons name="creation" size={13} color={colors.primary} />
+              <Text style={[styles.readBtnText, { color: colors.primary, fontWeight: "800" }]}>AI ✨</Text>
+            </Pressable>
+
+            {pdfUrl ? (
+              <Pressable
+                onPress={handleReadDirect}
+                hitSlop={6}
+                style={[styles.readBtn, { backgroundColor: `${colors.info}18`, borderColor: `${colors.info}40` }]}
+              >
+                <MaterialCommunityIcons name="file-pdf-box" size={13} color={colors.info} />
+                <Text style={[styles.readBtnText, { color: colors.info, fontWeight: "700" }]}>Read PDF</Text>
+              </Pressable>
+            ) : readUrl ? (
+              <Pressable
+                onPress={handleReadDirect}
+                hitSlop={6}
+                style={[styles.readBtn, { backgroundColor: `${colors.primary}15`, borderColor: `${colors.primary}35` }]}
+              >
+                <MaterialCommunityIcons name="book-open-page-variant" size={13} color={colors.primary} />
+                <Text style={[styles.readBtnText, { color: colors.primary, fontWeight: "700" }]}>Read Paper</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       </Pressable>
     </Animated.View>
@@ -170,6 +238,23 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   topLeft: { flexDirection: "row", gap: 6, flex: 1, alignItems: "center" },
   topRight: { flexDirection: "row", gap: 8, alignItems: "center" },
+  sourceBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  sourceText: { fontSize: 10, fontWeight: "800" },
+  readBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  readBtnText: { fontSize: 11, fontWeight: "700" },
   fieldPill: {
     paddingHorizontal: 8,
     paddingVertical: 3,

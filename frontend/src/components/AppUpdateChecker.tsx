@@ -68,7 +68,7 @@ export function AppUpdateChecker() {
   const [versionInfo, setVersionInfo] = useState<VersionResponse | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
-  const localVersion = Constants.expoConfig?.version ?? "2.0.10";
+  const localVersion = Constants.expoConfig?.version ?? "2.1.0";
 
   useEffect(() => {
     let mounted = true;
@@ -120,7 +120,7 @@ export function AppUpdateChecker() {
 
 export function UpdateInfoCard({
   versionInfo,
-  localVersion = Constants.expoConfig?.version ?? "2.0.10",
+  localVersion = Constants.expoConfig?.version ?? "2.1.0",
   onDismiss,
   compact = false,
 }: {

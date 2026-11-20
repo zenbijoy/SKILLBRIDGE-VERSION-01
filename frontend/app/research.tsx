@@ -48,7 +48,7 @@ import type {
   TrendingSection,
   SSPaper,
 } from "@/features/research/types";
-import { RESEARCH_DISCIPLINES, RESEARCH_FIELDS } from "@/features/research/types";
+import { RESEARCH_DISCIPLINES, RESEARCH_FIELDS, REALTIME_SOURCES } from "@/features/research/types";
 
 // ─── Types (project) ─────────────────────────────────────────────────────────
 
@@ -126,6 +126,8 @@ export default function ResearchHub() {
   const [paperField, setPaperField] = useState("All Fields");
   const [paperYearFilter, setPaperYearFilter] = useState("");
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
+  const [selectedSource, setSelectedSource] = useState("all");
+  const [latestDiscipline, setLatestDiscipline] = useState("AI & Machine Learning");
   const [searchSubmitted, setSearchSubmitted] = useState(false);
 
   // Projects tab state (preserved from original)
@@ -165,12 +167,23 @@ export default function ResearchHub() {
     enabled: activeTab === "home",
   });
 
-  const paperSearchQuery = useQuery({
-    queryKey: ["paper-search", paperQuery, paperField, paperYearFilter, openAccessOnly],
+  const latestPapersQuery = useQuery({
+    queryKey: ["latest-realtime-papers", latestDiscipline],
     queryFn: () =>
-      api<{ total: number; data: SSPaper[] }>(
+      api<{ data: SSPaper[]; discipline: string }>(
+        `/research/papers/latest?${qs({ discipline: latestDiscipline })}`,
+      ),
+    staleTime: 3 * 60 * 1000,
+    enabled: activeTab === "home" || activeTab === "papers",
+  });
+
+  const paperSearchQuery = useQuery({
+    queryKey: ["paper-search", paperQuery, paperField, paperYearFilter, openAccessOnly, selectedSource],
+    queryFn: () =>
+      api<{ total: number; sources?: string[]; data: SSPaper[] }>(
         `/research/papers/search?${qs({
           q: paperQuery,
+          source: selectedSource,
           field: paperField === "All Fields" ? "" : paperField,
           year: paperYearFilter,
           openAccess: openAccessOnly,
@@ -394,6 +407,20 @@ export default function ResearchHub() {
         </View>
       </Animated.View>
 
+      {/* Live Scholarly Network Status Strip */}
+      <View style={[s.liveApiStrip, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
+        <Row style={{ alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+          <Row style={{ alignItems: "center", gap: 6, flex: 1 }}>
+            <View style={[s.pulseDot, { backgroundColor: colors.success }]} />
+            <Text style={[s.liveApiTitle, { color: colors.text }]}>Real-Time Scholarly APIs Active</Text>
+          </Row>
+          <Pill tone="success">5 APIS LIVE</Pill>
+        </Row>
+        <Text style={[s.liveApiSub, { color: colors.muted }]}>
+          Live query sync with arXiv, OpenAlex (250M+), Europe PMC, Crossref & Semantic Scholar.
+        </Text>
+      </View>
+
       {/* Quick Stats */}
       <View style={[s.statStrip, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
         <View style={s.statItem}>
@@ -436,6 +463,57 @@ export default function ResearchHub() {
             </Pressable>
           ))}
         </View>
+      </View>
+
+      {/* Real-Time Latest Preprints & Discoveries */}
+      <View style={{ gap: 12 }}>
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <Row style={{ alignItems: "center", gap: 6 }}>
+            <H2>⚡ Real-Time Latest Papers</H2>
+            <View style={[s.pulseDot, { backgroundColor: colors.accent }]} />
+          </Row>
+          <Pressable onPress={() => { triggerHaptic(); setActiveTab("papers"); }}>
+            <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13 }}>Search All ↗</Text>
+          </Pressable>
+        </Row>
+
+        {/* Discipline filter */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {["AI & Machine Learning", "Computer Science", "Biomedical & Biotech", "Physics & Quantum", "Climate & Energy"].map((disc) => {
+            const active = latestDiscipline === disc;
+            return (
+              <Pressable
+                key={disc}
+                onPress={() => { triggerHaptic(); setLatestDiscipline(disc); }}
+                style={[
+                  s.discChip,
+                  {
+                    backgroundColor: active ? colors.accent : colors.surface2,
+                    borderColor: active ? colors.accent : colors.border,
+                  },
+                ]}
+              >
+                <Text style={[s.discChipText, { color: active ? colors.white : colors.text }]}>{disc}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {latestPapersQuery.isLoading ? (
+          <Skeleton height={130} />
+        ) : latestPapersQuery.isError ? (
+          <ErrorState detail="Could not load latest preprints" onRetry={() => latestPapersQuery.refetch()} />
+        ) : (
+          latestPapersQuery.data?.data?.slice(0, 3).map((paper, idx) => (
+            <PaperCard
+              key={paper.paperId}
+              paper={paper}
+              index={idx}
+              compact
+              isSaved={savedPaperIds.has(paper.paperId)}
+            />
+          ))
+        )}
       </View>
 
       {/* Trending This Week */}
@@ -508,13 +586,59 @@ export default function ResearchHub() {
 
   const renderPapersTab = () => (
     <View style={{ gap: 14 }}>
+      {/* Real-time API Source Selector */}
+      <View style={{ gap: 6 }}>
+        <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: colors.muted, letterSpacing: 0.5 }}>
+            REAL-TIME ACADEMIC APIS
+          </Text>
+          <Row style={{ alignItems: "center", gap: 5 }}>
+            <View style={[s.pulseDot, { backgroundColor: colors.success }]} />
+            <Text style={{ fontSize: 10, fontWeight: "800", color: colors.success }}>5 LIVE ENGINES</Text>
+          </Row>
+        </Row>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {REALTIME_SOURCES.map((source) => {
+            const active = selectedSource === source.id;
+            return (
+              <Pressable
+                key={source.id}
+                onPress={() => {
+                  triggerHaptic();
+                  setSelectedSource(source.id);
+                  if (paperQuery.trim().length >= 2) {
+                    setSearchSubmitted(true);
+                  }
+                }}
+                style={[
+                  s.sourceChip,
+                  {
+                    backgroundColor: active ? colors.primary : colors.surface,
+                    borderColor: active ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={source.icon as any}
+                  size={14}
+                  color={active ? colors.white : colors.primary}
+                />
+                <Text style={[s.sourceChipText, { color: active ? colors.white : colors.text }]}>
+                  {source.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       {/* Search bar */}
       <View style={[s.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <MaterialCommunityIcons name="magnify" size={20} color={colors.muted} style={{ marginLeft: 12 }} />
         <TextInput
           value={paperQuery}
           onChangeText={setPaperQuery}
-          placeholder="Search papers, authors, topics..."
+          placeholder="Search papers, arXiv preprints, DOIs, PubMed..."
           placeholderTextColor={colors.muted}
           style={[s.searchInput, { color: colors.text }]}
           returnKeyType="search"
@@ -577,26 +701,49 @@ export default function ResearchHub() {
 
       {/* Results */}
       {!searchSubmitted ? (
-        <View style={{ alignItems: "center", paddingVertical: 32, gap: 12 }}>
-          <MaterialCommunityIcons name="text-search" size={56} color={`${colors.primary}40`} />
-          <H3 style={{ color: colors.muted, textAlign: "center" }}>Search 200M+ Academic Papers</H3>
-          <Muted style={{ textAlign: "center", maxWidth: 260 }}>
-            Type a topic, author name, or keyword and press Search
-          </Muted>
-          <View style={{ gap: 8 }}>
-            <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700", textAlign: "center" }}>Try searching:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              {["deep learning", "climate change", "CRISPR", "quantum computing", "neural networks"].map((q) => (
-                <Pressable
-                  key={q}
-                  onPress={() => { triggerHaptic(); setPaperQuery(q); setSearchSubmitted(true); }}
-                  style={[s.suggestedQuery, { backgroundColor: colors.surface2, borderColor: colors.border }]}
-                >
-                  <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>{q}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
+        <View style={{ gap: 18, marginTop: 4 }}>
+          <View style={{ alignItems: "center", paddingVertical: 18, gap: 10 }}>
+            <MaterialCommunityIcons name="text-search" size={48} color={`${colors.primary}60`} />
+            <H3 style={{ color: colors.text, textAlign: "center" }}>Search 200M+ Academic Papers in Real Time</H3>
+            <Muted style={{ textAlign: "center", maxWidth: 280 }}>
+              Live preprints from arXiv, OpenAlex, Europe PMC, Crossref & Semantic Scholar.
+            </Muted>
+            <View style={{ gap: 8, marginTop: 4 }}>
+              <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700", textAlign: "center" }}>Popular queries:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {["deep learning", "large language models", "quantum algorithms", "CRISPR gene editing", "climate modeling", "cybersecurity"].map((q) => (
+                  <Pressable
+                    key={q}
+                    onPress={() => { triggerHaptic(); setPaperQuery(q); setSearchSubmitted(true); }}
+                    style={[s.suggestedQuery, { backgroundColor: colors.surface2, borderColor: colors.border }]}
+                  >
+                    <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>{q}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
           </View>
+
+          {/* Real-time papers feed preview */}
+          {latestPapersQuery.data?.data && latestPapersQuery.data.data.length > 0 && (
+            <View style={{ gap: 10 }}>
+              <Row style={{ alignItems: "center", justifyContent: "space-between" }}>
+                <Row style={{ alignItems: "center", gap: 6 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: colors.text }}>⚡ Fresh Preprints Ready to Read</Text>
+                  <View style={[s.pulseDot, { backgroundColor: colors.accent }]} />
+                </Row>
+                <Pill tone="accent">INSTANT PDF</Pill>
+              </Row>
+              {latestPapersQuery.data.data.slice(0, 5).map((paper, idx) => (
+                <PaperCard
+                  key={paper.paperId}
+                  paper={paper}
+                  index={idx}
+                  isSaved={savedPaperIds.has(paper.paperId)}
+                />
+              ))}
+            </View>
+          )}
         </View>
       ) : paperSearchQuery.isLoading ? (
         <>{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} height={140} style={{ marginBottom: 10 }} />)}</>
@@ -1338,6 +1485,16 @@ const s = StyleSheet.create({
   trendingSection: { borderRadius: radius.lg, borderWidth: 1, padding: 14 },
   trendingSectionTitle: { fontSize: 14, fontWeight: "800" },
   topicDot: { width: 8, height: 8, borderRadius: 4 },
+
+  // Real-time API & Preprints
+  liveApiStrip: { padding: 12, borderRadius: radius.md, borderWidth: 1, marginBottom: 12, gap: 6 },
+  liveApiTitle: { fontSize: 13, fontWeight: "700" },
+  liveApiSub: { fontSize: 11 },
+  pulseDot: { width: 8, height: 8, borderRadius: 4 },
+  discChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1 },
+  discChipText: { fontSize: 12, fontWeight: "600" },
+  sourceChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1 },
+  sourceChipText: { fontSize: 12, fontWeight: "700" },
 
   // History chip
   historyChip: { width: 140, padding: 12, borderRadius: radius.md, borderWidth: 1, gap: 6 },

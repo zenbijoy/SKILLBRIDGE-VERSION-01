@@ -18,17 +18,17 @@ export function RoomVoiceBanner({ roomId, roomTitle, memberCount = 0, onPress }:
   const { t } = useI18n();
   const session = useActiveRoomSession();
 
-  // If session is active for this room or generally active
+  // Only render when an actual voice session is currently active
   const isActiveHere = session.isVoiceActive && session.activeRoomId === roomId;
-  const count = session.participants.length > 0 ? session.participants.length : Math.max(memberCount, 0);
+  if (!isActiveHere) {
+    return null;
+  }
+  const count = session.participants.length > 0 ? session.participants.length : Math.max(memberCount, 1);
 
   return (
     <Pressable
       onPress={() => {
         triggerHaptic();
-        if (!session.isVoiceActive) {
-          void session.joinVoiceSession(roomId, roomTitle);
-        }
         onPress();
       }}
       style={[
@@ -44,7 +44,7 @@ export function RoomVoiceBanner({ roomId, roomTitle, memberCount = 0, onPress }:
           <View style={[s.pulseDot, { backgroundColor: colors.success }]} />
           <MaterialCommunityIcons name="volume-high" size={18} color={colors.success} />
           <Text style={[s.bannerText, { color: colors.text }]}>
-            {isActiveHere ? t("rooms.voice.connected") : t("rooms.voice.studyRoom")}
+            Live Audio Session Connected
           </Text>
           <Text style={[s.participantsText, { color: colors.muted }]}>
             · {count} {t("rooms.voice.peopleCount")}
@@ -52,7 +52,7 @@ export function RoomVoiceBanner({ roomId, roomTitle, memberCount = 0, onPress }:
         </Row>
 
         <View style={[s.joinChip, { backgroundColor: colors.success }]}>
-          <Text style={s.joinText}>{isActiveHere ? t("rooms.voice.return") : t("rooms.voice.join")}</Text>
+          <Text style={s.joinText}>{t("rooms.voice.return")}</Text>
         </View>
       </Row>
     </Pressable>

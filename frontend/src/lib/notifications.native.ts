@@ -26,8 +26,31 @@ Notifications.setNotificationHandler({
 });
 
 export async function setupNotificationChannels(): Promise<void> {
+  // 1. WhatsApp-style Interactive Call Action Category (Accept & Decline from lock screen / notification shade)
+  try {
+    await Notifications.setNotificationCategoryAsync("call", [
+      {
+        identifier: "accept",
+        buttonTitle: "Accept",
+        options: {
+          opensAppToForeground: true,
+        },
+      },
+      {
+        identifier: "decline",
+        buttonTitle: "Decline",
+        options: {
+          opensAppToForeground: false,
+          isDestructive: true,
+        },
+      },
+    ]);
+  } catch (err) {
+    console.warn("[Push] Error setting notification category:", err);
+  }
+
   if (Platform.OS === "android") {
-    // 1. WhatsApp-style Incoming Call Notification Channel (bypasses DND, max importance)
+    // 2. WhatsApp-style Incoming Call Notification Channel (bypasses DND, max importance)
     await Notifications.setNotificationChannelAsync("incoming_calls", {
       name: "Incoming Calls",
       description: "High priority incoming voice and video call alerts",
@@ -38,9 +61,13 @@ export async function setupNotificationChannels(): Promise<void> {
       bypassDnd: true,
       sound: "default",
       enableVibrate: true,
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.VOICE_COMMUNICATION_SIGNALLING,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+      },
     });
 
-    // 2. Default General Channel
+    // 3. Default General Channel
     await Notifications.setNotificationChannelAsync("default", {
       name: "General Notifications",
       importance: Notifications.AndroidImportance.HIGH,
@@ -136,17 +163,53 @@ export async function unregisterPush(): Promise<void> {
 export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
 
-  // Listen for active incoming foreground push notifications for instant in-app call modal
+  // 1. Listen for background & lockscreen notification response actions (Accept / Decline / Banner Tap)
+  useEffect(() => {
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const actionId = response.actionIdentifier;
+      const data = response.notification?.request?.content?.data as Record<string, any> | undefined;
+      const callId = data?.callId;
+
+      if (callId) {
+        if (actionId === "decline") {
+          import("@/features/calls/services/callApi").then(({ rejectCallApi }) => {
+            rejectCallApi(callId, "declined").catch(() => {});
+          });
+          import("@/lib/socket").then(({ getSocket }) => {
+            getSocket()?.emit("call:reject", { callId, reason: "declined" });
+          });
+          return;
+        }
+
+        // "accept" or banner tap opens directly into the call screen
+        router.push(`/call/${callId}?callId=${callId}` as any);
+        return;
+      }
+
+      if (typeof data?.url === "string" && data.url.startsWith("/")) {
+        router.push(data.url as any);
+        return;
+      }
+    });
+
+    return () => {
+      responseSub.remove();
+    };
+  }, [router]);
+
+  // 2. Listen for active incoming foreground push notifications for instant in-app call modal
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data as Record<string, any> | undefined;
       if (data?.callId) {
-        useCallStore.getState().setIncomingCall({
+        const { activeCall, setIncomingCall } = useCallStore.getState();
+        if (activeCall && activeCall.status === "connected") return;
+        setIncomingCall({
           callId: data.callId,
-          callerId: data.callerId,
+          callerId: data.callerId || "",
           callerName: data.callerName || "SkillBridge User",
           callerAvatar: data.callerAvatar || null,
-          type: data.callType || "video",
+          type: data.callType === "audio" ? "audio" : "video",
           provider: data.provider || "webrtc",
         });
       }

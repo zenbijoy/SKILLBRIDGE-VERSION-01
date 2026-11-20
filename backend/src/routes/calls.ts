@@ -272,21 +272,21 @@ export function callsRouter(io?: Server) {
         return res.status(403).json({ error: callCheck.reason || "Cannot connect call due to privacy settings." });
       }
 
-      // Auto-expire any stale calls older than 60 seconds to prevent deadlocks
-      const staleThreshold = new Date(Date.now() - 60_000).toISOString();
+      // Auto-expire any stale calls older than 45 seconds to prevent deadlocks
+      const staleThreshold = new Date(Date.now() - 45_000).toISOString();
       await admin
         .from("calls")
         .update({ status: "missed", end_reason: "timeout", ended_at: new Date().toISOString() })
         .in("status", ["ringing", "connecting", "reconnecting"])
         .lt("created_at", staleThreshold);
 
-      // Unified check: Check if caller or callee is in an active call
+      // Unified check: Check if caller or callee is currently in a live call (within 2 minutes)
       const { data: activeCall } = await admin
         .from("calls")
-        .select("id, caller_id, callee_id, created_at")
+        .select("id, caller_id, callee_id, created_at, status")
         .or(`caller_id.eq.${calleeId},callee_id.eq.${calleeId},caller_id.eq.${callerId},callee_id.eq.${callerId}`)
         .in("status", ["ringing", "accepted", "connecting", "connected", "reconnecting"])
-        .gt("created_at", new Date(Date.now() - 300_000).toISOString())
+        .gt("created_at", new Date(Date.now() - 120_000).toISOString())
         .maybeSingle();
 
       if (activeCall) {
@@ -360,7 +360,9 @@ export function callsRouter(io?: Server) {
             callerName,
             callerAvatar: callerProfile?.avatar_url || "",
             callType: type,
+            type,
             provider,
+            url: `/call/${callRecord.id}?callId=${callRecord.id}`,
           },
           { priority: "high", bypassQuietHours: true },
         );

@@ -48,6 +48,7 @@ import { useOptionalAutoHideNavigation } from "@/navigation/AutoHideNavigationCo
 // ---------------------------------------------------------------------------
 
 type ToolBadge = "new" | "soon";
+export type ToolRole = "admin" | "teacher" | "member";
 
 type ToolDef = {
   key: string;
@@ -62,6 +63,7 @@ type ToolDef = {
   /** Literal brand tint; takes precedence over `colorKey`. */
   color?: string;
   badge?: ToolBadge;
+  roles?: ToolRole[];
 };
 
 type ToolCategoryDef = {
@@ -110,6 +112,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/club/manage",
         color: "#F59E0B",
         badge: "new",
+        roles: ["admin"],
       },
       {
         key: "room-manage",
@@ -121,6 +124,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/room/manage",
         color: "#6366F1",
         badge: "new",
+        roles: ["admin", "teacher"],
       },
       {
         key: "my-posts",
@@ -132,6 +136,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/posts",
         color: "#10B981",
         badge: "new",
+        roles: ["member", "teacher", "admin"],
       },
       {
         key: "vault-storage",
@@ -142,6 +147,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitleKey: "tools.studyVaultSubtitle",
         route: "/vault",
         color: "#0EA5E9",
+        roles: ["member", "teacher"],
       },
     ],
   },
@@ -158,6 +164,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Peer Q&A & answers",
         route: "/help/questions",
         colorKey: "primary",
+        roles: ["member", "teacher"],
       },
       {
         key: "research-hub",
@@ -166,6 +173,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Faculty labs & papers",
         route: "/research",
         colorKey: "info",
+        roles: ["teacher", "member"],
       },
       {
         key: "skill-quizzes",
@@ -175,6 +183,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/quiz",
         color: "#8B5CF6",
         badge: "new",
+        roles: ["member"],
       },
       {
         key: "tutor-bookings",
@@ -184,6 +193,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/bookings",
         colorKey: "success",
         badge: "new",
+        roles: ["teacher", "member"],
       },
       {
         key: "ct-prep",
@@ -193,6 +203,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/ct",
         color: "#8B5CF6",
         badge: "new",
+        roles: ["teacher", "member"],
       },
       {
         key: "academic-schedule",
@@ -201,6 +212,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Interactive schedule",
         route: "/calendar",
         colorKey: "accent",
+        roles: ["member", "teacher"],
       },
       {
         key: "study-goals",
@@ -209,6 +221,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Daily habit targets",
         route: "/goals",
         color: "#EC4899",
+        roles: ["member"],
       },
       {
         key: "semester-planner",
@@ -217,6 +230,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Roadmap & syllabi",
         route: "/planner",
         color: "#3B82F6",
+        roles: ["teacher", "member"],
       },
       {
         key: "gpa-progress",
@@ -225,6 +239,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "GPA & milestone tracking",
         route: "/progress",
         color: "#10B981",
+        roles: ["member"],
       },
       {
         key: "achievements",
@@ -233,6 +248,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Academic awards",
         route: "/achievements",
         color: "#F59E0B",
+        roles: ["member"],
       },
     ],
   },
@@ -250,6 +266,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/connections",
         color: "#06B6D4",
         badge: "new",
+        roles: ["member", "teacher"],
       },
       {
         key: "student-clubs",
@@ -258,6 +275,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Societies & executives",
         route: "/clubs",
         colorKey: "warning",
+        roles: ["member", "admin"],
       },
       {
         key: "campus-events",
@@ -267,6 +285,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/events",
         colorKey: "danger",
         badge: "new",
+        roles: ["member", "admin", "teacher"],
       },
       {
         key: "campus-leaderboard",
@@ -275,6 +294,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Top student rankings",
         route: "/leaderboard",
         color: "#EAB308",
+        roles: ["member"],
       },
       {
         key: "saved-materials",
@@ -283,6 +303,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Liked posts & research",
         route: "/saved",
         colorKey: "primary",
+        roles: ["member"],
       },
       {
         key: "hackathons",
@@ -291,6 +312,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Campus hackathons",
         route: "/challenges",
         color: "#8B5CF6",
+        roles: ["member"],
       },
       {
         key: "live-streaming",
@@ -301,6 +323,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitleKey: "liveWorkshops.subtitle",
         route: "/live",
         color: "#EF4444",
+        roles: ["teacher", "member"],
       },
       {
         key: "campus-notices",
@@ -309,6 +332,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Department alerts",
         route: "/notifications",
         color: "#F59E0B",
+        roles: ["member", "teacher", "admin"],
       },
     ],
   },
@@ -325,6 +349,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Rearrange cards & widgets",
         route: "/dashboard/customize",
         colorKey: "primary",
+        roles: ["member", "teacher", "admin"],
       },
       {
         key: "media-integrations",
@@ -334,6 +359,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/settings/integrations",
         color: "#EF4444",
         badge: "new",
+        roles: ["member", "teacher"],
       },
       {
         key: "campus-admin",
@@ -342,6 +368,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Moderation & roles",
         route: "/admin",
         color: "#D97706",
+        roles: ["admin"],
       },
       {
         key: "settings-privacy",
@@ -350,6 +377,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         subtitle: "Password & security",
         route: "/settings",
         colorKey: "muted",
+        roles: ["member", "teacher", "admin"],
       },
     ],
   },
@@ -361,6 +389,7 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
 
 type ListRow =
   | { kind: "profile"; key: string; categoryIndex: number }
+  | { kind: "role-filter"; key: string; categoryIndex: number }
   | {
       kind: "section";
       key: string;
@@ -671,6 +700,136 @@ const ToolsProfileCard = memo(function ToolsProfileCard({
 });
 
 // ---------------------------------------------------------------------------
+// Role Filter Bar Component (Admin, Teacher, Member)
+// ---------------------------------------------------------------------------
+
+const ToolsRoleFilterBar = memo(function ToolsRoleFilterBar({
+  selectedRole,
+  onSelectRole,
+  isSystemAdmin,
+  isEducator,
+}: {
+  selectedRole: "all" | "admin" | "teacher" | "member";
+  onSelectRole: (role: "all" | "admin" | "teacher" | "member") => void;
+  isSystemAdmin: boolean;
+  isEducator: boolean;
+}) {
+  const { colors } = useTheme();
+
+  const roleTabs = useMemo(() => {
+    const tabs: { key: "all" | "admin" | "teacher" | "member"; label: string }[] = [
+      { key: "all", label: "🌟 All Tools" },
+    ];
+    if (isSystemAdmin) {
+      tabs.push({ key: "admin", label: "👑 Admin" });
+    }
+    if (isEducator) {
+      tabs.push({ key: "teacher", label: "🎓 Teacher" });
+    }
+    tabs.push({ key: "member", label: "🎒 Member" });
+    return tabs;
+  }, [isSystemAdmin, isEducator]);
+
+  if (!isSystemAdmin && !isEducator) {
+    return null;
+  }
+
+  return (
+    <View style={filterStyles.roleFilterContainer}>
+      <View style={filterStyles.roleFilterRow}>
+        {roleTabs.map((tab) => {
+          const isActive = selectedRole === tab.key;
+          return (
+            <Pressable
+              key={tab.key}
+              onPress={() => {
+                triggerHaptic();
+                onSelectRole(tab.key);
+              }}
+              style={[
+                filterStyles.roleFilterBtn,
+                {
+                  backgroundColor: isActive ? colors.primary : colors.surface,
+                  borderColor: isActive ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  filterStyles.roleFilterText,
+                  { color: isActive ? "#FFFFFF" : colors.text },
+                ]}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {selectedRole !== "all" && (
+        <View style={[filterStyles.filterActiveInfo, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}33` }]}>
+          <MaterialCommunityIcons name="filter-check-outline" size={14} color={colors.primary} />
+          <Text style={[filterStyles.filterActiveText, { color: colors.primary }]} numberOfLines={1}>
+            Filtered for {selectedRole === "admin" ? "Campus Admin & Space Controls" : selectedRole === "teacher" ? "Teaching, Lectures & Tutoring" : "Student Learning & Study Toolkit"}
+          </Text>
+          <Pressable onPress={() => onSelectRole("all")} hitSlop={6}>
+            <Text style={[filterStyles.filterResetText, { color: colors.primary }]}>Show All</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+});
+
+const filterStyles = StyleSheet.create({
+  roleFilterContainer: {
+    marginHorizontal: H_PADDING,
+    marginTop: 4,
+    marginBottom: 6,
+    gap: 6,
+  },
+  roleFilterRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  roleFilterBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roleFilterText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  filterActiveInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    gap: 6,
+  },
+  filterActiveText: {
+    fontSize: 11,
+    fontWeight: "600",
+    flex: 1,
+  },
+  filterResetText: {
+    fontSize: 11,
+    fontWeight: "800",
+    textDecorationLine: "underline",
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Sign Out Card Component
 // ---------------------------------------------------------------------------
 
@@ -718,16 +877,30 @@ export default function ToolsScreen() {
   const { width } = useWindowDimensions();
   const autoHideNav = useOptionalAutoHideNavigation();
 
-  // Profile Switching State (Facebook style)
+  // Profile Switching & Role Filter State
   const [activePersonaId, setActivePersonaId] = useState("student");
   const [activePersona, setActivePersona] = useState("🎓 Student Account");
   const [switchModalVisible, setSwitchModalVisible] = useState(false);
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<"all" | "admin" | "teacher" | "member">("all");
 
   const { data, isRefetching, refetch } = useQuery({
     queryKey: ["me"],
     queryFn: () => api<{ profile: Profile }>("/profiles/me"),
   });
   const profile = data?.profile;
+
+  const isSystemAdmin = Boolean(
+    profile?.roles?.includes("club_admin") ||
+    profile?.roles?.includes("moderator") ||
+    (profile as any)?.is_admin ||
+    (profile as any)?.role === "admin"
+  );
+  const isEducator = Boolean(
+    isSystemAdmin ||
+    profile?.roles?.includes("peer_tutor") ||
+    profile?.roles?.includes("researcher") ||
+    (profile as any)?.role === "teacher"
+  );
 
   const effectiveWidth = useMemo(() => {
     if (Platform.OS === "web") {
@@ -742,10 +915,39 @@ export default function ToolsScreen() {
     [effectiveWidth, columns],
   );
 
-  // Flattened data: Profile + categories + cards + Sign Out card
+  const filteredCatalog = useMemo(() => {
+    let base = TOOL_CATALOG;
+    // Strip tools that require admin permissions if user is not a system admin
+    if (!isSystemAdmin) {
+      base = base.map((cat) => ({
+        ...cat,
+        tools: cat.tools.filter((t) => !(t.roles?.length === 1 && t.roles[0] === "admin")),
+      })).filter((cat) => cat.tools.length > 0);
+    }
+    // Strip tools that require teacher permissions if user is not an educator
+    if (!isEducator) {
+      base = base.map((cat) => ({
+        ...cat,
+        tools: cat.tools.filter((t) => !(t.roles?.length === 1 && t.roles[0] === "teacher")),
+      })).filter((cat) => cat.tools.length > 0);
+    }
+
+    if (selectedRoleFilter === "all") return base;
+    return base.map((cat) => ({
+      ...cat,
+      tools: cat.tools.filter((t) => !t.roles || t.roles.includes(selectedRoleFilter)),
+    })).filter((cat) => cat.tools.length > 0);
+  }, [selectedRoleFilter, isSystemAdmin, isEducator]);
+
+  // Flattened data: Profile + Role Filter + categories + cards + Sign Out card
   const rows = useMemo<ListRow[]>(() => {
-    const out: ListRow[] = [{ kind: "profile", key: "tools-profile", categoryIndex: 0 }];
-    TOOL_CATALOG.forEach((category, categoryIndex) => {
+    const out: ListRow[] = [
+      { kind: "profile", key: "tools-profile", categoryIndex: 0 },
+    ];
+    if (isSystemAdmin || isEducator) {
+      out.push({ kind: "role-filter", key: "tools-role-filter", categoryIndex: 0 });
+    }
+    filteredCatalog.forEach((category, categoryIndex) => {
       out.push({
         kind: "section",
         key: `section-${category.key}`,
@@ -766,10 +968,10 @@ export default function ToolsScreen() {
     out.push({
       kind: "signout",
       key: "tools-signout",
-      categoryIndex: TOOL_CATALOG.length - 1,
+      categoryIndex: Math.max(0, filteredCatalog.length - 1),
     });
     return out;
-  }, [columns]);
+  }, [filteredCatalog, columns]);
 
   const sectionRowIndex = useMemo(() => {
     const map: Record<number, number> = {};
@@ -949,6 +1151,15 @@ export default function ToolsScreen() {
               onOpenSwitcher={handleOpenSwitcher}
             />
           );
+        case "role-filter":
+          return (
+            <ToolsRoleFilterBar
+              selectedRole={selectedRoleFilter}
+              onSelectRole={setSelectedRoleFilter}
+              isSystemAdmin={isSystemAdmin}
+              isEducator={isEducator}
+            />
+          );
         case "section":
           return (
             <SectionHeading
@@ -961,14 +1172,16 @@ export default function ToolsScreen() {
           );
         case "signout":
           return <SignOutCard onSignOut={handleSignOut} />;
-        default:
+        case "cards":
           return (
             <Animated.View entering={FadeInUp.duration(260)} style={s.cardsRow}>
-              {item.items.map((def) => (
+              {item.items.map((def: ToolDef) => (
                 <ToolCard key={def.key} def={def} width={cardWidth} onOpen={handleOpenRoute} />
               ))}
             </Animated.View>
           );
+        default:
+          return null;
       }
     },
     [
@@ -980,6 +1193,7 @@ export default function ToolsScreen() {
       handleSectionMeasure,
       handleSignOut,
       profile,
+      selectedRoleFilter,
     ],
   );
 
@@ -1001,7 +1215,7 @@ export default function ToolsScreen() {
           contentContainerStyle={s.pillRow}
           accessibilityLabel={t("tools.categoriesLabel")}
         >
-          {TOOL_CATALOG.map((category, index) => (
+          {filteredCatalog.map((category, index) => (
             <CategoryPill
               key={category.key}
               index={index}
@@ -1064,7 +1278,7 @@ export default function ToolsScreen() {
             </View>
 
             <Text style={[s.modalHeaderSub, { color: colors.muted }]}>
-              Switch between student learning, peer tutor mode, or club administration
+              Switch persona to tailor tools for learning, teaching, or administration
             </Text>
 
             <View style={s.personaList}>
@@ -1072,25 +1286,31 @@ export default function ToolsScreen() {
                 {
                   id: "student",
                   name: profile?.full_name || "Primary Student Profile",
-                  role: "Learning, Routine & Course Quizzes",
+                  role: "Learning, Routine, Vault & Quizzes",
                   icon: "school",
-                  tag: "🎓 Student Account",
+                  tag: "🎓 Student Mode",
+                  filter: "member" as const,
+                  allowed: true,
                 },
                 {
                   id: "tutor",
                   name: `${profile?.full_name || "Member"} · Tutor`,
-                  role: "Teaching, Availability & Bookings",
+                  role: "Teaching, Availability, Lectures & Bookings",
                   icon: "teach",
-                  tag: "👨‍🏫 Tutor Mode",
+                  tag: "👨‍🏫 Teacher Mode",
+                  filter: "teacher" as const,
+                  allowed: isEducator,
                 },
                 {
-                  id: "club_exec",
-                  name: `${profile?.full_name || "Member"} · Executive`,
-                  role: "Society Leadership & Campus Events",
-                  icon: "account-tie",
-                  tag: "🏛️ Club Exec",
+                  id: "admin",
+                  name: `${profile?.full_name || "Member"} · Campus Admin`,
+                  role: "Campus Moderation, Room Controls & Roles",
+                  icon: "shield-crown",
+                  tag: "👑 Admin Mode",
+                  filter: "admin" as const,
+                  allowed: isSystemAdmin,
                 },
-              ].map((item) => {
+              ].filter((item) => item.allowed).map((item) => {
                 const isActive = activePersonaId === item.id;
                 return (
                   <Pressable
@@ -1099,6 +1319,7 @@ export default function ToolsScreen() {
                       triggerHaptic();
                       setActivePersonaId(item.id);
                       setActivePersona(item.tag);
+                      setSelectedRoleFilter(item.filter);
                       setSwitchModalVisible(false);
                       Alert.alert("Profile Switched", `Now active as: ${item.tag}`);
                     }}
@@ -1269,6 +1490,49 @@ const s = StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
     gap: 8,
+  },
+  roleFilterContainer: {
+    marginHorizontal: H_PADDING,
+    marginTop: 4,
+    marginBottom: 6,
+    gap: 6,
+  },
+  roleFilterRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  roleFilterBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roleFilterText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  filterActiveInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    gap: 6,
+  },
+  filterActiveText: {
+    fontSize: 11,
+    fontWeight: "600",
+    flex: 1,
+  },
+  filterResetText: {
+    fontSize: 11,
+    fontWeight: "800",
+    textDecorationLine: "underline",
   },
   profileCard: {
     flexDirection: "row",

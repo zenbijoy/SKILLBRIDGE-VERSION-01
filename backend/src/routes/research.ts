@@ -15,6 +15,22 @@ import {
   formatBibtex,
   TRENDING_TOPICS,
 } from "../services/semanticScholar.js";
+import {
+  searchAcademicPapers,
+  getLatestRealtimePapers,
+  resolvePaper,
+  getAvailableSources,
+} from "../services/paperSources.js";
+import {
+  generateUniversalCitation,
+  generateAllCitations,
+  type CitationStyle,
+} from "../services/citationService.js";
+import {
+  getOrGeneratePaperInsights,
+  askPaperQuestion,
+} from "../services/paperAiService.js";
+import { getSocketServer } from "../socket.js";
 
 export const research = Router();
 
@@ -320,6 +336,31 @@ research.get(
     }
 
     const roomId = await ensureResearchWorkspace(id, project.owner_id);
+
+    // Ensure requesting user is actively enrolled in room_members & room conversations
+    try {
+      await admin.from("room_members").upsert(
+        {
+          room_id: roomId,
+          user_id: req.userId!,
+          role: isOwner ? "owner" : "member",
+        } as any,
+        { onConflict: "room_id,user_id" },
+      );
+
+      const { data: r } = await admin.from("rooms").select("conversation_id").eq("id", roomId).maybeSingle();
+      if (r?.conversation_id) {
+        await admin.from("conversation_members").upsert(
+          {
+            conversation_id: r.conversation_id,
+            user_id: req.userId!,
+            role: isOwner ? "owner" : "member",
+          },
+          { onConflict: "conversation_id,user_id" },
+        );
+      }
+    } catch {}
+
     res.json({ roomId });
   }),
 );
@@ -344,7 +385,7 @@ research.post(
   }),
 );
 
-// ─── NEW: Academic Paper Search (Semantic Scholar Proxy) ──────────────────────
+// ─── NEW: Multi-Source Real-Time Academic Paper Search & Reading APIs ────────
 
 research.get(
   "/papers/search",
@@ -353,13 +394,53 @@ research.get(
     if (!q || q.length < 2) return res.status(400).json({ error: "Query too short" });
 
     const offset = parseInt(String(req.query.offset ?? "0"), 10);
-    const limit = Math.min(parseInt(String(req.query.limit ?? "10"), 10), 25);
+    const limit = Math.min(parseInt(String(req.query.limit ?? "15"), 10), 30);
     const field = typeof req.query.field === "string" ? req.query.field : undefined;
     const year = typeof req.query.year === "string" ? req.query.year : undefined;
     const openAccess = req.query.openAccess === "true";
+    const source = typeof req.query.source === "string" ? (req.query.source as any) : "all";
 
-    const result = await searchPapers(q, { offset, limit, fieldsOfStudy: field, year, openAccess });
+    const result = await searchAcademicPapers(q, {
+      source,
+      offset,
+      limit,
+      field,
+      year,
+      openAccess,
+    });
     res.json(result);
+  }),
+);
+
+research.get(
+  "/papers/latest",
+  wrap(async (req, res) => {
+    const discipline = typeof req.query.discipline === "string" ? req.query.discipline : undefined;
+    const papers = await getLatestRealtimePapers(discipline);
+    res.json({ data: papers, discipline: discipline || "AI & Machine Learning" });
+  }),
+);
+
+research.get(
+  "/papers/sources",
+  wrap(async (_req, res) => {
+    res.json({ sources: getAvailableSources() });
+  }),
+);
+
+research.get(
+  "/papers/:paperId/read-url",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const paper = await resolvePaper(paperId);
+    res.json({
+      paperId,
+      readUrl: paper.readUrl,
+      pdfUrl: paper.pdfUrl,
+      isOpenAccess: paper.isOpenAccess,
+      source: paper.source,
+      sourceLabel: paper.sourceLabel,
+    });
   }),
 );
 
@@ -367,7 +448,7 @@ research.get(
   "/papers/:paperId",
   wrap(async (req, res) => {
     const paperId = String(req.params.paperId);
-    const paper = await getPaper(paperId);
+    const paper = await resolvePaper(paperId);
     res.json(paper);
   }),
 );
@@ -396,10 +477,178 @@ research.get(
   "/papers/:paperId/cite",
   wrap(async (req, res) => {
     const paperId = String(req.params.paperId);
-    const format = req.query.format === "bibtex" ? "bibtex" : "apa";
-    const paper = await getPaper(paperId);
-    const citation = format === "bibtex" ? formatBibtex(paper) : formatAPA(paper);
-    res.json({ citation, format });
+    const requestedFormat = (String(req.query.format || "apa").toLowerCase()) as CitationStyle;
+    const paper = await resolvePaper(paperId);
+    const allFormats = generateAllCitations(paper);
+    const citation = allFormats[requestedFormat] || allFormats.apa;
+    res.json({
+      citation,
+      format: requestedFormat,
+      allFormats,
+      title: paper.title,
+      authors: paper.authors,
+      year: paper.year,
+      doi: paper.externalIds?.DOI,
+      url: paper.readUrl || paper.url,
+    });
+  }),
+);
+
+// ─── AI Paper Assistant & Key Insights ──────────────────────────────────────
+
+research.get(
+  "/papers/:paperId/ai-insights",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const paper = await resolvePaper(paperId);
+    const insights = await getOrGeneratePaperInsights(paper);
+    res.json(insights);
+  }),
+);
+
+research.post(
+  "/papers/:paperId/ai-qa",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const { question } = z.object({ question: z.string().min(2).max(500) }).parse(req.body);
+    const paper = await resolvePaper(paperId);
+    const answer = await askPaperQuestion(paper, question);
+    res.json(answer);
+  }),
+);
+
+// ─── Workspace Integration ───────────────────────────────────────────────────
+
+research.get(
+  "/user/workspaces",
+  wrap(async (req, res) => {
+    const userId = req.userId!;
+    const { data: owned } = await admin
+      .from("research_projects")
+      .select("id, title, status, room_id")
+      .eq("owner_id", userId);
+
+    const { data: memberProjects } = await admin
+      .from("research_members")
+      .select("project_id, research_projects(id, title, status, room_id)")
+      .eq("user_id", userId)
+      .eq("status", "accepted");
+
+    const projectsMap = new Map<string, { id: string; title: string; roomId: string | null }>();
+    (owned || []).forEach((p: any) => {
+      projectsMap.set(p.id, { id: p.id, title: p.title, roomId: p.room_id || null });
+    });
+    (memberProjects || []).forEach((mp: any) => {
+      const p = mp.research_projects;
+      if (p && !projectsMap.has(p.id)) {
+        projectsMap.set(p.id, { id: p.id, title: p.title, roomId: p.room_id || null });
+      }
+    });
+
+    const workspaces = [];
+    for (const [projId, p] of projectsMap.entries()) {
+      const roomId = p.roomId || (await ensureResearchWorkspace(projId, userId));
+      const { data: room } = await admin
+        .from("rooms")
+        .select("id, name, conversation_id")
+        .eq("id", roomId)
+        .maybeSingle();
+
+      if (room) {
+        workspaces.push({
+          projectId: projId,
+          projectTitle: p.title,
+          roomId: room.id,
+          roomName: room.name,
+          conversationId: room.conversation_id,
+        });
+      }
+    }
+
+    res.json({ data: workspaces });
+  }),
+);
+
+research.post(
+  "/papers/:paperId/share-to-workspace",
+  wrap(async (req, res) => {
+    const paperId = String(req.params.paperId);
+    const userId = req.userId!;
+    const { roomId, comment } = z
+      .object({
+        roomId: z.string().uuid(),
+        comment: z.string().max(1000).optional(),
+      })
+      .parse(req.body);
+
+    // Verify room membership
+    const { data: membership } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!membership) {
+      return res.status(403).json({ error: "You are not a member of this workspace" });
+    }
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, conversation_id, name")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room?.conversation_id) {
+      return res.status(400).json({ error: "Workspace has no active conversation" });
+    }
+
+    const paper = await resolvePaper(paperId);
+    const authorsStr = (paper.authors || []).slice(0, 3).map((a) => a.name).join(", ");
+    const readLink = paper.readUrl || paper.pdfUrl || paper.url || "";
+
+    let messageBody = `📄 **Research Paper Shared**: [${paper.title}](${readLink})\n` +
+      `*Authors*: ${authorsStr || "Academic Authors"} (${paper.year || "Recent"})\n` +
+      `*Source*: ${paper.sourceLabel || paper.source}`;
+
+    if (comment && comment.trim()) {
+      messageBody += `\n\n> 💬 **Note**: ${comment.trim()}`;
+    }
+
+    const { data: insertedMsg, error: msgErr } = await admin
+      .from("messages")
+      .insert({
+        conversation_id: room.conversation_id,
+        sender_id: userId,
+        body: messageBody,
+        attachment: {
+          type: "paper_share",
+          paperId: paper.paperId,
+          title: paper.title,
+          pdfUrl: paper.pdfUrl,
+          readUrl: readLink,
+          authors: authorsStr,
+          year: paper.year,
+          source: paper.source,
+        },
+      })
+      .select()
+      .single();
+
+    if (msgErr) throw msgErr;
+
+    // Broadcast via Socket.IO
+    const io = getSocketServer();
+    if (io && insertedMsg) {
+      io.to(`conversation:${room.conversation_id}`).emit("message:new", insertedMsg);
+      io.to(`room:${roomId}`).emit("room:paper_shared", {
+        roomId,
+        paperId: paper.paperId,
+        title: paper.title,
+      });
+    }
+
+    res.status(201).json({ success: true, message: insertedMsg });
   }),
 );
 

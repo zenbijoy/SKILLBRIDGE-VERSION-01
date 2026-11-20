@@ -26,6 +26,7 @@ import { Audio } from "expo-av";
 import "react-native-get-random-values";
 import { v4 as uuidv4 } from "uuid";
 import { api } from "@/lib/api";
+import { uploadConversationAttachment, getSafeMimeType } from "@/lib/chatUpload";
 import { optimizeImageForUpload, OPTIMIZATION_PRESETS } from "@/lib/imageOptimizer";
 import { supabase } from "@/lib/supabase";
 import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
@@ -657,39 +658,14 @@ export default function ChatScreen() {
 
       const fileName = `voice_note_${Date.now()}.m4a`;
 
-      const ticketRes = await api<{
-        url?: string;
-        uploadUrl?: string;
-        publicUrl?: string;
-        signedUrl?: string;
-        storagePath: string;
-      }>(`/chat/conversations/${id}/attachment-ticket`, {
-        method: "POST",
-        body: JSON.stringify({
-          filename: fileName,
-          contentType: "audio/m4a",
-          // Declared size must be >= 1; the server cap is 15MB.
-          sizeBytes: 1024,
-        }),
+      const uploadRes = await uploadConversationAttachment(id, {
+        uri,
+        fileName,
+        contentType: "audio/m4a",
+        duration: realDuration,
       });
 
-      const uploadEndpoint = ticketRes.uploadUrl || ticketRes.url;
-      if (!uploadEndpoint) throw new Error("Upload ticket did not include an upload URL.");
-
-      const audioBlob = await (await fetch(uri)).blob();
-      const putRes = await fetch(uploadEndpoint, {
-        method: "PUT",
-        headers: { "Content-Type": "audio/m4a" },
-        body: audioBlob,
-      });
-      if (!putRes.ok) {
-        throw new Error(`Voice upload failed (${putRes.status}).`);
-      }
-
-      const finalUrl = ticketRes.signedUrl || ticketRes.publicUrl;
-      if (!finalUrl) throw new Error("Could not resolve a readable link for the voice note.");
-
-      await sendVoiceNote(finalUrl, realDuration, ticketRes.storagePath);
+      await sendVoiceNote(uploadRes.url, realDuration, uploadRes.storagePath);
     } catch (err: any) {
       // Never send a placeholder: a failed recording must surface, not lie.
       Alert.alert(
@@ -772,39 +748,21 @@ export default function ChatScreen() {
       triggerHaptic();
       setUploadingMedia(true);
       const doc = result.assets[0];
-      const mimeType: string = doc.mimeType || "application/pdf";
       const fileName: string = doc.name || `file_${Date.now()}.pdf`;
-      const ticketRes = await api<{
-        url?: string;
-        uploadUrl?: string;
-        publicUrl?: string;
-        signedUrl?: string;
-        storagePath: string;
-      }>(`/chat/conversations/${id}/attachment-ticket`, {
-        method: "POST",
-        body: JSON.stringify({
-          filename: fileName,
-          contentType: mimeType,
-          sizeBytes: doc.size ?? 1024 * 100,
-        }),
+      const mimeType: string = getSafeMimeType(fileName, doc.mimeType);
+
+      const uploadRes = await uploadConversationAttachment(id, {
+        uri: doc.uri,
+        fileName,
+        contentType: mimeType,
       });
-      const uploadEndpoint = ticketRes.uploadUrl || ticketRes.url;
-      if (!uploadEndpoint) throw new Error("Upload ticket did not include an upload URL.");
-      const fileBlob = await (await fetch(doc.uri)).blob();
-      const putRes = await fetch(uploadEndpoint, {
-        method: "PUT",
-        headers: { "Content-Type": mimeType },
-        body: fileBlob,
-      });
-      if (!putRes.ok) throw new Error(`Upload failed (${putRes.status}). Please try again.`);
-      const finalUrl = ticketRes.signedUrl || ticketRes.publicUrl;
-      if (!finalUrl) throw new Error("Could not resolve a readable link for the uploaded file.");
+
       setPendingAttachment({
-        url: finalUrl,
+        url: uploadRes.url,
         type: "file",
         name: fileName,
-        size: doc.size,
-        storagePath: ticketRes.storagePath,
+        size: uploadRes.size || doc.size,
+        storagePath: uploadRes.storagePath,
       });
     } catch (err: any) {
       Alert.alert("Upload failed", err?.message || "Could not upload file.");
@@ -844,51 +802,19 @@ export default function ChatScreen() {
       const fileName = optimized.fileName;
       const uploadUri = optimized.uri || asset.uri;
 
-      const ticketRes = await api<{
-        url?: string;
-        uploadUrl?: string;
-        publicUrl?: string;
-        signedUrl?: string;
-        storagePath: string;
-      }>(`/chat/conversations/${id}/attachment-ticket`, {
-        method: "POST",
-        body: JSON.stringify({
-          filename: fileName,
-          contentType: mimeType,
-          sizeBytes: optimized.fileSizeBytes || asset.fileSize || 180 * 1024,
-        }),
+      const uploadRes = await uploadConversationAttachment(id, {
+        uri: uploadUri,
+        fileName,
+        contentType: mimeType,
+        base64: optimized.base64,
       });
-
-      const uploadEndpoint = ticketRes.uploadUrl || ticketRes.url;
-      if (!uploadEndpoint) {
-        throw new Error("Upload ticket did not include an upload URL.");
-      }
-
-      const fileBlob = await (await fetch(uploadUri)).blob();
-      const putRes = await fetch(uploadEndpoint, {
-        method: "PUT",
-        headers: { "Content-Type": mimeType },
-        body: fileBlob,
-      });
-
-      // The old code ignored the PUT result, so failed uploads still produced a
-      // "sent" message pointing at an object that was never stored.
-      if (!putRes.ok) {
-        throw new Error(`Upload failed (${putRes.status}). Please try again.`);
-      }
-
-      // Always use a real read URL. Never fall back to the signed *upload* URL.
-      const finalUrl = ticketRes.signedUrl || ticketRes.publicUrl;
-      if (!finalUrl) {
-        throw new Error("Could not resolve a readable link for the uploaded image.");
-      }
 
       setPendingAttachment({
-        url: finalUrl,
+        url: uploadRes.url,
         type: "image",
         name: fileName,
-        size: asset.fileSize,
-        storagePath: ticketRes.storagePath,
+        size: uploadRes.size || asset.fileSize,
+        storagePath: uploadRes.storagePath,
       });
     } catch (err: any) {
       Alert.alert("Upload failed", err?.message || "Could not upload image.");
@@ -1131,14 +1057,19 @@ export default function ChatScreen() {
 
   // Quick Call Launchers
   const startDirectCall = (type: "audio" | "video") => {
-    if (!conversation?.peer_id) {
+    let peerId = conversation?.peer_id;
+    if (!peerId && conversation?.kind === "dm" && conversation?.members) {
+      const other = conversation.members.find((m) => m.userId !== session?.user?.id);
+      if (other) peerId = other.userId;
+    }
+    if (!peerId) {
       Alert.alert("Direct call unavailable", "1:1 calls are only available in direct message conversations.");
       return;
     }
     triggerHaptic();
-    const peerName = encodeURIComponent(conversation.title || "Peer");
-    const peerAvatar = encodeURIComponent(conversation.avatar_url || "");
-    router.push(`/call/${conversation.peer_id}?name=${peerName}&avatar=${peerAvatar}&type=${type}` as any);
+    const peerName = encodeURIComponent(conversation?.title || "Peer");
+    const peerAvatar = encodeURIComponent(conversation?.avatar_url || "");
+    router.push(`/call/${peerId}?name=${peerName}&avatar=${peerAvatar}&type=${type}` as any);
   };
 
   // Sync group title to state
@@ -1665,7 +1596,7 @@ export default function ChatScreen() {
             )}
 
             {/* Message Body */}
-            {item.body && !(hasImage && item.body === "[Photo]") && !isVoice ? (
+            {item.body && !(hasImage && item.body === "[Photo]") && !(isFile && item.body === "[Attachment]") && !isVoice ? (
               <Text style={{ color: item.deleted ? colors.muted : colors.text, fontSize: 15, lineHeight: 21, fontStyle: item.deleted ? "italic" : "normal" }}>
                 {item.body}
               </Text>
@@ -1988,7 +1919,7 @@ export default function ChatScreen() {
       <FlatList
         ref={flatListRef}
         style={{ flex: 1 }}
-        contentContainerStyle={[styles.messagesList, { paddingBottom: 140 + keyboardHeight }]}
+        contentContainerStyle={[styles.messagesList, { paddingBottom: 16 }]}
         data={displayMessages}
         keyboardShouldPersistTaps="handled"
         keyExtractor={(item) => item.client_message_id || item.id}
@@ -2057,6 +1988,22 @@ export default function ChatScreen() {
         </Animated.View>
       )}
 
+      {/* Uploading Media Indicator */}
+      {uploadingMedia && (
+        <Animated.View
+          entering={FadeIn.duration(150)}
+          style={[styles.attachmentPreview, { backgroundColor: colors.surface2, borderColor: colors.primary }]}
+        >
+          <ActivityIndicator size="small" color={colors.primary} />
+          <View style={{ flex: 1, gap: 2, marginLeft: 10 }}>
+            <Text style={{ color: colors.text, fontWeight: "700", fontSize: 13 }}>
+              Uploading attachment...
+            </Text>
+            <Text style={{ color: colors.muted, fontSize: 11 }}>Please wait a moment</Text>
+          </View>
+        </Animated.View>
+      )}
+
       {/* Pending Attachment Preview Bar */}
       {pendingAttachment && (
         <View style={[styles.attachmentPreview, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
@@ -2102,11 +2049,7 @@ export default function ChatScreen() {
             {
               backgroundColor: colors.surface,
               borderTopColor: colors.border,
-              paddingBottom: Math.max(insets.bottom, 10) + 4,
-              position: "absolute",
-              bottom: keyboardHeight,
-              left: 0,
-              right: 0,
+              paddingBottom: keyboardHeight > 0 ? 8 : Math.max(insets.bottom, 10) + 4,
             },
           ]}
         >
@@ -3321,14 +3264,18 @@ const styles = StyleSheet.create({
   attachmentPreview: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    padding: 8,
-    borderTopWidth: 1,
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    marginHorizontal: 12,
+    marginBottom: 6,
+    borderRadius: 14,
   },
   previewThumb: {
     width: 44,
     height: 44,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   recordingBar: {
     flexDirection: "row",

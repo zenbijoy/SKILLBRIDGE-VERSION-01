@@ -1,10 +1,13 @@
 import {
   deriveStatus,
+  DOUBT_REWARDS,
   filterQuestions,
   formatRelativeTime,
   getUrgencyMeta,
+  hasValidQuestionText,
   HelpQuestionSummary,
   matchesSearch,
+  resolveQuestionPayload,
   roomLabel,
   summarizeQuestions,
 } from "./helpUtils";
@@ -190,6 +193,44 @@ describe("helpUtils", () => {
       expect(roomLabel("")).toBe("Study Space");
       expect(roomLabel(null)).toBe("Study Space");
       expect(roomLabel(undefined)).toBe("Study Space");
+    });
+  });
+
+  describe("DOUBT_REWARDS", () => {
+    it("defines reward values for doubtful actions", () => {
+      expect(DOUBT_REWARDS.ASK_DOUBT).toBe(5);
+      expect(DOUBT_REWARDS.ANSWER_DOUBT).toBe(15);
+      expect(DOUBT_REWARDS.ACCEPTED_SOLUTION).toBe(30);
+      expect(DOUBT_REWARDS.UPVOTE_RECEIVED).toBe(2);
+      expect(DOUBT_REWARDS.RESOLVE_BONUS).toBe(5);
+    });
+  });
+
+  describe("hasValidQuestionText and resolveQuestionPayload", () => {
+    it("validates when either title or body meets minimum length", () => {
+      expect(hasValidQuestionText("Why is sky blue?", "")).toBe(true);
+      expect(hasValidQuestionText("", "Why is sky blue?")).toBe(true);
+      expect(hasValidQuestionText("Hi", "Bye")).toBe(false);
+    });
+
+    it("resolves question payload without losing user content", () => {
+      const p1 = resolveQuestionPayload("Newton backward interpolation problem", "");
+      expect(p1.isValid).toBe(true);
+      expect(p1.body).toBe("Newton backward interpolation problem");
+      expect(p1.title).toBe("Newton backward interpolation problem");
+
+      const p2 = resolveQuestionPayload("", "Explaining quantum tunneling wave decay function in detail");
+      expect(p2.isValid).toBe(true);
+      expect(p2.body).toBe("Explaining quantum tunneling wave decay function in detail");
+      expect(p2.title.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("unanswered filter", () => {
+    it("filters questions that have 0 answers and are not resolved", () => {
+      const filtered = filterQuestions(mockQuestions, { status: "unanswered" });
+      expect(filtered.length).toBe(1);
+      expect(filtered[0].id).toBe("q-1");
     });
   });
 });

@@ -11,6 +11,8 @@ export type NextGenNotificationType =
   | "ROOM_LIVE_OPEN_STARTED"
   | "ROOM_STUDY_STARTED"
   | "ROOM_STUDY_PERMISSION_GRANTED"
+  | "ROOM_HELP_REQUEST"
+  | "ROOM_HELP_ACCEPTED"
   | "QUESTION_ANSWERED"
   | "ANSWER_ACCEPTED"
   | "NEW_ROOM_MATERIAL"
@@ -31,7 +33,11 @@ export type NextGenNotificationType =
   | "SYSTEM_ANNOUNCEMENT"
   | "BOOKING_REQUESTED"
   | "BOOKING_CONFIRMED"
-  | "BOOKING_CANCELLED";
+  | "BOOKING_CANCELLED"
+  | "ROOM_KNOCK"
+  | "ROOM_ROLE_UPDATED"
+  | "ROOM_SESSION_REQUEST"
+  | "ROOM_POLL_CREATED";
 
 export interface NotificationEvent {
   userId: string;
@@ -51,6 +57,8 @@ const typeToCategory: Record<NextGenNotificationType, "messages" | "connections"
   ROOM_LIVE_OPEN_STARTED: "rooms",
   ROOM_STUDY_STARTED: "sessions",
   ROOM_STUDY_PERMISSION_GRANTED: "rooms",
+  ROOM_HELP_REQUEST: "rooms",
+  ROOM_HELP_ACCEPTED: "rooms",
   QUESTION_ANSWERED: "rooms",
   ANSWER_ACCEPTED: "rooms",
   NEW_ROOM_MATERIAL: "rooms",
@@ -72,6 +80,10 @@ const typeToCategory: Record<NextGenNotificationType, "messages" | "connections"
   BOOKING_REQUESTED: "teaching",
   BOOKING_CONFIRMED: "sessions",
   BOOKING_CANCELLED: "sessions",
+  ROOM_KNOCK: "rooms",
+  ROOM_ROLE_UPDATED: "rooms",
+  ROOM_SESSION_REQUEST: "rooms",
+  ROOM_POLL_CREATED: "rooms",
 };
 
 export class NotificationService {

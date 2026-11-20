@@ -33,6 +33,7 @@ import {
   triggerHaptic,
 } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 type TabMode = "created" | "joined";
 
@@ -48,6 +49,7 @@ export default function RoomManageScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const qc = useQueryClient();
+  const keyboardHeight = useKeyboardHeight();
 
   const [activeTab, setActiveTab] = useState<TabMode>("created");
 
@@ -470,7 +472,7 @@ export default function RoomManageScreen() {
         animationType="slide"
         onRequestClose={() => setEditingRoom(null)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, paddingBottom: keyboardHeight }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <View>
               <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Room Settings & Control</Text>
@@ -481,7 +483,11 @@ export default function RoomManageScreen() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: 16, gap: 14 }}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Title */}
             <View style={{ gap: 4 }}>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>ROOM TITLE</Text>
@@ -673,7 +679,7 @@ export default function RoomManageScreen() {
         animationType="slide"
         onRequestClose={() => setInviteRoom(null)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, paddingBottom: keyboardHeight }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <View>
               <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>Room Invites & Codes</Text>
@@ -684,7 +690,11 @@ export default function RoomManageScreen() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: 16, gap: 16 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={[styles.inviteGeneratorBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={{ fontWeight: "700", color: colors.text, fontSize: 15 }}>Generate Quick Access Code</Text>
               <Text style={{ fontSize: 12, color: colors.muted, marginVertical: 4 }}>

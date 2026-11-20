@@ -11,6 +11,8 @@ import {
   Image,
   TouchableOpacity,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -31,6 +33,7 @@ import { api } from "@/lib/api";
 import { LocalDB } from "@/lib/database";
 import { growthIllustrations } from "@/assets/illustrations";
 import { nextGenFeatureCards, nextGenBadges } from "@/assets/nextgen";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -146,6 +149,7 @@ function formatCountdown(targetDateIso: string): string {
 
 export default function CTPrepScreen() {
   const { colors } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
 
   // Plans state
   const [plans, setPlans] = useState<CTPlan[]>([]);
@@ -587,24 +591,37 @@ export default function CTPrepScreen() {
       {/* AI Roadmap Generator Modal / Composer */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       <Modal visible={showAiModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <Row style={{ alignItems: "center", gap: 8 }}>
-                <Image source={nextGenFeatureCards.studyPlan} style={{ width: 28, height: 28, borderRadius: 6 }} />
-                <H2 style={{ fontSize: 18 }}>AI Class Test Study Generator</H2>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1 }}
+        >
+          <View
+            style={[
+              styles.modalOverlay,
+              Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
+            ]}
+          >
+            <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <Row style={{ alignItems: "center", gap: 8 }}>
+                  <Image source={nextGenFeatureCards.studyPlan} style={{ width: 28, height: 28, borderRadius: 6 }} />
+                  <H2 style={{ fontSize: 18 }}>AI Class Test Study Generator</H2>
+                </Row>
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setShowAiModal(false);
+                  }}
+                >
+                  <MaterialCommunityIcons name="close" size={24} color={colors.muted} />
+                </Pressable>
               </Row>
-              <Pressable
-                onPress={() => {
-                  triggerHaptic();
-                  setShowAiModal(false);
-                }}
-              >
-                <MaterialCommunityIcons name="close" size={24} color={colors.muted} />
-              </Pressable>
-            </Row>
 
-            <ScrollView style={{ maxHeight: "85%", marginTop: 8 }} showsVerticalScrollIndicator={false}>
+              <ScrollView
+                style={{ maxHeight: "85%", marginTop: 8 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
               <View style={{ gap: 12 }}>
                 {/* Course Presets */}
                 <View>
@@ -820,6 +837,7 @@ export default function CTPrepScreen() {
             </ScrollView>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ─────────────────────────────────────────────────────────────────── */}

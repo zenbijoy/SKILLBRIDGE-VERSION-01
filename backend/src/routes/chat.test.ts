@@ -104,7 +104,7 @@ test("Chat and Messaging Tests", async (t) => {
   await t.test("DELETE /chat/messages/:id - soft deletes a message", async () => {
     mockAdmin.from = (table?: string) => {
       if (table === "messages") {
-        return createMockChain({ id: MESSAGE_ID, soft_deleted: true, conversation_id: CONVERSATION_ID });
+        return createMockChain({ id: MESSAGE_ID, soft_deleted: true, conversation_id: CONVERSATION_ID, sender_id: USER_A });
       }
       return createMockChain();
     };

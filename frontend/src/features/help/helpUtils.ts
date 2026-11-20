@@ -8,9 +8,17 @@
 
 export type HelpUrgency = "normal" | "today" | "exam_soon";
 
-export type HelpStatus = "all" | "open" | "answered" | "resolved";
+export type HelpStatus = "all" | "open" | "unanswered" | "answered" | "resolved";
 
 export type PillTone = "default" | "primary" | "warning" | "danger" | "success" | "accent" | "info";
+
+export const DOUBT_REWARDS = {
+  ASK_DOUBT: 5,
+  ANSWER_DOUBT: 15,
+  ACCEPTED_SOLUTION: 30,
+  UPVOTE_RECEIVED: 2,
+  RESOLVE_BONUS: 5,
+} as const;
 
 export type HelpQuestionSummary = {
   id: string;
@@ -99,9 +107,34 @@ export function filterQuestions(
     if (status === "resolved" && st !== "resolved") return false;
     if (status === "answered" && st === "open") return false;
     if (status === "open" && st !== "open") return false;
+    if (status === "unanswered" && (q.answersCount > 0 || st === "resolved")) return false;
 
     return matchesSearch(q, search);
   });
+}
+
+/**
+ * Ensures user has provided at least 5 meaningful characters in either title or body.
+ */
+export function hasValidQuestionText(title?: string, body?: string): boolean {
+  const t = (title || "").trim();
+  const b = (body || "").trim();
+  return t.length >= 5 || b.length >= 5;
+}
+
+/**
+ * Resolves effective title and body so user input is never lost or blocked.
+ */
+export function resolveQuestionPayload(title?: string, body?: string) {
+  const t = (title || "").trim();
+  const b = (body || "").trim();
+  const effectiveBody = b || t;
+  const effectiveTitle = t || (b.length > 80 ? `${b.slice(0, 77)}...` : b);
+  return {
+    title: effectiveTitle,
+    body: effectiveBody,
+    isValid: effectiveBody.length >= 5,
+  };
 }
 
 export type QuestionSummaryStats = {

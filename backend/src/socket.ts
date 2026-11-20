@@ -8,6 +8,7 @@ import {
   updateUserPrivacySettings,
 } from "./services/privacyService.js";
 import { getRoomLiveStatusPayload } from "./routes/room-live.js";
+import { ensureConversationMember } from "./lib/chatAccess.js";
 
 /**
  * Lightweight real-time presence bus.
@@ -89,6 +90,66 @@ export function broadcastRoomQA(
     logger.warn(
       { event: "qa_broadcast_failed", roomId, qaEvent: event, err: (err as Error).message },
       "Failed to broadcast room Q&A update",
+    );
+  }
+}
+
+/**
+ * Broadcast real-time Poll events (created, voted, closed, deleted) to everyone in the room.
+ */
+export function broadcastRoomPoll(
+  roomId: string,
+  event: "created" | "voted" | "closed" | "deleted",
+  payload: Record<string, any>,
+): void {
+  if (!ioRef) return;
+  try {
+    ioRef.to(roomPresenceRoom(roomId)).emit(`room:poll:${event}`, { ...payload, roomId });
+    ioRef.to(roomPresenceRoom(roomId)).emit("room:poll:updated", { ...payload, roomId, event });
+  } catch (err) {
+    logger.warn(
+      { event: "poll_broadcast_failed", roomId, pollEvent: event, err: (err as Error).message },
+      "Failed to broadcast room poll update",
+    );
+  }
+}
+
+/**
+ * Broadcast real-time Member Session Requests (created, upvoted, status_changed, deleted).
+ */
+export function broadcastRoomSessionRequest(
+  roomId: string,
+  event: "created" | "upvoted" | "status_changed" | "deleted",
+  payload: Record<string, any>,
+): void {
+  if (!ioRef) return;
+  try {
+    ioRef.to(roomPresenceRoom(roomId)).emit(`room:session_request:${event}`, { ...payload, roomId });
+    ioRef.to(roomPresenceRoom(roomId)).emit("room:session_request:updated", { ...payload, roomId, event });
+  } catch (err) {
+    logger.warn(
+      { event: "session_request_broadcast_failed", roomId, reqEvent: event, err: (err as Error).message },
+      "Failed to broadcast room session request update",
+    );
+  }
+}
+
+/**
+ * Broadcast real-time Room Sessions (created, updated, deleted).
+ */
+export function broadcastRoomSession(
+  roomId: string,
+  event: "created" | "updated" | "deleted",
+  payload: Record<string, any>,
+): void {
+  if (!ioRef) return;
+  try {
+    ioRef.to(roomPresenceRoom(roomId)).emit(`room:session:${event}`, { ...payload, roomId });
+    ioRef.to(roomPresenceRoom(roomId)).emit("room:session:updated", { ...payload, roomId, event });
+  } catch (err) {
+    logger.warn(
+      { event: "session_broadcast_failed", roomId, sessionEvent: event, err: (err as Error).message },
+      "Failed to broadcast room session update",
     );
   }
 }
@@ -265,14 +326,11 @@ export function setupSocket(io: SocketServer) {
 
     const handleJoin = async (payload: any) => {
       const convId = payload?.conversationId || payload?.conversation_id;
-      if (typeof convId !== "string") return;
-      const { data } = await admin
-        .from("conversation_members")
-        .select("id")
-        .eq("conversation_id", convId)
-        .eq("user_id", socket.data.userId)
-        .maybeSingle();
-      if (data) socket.join(`conversation:${convId}`);
+      if (typeof convId !== "string" || !socket.data.userId) return;
+      const access = await ensureConversationMember(convId, socket.data.userId);
+      if (access.allowed) {
+        socket.join(`conversation:${convId}`);
+      }
     };
 
     const handleLeave = (payload: any) => {
@@ -493,17 +551,27 @@ export function setupSocket(io: SocketServer) {
       });
     });
 
-    socket.on("typing:start", ({ conversationId }) => {
-      if (typeof conversationId !== "string") return;
-      if (socket.rooms.has(`conversation:${conversationId}`)) {
-        socket.to(`conversation:${conversationId}`).emit("typing:start", { userId, conversationId });
+    socket.on("typing:start", (payload: any) => {
+      const convId = typeof payload === "string" ? payload : payload?.conversationId;
+      if (typeof convId !== "string") return;
+      const userName = payload?.userName || payload?.senderName;
+      if (socket.rooms.has(`conversation:${convId}`)) {
+        socket.to(`conversation:${convId}`).emit("typing:start", {
+          userId,
+          conversationId: convId,
+          userName: userName || "Someone",
+        });
       }
     });
 
-    socket.on("typing:stop", ({ conversationId }) => {
-      if (typeof conversationId !== "string") return;
-      if (socket.rooms.has(`conversation:${conversationId}`)) {
-        socket.to(`conversation:${conversationId}`).emit("typing:stop", { userId, conversationId });
+    socket.on("typing:stop", (payload: any) => {
+      const convId = typeof payload === "string" ? payload : payload?.conversationId;
+      if (typeof convId !== "string") return;
+      if (socket.rooms.has(`conversation:${convId}`)) {
+        socket.to(`conversation:${convId}`).emit("typing:stop", {
+          userId,
+          conversationId: convId,
+        });
       }
     });
 
@@ -863,7 +931,7 @@ export function setupSocket(io: SocketServer) {
       signal?: any;
       type?: "offer" | "answer" | "candidate";
     }) => {
-      if (!checkSignalingRateLimit(socket.id)) return;
+      if (!checkSignalingRateLimit(socket.id, 250, 10000)) return;
       const { roomId, toSocketId, signal, type } = payload || {};
       if (!roomId || !toSocketId || !signal) return;
 

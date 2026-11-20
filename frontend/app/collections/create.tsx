@@ -15,6 +15,7 @@ import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { createSavedCollection } from "@/features/growth/growthApi";
 import { Screen } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 const COLORS = ["#2563EB", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#64748B"];
 
@@ -22,6 +23,7 @@ export default function CreateCollectionScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
   const router = useRouter();
+  const keyboardHeight = useKeyboardHeight();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -50,10 +52,14 @@ export default function CreateCollectionScreen() {
 
   return (
     <Screen scroll={false}>
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.bg }]}
-      contentContainerStyle={styles.content}
-    >
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.bg }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: 40 + (keyboardHeight > 0 ? keyboardHeight : 20) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}

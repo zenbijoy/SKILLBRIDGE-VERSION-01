@@ -20,16 +20,38 @@ export function getSocket(): Socket | null {
 
   socketInstance = io(url, {
     autoConnect: false,
+    transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
-    reconnectionAttempts: 10,
+    reconnectionAttempts: 15,
+    timeout: 20000,
   });
 
   socketInstance.on("reconnect_attempt", async () => {
-    const { data } = await supabase.auth.getSession();
-    if (data.session && socketInstance) {
-      socketInstance.auth = { token: data.session.access_token };
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session && socketInstance) {
+        socketInstance.auth = { token: data.session.access_token };
+      }
+    } catch {}
+  });
+
+  socketInstance.on("connect_error", async (err) => {
+    console.warn("[Socket] Connect error:", err?.message || err);
+    // If unauthorized or connection rejected, attempt session refresh and retry
+    if (err?.message?.includes("unauthorized") || err?.message?.includes("jwt")) {
+      try {
+        const { data } = await supabase.auth.refreshSession();
+        if (data.session && socketInstance) {
+          socketInstance.auth = { token: data.session.access_token };
+          setTimeout(() => {
+            if (socketInstance && !socketInstance.connected) {
+              socketInstance.connect();
+            }
+          }, 1000);
+        }
+      } catch {}
     }
   });
 
@@ -43,8 +65,13 @@ export function getSocket(): Socket | null {
 export function connectSocket(accessToken: string): void {
   const socket = getSocket();
   if (!socket) return;
+  const currentToken = (socket.auth as any)?.token;
   socket.auth = { token: accessToken };
   if (!socket.connected) {
+    socket.connect();
+  } else if (currentToken && currentToken !== accessToken) {
+    // Token updated while connected - reconnect cleanly to authenticate new session
+    socket.disconnect();
     socket.connect();
   }
 }

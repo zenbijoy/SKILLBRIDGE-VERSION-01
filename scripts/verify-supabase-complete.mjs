@@ -42,6 +42,8 @@ const TABLES = [
   "livekit_attendance",
   "room_poll_votes",
   "room_certificates",
+  "room_session_requests",
+  "room_session_request_upvotes",
   // Clubs & Events
   "clubs",
   "club_members",

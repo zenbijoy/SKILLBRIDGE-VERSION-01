@@ -34,6 +34,8 @@ export type RoomOSHeaderProps = {
   onOpenAnalytics?: () => void;
   onAttendance?: () => void;
   onToggleRolePreview?: () => void;
+  onOpenTeachers?: () => void;
+  onAskQuestion?: () => void;
 };
 
 export const RoomOSHeader: React.FC<RoomOSHeaderProps> = ({
@@ -43,6 +45,8 @@ export const RoomOSHeader: React.FC<RoomOSHeaderProps> = ({
   isEducator = false,
   onOpenMore,
   onSearch,
+  onOpenTeachers,
+  onAskQuestion,
 }) => {
   const { colors } = useTheme();
 
@@ -181,6 +185,36 @@ export const RoomOSHeader: React.FC<RoomOSHeaderProps> = ({
             {isPrivate ? "Private" : "Public"}
           </Text>
         </View>
+
+        {onOpenTeachers && (
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              onOpenTeachers();
+            }}
+            style={[styles.chip, { backgroundColor: `${colors.primary}15`, borderColor: `${colors.primary}40` }]}
+            accessibilityRole="button"
+            accessibilityLabel="Call Room Teacher"
+          >
+            <MaterialCommunityIcons name="phone-outgoing" size={13} color={colors.primary} />
+            <Text style={[styles.chipText, { color: colors.primary }]}>Call Teacher</Text>
+          </Pressable>
+        )}
+
+        {onAskQuestion && (
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              onAskQuestion();
+            }}
+            style={[styles.chip, { backgroundColor: colors.surface2, borderColor: colors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel="Ask Question"
+          >
+            <MaterialCommunityIcons name="help-circle-outline" size={13} color={colors.text} />
+            <Text style={[styles.chipText, { color: colors.text }]}>Ask Question</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );

@@ -21,12 +21,14 @@ import {
   type TutorSlot,
 } from "@/features/growth/growthApi";
 import { Screen } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 export default function BookTutorScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { colors } = useTheme();
   const { t } = useI18n();
   const router = useRouter();
+  const keyboardHeight = useKeyboardHeight();
 
   const [slots, setSlots] = useState<TutorSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<TutorSlot | null>(null);
@@ -96,10 +98,14 @@ export default function BookTutorScreen() {
 
   return (
     <Screen scroll={false}>
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.bg }]}
-      contentContainerStyle={styles.content}
-    >
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.bg }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: 60 + (keyboardHeight > 0 ? keyboardHeight : 20) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}

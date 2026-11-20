@@ -57,7 +57,6 @@ help.get(
     const questions = filtered.map((q: any) => {
       const answers = q.answers ?? [];
       const acceptedAnswer = answers.find((a: any) => a.is_accepted);
-      const isAnswered = answers.length > 0;
 
       return {
         id: q.id,
@@ -79,19 +78,31 @@ help.get(
       };
     });
 
-    // Filter by answered/unanswered if status === "answered"
-    const finalQuestions = status === "answered"
-      ? questions.filter((q) => q.answersCount > 0)
-      : questions;
+    // Filter by answered/unanswered if status === "answered" or "unanswered"
+    let finalQuestions = questions;
+    if (status === "answered") {
+      finalQuestions = questions.filter((q) => q.answersCount > 0);
+    } else if (status === "unanswered") {
+      finalQuestions = questions.filter((q) => q.answersCount === 0 && !q.isResolved);
+    }
 
     res.json({ questions: finalQuestions });
   }),
 );
 
-// POST /api/v1/help/questions - Fast canonical question composer
+// POST /api/v1/help/questions - Fast canonical question composer with rewards
 help.post(
   "/questions",
   wrap(async (req, res) => {
+    const rawBody = req.body || {};
+    const effectiveBody =
+      (typeof rawBody.body === "string" && rawBody.body.trim()) ||
+      (typeof rawBody.title === "string" && rawBody.title.trim()) ||
+      "";
+    const effectiveTitle =
+      (typeof rawBody.title === "string" && rawBody.title.trim()) ||
+      effectiveBody.slice(0, 80).trim();
+
     const body = z
       .object({
         title: z.string().max(200).optional(),
@@ -103,7 +114,11 @@ help.post(
         roomId: z.string().uuid().optional(),
         tags: z.array(z.string()).default([]),
       })
-      .parse(req.body);
+      .parse({
+        ...req.body,
+        body: effectiveBody,
+        title: effectiveTitle,
+      });
 
     let targetRoomId: string;
 
@@ -153,6 +168,8 @@ help.post(
       `)
       .single();
 
+    let createdQuestion = question;
+
     if (error) {
       // Fallback insert without extra columns if DB schema cache hasn't synced
       const { data: fallbackQuestion, error: fallbackErr } = await admin
@@ -170,38 +187,45 @@ help.post(
         .single();
 
       if (fallbackErr) throw fallbackErr;
+      createdQuestion = fallbackQuestion;
+    }
 
-      logDomainEvent({
-        event: "question_created",
-        roomId: targetRoomId,
-        questionId: fallbackQuestion.id,
-        urgency: body.urgency,
-      } as any);
+    if (!createdQuestion) {
+      throw new Error("Failed to create question record");
+    }
 
-      return res.status(201).json({
-        question: {
-          ...fallbackQuestion,
-          subject: body.subject || null,
-          topic: body.topic || null,
-          urgency: body.urgency,
-        },
+    // Award reputation (+5 points) to the question author for asking a doubt
+    let rewardResult = { awarded: false, points: 5, event: "doubt_asked" };
+    try {
+      const { data: rep } = await admin.rpc("award_reputation_atomic", {
+        p_user_id: req.userId!,
+        p_event_type: "doubt_asked",
+        p_points: 5,
+        p_reference_type: "room_question",
+        p_reference_id: createdQuestion.id,
       });
+      if (rep && (rep as any).awarded) {
+        rewardResult = { awarded: true, points: 5, event: "doubt_asked" };
+      }
+    } catch (e) {
+      logger.warn({ err: (e as Error).message, questionId: createdQuestion.id }, "Failed to award reputation for doubt_asked");
     }
 
     logDomainEvent({
       event: "question_created",
       roomId: targetRoomId,
-      questionId: question.id,
+      questionId: createdQuestion.id,
       urgency: body.urgency,
     } as any);
 
     res.status(201).json({
       question: {
-        ...question,
+        ...createdQuestion,
         subject: body.subject || null,
         topic: body.topic || null,
         urgency: body.urgency,
       },
+      reward: rewardResult,
     });
   }),
 );
@@ -262,7 +286,7 @@ help.get(
   }),
 );
 
-// POST /api/v1/help/questions/:id/answers - Post answer to question
+// POST /api/v1/help/questions/:id/answers - Post answer to question with rewards
 help.post(
   "/questions/:id/answers",
   wrap(async (req, res) => {
@@ -306,6 +330,23 @@ help.post(
 
     if (error) throw error;
 
+    // Award reputation (+15 points) for answering a peer's academic doubt
+    let rewardResult = { awarded: false, points: 15, event: "doubt_answered" };
+    try {
+      const { data: rep } = await admin.rpc("award_reputation_atomic", {
+        p_user_id: req.userId!,
+        p_event_type: "doubt_answered",
+        p_points: 15,
+        p_reference_type: "room_question_answer",
+        p_reference_id: answer.id,
+      });
+      if (rep && (rep as any).awarded) {
+        rewardResult = { awarded: true, points: 15, event: "doubt_answered" };
+      }
+    } catch (e) {
+      logger.warn({ err: (e as Error).message, answerId: answer.id }, "Failed to award reputation for doubt_answered");
+    }
+
     logDomainEvent({
       event: "question_answered",
       roomId: q.room_id,
@@ -328,7 +369,7 @@ help.post(
       });
     }
 
-    res.status(201).json({ answer });
+    res.status(201).json({ answer, reward: rewardResult });
   }),
 );
 
@@ -340,7 +381,7 @@ help.post(
 
     const { data: q, error: getErr } = await admin
       .from("room_questions")
-      .select("id, upvotes_count")
+      .select("id, author_id, upvotes_count")
       .eq("id", id)
       .maybeSingle();
 
@@ -354,6 +395,64 @@ help.post(
       .eq("id", id);
 
     if (updateErr) throw updateErr;
+
+    // Award question author (+2 points) when upvoted by someone else
+    if (q.author_id && q.author_id !== req.userId) {
+      try {
+        await admin.rpc("award_reputation_atomic", {
+          p_user_id: q.author_id,
+          p_event_type: "question_upvoted",
+          p_points: 2,
+          p_reference_type: "room_question",
+          p_reference_id: id,
+        });
+      } catch (e) {
+        logger.warn({ err: (e as Error).message, questionId: id }, "Failed to award reputation for question_upvoted");
+      }
+    }
+
+    res.json({ upvotesCount: newCount });
+  }),
+);
+
+// POST /api/v1/help/questions/:id/answers/:answerId/upvote - Upvote an answer
+help.post(
+  "/questions/:id/answers/:answerId/upvote",
+  wrap(async (req, res) => {
+    const { id, answerId } = req.params;
+
+    const { data: a, error: getErr } = await admin
+      .from("room_question_answers")
+      .select("id, author_id, upvotes_count")
+      .eq("id", answerId)
+      .eq("question_id", id)
+      .maybeSingle();
+
+    if (getErr) throw getErr;
+    if (!a) return res.status(404).json({ error: "Answer not found" });
+
+    const newCount = (a.upvotes_count || 0) + 1;
+    const { error: updateErr } = await admin
+      .from("room_question_answers")
+      .update({ upvotes_count: newCount })
+      .eq("id", answerId);
+
+    if (updateErr) throw updateErr;
+
+    // Award answer author (+2 points) when upvoted by someone else
+    if (a.author_id && a.author_id !== req.userId) {
+      try {
+        await admin.rpc("award_reputation_atomic", {
+          p_user_id: a.author_id,
+          p_event_type: "answer_upvoted",
+          p_points: 2,
+          p_reference_type: "room_question_answer",
+          p_reference_id: answerId,
+        });
+      } catch (e) {
+        logger.warn({ err: (e as Error).message, answerId }, "Failed to award reputation for answer_upvoted");
+      }
+    }
 
     res.json({ upvotesCount: newCount });
   }),
@@ -404,12 +503,47 @@ help.patch(
       .eq("id", answerId)
       .maybeSingle();
 
+    let solverReward = { awarded: false, points: 30, event: "doubt_solution_accepted" };
+    let askerReward = { awarded: false, points: 5, event: "doubt_resolved" };
+
+    if (acceptedAnswer?.author_id) {
+      try {
+        const { data: rep } = await admin.rpc("award_reputation_atomic", {
+          p_user_id: acceptedAnswer.author_id,
+          p_event_type: "doubt_solution_accepted",
+          p_points: 30,
+          p_reference_type: "room_question_answer",
+          p_reference_id: answerId,
+        });
+        if (rep && (rep as any).awarded) {
+          solverReward = { awarded: true, points: 30, event: "doubt_solution_accepted" };
+        }
+      } catch (e) {
+        logger.warn({ err: (e as Error).message, answerId }, "Failed to award solver reward for solution accepted");
+      }
+    }
+
+    try {
+      const { data: rep } = await admin.rpc("award_reputation_atomic", {
+        p_user_id: req.userId!,
+        p_event_type: "doubt_resolved",
+        p_points: 5,
+        p_reference_type: "room_question",
+        p_reference_id: id,
+      });
+      if (rep && (rep as any).awarded) {
+        askerReward = { awarded: true, points: 5, event: "doubt_resolved" };
+      }
+    } catch (e) {
+      logger.warn({ err: (e as Error).message, questionId: id }, "Failed to award asker reward for doubt resolution");
+    }
+
     if (acceptedAnswer?.author_id && acceptedAnswer.author_id !== req.userId) {
       NotificationService.dispatch({
         userId: acceptedAnswer.author_id,
         type: "ANSWER_ACCEPTED",
         title: "Answer Accepted! 🌟",
-        body: `Your answer was accepted as the solution for: "${q.title?.slice(0, 50) || "a question"}"`,
+        body: `Your answer was accepted as the solution for: "${q.title?.slice(0, 50) || "a question"}" (+30 Reputation)`,
         entityType: "question",
         entityId: id,
         data: { roomId: q.room_id, questionId: id, answerId, route: "room" },
@@ -418,6 +552,11 @@ help.patch(
       });
     }
 
-    res.json({ success: true, acceptedAnswerId: answerId });
+    res.json({
+      success: true,
+      acceptedAnswerId: answerId,
+      solverReward,
+      askerReward,
+    });
   }),
 );

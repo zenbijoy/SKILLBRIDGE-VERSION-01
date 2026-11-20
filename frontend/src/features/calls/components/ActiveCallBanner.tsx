@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Image } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallStore } from "../store/callStore";
 import { endCallApi } from "../services/callApi";
@@ -10,6 +11,7 @@ import { triggerHaptic } from "@/components/ui";
 
 export const ActiveCallBanner: React.FC = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { activeCall, setMinimized, resetCall } = useCallStore();
   const socket = getSocket();
@@ -66,7 +68,7 @@ export const ActiveCallBanner: React.FC = () => {
   const isVideo = activeCall.type === "video";
 
   return (
-    <View style={[styles.wrapper, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+    <View style={[styles.wrapper, { top: Math.max(insets.top, 16) + 8, backgroundColor: colors.surface, borderColor: colors.primary }]}>
       <Pressable onPress={handleReturn} style={styles.content}>
         {/* Call Icon / Status Indicator */}
         <View
@@ -125,7 +127,6 @@ export const ActiveCallBanner: React.FC = () => {
 const styles = StyleSheet.create({
   wrapper: {
     position: "absolute",
-    top: 50,
     left: 12,
     right: 12,
     zIndex: 9999,

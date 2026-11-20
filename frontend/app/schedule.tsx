@@ -307,10 +307,13 @@ export default function ScheduleScreen() {
       await api("/calendar/events/exception", {
         method: "POST",
         body: JSON.stringify({
+          routine_entry_id: event.routine_entry_id,
           routineEntryId: event.routine_entry_id,
           date: event.date,
+          exception_type: exceptionType,
           exceptionType,
-          notes,
+          note: notes || undefined,
+          notes: notes || undefined,
         }),
       });
       queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
@@ -336,8 +339,11 @@ export default function ScheduleScreen() {
       await api(`/calendar/routines/${activeRt.id}/overrides`, {
         method: "POST",
         body: JSON.stringify({
+          routine_entry_id: event.routine_entry_id,
           routineEntryId: event.routine_entry_id,
+          custom_room: customRoom || null,
           customRoom: customRoom || null,
+          custom_notes: customNotes || null,
           customNotes: customNotes || null,
         }),
       });
@@ -351,13 +357,38 @@ export default function ScheduleScreen() {
 
   const handleManualClassSave = async (classData: RoutineEntry) => {
     try {
+      const formattedEntry = {
+        ...classData,
+        course_code: classData.course_code,
+        courseCode: classData.course_code,
+        course_title: classData.course_title,
+        courseTitle: classData.course_title,
+        day_of_week: classData.day_of_week,
+        day: classData.day_of_week,
+        start_time: classData.start_time,
+        startTime: classData.start_time,
+        end_time: classData.end_time,
+        endTime: classData.end_time,
+        group_name: classData.group_name,
+        groupName: classData.group_name,
+      };
+
       // Create or update manual routine
       await api("/calendar/routines", {
         method: "POST",
         body: JSON.stringify({
           title: `${profile?.academic_group ?? "My Class"} Routine`,
-          entries: [classData],
+          university: profile?.university || "RUET",
+          department: profile?.department || "CSE",
+          semester: profile?.semester || "2nd Year",
+          section: profile?.section || "A",
+          academic_group: profile?.academic_group,
+          academicGroup: profile?.academic_group,
+          entries: [formattedEntry],
+          source_type: "manual",
           sourceType: "manual",
+          is_active: true,
+          isActive: true,
         }),
       });
       setIsManualClassModalOpen(false);

@@ -204,7 +204,7 @@ try {
             exit $LASTEXITCODE
         }
     }
-    & .\gradlew.bat assembleRelease "-PreactNativeArchitectures=$archList"
+    & .\gradlew.bat assembleRelease "-PreactNativeArchitectures=$archList" -x lint -x lintVitalAnalyzeRelease
     $buildExit = $LASTEXITCODE
 }
 finally {

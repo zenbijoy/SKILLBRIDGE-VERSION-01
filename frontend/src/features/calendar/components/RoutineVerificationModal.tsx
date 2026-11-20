@@ -208,6 +208,30 @@ export function RoutineVerificationModal({
     setEditingEntry({ entry: null, index: -1, isOpen: true });
   };
 
+  const formatEntriesForPayload = (rawEntries: RoutineEntry[]) => {
+    return rawEntries.map((e) => ({
+      id: e.id,
+      course_code: e.course_code,
+      courseCode: e.course_code,
+      course_title: e.course_title,
+      courseTitle: e.course_title,
+      day_of_week: e.day_of_week,
+      day: e.day_of_week,
+      start_time: e.start_time,
+      startTime: e.start_time,
+      end_time: e.end_time,
+      endTime: e.end_time,
+      room: e.room || null,
+      instructor: e.instructor || null,
+      type: e.type || "CLASS",
+      group_name: e.group_name || null,
+      groupName: e.group_name || null,
+      confidence: e.confidence || "high",
+      warnings: e.warnings || [],
+      is_confirmed: true,
+    }));
+  };
+
   const handleSaveEditedEntry = async (saved: RoutineEntry) => {
     const nextEntries = [...entries];
     if (editingEntry.index >= 0) {
@@ -229,7 +253,12 @@ export function RoutineVerificationModal({
     try {
       await api(`/calendar/routines/${routine.id}`, {
         method: "PUT",
-        body: JSON.stringify({ entries: nextEntries }),
+        body: JSON.stringify({
+          entries: formatEntriesForPayload(nextEntries),
+          academic_group: currentSection || routine.academic_group,
+          academicGroup: currentSection || routine.academic_group,
+          title: routine.title,
+        }),
       });
     } catch (e) {
       console.warn("Could not sync edit draft", e);
@@ -244,7 +273,12 @@ export function RoutineVerificationModal({
     try {
       await api(`/calendar/routines/${routine.id}`, {
         method: "PUT",
-        body: JSON.stringify({ entries: nextEntries }),
+        body: JSON.stringify({
+          entries: formatEntriesForPayload(nextEntries),
+          academic_group: currentSection || routine.academic_group,
+          academicGroup: currentSection || routine.academic_group,
+          title: routine.title,
+        }),
       });
     } catch (e) {
       console.warn("Could not sync delete draft", e);
@@ -270,12 +304,16 @@ export function RoutineVerificationModal({
     setIsActivating(true);
 
     try {
+      const payloadEntries = formatEntriesForPayload(entries);
+
       // 1. Save all edited entries first
       await api(`/calendar/routines/${routine.id}`, {
         method: "PUT",
         body: JSON.stringify({
-          entries,
+          entries: payloadEntries,
           academic_group: currentSection || routine.academic_group,
+          academicGroup: currentSection || routine.academic_group,
+          title: routine.title,
         }),
       });
 
@@ -289,10 +327,17 @@ export function RoutineVerificationModal({
 
       // 3. Share with class if opted
       if (shareWithClass) {
-        await api(`/calendar/routines/${routine.id}/share`, {
-          method: "POST",
-          body: JSON.stringify({ isPublic: true }),
-        });
+        try {
+          await api(`/calendar/routines/${routine.id}/share`, {
+            method: "POST",
+            body: JSON.stringify({
+              is_public: true,
+              isPublic: true,
+            }),
+          });
+        } catch (shareErr) {
+          console.warn("Routine share error (non-fatal):", shareErr);
+        }
       }
 
       setIsActivating(false);
@@ -300,7 +345,13 @@ export function RoutineVerificationModal({
         "Routine Activated! 🎉",
         "Your academic timetable is active. SkillBridge will keep your classes, labs, and reminders synced."
       );
-      onActivated(activateResp.routine);
+      onActivated(
+        activateResp?.routine || {
+          ...routine,
+          is_active: true,
+          verification_status: "user_verified",
+        }
+      );
     } catch (error: any) {
       setIsActivating(false);
       Alert.alert("Activation Error", error.message || "Failed to activate routine.");

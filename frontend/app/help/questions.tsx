@@ -16,11 +16,12 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
-import { Button, Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
+import { Empty, ErrorState, H1, Muted, Pill, Row, Screen, Skeleton, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { AskHelpComposerModal } from "@/features/help/AskHelpComposerModal";
 import {
   deriveStatus,
+  DOUBT_REWARDS,
   formatRelativeTime,
   getUrgencyMeta,
   matchesSearch,
@@ -30,8 +31,9 @@ import {
   type HelpStatus,
 } from "@/features/help/helpUtils";
 
-const STATUS_FILTERS: { key: HelpStatus; label: string }[] = [
+const STATUS_FILTERS: { key: HelpStatus; label: string; icon?: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
   { key: "all", label: "All" },
+  { key: "unanswered", label: "Needs Answer 🔥", icon: "fire" },
   { key: "open", label: "Open" },
   { key: "answered", label: "Answered" },
   { key: "resolved", label: "Solved" },
@@ -51,7 +53,7 @@ export default function HelpQuestionsScreen() {
     queryKey: ["help-questions", filterStatus, onlyMine],
     queryFn: () =>
       api<{ questions: HelpQuestionSummary[] }>(
-        `/help/questions?status=${filterStatus}&mine=${onlyMine}&limit=40`,
+        `/help/questions?status=${filterStatus}&mine=${onlyMine}&limit=50`,
       ),
   });
 
@@ -60,9 +62,13 @@ export default function HelpQuestionsScreen() {
   const stats = useMemo(() => summarizeQuestions(questions), [questions]);
 
   const visibleQuestions = useMemo(() => {
-    if (!search.trim()) return questions;
-    return questions.filter((q) => matchesSearch(q, search));
-  }, [questions, search]);
+    let list = questions;
+    if (filterStatus === "unanswered") {
+      list = list.filter((q) => q.answersCount === 0 && !q.isResolved && !q.hasAcceptedAnswer);
+    }
+    if (!search.trim()) return list;
+    return list.filter((q) => matchesSearch(q, search));
+  }, [questions, filterStatus, search]);
 
   const openComposer = () => {
     triggerHaptic();
@@ -73,6 +79,7 @@ export default function HelpQuestionsScreen() {
     const status = deriveStatus(item);
     const urgency = getUrgencyMeta(item.urgency);
     const solved = status === "resolved";
+    const needsAnswer = item.answersCount === 0 && !solved;
 
     return (
       <Pressable
@@ -84,27 +91,34 @@ export default function HelpQuestionsScreen() {
           s.questionCard,
           {
             backgroundColor: colors.surface,
-            borderColor: solved ? `${colors.success}55` : colors.border,
+            borderColor: solved ? `${colors.success}55` : needsAnswer ? `${colors.warning}44` : colors.border,
             opacity: pressed ? 0.85 : 1,
           },
         ]}
       >
-        {solved && <View style={[s.solvedStripe, { backgroundColor: colors.success }]} />}
+        {solved && <View style={[s.stripe, { backgroundColor: colors.success }]} />}
+        {needsAnswer && <View style={[s.stripe, { backgroundColor: colors.warning }]} />}
+
         <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
           <Row style={{ gap: 6, alignItems: "center", flexShrink: 1 }}>
             {item.subject ? <Pill tone="primary">#{item.subject}</Pill> : null}
             {item.urgency !== "normal" ? <Pill tone={urgency.tone}>{urgency.label}</Pill> : null}
+            {needsAnswer && (
+              <Pill tone="warning">⚡ +{DOUBT_REWARDS.ANSWER_DOUBT} Rep Bounty</Pill>
+            )}
           </Row>
           <Pill tone={solved ? "success" : status === "answered" ? "info" : "default"}>
             {solved ? "SOLVED" : status === "answered" ? "ANSWERED" : "OPEN"}
           </Pill>
         </Row>
+
         <Text style={[s.questionTitle, { color: colors.text }]} numberOfLines={2}>
           {item.title}
         </Text>
         <Text style={[s.questionBody, { color: colors.muted }]} numberOfLines={2}>
           {item.body}
         </Text>
+
         <Row style={[s.cardFooter, { borderTopColor: colors.divider }]}>
           <Row style={{ gap: 8, alignItems: "center", flexShrink: 1 }}>
             <View style={[s.avatar, { backgroundColor: colors.primarySoft }]}>
@@ -122,8 +136,17 @@ export default function HelpQuestionsScreen() {
               </Text>
               <Row style={{ gap: 10, alignItems: "center" }}>
                 <Row style={{ gap: 3, alignItems: "center" }}>
-                  <MaterialCommunityIcons name="comment-text-outline" size={12} color={colors.primary} />
-                  <Text style={[s.metaText, { color: colors.primary }]}>
+                  <MaterialCommunityIcons
+                    name={item.answersCount > 0 ? "comment-check-outline" : "comment-question-outline"}
+                    size={12}
+                    color={item.answersCount > 0 ? colors.primary : colors.muted}
+                  />
+                  <Text
+                    style={[
+                      s.metaText,
+                      { color: item.answersCount > 0 ? colors.primary : colors.muted, fontWeight: "600" },
+                    ]}
+                  >
                     {item.answersCount} {item.answersCount === 1 ? "answer" : "answers"}
                   </Text>
                 </Row>
@@ -151,7 +174,7 @@ export default function HelpQuestionsScreen() {
   const listHeader = (
     <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
       <Muted style={{ fontSize: 12 }}>
-        {visibleQuestions.length} {visibleQuestions.length === 1 ? "question" : "questions"}
+        {visibleQuestions.length} {visibleQuestions.length === 1 ? "doubt" : "doubts"}
         {search.trim() ? " matching" : ""}
       </Muted>
       <Pressable
@@ -173,7 +196,7 @@ export default function HelpQuestionsScreen() {
           color={onlyMine ? colors.primary : colors.muted}
         />
         <Text style={{ fontSize: 12, fontWeight: "600", color: onlyMine ? colors.primary : colors.text }}>
-          {onlyMine ? "My Questions" : "All Authors"}
+          {onlyMine ? "My Doubts" : "All Authors"}
         </Text>
       </Pressable>
     </Row>
@@ -206,27 +229,26 @@ export default function HelpQuestionsScreen() {
             progressBackgroundColor={colors.surface}
           />
         }
-        contentContainerStyle={{ paddingBottom: 96 + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
         ListHeaderComponent={listHeader}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <Empty
             icon="help-circle-outline"
-            title={onlyMine ? "No Questions Yet" : "No Questions Found"}
+            title={onlyMine ? "No Doubts Asked Yet" : "No Doubts Found"}
             detail={
               onlyMine
-                ? "You haven't asked for help yet. Tap the button below to post your first doubt."
-                : "Be the first to ask a study question, or try a different filter or search."
+                ? "You haven't asked for academic help yet. Tap below to post your first doubt and earn +5 Reputation."
+                : "Be the first to post a study question and get help from peer mentors!"
             }
-            actionTitle="Ask a Question"
+            actionTitle={onlyMine ? "Ask Your First Doubt" : "Post a Doubt"}
             onAction={openComposer}
           />
         }
       />
     );
   };
-
 
   return (
     <Screen scroll={false} contentStyle={{ padding: 0, gap: 0 }}>
@@ -237,10 +259,20 @@ export default function HelpQuestionsScreen() {
             <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
           </Pressable>
           <View style={{ flex: 1, marginHorizontal: 10 }}>
-            <H1 style={s.title}>Ask Doubt</H1>
-            <Muted style={s.subtitle}>Get unstuck with your campus peers</Muted>
+            <H1 style={s.title}>Campus Doubts</H1>
+            <Muted style={s.subtitle}>Ask doubts, help peers &amp; earn rewards</Muted>
           </View>
-          <Button title="Ask" compact onPress={openComposer} />
+          {/* Quick link to Leaderboard instead of duplicate ask button */}
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              router.push("/leaderboard" as any);
+            }}
+            style={[s.trophyBtn, { backgroundColor: `${colors.accent}15`, borderColor: `${colors.accent}40` }]}
+          >
+            <MaterialCommunityIcons name="trophy-outline" size={16} color={colors.accent} />
+            <Text style={[s.trophyBtnText, { color: colors.accent }]}>Rankings</Text>
+          </Pressable>
         </Row>
 
         {/* Live stat hero */}
@@ -252,7 +284,7 @@ export default function HelpQuestionsScreen() {
         >
           <View style={s.heroItem}>
             <Text style={s.heroValue}>{stats.total}</Text>
-            <Text style={s.heroLabel}>Loaded</Text>
+            <Text style={s.heroLabel}>Total</Text>
           </View>
           <View style={[s.heroDivider, { backgroundColor: "rgba(255,255,255,0.25)" }]} />
           <View style={s.heroItem}>
@@ -270,6 +302,16 @@ export default function HelpQuestionsScreen() {
             <Text style={s.heroLabel}>Solved</Text>
           </View>
         </LinearGradient>
+
+        {/* Gamification & Reward Motivation Strip */}
+        <Row style={[s.rewardStrip, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+          <MaterialCommunityIcons name="star-shooting" size={16} color={colors.accent} />
+          <Text style={[s.rewardStripText, { color: colors.text }]}>
+            Rewards: <Text style={{ color: colors.primary, fontWeight: "700" }}>+{DOUBT_REWARDS.ASK_DOUBT} Rep</Text> Ask ·{" "}
+            <Text style={{ color: colors.warning, fontWeight: "700" }}>+{DOUBT_REWARDS.ANSWER_DOUBT} Rep</Text> Answer ·{" "}
+            <Text style={{ color: colors.success, fontWeight: "800" }}>+{DOUBT_REWARDS.ACCEPTED_SOLUTION} Rep</Text> Solved
+          </Text>
+        </Row>
 
         {/* Search */}
         <View style={[s.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -323,38 +365,38 @@ export default function HelpQuestionsScreen() {
         </Row>
       </View>
 
-      {/* FlatList is the scroller (fixes VirtualizedList-in-ScrollView) */}
+      {/* FlatList is the scroller */}
       <View style={{ flex: 1, paddingHorizontal: 16 }}>{listBody()}</View>
 
-      {/* Floating Ask button */}
+      {/* Single, prominent Extended Floating Ask Button */}
       <Pressable
         onPress={openComposer}
         style={({ pressed }) => [
-          s.fab,
+          s.extendedFab,
           {
             backgroundColor: colors.primary,
-            bottom: Math.max(insets.bottom, 16) + 76,
+            bottom: Math.max(insets.bottom, 16) + 70,
             opacity: pressed ? 0.9 : 1,
           },
         ]}
         accessibilityLabel="Ask a new doubt"
         accessibilityRole="button"
       >
-        <MaterialCommunityIcons name="message-question-outline" size={26} color="#FFFFFF" />
+        <MaterialCommunityIcons name="plus-circle-outline" size={20} color="#FFFFFF" />
+        <Text style={s.extendedFabText}>Ask Doubt</Text>
       </Pressable>
 
-      {/* Real composer wired to POST /help/questions */}
+      {/* Real composer wired to POST /help/questions with rewards */}
       <AskHelpComposerModal visible={showComposer} onClose={() => setShowComposer(false)} />
     </Screen>
   );
 }
 
-
 const s = StyleSheet.create({
   header: {
     paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 12,
+    paddingBottom: 10,
+    gap: 10,
   },
   backBtn: {
     padding: 4,
@@ -366,12 +408,25 @@ const s = StyleSheet.create({
   subtitle: {
     fontSize: 12,
   },
+  trophyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  trophyBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
   hero: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderRadius: radius.lg,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 8,
   },
   heroItem: {
@@ -381,7 +436,7 @@ const s = StyleSheet.create({
   },
   heroDivider: {
     width: 1,
-    height: 26,
+    height: 24,
   },
   heroValue: {
     color: "#FFFFFF",
@@ -392,6 +447,19 @@ const s = StyleSheet.create({
     color: "rgba(255,255,255,0.85)",
     fontSize: 11,
     fontWeight: "600",
+  },
+  rewardStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  rewardStripText: {
+    fontSize: 11.5,
+    flex: 1,
   },
   searchBar: {
     flexDirection: "row",
@@ -412,8 +480,8 @@ const s = StyleSheet.create({
     flexWrap: "wrap",
   },
   pillBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: radius.pill,
     borderWidth: 1,
   },
@@ -434,7 +502,7 @@ const s = StyleSheet.create({
     marginBottom: 10,
     overflow: "hidden",
   },
-  solvedStripe: {
+  stripe: {
     position: "absolute",
     left: 0,
     top: 0,
@@ -476,19 +544,25 @@ const s = StyleSheet.create({
   metaText: {
     fontSize: 11,
   },
-  fab: {
+  extendedFab: {
     position: "absolute",
     right: 18,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 28,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 6,
   },
+  extendedFabText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
 });
-

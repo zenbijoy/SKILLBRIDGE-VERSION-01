@@ -13,7 +13,7 @@ export default function AboutSettings() {
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
 
-  const localVersion = Constants.expoConfig?.version ?? "2.0.10";
+  const localVersion = Constants.expoConfig?.version ?? "2.1.0";
 
   const fetchUpdateInfo = async () => {
     setLoading(true);

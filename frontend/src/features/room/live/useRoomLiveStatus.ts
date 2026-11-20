@@ -43,6 +43,9 @@ export interface RoomLiveStatusPayload {
     canStartStudy: boolean;
     canJoin: boolean;
     reason?: string;
+    role?: string | null;
+    isOwner?: boolean;
+    isMember?: boolean;
   };
 }
 

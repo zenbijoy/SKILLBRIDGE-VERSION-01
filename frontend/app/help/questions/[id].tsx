@@ -32,7 +32,7 @@ import {
   triggerHaptic,
 } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
-import { formatRelativeTime, getUrgencyMeta, roomLabel } from "@/features/help/helpUtils";
+import { DOUBT_REWARDS, formatRelativeTime, getUrgencyMeta, roomLabel } from "@/features/help/helpUtils";
 
 type Answer = {
   id: string;
@@ -85,9 +85,8 @@ export default function QuestionDetailScreen() {
   const qc = useQueryClient();
 
   const [answerText, setAnswerText] = useState("");
-  // Local flag only disables the button after a tap. The displayed count always
-  // comes from the server, because POST /upvote persists the increment.
   const [upvoted, setUpvoted] = useState(false);
+  const [upvotedAnswers, setUpvotedAnswers] = useState<Record<string, boolean>>({});
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery<{
     question: QuestionDetail;
@@ -106,23 +105,44 @@ export default function QuestionDetailScreen() {
       triggerHaptic("selection");
       setUpvoted(true);
       qc.invalidateQueries({ queryKey: ["help-question", id] });
+      qc.invalidateQueries({ queryKey: ["help-questions"] });
     },
     onError: () => {
       Alert.alert("Error", "Could not upvote this question.");
     },
   });
 
+  const upvoteAnswerMutation = useMutation({
+    mutationFn: (answerId: string) =>
+      api<{ upvotesCount: number }>(`/help/questions/${id}/answers/${answerId}/upvote`, { method: "POST" }),
+    onSuccess: (_res, answerId) => {
+      triggerHaptic("selection");
+      setUpvotedAnswers((prev) => ({ ...prev, [answerId]: true }));
+      qc.invalidateQueries({ queryKey: ["help-question", id] });
+    },
+    onError: () => {
+      Alert.alert("Error", "Could not upvote this answer.");
+    },
+  });
+
   const answerMutation = useMutation({
     mutationFn: (body: string) =>
-      api(`/help/questions/${id}/answers`, {
+      api<{ answer: Answer; reward?: { points: number; awarded: boolean } }>(`/help/questions/${id}/answers`, {
         method: "POST",
         body: JSON.stringify({ body }),
       }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       triggerHaptic("notificationSuccess");
       setAnswerText("");
       qc.invalidateQueries({ queryKey: ["help-question", id] });
       qc.invalidateQueries({ queryKey: ["help-questions"] });
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      qc.invalidateQueries({ queryKey: ["leaderboard"] });
+      const pts = res?.reward?.points ?? DOUBT_REWARDS.ANSWER_DOUBT;
+      Alert.alert(
+        "Answer Published! 🌟",
+        `Thank you for helping your classmate! You earned +${pts} Reputation XP!`,
+      );
     },
     onError: (err: Error) => {
       Alert.alert("Answer Failed", err.message || "Could not submit your answer.");
@@ -138,6 +158,12 @@ export default function QuestionDetailScreen() {
       triggerHaptic("notificationSuccess");
       qc.invalidateQueries({ queryKey: ["help-question", id] });
       qc.invalidateQueries({ queryKey: ["help-questions"] });
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      qc.invalidateQueries({ queryKey: ["leaderboard"] });
+      Alert.alert(
+        "Solution Verified! 🏆",
+        `You accepted this answer as the solution. The solver earned +${DOUBT_REWARDS.ACCEPTED_SOLUTION} Reputation, and you received a +${DOUBT_REWARDS.RESOLVE_BONUS} Rep completion bonus!`,
+      );
     },
     onError: (err: Error) => {
       Alert.alert("Action Failed", err.message || "Could not mark as accepted.");
@@ -151,6 +177,7 @@ export default function QuestionDetailScreen() {
 
   const renderAnswer = ({ item }: ListRenderItemInfo<Answer>) => {
     const isAccepted = item.is_accepted;
+    const isAnswerUpvoted = upvotedAnswers[item.id];
     return (
       <View
         style={[
@@ -165,7 +192,9 @@ export default function QuestionDetailScreen() {
         {isAccepted && (
           <Row style={[s.acceptedBanner, { backgroundColor: `${colors.success}18` }]}>
             <MaterialCommunityIcons name="check-decagram" size={16} color={colors.success} />
-            <Text style={[s.acceptedText, { color: colors.success }]}>ACCEPTED SOLUTION</Text>
+            <Text style={[s.acceptedText, { color: colors.success }]}>
+              ACCEPTED SOLUTION · +{DOUBT_REWARDS.ACCEPTED_SOLUTION} REP AWARDED
+            </Text>
           </Row>
         )}
 
@@ -193,23 +222,51 @@ export default function QuestionDetailScreen() {
             </View>
           </Pressable>
 
-          {isAuthor && !isAccepted && (
+          <Row style={{ gap: 8, alignItems: "center" }}>
+            {/* Upvote answer button */}
             <Pressable
-              onPress={() => acceptMutation.mutate(item.id)}
-              disabled={acceptMutation.isPending}
-              style={[s.markAcceptBtn, { backgroundColor: colors.primarySoft, borderColor: colors.primary }]}
+              onPress={() => upvoteAnswerMutation.mutate(item.id)}
+              disabled={isAnswerUpvoted || upvoteAnswerMutation.isPending}
+              style={[
+                s.answerUpvoteBtn,
+                {
+                  backgroundColor: isAnswerUpvoted ? colors.primarySoft : colors.bg,
+                  borderColor: isAnswerUpvoted ? colors.primary : colors.border,
+                },
+              ]}
             >
-              <MaterialCommunityIcons name="check" size={14} color={colors.primary} />
-              <Text style={[s.markAcceptText, { color: colors.primary }]}>Accept</Text>
+              <MaterialCommunityIcons
+                name={isAnswerUpvoted ? "thumb-up" : "thumb-up-outline"}
+                size={13}
+                color={isAnswerUpvoted ? colors.primary : colors.muted}
+              />
+              <Text
+                style={[
+                  s.answerUpvoteText,
+                  { color: isAnswerUpvoted ? colors.primary : colors.text },
+                ]}
+              >
+                {item.upvotes_count || 0}
+              </Text>
             </Pressable>
-          )}
+
+            {isAuthor && !isAccepted && (
+              <Pressable
+                onPress={() => acceptMutation.mutate(item.id)}
+                disabled={acceptMutation.isPending}
+                style={[s.markAcceptBtn, { backgroundColor: colors.primarySoft, borderColor: colors.primary }]}
+              >
+                <MaterialCommunityIcons name="check" size={14} color={colors.primary} />
+                <Text style={[s.markAcceptText, { color: colors.primary }]}>Accept</Text>
+              </Pressable>
+            )}
+          </Row>
         </Row>
 
         <Text style={[s.answerBody, { color: colors.text }]}>{item.body}</Text>
       </View>
     );
   };
-
 
   const questionHeader = question ? (
     <View style={{ marginBottom: 4 }}>
@@ -221,9 +278,26 @@ export default function QuestionDetailScreen() {
             <Pill tone={getUrgencyMeta(question.urgency).tone}>{getUrgencyMeta(question.urgency).label}</Pill>
           ) : null}
           <Pill tone={question.isResolved ? "success" : "default"}>
-            {question.isResolved ? "RESOLVED" : "OPEN"}
+            {question.isResolved ? "SOLVED" : "OPEN"}
           </Pill>
         </Row>
+
+        {/* Bounty / Reward Tag */}
+        {!question.isResolved ? (
+          <Row style={[s.questionBountyPill, { backgroundColor: `${colors.warning}15`, borderColor: `${colors.warning}44` }]}>
+            <MaterialCommunityIcons name="star-shooting" size={14} color={colors.warning} />
+            <Text style={[s.questionBountyText, { color: colors.warning }]}>
+              Reward: +{DOUBT_REWARDS.ANSWER_DOUBT} Rep for answering · +{DOUBT_REWARDS.ACCEPTED_SOLUTION} Rep for accepted solution
+            </Text>
+          </Row>
+        ) : (
+          <Row style={[s.questionBountyPill, { backgroundColor: `${colors.success}15`, borderColor: `${colors.success}44` }]}>
+            <MaterialCommunityIcons name="check-decagram" size={14} color={colors.success} />
+            <Text style={[s.questionBountyText, { color: colors.success }]}>
+              Verified Solution Accepted · +{DOUBT_REWARDS.ACCEPTED_SOLUTION} Rep awarded to solver
+            </Text>
+          </Row>
+        )}
 
         <Text style={[s.mainTitle, { color: colors.text }]}>{question.title}</Text>
         <Text style={[s.mainBody, { color: colors.text }]}>{question.body}</Text>
@@ -305,7 +379,6 @@ export default function QuestionDetailScreen() {
     </View>
   ) : null;
 
-
   return (
     <Screen scroll={false} keyboardAvoiding={false} contentStyle={{ padding: 0, gap: 0 }}>
       <KeyboardAvoidingView
@@ -321,7 +394,7 @@ export default function QuestionDetailScreen() {
             <Text style={[s.navTitle, { color: colors.text }]} numberOfLines={1}>
               {question?.roomTitle || "Help Thread"}
             </Text>
-            <Muted style={{ fontSize: 11 }}>Q&amp;A Discussion</Muted>
+            <Muted style={{ fontSize: 11 }}>Q&amp;A Discussion · Earn Reputation</Muted>
           </View>
           <Pressable
             onPress={() => refetch()}
@@ -368,10 +441,10 @@ export default function QuestionDetailScreen() {
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <Card style={[s.emptyAnswersCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <MaterialCommunityIcons name="lightbulb-on-outline" size={36} color={colors.primary} />
+                  <MaterialCommunityIcons name="lightbulb-on-outline" size={38} color={colors.primary} />
                   <Text style={[s.emptyAnswersTitle, { color: colors.text }]}>No Answers Yet</Text>
                   <Muted style={{ fontSize: 12, textAlign: "center", marginTop: 4 }}>
-                    Know the solution? Type below to help out your classmate!
+                    Know the solution? Type below to help out your classmate and earn +15 Rep!
                   </Muted>
                 </Card>
               }
@@ -379,28 +452,36 @@ export default function QuestionDetailScreen() {
           )}
         </View>
 
-        {/* Answer composer */}
+        {/* Answer composer with incentive banner */}
         {question && (
-          <View style={[s.composerBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-            <TextInput
-              placeholder="Write a clear answer or solution..."
-              placeholderTextColor={colors.muted}
-              value={answerText}
-              onChangeText={setAnswerText}
-              multiline
-              maxLength={2000}
-              style={[
-                s.composerInput,
-                { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
-              ]}
-            />
-            <View style={{ minWidth: 64 }}>
-              <Button
-                title="Post"
-                compact
-                onPress={handleSendAnswer}
-                disabled={answerMutation.isPending || !answerText.trim()}
+          <View style={[s.composerContainer, { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 10) }]}>
+            <Row style={[s.composerIncentive, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
+              <MaterialCommunityIcons name="star-shooting" size={15} color={colors.primary} />
+              <Text style={[s.composerIncentiveText, { color: colors.primary }]}>
+                Post an answer to earn <Text style={{ fontWeight: "800" }}>+{DOUBT_REWARDS.ANSWER_DOUBT} Rep</Text> (+{DOUBT_REWARDS.ACCEPTED_SOLUTION} if accepted!)
+              </Text>
+            </Row>
+            <View style={s.composerBar}>
+              <TextInput
+                placeholder="Write a helpful answer or solution..."
+                placeholderTextColor={colors.muted}
+                value={answerText}
+                onChangeText={setAnswerText}
+                multiline
+                maxLength={2000}
+                style={[
+                  s.composerInput,
+                  { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
+                ]}
               />
+              <View style={{ minWidth: 64 }}>
+                <Button
+                  title="Reply"
+                  compact
+                  onPress={handleSendAnswer}
+                  disabled={answerMutation.isPending || !answerText.trim()}
+                />
+              </View>
             </View>
           </View>
         )}
@@ -409,12 +490,11 @@ export default function QuestionDetailScreen() {
   );
 }
 
-
 const s = StyleSheet.create({
   navBar: {
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 8,
     paddingHorizontal: 16,
   },
   backBtn: {
@@ -437,6 +517,20 @@ const s = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     gap: 0,
+  },
+  questionBountyPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  questionBountyText: {
+    fontSize: 11.5,
+    fontWeight: "700",
   },
   mainTitle: {
     fontSize: 18,
@@ -532,6 +626,19 @@ const s = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
+  answerUpvoteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  answerUpvoteText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
   markAcceptBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -549,12 +656,29 @@ const s = StyleSheet.create({
     fontSize: 13.5,
     lineHeight: 20,
   },
+  composerContainer: {
+    borderTopWidth: 1,
+    paddingTop: 6,
+    paddingHorizontal: 12,
+  },
+  composerIncentive: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  composerIncentiveText: {
+    fontSize: 11,
+  },
   composerBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    padding: 10,
-    borderTopWidth: 1,
+    paddingBottom: 4,
   },
   composerInput: {
     flex: 1,
@@ -567,4 +691,3 @@ const s = StyleSheet.create({
     fontSize: 13.5,
   },
 });
-

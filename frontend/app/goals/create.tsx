@@ -17,6 +17,7 @@ import { GrowthHero } from "@/components/GrowthHero";
 import { growthIllustrations512 } from "@/assets/illustrations";
 import { createGoal } from "@/features/growth/growthApi";
 import { Screen } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface MilestoneDraft {
   title: string;
@@ -29,6 +30,7 @@ export default function CreateGoalScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
   const router = useRouter();
+  const keyboardHeight = useKeyboardHeight();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -120,10 +122,14 @@ export default function CreateGoalScreen() {
 
   return (
     <Screen scroll={false}>
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.bg }]}
-      contentContainerStyle={styles.content}
-    >
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.bg }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: 60 + (keyboardHeight > 0 ? keyboardHeight : 20) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}

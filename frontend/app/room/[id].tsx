@@ -30,6 +30,8 @@ import { RoomLiveStage } from "@/features/room/live/RoomLiveStage";
 import { RoomKnockLobbyScreen } from "@/features/room/knock/RoomKnockLobbyScreen";
 import { RoomKnockRequestsModal } from "@/features/room/knock/RoomKnockRequestsModal";
 import { RoomMonitoringCenterModal } from "@/features/room/monitoring/RoomMonitoringCenterModal";
+import { TeacherCallModal } from "@/features/room/TeacherCallModal";
+import { RequestSessionModal } from "@/features/room/RequestSessionModal";
 import { getSocket } from "@/lib/socket";
 import { useI18n } from "@/i18n";
 
@@ -53,7 +55,7 @@ type RoomDetailData = {
 };
 
 export default function RoomDetailScreen() {
-  const { id, openKnock } = useLocalSearchParams<{ id: string; openKnock?: string }>();
+  const { id, openKnock, tab } = useLocalSearchParams<{ id: string; openKnock?: string; tab?: RoomOSTabKey }>();
   const { colors } = useTheme();
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -67,12 +69,23 @@ export default function RoomDetailScreen() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [studyPermissionsVisible, setStudyPermissionsVisible] = useState(false);
   const liveStore = useLiveSessionStore();
+  const [hasJoinedStage, setHasJoinedStage] = useState(false);
+  const [stageInitialMedia, setStageInitialMedia] = useState<"audio" | "video">("audio");
   const [knockRequestsVisible, setKnockRequestsVisible] = useState(false);
   const [monitoringVisible, setMonitoringVisible] = useState(false);
   const [hasInitializedLandingTab, setHasInitializedLandingTab] = useState(false);
   const [externalComposerOpen, setExternalComposerOpen] = useState(false);
   const [composerInitialType, setComposerInitialType] = useState<RoomPostType>("discussion");
   const [rolePreviewOverride, setRolePreviewOverride] = useState<"educator" | "learner" | null>(null);
+  const [teacherCallVisible, setTeacherCallVisible] = useState(false);
+  const [requestSessionVisible, setRequestSessionVisible] = useState(false);
+
+  const handleJoinStage = (media: "audio" | "video" = "audio") => {
+    triggerHaptic();
+    setStageInitialMedia(media);
+    setHasJoinedStage(true);
+    setActiveTab("stage");
+  };
 
   // Auto-open knock requests if navigated with openKnock query param (e.g. from notification)
   React.useEffect(() => {
@@ -88,13 +101,16 @@ export default function RoomDetailScreen() {
     enabled: Boolean(id),
   });
 
-  // Sync default landing tab if configured
+  // Sync default landing tab or explicit tab URL param
   React.useEffect(() => {
-    if (!hasInitializedLandingTab && roomQuery.data?.room?.default_landing_tab) {
+    if (tab && ["posts", "chat", "learn", "media", "more", "stage"].includes(tab)) {
+      setActiveTab(tab);
+      setHasInitializedLandingTab(true);
+    } else if (!hasInitializedLandingTab && roomQuery.data?.room?.default_landing_tab) {
       setActiveTab(roomQuery.data.room.default_landing_tab as RoomOSTabKey);
       setHasInitializedLandingTab(true);
     }
-  }, [hasInitializedLandingTab, roomQuery.data?.room?.default_landing_tab]);
+  }, [tab, hasInitializedLandingTab, roomQuery.data?.room?.default_landing_tab]);
 
   // 2. Fetch Server-Authoritative Capabilities
   const permissions = useRoomPermissions(id);
@@ -173,8 +189,12 @@ export default function RoomDetailScreen() {
   });
 
   // 5. Member Management Mutations
-  const promoteRoleMutation = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: "teacher" | "moderator" | "member" }) =>
+  const promoteRoleMutation = useMutation<
+    any,
+    Error,
+    { memberId: string; role: any }
+  >({
+    mutationFn: ({ memberId, role }) =>
       api(`/rooms/${id}/members/${memberId}/role`, {
         method: "PATCH",
         body: JSON.stringify({ role }),
@@ -182,6 +202,8 @@ export default function RoomDetailScreen() {
     onSuccess: () => {
       triggerHaptic();
       qc.invalidateQueries({ queryKey: ["room", id] });
+      qc.invalidateQueries({ queryKey: ["room-permissions", id] });
+      qc.invalidateQueries({ queryKey: ["room-teachers", id] });
       Alert.alert("Role Updated", "Member role has been changed.");
     },
     onError: (err: Error) => Alert.alert("Update Failed", err.message),
@@ -193,6 +215,8 @@ export default function RoomDetailScreen() {
     onSuccess: () => {
       triggerHaptic();
       qc.invalidateQueries({ queryKey: ["room", id] });
+      qc.invalidateQueries({ queryKey: ["room-permissions", id] });
+      qc.invalidateQueries({ queryKey: ["room-teachers", id] });
       Alert.alert("Member Removed", "The user has been removed from this room.");
     },
     onError: (err: Error) => Alert.alert("Remove Failed", err.message),
@@ -231,20 +255,59 @@ export default function RoomDetailScreen() {
 
   React.useEffect(() => {
     const socket = getSocket();
-    if (!socket || !isEducator) return;
+    if (!socket || !id) return;
 
     const handleNewKnock = (payload: any) => {
-      if (payload?.roomId === id) {
+      if (payload?.roomId === id && isEducator) {
         triggerHaptic();
         knockRequestsQuery.refetch();
       }
     };
 
+    const handleRoleUpdated = (payload: any) => {
+      if (payload?.roomId === id) {
+        triggerHaptic();
+        qc.invalidateQueries({ queryKey: ["room", id] });
+        qc.invalidateQueries({ queryKey: ["room-permissions", id] });
+        qc.invalidateQueries({ queryKey: ["room-teachers", id] });
+        if (payload?.userId === session?.user?.id) {
+          Alert.alert("Role Updated", `Your role in this room is now: ${payload.role}`);
+        }
+      }
+    };
+
+    const handleMemberRemoved = (payload: any) => {
+      if (payload?.roomId === id) {
+        qc.invalidateQueries({ queryKey: ["room", id] });
+        qc.invalidateQueries({ queryKey: ["room-teachers", id] });
+        if (payload?.userId === session?.user?.id) {
+          Alert.alert("Removed from Room", "You have been removed from this room by an administrator.");
+          router.replace("/(tabs)/rooms" as any);
+        }
+      }
+    };
+
+    const handleOwnershipTransferred = (payload: any) => {
+      if (payload?.roomId === id) {
+        triggerHaptic();
+        qc.invalidateQueries({ queryKey: ["room", id] });
+        qc.invalidateQueries({ queryKey: ["room-permissions", id] });
+        qc.invalidateQueries({ queryKey: ["room-teachers", id] });
+      }
+    };
+
     socket.on("room:knock:new", handleNewKnock);
+    socket.on("room:member:role_updated", handleRoleUpdated);
+    socket.on("room:member:removed", handleMemberRemoved);
+    socket.on("room:ownership_transferred", handleOwnershipTransferred);
+
     return () => {
       socket.off("room:knock:new", handleNewKnock);
+      socket.off("room:member:role_updated", handleRoleUpdated);
+      socket.off("room:member:removed", handleMemberRemoved);
+      socket.off("room:ownership_transferred", handleOwnershipTransferred);
     };
-  }, [id, isEducator, knockRequestsQuery]);
+  }, [id, isEducator, knockRequestsQuery, session?.user?.id, router, qc]);
 
   // ── Guards ──────────────────────────────────────────────────────────────────
   if (roomQuery.isLoading) {
@@ -325,12 +388,14 @@ export default function RoomDetailScreen() {
           onOpenMore={() => setActiveTab("more")}
           onJoinLiveSession={() => router.push(`/live/${room.id}` as any)}
           onOpenVoice={() => {
-            triggerHaptic();
-            if (liveStore.status === "connected" && liveStore.roomId === room.id) {
-              liveStore.setSheetOpen(true);
-            } else {
-              void liveStore.joinSession({ roomId: room.id, roomTitle: room.title, media: "audio" });
-            }
+            Alert.alert(
+              "Join Room to Speak",
+              "You must join this room before entering real-time audio chat.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Join Room", onPress: () => joinMutation.mutate() },
+              ]
+            );
           }}
           onSearch={undefined}
           onToggleRolePreview={handleToggleRolePreview}
@@ -378,17 +443,8 @@ export default function RoomDetailScreen() {
         onJoin={() => joinMutation.mutate()}
         onLeave={() => leaveMutation.mutate()}
         onOpenMore={() => setActiveTab("more")}
-        onJoinLiveSession={() => {
-          setActiveTab("stage");
-        }}
-        onOpenVoice={() => {
-          triggerHaptic();
-          if (liveStore.status === "connected" && liveStore.roomId === room.id) {
-            liveStore.setSheetOpen(true);
-          } else {
-            void liveStore.joinSession({ roomId: room.id, roomTitle: room.title, media: "audio" });
-          }
-        }}
+        onJoinLiveSession={() => handleJoinStage("video")}
+        onOpenVoice={() => handleJoinStage("audio")}
         onSearch={() => setSearchModalVisible(true)}
         onPostAnnouncement={() => {
           setActiveTab("posts");
@@ -398,16 +454,21 @@ export default function RoomDetailScreen() {
         onOpenAnalytics={() => setAnalyticsVisible(true)}
         onAttendance={() => setActiveTab("learn")}
         onToggleRolePreview={handleToggleRolePreview}
+        onOpenTeachers={() => setTeacherCallVisible(true)}
+        onAskQuestion={() => setActiveTab("learn")}
       />
 
-      {/* 2. ONE LIVE STRIP (Replacing RoomVoiceBanner & duplicate audio/video buttons) */}
+      {/* 2. ONE LIVE STRIP (Dynamic Audio/Video session visibility, Teacher controls & Help Request) */}
       <RoomLiveStrip
         roomId={room.id}
         roomTitle={room.title}
         isMember={isMember}
         isOwner={permissions.isOwner}
+        isEducator={isEducator}
         onOpenStudyPermissions={() => setStudyPermissionsVisible(true)}
         onOpenScheduleStudy={() => setActiveTab("learn")}
+        onAskQuestion={() => setActiveTab("learn")}
+        onJoinStage={(media) => handleJoinStage(media)}
       />
 
       {/* Real-time Knock Waiting Banner for Room Admins & Educators */}
@@ -446,29 +507,72 @@ export default function RoomDetailScreen() {
       {/* 2. ROOM OS TAB BAR */}
       <RoomOSTabs
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => {
+          if (tab === "stage" && !hasJoinedStage) {
+            setHasJoinedStage(true);
+          }
+          setActiveTab(tab);
+        }}
         chatUnreadCount={unreadCount}
         isEducator={isEducator}
-        hasLiveSession={hasLiveSession}
+        hasLiveSession={hasLiveSession || hasJoinedStage}
       />
 
       {/* 3. ACTIVE DESTINATION VIEW (With state preservation) */}
       <View style={s.contentArea}>
-        {activeTab === "stage" && (
-          <RoomLiveStage
-            roomId={room.id}
-            roomTitle={room.title}
-            initialMedia="video"
-            currentUserId={session?.user.id || ""}
-            currentUserName={userFullName || session?.user.email || "Member"}
-            currentUserAvatar={userAvatarUrl}
-            currentUserRole={permissions.role || "member"}
-            isHost={isEducator}
-            onLeave={() => setActiveTab("posts")}
-            onOpenChat={() => setActiveTab("chat")}
-            unreadChatCount={unreadCount}
-          />
+        {hasJoinedStage && (
+          <View style={{ flex: 1, display: activeTab === "stage" ? "flex" : "none" }}>
+            <RoomLiveStage
+              roomId={room.id}
+              roomTitle={room.title}
+              initialMedia={stageInitialMedia}
+              currentUserId={session?.user.id || ""}
+              currentUserName={userFullName || session?.user.email || "Member"}
+              currentUserAvatar={userAvatarUrl}
+              currentUserRole={permissions.role || "member"}
+              isHost={isEducator}
+              onLeave={() => {
+                setHasJoinedStage(false);
+                if (activeTab === "stage") {
+                  setActiveTab("posts");
+                }
+              }}
+              onOpenChat={() => setActiveTab("chat")}
+              unreadChatCount={unreadCount}
+            />
+          </View>
         )}
+
+        {!hasJoinedStage && activeTab === "stage" && (
+          <View style={s.emptyStageContainer}>
+            <View style={[s.stagePromptIconCircle, { backgroundColor: `${colors.primary}15` }]}>
+              <MaterialCommunityIcons name="microphone" size={40} color={colors.primary} />
+            </View>
+            <Text style={[s.stagePromptTitle, { color: colors.text }]}>
+              Join Real-Time Voice Stage
+            </Text>
+            <Text style={[s.stagePromptSub, { color: colors.muted }]}>
+              Talk and collaborate live with others in this room with crystal-clear WebRTC audio.
+            </Text>
+            <Row style={{ gap: 12, marginTop: 18 }}>
+              <Pressable
+                onPress={() => handleJoinStage("audio")}
+                style={[s.stageJoinBtn, { backgroundColor: colors.primary }]}
+              >
+                <MaterialCommunityIcons name="microphone" size={18} color="#FFF" />
+                <Text style={s.stageJoinBtnText}>Join Audio</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleJoinStage("video")}
+                style={[s.stageJoinBtnSecondary, { backgroundColor: colors.surface2, borderColor: colors.border }]}
+              >
+                <MaterialCommunityIcons name="video" size={18} color={colors.text} />
+                <Text style={[s.stageJoinBtnSecondaryText, { color: colors.text }]}>Join Video</Text>
+              </Pressable>
+            </Row>
+          </View>
+        )}
+
         {activeTab === "posts" && (
           <RoomPostsView
             room={room}
@@ -494,15 +598,14 @@ export default function RoomDetailScreen() {
             memberCount={room.member_count}
             isMember={isMember}
             canManageChannels={permissions.canManageChannels}
+            isEducator={
+              permissions.isOwner ||
+              permissions.isTeacher ||
+              permissions.canAnnounce ||
+              permissions.canManageChannels
+            }
             onOpenSearch={() => setSearchModalVisible(true)}
-            onJoinVoice={() => {
-              triggerHaptic();
-              if (liveStore.status === "connected" && liveStore.roomId === room.id) {
-                liveStore.setSheetOpen(true);
-              } else {
-                void liveStore.joinSession({ roomId: room.id, roomTitle: room.title, media: "audio" });
-              }
-            }}
+            onJoinVoice={() => handleJoinStage("audio")}
           />
         )}
 
@@ -525,6 +628,7 @@ export default function RoomDetailScreen() {
             roomId={room.id}
             isHostOrMod={permissions.isOwner || permissions.canModerate}
             isMember={isMember}
+            resources={data.resources ?? []}
           />
         )}
 
@@ -534,8 +638,15 @@ export default function RoomDetailScreen() {
             members={data.members ?? []}
             currentUserId={session?.user.id}
             isOwner={permissions.isOwner}
+            isAdmin={permissions.isAdmin}
+            isTeacher={Boolean(permissions.isTeacher || permissions.role === "teacher")}
+            role={permissions.role as any}
             canManageMembers={permissions.canManageMembers}
+            canManageRoles={permissions.canManageRoles}
             canModerate={permissions.canModerate || permissions.isOwner}
+            canStartLive={permissions.canStartLive}
+            canAnnounce={permissions.canAnnounce}
+            canPin={permissions.canPin}
             onPromoteRole={(memberId, role) => promoteRoleMutation.mutate({ memberId, role })}
             onRemoveMember={(memberId) => removeMemberMutation.mutate(memberId)}
             onLeaveRoom={() => leaveMutation.mutate()}
@@ -546,6 +657,12 @@ export default function RoomDetailScreen() {
             onOpenKnockRequests={() => setKnockRequestsVisible(true)}
             onOpenMonitoringCenter={() => setMonitoringVisible(true)}
             onOpenStudyPermissions={() => setStudyPermissionsVisible(true)}
+            onTabChange={setActiveTab}
+            onRoomUpdated={(upd) =>
+              qc.setQueryData(["room", room.id], (old: any) =>
+                old ? { ...old, room: { ...old.room, ...upd } } : old,
+              )
+            }
           />
         )}
       </View>
@@ -629,6 +746,67 @@ export default function RoomDetailScreen() {
         roomId={room.id}
         onClose={() => setStudyPermissionsVisible(false)}
       />
+
+      {/* Direct Call to Room Teachers Modal */}
+      <TeacherCallModal
+        visible={teacherCallVisible}
+        roomId={room.id}
+        roomTitle={room.title}
+        onClose={() => setTeacherCallVisible(false)}
+      />
+
+      {/* Immediate Session / Help Request Modal */}
+      <RequestSessionModal
+        visible={requestSessionVisible}
+        roomId={room.id}
+        roomTitle={room.title}
+        onClose={() => setRequestSessionVisible(false)}
+      />
+
+      {/* Persistent Mini Voice Bar when browsing other tabs while connected */}
+      {hasJoinedStage && activeTab !== "stage" && (
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            setActiveTab("stage");
+          }}
+          style={[
+            s.floatingVoiceBar,
+            { backgroundColor: colors.surface, borderColor: colors.primary },
+          ]}
+        >
+          <Row style={{ alignItems: "center", justifyContent: "space-between", flex: 1, paddingHorizontal: 14 }}>
+            <Row style={{ alignItems: "center", gap: 10 }}>
+              <View style={[s.liveDot, { backgroundColor: "#10B981" }]} />
+              <MaterialCommunityIcons name="microphone" size={18} color="#10B981" />
+              <Text style={[s.floatingVoiceTitle, { color: colors.text }]}>
+                Live Voice Active
+              </Text>
+            </Row>
+            <Row style={{ alignItems: "center", gap: 10 }}>
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setActiveTab("stage");
+                }}
+                style={[s.floatingVoiceReturnBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={s.floatingVoiceReturnText}>Return</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setHasJoinedStage(false);
+                }}
+                style={s.floatingVoiceLeaveBtn}
+                accessibilityLabel="Leave Voice Stage"
+              >
+                <MaterialCommunityIcons name="phone-hangup" size={16} color="#EF4444" />
+              </Pressable>
+            </Row>
+          </Row>
+        </Pressable>
+      )}
     </SafeAreaView>
   );
 }
@@ -684,5 +862,87 @@ const s = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
+  },
+  emptyStageContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  stagePromptIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  stagePromptTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  stagePromptSub: {
+    fontSize: 13,
+    textAlign: "center",
+    maxWidth: 320,
+    lineHeight: 18,
+  },
+  stageJoinBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: radius.pill,
+  },
+  stageJoinBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  stageJoinBtnSecondary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  stageJoinBtnSecondaryText: {
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  floatingVoiceBar: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  floatingVoiceTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  floatingVoiceReturnBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  floatingVoiceReturnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  floatingVoiceLeaveBtn: {
+    padding: 6,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
   },
 });

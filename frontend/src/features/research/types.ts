@@ -2,13 +2,17 @@
 
 export interface SSPaper {
   paperId: string;
-  externalIds?: { DOI?: string; ArXiv?: string; PubMed?: string };
+  source?: "arxiv" | "openalex" | "europepmc" | "crossref" | "semanticscholar" | string;
+  sourceLabel?: string;
+  externalIds?: { DOI?: string; ArXiv?: string; PubMed?: string; PMCID?: string; OpenAlex?: string };
   title: string;
   abstract?: string;
   year?: number;
   citationCount?: number;
   referenceCount?: number;
-  openAccessPdf?: { url: string; status: string } | null;
+  openAccessPdf?: { url: string; status?: string } | null;
+  pdfUrl?: string | null;
+  readUrl?: string | null;
   isOpenAccess?: boolean;
   url?: string;
   authors: { authorId?: string; name: string }[];
@@ -18,7 +22,26 @@ export interface SSPaper {
   publicationDate?: string;
   journal?: { name?: string; volume?: string; pages?: string } | null;
   venue?: string;
+  isRealTime?: boolean;
 }
+
+export interface AcademicSource {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  status: string;
+  isRealTime: boolean;
+}
+
+export const REALTIME_SOURCES = [
+  { id: "all", label: "All Sources 🌐", shortName: "Unified", icon: "earth" },
+  { id: "arxiv", label: "arXiv Preprints ⚡", shortName: "arXiv", icon: "lightning-bolt" },
+  { id: "openalex", label: "OpenAlex (250M+) 📚", shortName: "OpenAlex", icon: "bookshelf" },
+  { id: "europepmc", label: "Europe PMC 🧬", shortName: "Europe PMC", icon: "dna" },
+  { id: "semanticscholar", label: "Semantic Scholar 📈", shortName: "Semantic Scholar", icon: "chart-timeline-variant" },
+  { id: "crossref", label: "Crossref DOIs 🏛️", shortName: "Crossref", icon: "file-certificate" },
+];
 
 export interface SSAuthor {
   authorId: string;
@@ -115,3 +138,48 @@ export const RESEARCH_DISCIPLINES = [
   "Renewable Energy & Climate",
   "Economics & Social Sciences",
 ];
+
+export interface PaperAiInsights {
+  paperId: string;
+  title: string;
+  tldr: string;
+  keyFindings: string[];
+  methodology: string;
+  practicalTakeaways: string[];
+  futureDirections: string;
+  source: string;
+  generatedAt: string;
+}
+
+export interface PaperQuestionAnswer {
+  paperId: string;
+  question: string;
+  answer: string;
+  answeredAt: string;
+}
+
+export interface CitationFormats {
+  citation: string;
+  format: string;
+  allFormats: {
+    apa: string;
+    mla: string;
+    ieee: string;
+    chicago: string;
+    harvard: string;
+    bibtex: string;
+  };
+  title?: string;
+  authors?: { name: string }[];
+  year?: number;
+  doi?: string;
+  url?: string;
+}
+
+export interface ResearchWorkspaceSummary {
+  projectId: string;
+  projectTitle: string;
+  roomId: string;
+  roomName: string;
+  conversationId: string;
+}

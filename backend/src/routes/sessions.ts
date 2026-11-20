@@ -3,6 +3,7 @@ import { z } from "zod";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
+import { broadcastRoomSession } from "../socket.js";
 export const sessions = Router();
 sessions.get(
   "/mine",
@@ -83,6 +84,7 @@ sessions.post(
             { sessionId: data.id },
           );
     }
+    broadcastRoomSession(b.room_id, "created", { session: data });
     res.status(201).json(data);
   }),
 );
@@ -135,6 +137,7 @@ sessions.patch(
       .select()
       .single();
     if (error) throw error;
+    broadcastRoomSession(session.room_id, "updated", { sessionId: id, status, userId: req.userId! });
     res.json(data);
   }),
 );
@@ -199,7 +202,7 @@ sessions.patch(
 
     const { data: session } = await admin
       .from("sessions")
-      .select("teacher_id, status")
+      .select("teacher_id, status, room_id")
       .eq("id", id)
       .single();
 
@@ -227,6 +230,7 @@ sessions.patch(
       .single();
 
     if (error) throw error;
+    broadcastRoomSession(session.room_id, "updated", { sessionId: id, status, userId: req.userId! });
     res.json(data);
   })
 );
@@ -247,7 +251,7 @@ sessions.patch(
 
     const { data: session } = await admin
       .from("sessions")
-      .select("teacher_id, status")
+      .select("teacher_id, status, room_id")
       .eq("id", id)
       .single();
 

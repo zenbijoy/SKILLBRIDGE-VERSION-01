@@ -539,7 +539,11 @@ export default function ClubManageScreen() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: 16, gap: 16 }}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Search Student / Friend */}
             <View>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>SEARCH STUDENT OR FRIEND</Text>
@@ -726,7 +730,11 @@ export default function ClubManageScreen() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: 16, gap: 14 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={{ gap: 4 }}>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>CLUB NAME</Text>
               <TextInput
@@ -837,7 +845,11 @@ export default function ClubManageScreen() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 16 + keyboardHeight }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 16 + keyboardHeight }}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Quick Post Announcement */}
             <View style={[styles.activitySection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Row style={{ alignItems: "center", gap: 6, marginBottom: 8 }}>

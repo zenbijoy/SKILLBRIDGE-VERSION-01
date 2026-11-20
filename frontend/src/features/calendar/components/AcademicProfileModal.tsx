@@ -8,12 +8,15 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import type { AcademicProfile } from "../types";
 import { useTheme, radius } from "@/theme";
 import { triggerHaptic } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface AcademicProfileModalProps {
   visible: boolean;
@@ -29,6 +32,7 @@ export function AcademicProfileModal({
   onUpdated,
 }: AcademicProfileModalProps) {
   const { colors, isDark } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
 
   const [university, setUniversity] = useState(profile?.university ?? "RUET");
   const [department, setDepartment] = useState(profile?.department ?? "CSE");
@@ -84,32 +88,45 @@ export function AcademicProfileModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
         <View
           style={[
-            styles.sheet,
-            {
-              backgroundColor: isDark ? colors.surface : "#FFFFFF",
-              borderColor: isDark ? colors.border : "#E2E8F0",
-            },
+            styles.overlay,
+            Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
           ]}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>
-                Academic Profile
-              </Text>
-              <Text style={[styles.headerSub, { color: colors.muted }]}>
-                Matches your section's routines and academic calendar
-              </Text>
+          <View
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: isDark ? colors.surface : "#FFFFFF",
+                borderColor: isDark ? colors.border : "#E2E8F0",
+              },
+            ]}
+          >
+            {/* Header */}
+            <View style={styles.header}>
+              <View>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>
+                  Academic Profile
+                </Text>
+                <Text style={[styles.headerSub, { color: colors.muted }]}>
+                  Matches your section's routines and academic calendar
+                </Text>
+              </View>
+              <Pressable onPress={onClose} style={styles.closeBtn}>
+                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
+              </Pressable>
             </View>
-            <Pressable onPress={onClose} style={styles.closeBtn}>
-              <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-            </Pressable>
-          </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.body}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             {/* Academic Group Preview Tag */}
             <View
               style={[
@@ -270,7 +287,8 @@ export function AcademicProfileModal({
             </Pressable>
           </View>
         </View>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

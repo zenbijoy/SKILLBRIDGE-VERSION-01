@@ -1,8 +1,19 @@
 import React, { useState, useEffect } from "react";
-import { Text, StyleSheet, Modal, TextInput, Pressable, ActivityIndicator, Alert } from "react-native";
+import {
+  Text,
+  StyleSheet,
+  Modal,
+  TextInput,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme, radius } from "@/theme";
 import { Row, triggerHaptic } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import type { SocialPost } from "../../types";
 
 interface EditPostModalProps {
@@ -14,6 +25,7 @@ interface EditPostModalProps {
 
 export function EditPostModal({ visible, post, onSave, onClose }: EditPostModalProps) {
   const { colors } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
   const [editText, setEditText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -41,53 +53,64 @@ export function EditPostModal({ visible, post, onSave, onClose }: EditPostModalP
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Row style={styles.header}>
-            <Row style={{ alignItems: "center", gap: 6 }}>
-              <MaterialCommunityIcons name="pencil" size={18} color={colors.primary} />
-              <Text style={[styles.title, { color: colors.text }]}>Edit Post</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <Pressable
+          style={[
+            styles.backdrop,
+            Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
+          ]}
+          onPress={onClose}
+        >
+          <Pressable style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Row style={styles.header}>
+              <Row style={{ alignItems: "center", gap: 6 }}>
+                <MaterialCommunityIcons name="pencil" size={18} color={colors.primary} />
+                <Text style={[styles.title, { color: colors.text }]}>Edit Post</Text>
+              </Row>
+              <Pressable onPress={onClose} hitSlop={6}>
+                <MaterialCommunityIcons name="close" size={20} color={colors.muted} />
+              </Pressable>
             </Row>
-            <Pressable onPress={onClose} hitSlop={6}>
-              <MaterialCommunityIcons name="close" size={20} color={colors.muted} />
-            </Pressable>
-          </Row>
 
-          <TextInput
-            style={[styles.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.bg }]}
-            value={editText}
-            onChangeText={setEditText}
-            multiline
-            numberOfLines={6}
-            placeholder="Edit your post content..."
-            placeholderTextColor={colors.muted}
-            autoFocus
-          />
+            <TextInput
+              style={[styles.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.bg }]}
+              value={editText}
+              onChangeText={setEditText}
+              multiline
+              numberOfLines={6}
+              placeholder="Edit your post content..."
+              placeholderTextColor={colors.muted}
+              autoFocus
+            />
 
-          <Row style={styles.actions}>
-            <Pressable onPress={onClose} style={styles.cancelBtn}>
-              <Text style={{ color: colors.muted }}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              disabled={isSaving || !editText.trim()}
-              onPress={handleSave}
-              style={[
-                styles.saveBtn,
-                {
-                  backgroundColor: colors.primary,
-                  opacity: isSaving || !editText.trim() ? 0.6 : 1,
-                },
-              ]}
-            >
-              {isSaving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.saveBtnText}>Save Changes</Text>
-              )}
-            </Pressable>
-          </Row>
+            <Row style={styles.actions}>
+              <Pressable onPress={onClose} style={styles.cancelBtn}>
+                <Text style={{ color: colors.muted }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                disabled={isSaving || !editText.trim()}
+                onPress={handleSave}
+                style={[
+                  styles.saveBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    opacity: isSaving || !editText.trim() ? 0.6 : 1,
+                  },
+                ]}
+              >
+                {isSaving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                )}
+              </Pressable>
+            </Row>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

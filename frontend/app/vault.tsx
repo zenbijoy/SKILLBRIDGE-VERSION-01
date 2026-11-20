@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -18,9 +19,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
-import * as WebBrowser from "expo-web-browser";
-import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system";
 import { api } from "@/lib/api";
+import { API_URL } from "@/lib/config";
 import {
   Button,
   Empty,
@@ -34,6 +35,7 @@ import {
   Skeleton,
   triggerHaptic,
 } from "@/components/ui";
+import { FullScreenPdfReader } from "@/components/FullScreenPdfReader";
 import { radius, useTheme } from "@/theme";
 import { useSession } from "@/hooks/useSession";
 
@@ -64,6 +66,11 @@ export interface VaultNote {
   downloads_count: number;
   views_count: number;
   created_at: string;
+  source_type?: "direct_upload" | "google_drive";
+  source_drive_id?: string | null;
+  source_drive_url?: string | null;
+  sync_status?: string;
+  r2_cached_at?: string | null;
 }
 
 const DEPARTMENTS = ["All", "CSE", "EEE", "BBA", "Architecture", "Civil", "Mechanical", "General"];
@@ -119,6 +126,81 @@ export default function NoteVaultScreen() {
     base64?: string;
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatusText, setUploadStatusText] = useState("");
+
+  // Google Drive Ingestion State
+  const [driveModalVisible, setDriveModalVisible] = useState(false);
+  const [driveUrl, setDriveUrl] = useState("");
+  const [driveDept, setDriveDept] = useState("CSE");
+  const [driveSem, setDriveSem] = useState("1st");
+  const [driveCourseCode, setDriveCourseCode] = useState("");
+  const [driveTags, setDriveTags] = useState("");
+  const [driveVisibility, setDriveVisibility] = useState<"public" | "community">("public");
+  const [driveCommunityName, setDriveCommunityName] = useState("");
+  const [isSubmittingDrive, setIsSubmittingDrive] = useState(false);
+
+  // Active VPS Sync Job State & Polling
+  const [activeSyncJob, setActiveSyncJob] = useState<{
+    jobId: string;
+    status: "pending" | "processing" | "completed" | "failed";
+    filesFound: number;
+    filesProcessed: number;
+    error?: string;
+  } | null>(null);
+
+  // Manual R2 Caching State
+  const [cachingNoteId, setCachingNoteId] = useState<string | null>(null);
+
+  // Resolve direct or stream URL for a given note
+  const resolveNoteStreamUrl = (note: VaultNote): string => {
+    if (note.source_type === "google_drive") {
+      return `${API_URL}/vault/drive/stream/${note.id}`;
+    }
+    return note.file_url;
+  };
+
+  // Poll active VPS sync job until completed or failed
+  useEffect(() => {
+    if (!activeSyncJob || activeSyncJob.status === "completed" || activeSyncJob.status === "failed") {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await api<{ job: any }>(`/vault/drive/jobs/${activeSyncJob.jobId}`);
+        if (res?.job) {
+          const { status, files_found, files_processed, error_message } = res.job;
+          setActiveSyncJob((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status,
+                  filesFound: files_found || 0,
+                  filesProcessed: files_processed || 0,
+                  error: error_message,
+                }
+              : null,
+          );
+
+          if (status === "completed") {
+            clearInterval(interval);
+            triggerHaptic();
+            await qc.invalidateQueries({ queryKey: ["vault-notes"] });
+            await qc.refetchQueries({ queryKey: ["vault-notes"] });
+            setTimeout(() => {
+              setActiveSyncJob((curr) => (curr?.status === "completed" ? null : curr));
+            }, 6000);
+          } else if (status === "failed") {
+            clearInterval(interval);
+          }
+        }
+      } catch (e) {
+        console.warn("Poll sync job error:", e);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [activeSyncJob?.jobId, activeSyncJob?.status, qc]);
 
   // Fetch Vault Notes
   const queryParams = new URLSearchParams();
@@ -133,7 +215,7 @@ export default function NoteVaultScreen() {
       api<{ notes: VaultNote[] }>(`/vault?${queryParams.toString()}`).then((res) => res.notes ?? []),
   });
 
-  // Pick Document for Upload
+  // Pick Document for Upload (Supports up to 200 MB+ without JS heap crash)
   const handlePickDocument = async () => {
     try {
       triggerHaptic();
@@ -145,22 +227,24 @@ export default function NoteVaultScreen() {
       if (res.canceled || !res.assets?.[0]) return;
       const file = res.assets[0];
 
-      // Read base64
+      // Only attempt base64 read for small files on web; stream directly on native
       let base64 = "";
-      try {
-        const response = await fetch(file.uri);
-        const blob = await response.blob();
-        const reader = new FileReader();
-        base64 = await new Promise((resolve) => {
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            const pureBase64 = result.includes(",") ? result.split(",")[1] ?? "" : result;
-            resolve(pureBase64);
-          };
-          reader.readAsDataURL(blob);
-        });
-      } catch (e) {
-        console.warn("Base64 reading fallback error:", e);
+      if (Platform.OS === "web" && file.size && file.size < 15 * 1024 * 1024) {
+        try {
+          const response = await fetch(file.uri);
+          const blob = await response.blob();
+          const reader = new FileReader();
+          base64 = await new Promise((resolve) => {
+            reader.onloadend = () => {
+              const result = reader.result as string;
+              const pureBase64 = result.includes(",") ? result.split(",")[1] ?? "" : result;
+              resolve(pureBase64);
+            };
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          console.warn("Base64 reading fallback error:", e);
+        }
       }
 
       setSelectedDoc({
@@ -180,7 +264,7 @@ export default function NoteVaultScreen() {
     }
   };
 
-  // Upload Mutation
+  // Upload & Compress Mutation (Handles 200 MB files via native streaming & R2 Turbo Compressor)
   const handleUploadSubmit = async () => {
     if (!selectedDoc) {
       Alert.alert("Document Required", "Please select a PDF document first.");
@@ -190,35 +274,111 @@ export default function NoteVaultScreen() {
       Alert.alert("Title Required", "Please enter a descriptive title for this note.");
       return;
     }
-    if (!selectedDoc.base64) {
-      Alert.alert("File Error", "Could not process PDF data. Please select the file again.");
-      return;
-    }
 
     try {
       triggerHaptic();
       setIsUploading(true);
+      setUploadStatusText("Streaming PDF to Turbo Compressor...");
 
       const parsedTags = uploadTags
         .split(",")
         .map((t) => t.trim())
         .filter(Boolean);
 
-      await api("/vault/upload", {
-        method: "POST",
-        body: JSON.stringify({
-          title: uploadTitle.trim(),
-          description: uploadDesc.trim(),
-          fileBase64: selectedDoc.base64,
-          fileName: selectedDoc.name,
-          department: uploadDept,
-          semester: uploadSem,
-          courseCode: uploadCourseCode.trim() || undefined,
-          tags: parsedTags,
-          visibility: uploadVisibility,
-          communityName: uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : undefined,
-        }),
-      });
+      let responseData: any = null;
+
+      // NATIVE STREAMING: Uses FileSystem.uploadAsync (zero memory overhead, supports up to 250MB)
+      if (Platform.OS !== "web" && selectedDoc.uri) {
+        setUploadStatusText("Compressing & Saving in Cloudflare R2...");
+        const token = (session as any)?.token || session?.access_token;
+        const uploadResult = await FileSystem.uploadAsync(
+          `${API_URL}/vault/upload-raw`,
+          selectedDoc.uri,
+          {
+            httpMethod: "POST",
+            uploadType: (FileSystem as any).FileSystemUploadType?.BINARY_CONTENT ?? 0,
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              "x-vault-title": encodeURIComponent(uploadTitle.trim()),
+              "x-vault-description": encodeURIComponent(uploadDesc.trim()),
+              "x-vault-department": encodeURIComponent(uploadDept),
+              "x-vault-semester": encodeURIComponent(uploadSem),
+              "x-vault-course-code": encodeURIComponent(uploadCourseCode.trim()),
+              "x-vault-tags": encodeURIComponent(parsedTags.join(",")),
+              "x-vault-visibility": uploadVisibility,
+              "x-vault-filename": encodeURIComponent(selectedDoc.name),
+              "x-vault-community-name": encodeURIComponent(
+                uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : "",
+              ),
+            },
+          },
+        );
+
+        if (uploadResult.status >= 400) {
+          let errMessage = "Upload failed";
+          try {
+            const parsed = JSON.parse(uploadResult.body);
+            errMessage = parsed.error || errMessage;
+          } catch {}
+          throw new Error(errMessage);
+        }
+
+        responseData = JSON.parse(uploadResult.body);
+      } else {
+        // WEB STREAMING: Uses binary blob fetch
+        setUploadStatusText("Compressing & Saving in Cloudflare R2...");
+        const token = (session as any)?.token || session?.access_token;
+        let blob: Blob | null = null;
+        try {
+          const blobRes = await fetch(selectedDoc.uri);
+          blob = await blobRes.blob();
+        } catch {}
+
+        if (blob) {
+          const rawRes = await fetch(`${API_URL}/vault/upload-raw`, {
+            method: "POST",
+            body: blob,
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              "Content-Type": "application/pdf",
+              "x-vault-title": encodeURIComponent(uploadTitle.trim()),
+              "x-vault-description": encodeURIComponent(uploadDesc.trim()),
+              "x-vault-department": encodeURIComponent(uploadDept),
+              "x-vault-semester": encodeURIComponent(uploadSem),
+              "x-vault-course-code": encodeURIComponent(uploadCourseCode.trim()),
+              "x-vault-tags": encodeURIComponent(parsedTags.join(",")),
+              "x-vault-visibility": uploadVisibility,
+              "x-vault-filename": encodeURIComponent(selectedDoc.name),
+              "x-vault-community-name": encodeURIComponent(
+                uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : "",
+              ),
+            },
+          });
+
+          if (!rawRes.ok) {
+            const errData = await rawRes.json().catch(() => ({}));
+            throw new Error(errData.error || "Web upload failed");
+          }
+          responseData = await rawRes.json();
+        } else if (selectedDoc.base64) {
+          responseData = await api("/vault/upload", {
+            method: "POST",
+            body: JSON.stringify({
+              title: uploadTitle.trim(),
+              description: uploadDesc.trim(),
+              fileBase64: selectedDoc.base64,
+              fileName: selectedDoc.name,
+              department: uploadDept,
+              semester: uploadSem,
+              courseCode: uploadCourseCode.trim() || undefined,
+              tags: parsedTags,
+              visibility: uploadVisibility,
+              communityName:
+                uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : undefined,
+            }),
+          });
+        }
+      }
 
       triggerHaptic();
       setUploadModalVisible(false);
@@ -228,17 +388,128 @@ export default function NoteVaultScreen() {
       setUploadCourseCode("");
       setUploadTags("");
       setUploadCommunityName("");
+
+      // Invalidate queries so note appears immediately at top of screen!
       await qc.invalidateQueries({ queryKey: ["vault-notes"] });
-      Alert.alert("Upload Successful", "Your PDF has been optimized and saved in Cloudflare R2 Vault!");
+      await qc.refetchQueries({ queryKey: ["vault-notes"] });
+
+      const opt = responseData?.optimization;
+      if (opt) {
+        if (opt.isDeduplicated) {
+          Alert.alert(
+            "Deduplication Match Found! ⚡",
+            "An identical document was already in Cloudflare R2! 100% bandwidth saved and instantly indexed into your vault.",
+          );
+        } else if (opt.savedPercent && opt.savedPercent !== "0.0%") {
+          Alert.alert(
+            "Turbo Compression Successful! 🎉",
+            `PDF compressed from ${formatBytes(opt.originalBytes)} down to ${formatBytes(opt.finalBytes)} (${opt.savedPercent} smaller)!\nSaved to Cloudflare R2 for lightning-fast reading.`,
+          );
+        } else {
+          Alert.alert("Upload Successful", "Your document has been verified and saved to Cloudflare R2 Vault!");
+        }
+      } else {
+        Alert.alert("Upload Successful", "Your document has been saved to Cloudflare R2 Vault!");
+      }
     } catch (err: any) {
       Alert.alert("Upload Failed", err.message || "Could not complete PDF upload to Cloudflare R2.");
     } finally {
       setIsUploading(false);
+      setUploadStatusText("");
+    }
+  };
+
+  // Google Drive Ingestion Submission to VPS Background Worker
+  const handleDriveSubmit = async () => {
+    const trimmed = driveUrl.trim();
+    if (!trimmed) {
+      Alert.alert("Google Drive Link Required", "Please enter a valid Google Drive folder or file link.");
+      return;
+    }
+    if (!trimmed.includes("drive.google.com") && !trimmed.includes("docs.google.com")) {
+      Alert.alert(
+        "Invalid Link",
+        "Please provide a valid link from drive.google.com (folder/file) or docs.google.com (Doc, Slides, Sheets).",
+      );
+      return;
+    }
+
+    try {
+      triggerHaptic();
+      setIsSubmittingDrive(true);
+
+      const parsedTags = driveTags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const res = await api<{
+        success: boolean;
+        jobId: string;
+        message: string;
+        driveType: string;
+        driveId: string;
+      }>("/vault/drive/import", {
+        method: "POST",
+        body: JSON.stringify({
+          driveUrl: trimmed,
+          department: driveDept,
+          semester: driveSem,
+          courseCode: driveCourseCode.trim() || undefined,
+          tags: parsedTags.length > 0 ? parsedTags : ["GoogleDrive", "Academic"],
+          visibility: driveVisibility,
+          communityName:
+            driveVisibility === "community" ? driveCommunityName.trim() || "Campus Community" : undefined,
+        }),
+      });
+
+      triggerHaptic();
+      setDriveModalVisible(false);
+      setDriveUrl("");
+      setDriveCourseCode("");
+      setDriveTags("");
+
+      // Start active background job banner
+      setActiveSyncJob({
+        jobId: res.jobId,
+        status: "pending",
+        filesFound: 0,
+        filesProcessed: 0,
+      });
+
+      Alert.alert(
+        "VPS Ingestion Started! 🚀",
+        `Our VPS background worker has begun crawling the Google Drive ${res.driveType}.\n\nMetadata is cataloged into the Note Vault, a manifest is archived to Cloudflare R2, and documents can be streamed instantly.`,
+      );
+    } catch (err: any) {
+      Alert.alert("Drive Import Failed", err.message || "Could not dispatch Google Drive ingestion job.");
+    } finally {
+      setIsSubmittingDrive(false);
+    }
+  };
+
+  // Manual R2 Cache Trigger for Google Drive note
+  const handleCacheNoteToR2 = async (noteId: string) => {
+    try {
+      triggerHaptic();
+      setCachingNoteId(noteId);
+      await api(`/vault/drive/cache/${noteId}`, { method: "POST" });
+      triggerHaptic();
+      await qc.invalidateQueries({ queryKey: ["vault-notes"] });
+      await qc.refetchQueries({ queryKey: ["vault-notes"] });
+      Alert.alert(
+        "Cloudflare R2 Synced! ☁️",
+        "Document has been downloaded, optimized, and permanently mirrored in Cloudflare R2 for lightning-fast access.",
+      );
+    } catch (err: any) {
+      Alert.alert("Cache Failed", err.message || "Could not mirror document to Cloudflare R2.");
+    } finally {
+      setCachingNoteId(null);
     }
   };
 
   // Open In-App PDF Reader
-  const handleOpenReader = async (note: VaultNote) => {
+  const handleOpenReader = (note: VaultNote) => {
     triggerHaptic();
     setReaderNote(note);
 
@@ -248,28 +519,15 @@ export default function NoteVaultScreen() {
     } catch {}
   };
 
-  // Launch Fullscreen Native In-App Browser
-  const handleLaunchInAppBrowser = async (url: string) => {
-    triggerHaptic();
-    try {
-      await WebBrowser.openBrowserAsync(url, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-        readerMode: true,
-        toolbarColor: colors.surface,
-      });
-    } catch (err: any) {
-      Alert.alert("Browser Error", err.message || "Could not open in-app browser.");
-    }
-  };
-
-  // Share PDF
+  // Share PDF / Drive Note
   const handleShareNote = async (note: VaultNote) => {
     triggerHaptic();
+    const targetUrl = resolveNoteStreamUrl(note);
     try {
       await Share.share({
         title: note.title,
-        message: `Read "${note.title}" on SkillBridge Note Vault: ${note.file_url}`,
-        url: note.file_url,
+        message: `Read "${note.title}" on SkillBridge Note Vault: ${targetUrl}`,
+        url: targetUrl,
       });
     } catch (err) {
       console.warn("Share failed:", err);
@@ -317,16 +575,37 @@ export default function NoteVaultScreen() {
               </View>
             </Row>
 
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                setUploadModalVisible(true);
-              }}
-              style={[styles.uploadPillBtn, { backgroundColor: colors.primary }]}
-            >
-              <MaterialCommunityIcons name="plus" size={18} color="#fff" />
-              <Text style={styles.uploadPillText}>Upload PDF</Text>
-            </Pressable>
+            <Row style={{ alignItems: "center", gap: 8 }}>
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setDriveModalVisible(true);
+                }}
+                style={[
+                  styles.drivePillBtn,
+                  {
+                    backgroundColor: isDark ? "rgba(16, 185, 129, 0.18)" : "#ecfdf5",
+                    borderColor: isDark ? "#059669" : "#10b981",
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons name="google-drive" size={16} color="#10b981" />
+                <Text style={[styles.drivePillText, { color: isDark ? "#6ee7b7" : "#065f46" }]}>
+                  Drive Sync
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setUploadModalVisible(true);
+                }}
+                style={[styles.uploadPillBtn, { backgroundColor: colors.primary }]}
+              >
+                <MaterialCommunityIcons name="plus" size={17} color="#fff" />
+                <Text style={styles.uploadPillText}>Upload PDF</Text>
+              </Pressable>
+            </Row>
           </Row>
 
           {/* R2 Engine Capability Badge */}
@@ -341,13 +620,93 @@ export default function NoteVaultScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.engineTitle, { color: colors.text }]}>
-                Cloudflare R2 • Storage Optimization Active
+                Cloudflare R2 • Turbo Compression Active
               </Text>
               <Text style={[styles.engineDesc, { color: colors.muted }]}>
-                SHA-256 CAS deduplication reduces redundant storage. Read documents in-app seamlessly.
+                Smart image re-encoding & CAS deduplication compresses large PDFs down to a few MB for fastest upload and reading.
               </Text>
             </View>
           </LinearGradient>
+
+          {/* Active VPS Background Sync Job Banner */}
+          {activeSyncJob && (
+            <Animated.View
+              entering={FadeInDown.duration(200)}
+              style={[
+                styles.syncJobBanner,
+                {
+                  backgroundColor:
+                    activeSyncJob.status === "failed"
+                      ? isDark
+                        ? "#450a0a"
+                        : "#fef2f2"
+                      : isDark
+                      ? "rgba(6, 78, 59, 0.28)"
+                      : "#ecfdf5",
+                  borderColor: activeSyncJob.status === "failed" ? "#ef4444" : "#10b981",
+                },
+              ]}
+            >
+              <Row style={{ alignItems: "center", gap: 10, flex: 1 }}>
+                {activeSyncJob.status === "completed" ? (
+                  <MaterialCommunityIcons name="check-circle" size={22} color="#10b981" />
+                ) : activeSyncJob.status === "failed" ? (
+                  <MaterialCommunityIcons name="alert-circle" size={22} color="#ef4444" />
+                ) : (
+                  <ActivityIndicator size="small" color="#10b981" />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.syncJobTitle,
+                      {
+                        color:
+                          activeSyncJob.status === "failed"
+                            ? "#ef4444"
+                            : isDark
+                            ? "#a7f3d0"
+                            : "#065f46",
+                      },
+                    ]}
+                  >
+                    {activeSyncJob.status === "completed"
+                      ? "VPS Ingestion Complete • Vault Updated"
+                      : activeSyncJob.status === "failed"
+                      ? "VPS Ingestion Failed"
+                      : "VPS Background Worker Active"}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.syncJobSub,
+                      {
+                        color:
+                          activeSyncJob.status === "failed"
+                            ? "#dc2626"
+                            : isDark
+                            ? "#6ee7b7"
+                            : "#047857",
+                      },
+                    ]}
+                  >
+                    {activeSyncJob.status === "completed"
+                      ? `${activeSyncJob.filesProcessed} resources indexed & manifest saved to Cloudflare R2.`
+                      : activeSyncJob.status === "failed"
+                      ? activeSyncJob.error || "Could not crawl Google Drive resource."
+                      : `Crawling Google Drive • Cataloged ${activeSyncJob.filesProcessed} / ${activeSyncJob.filesFound || "..."} files into Vault`}
+                  </Text>
+                </View>
+              </Row>
+              {activeSyncJob.status !== "pending" && activeSyncJob.status !== "processing" && (
+                <Pressable onPress={() => setActiveSyncJob(null)} hitSlop={8}>
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={18}
+                    color={activeSyncJob.status === "failed" ? "#ef4444" : "#10b981"}
+                  />
+                </Pressable>
+              )}
+            </Animated.View>
+          )}
         </Animated.View>
 
         {/* Search Bar */}
@@ -517,9 +876,9 @@ export default function NoteVaultScreen() {
         ) : (notesQuery.data ?? []).length === 0 ? (
           <Empty
             title="No notes found in vault"
-            detail="Be the first to share an academic PDF or lecture slides with the campus."
-            actionTitle="+ Upload First PDF"
-            onAction={() => setUploadModalVisible(true)}
+            detail="Be the first to share an academic PDF or sync a Google Drive folder with the campus."
+            actionTitle="+ Sync Google Drive"
+            onAction={() => setDriveModalVisible(true)}
           />
         ) : (
           <View style={{ gap: 12 }}>
@@ -534,102 +893,172 @@ export default function NoteVaultScreen() {
                     { backgroundColor: colors.surface, borderColor: colors.border },
                   ]}
                 >
-                  <Row style={{ gap: 12, alignItems: "flex-start" }}>
-                    {/* PDF Badge Icon */}
-                    <View style={styles.pdfBadgeWrap}>
-                      <MaterialCommunityIcons name="file-pdf-box" size={36} color="#EF4444" />
-                      <Text style={styles.pdfBadgeExt}>PDF</Text>
-                    </View>
-
-                    {/* Note Details */}
-                    <View style={{ flex: 1, gap: 4 }}>
-                      <Text style={[styles.noteTitle, { color: colors.text }]} numberOfLines={2}>
-                        {note.title}
-                      </Text>
-
-                      {note.description ? (
-                        <Text style={[styles.noteDesc, { color: colors.muted }]} numberOfLines={2}>
-                          {note.description}
-                        </Text>
-                      ) : null}
-
-                      {/* Tags & Metadata Badges */}
-                      <Row style={{ gap: 6, flexWrap: "wrap", marginVertical: 4 }}>
-                        {note.course_code ? (
-                          <Pill tone="primary">{note.course_code}</Pill>
-                        ) : null}
-                        {note.department ? (
-                          <Pill tone="default">{note.department}</Pill>
-                        ) : null}
-                        {note.semester ? (
-                          <Pill tone="accent">{note.semester} Sem</Pill>
-                        ) : null}
-                        <Pill tone={note.visibility === "community" ? "warning" : "success"}>
-                          {note.visibility === "community"
-                            ? note.community_name || "Community"
-                            : "Public"}
-                        </Pill>
-                      </Row>
-
-                      {/* Uploader & Size Footer */}
-                      <Row style={{ justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                        <Pressable
-                          onPress={() => {
-                            triggerHaptic();
-                            if (note.uploader_id === session?.user?.id) {
-                              router.push("/(tabs)/profile" as any);
-                            } else {
-                              router.push(`/user/${note.uploader_id}` as any);
-                            }
-                          }}
-                          style={styles.authorRow}
+                  <Pressable onPress={() => handleOpenReader(note)}>
+                    <Row style={{ gap: 12, alignItems: "flex-start" }}>
+                      {/* PDF / Drive Badge Icon */}
+                      {note.source_type === "google_drive" ? (
+                        <View
+                          style={[
+                            styles.pdfBadgeWrap,
+                            {
+                              backgroundColor: isDark
+                                ? "rgba(16, 185, 129, 0.15)"
+                                : "rgba(16, 185, 129, 0.1)",
+                              borderColor: "rgba(16, 185, 129, 0.3)",
+                            },
+                          ]}
                         >
-                          {note.uploader?.avatar_url ? (
-                            <Image
-                              source={{ uri: note.uploader.avatar_url }}
-                              style={styles.authorAvatar}
-                            />
-                          ) : (
-                            <View
-                              style={[
-                                styles.authorAvatar,
-                                styles.authorAvatarFallback,
-                                { backgroundColor: colors.primary },
-                              ]}
-                            >
-                              <Text style={styles.authorInitials}>
-                                {initials(note.uploader?.full_name)}
-                              </Text>
-                            </View>
-                          )}
-                          <Text style={[styles.authorName, { color: colors.text }]}>
-                            {note.uploader?.full_name || "Campus Peer"}
-                          </Text>
-                        </Pressable>
+                          <MaterialCommunityIcons name="google-drive" size={32} color="#10B981" />
+                          <Text style={[styles.pdfBadgeExt, { color: "#10B981" }]}>DRIVE</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.pdfBadgeWrap}>
+                          <MaterialCommunityIcons name="file-pdf-box" size={36} color="#EF4444" />
+                          <Text style={styles.pdfBadgeExt}>PDF</Text>
+                        </View>
+                      )}
 
-                        <Text style={[styles.fileSizeText, { color: colors.muted }]}>
-                          {formatBytes(note.file_size_bytes)}
+                      {/* Note Details */}
+                      <View style={{ flex: 1, gap: 4 }}>
+                        <Text style={[styles.noteTitle, { color: colors.text }]} numberOfLines={2}>
+                          {note.title}
                         </Text>
-                      </Row>
-                    </View>
-                  </Row>
+
+                        {note.description ? (
+                          <Text style={[styles.noteDesc, { color: colors.muted }]} numberOfLines={2}>
+                            {note.description}
+                          </Text>
+                        ) : null}
+
+                        {/* Tags & Metadata Badges */}
+                        <Row style={{ gap: 6, flexWrap: "wrap", marginVertical: 4 }}>
+                          {note.source_type === "google_drive" && (
+                            <Pill
+                              tone={
+                                note.r2_cached_at || note.sync_status === "synced"
+                                  ? "success"
+                                  : "accent"
+                              }
+                            >
+                              {note.r2_cached_at || note.sync_status === "synced"
+                                ? "☁️ R2 Cached"
+                                : "⚡ Direct Stream"}
+                            </Pill>
+                          )}
+                          {note.course_code ? (
+                            <Pill tone="primary">{note.course_code}</Pill>
+                          ) : null}
+                          {note.department ? (
+                            <Pill tone="default">{note.department}</Pill>
+                          ) : null}
+                          {note.semester ? (
+                            <Pill tone="accent">{note.semester} Sem</Pill>
+                          ) : null}
+                          <Pill tone={note.visibility === "community" ? "warning" : "success"}>
+                            {note.visibility === "community"
+                              ? note.community_name || "Community"
+                              : "Public"}
+                          </Pill>
+                        </Row>
+
+                        {/* Uploader & Size Footer */}
+                        <Row style={{ justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                          <Pressable
+                            onPress={() => {
+                              triggerHaptic();
+                              if (note.uploader_id === session?.user?.id) {
+                                router.push("/(tabs)/profile" as any);
+                              } else {
+                                router.push(`/user/${note.uploader_id}` as any);
+                              }
+                            }}
+                            style={styles.authorRow}
+                          >
+                            {note.uploader?.avatar_url ? (
+                              <Image
+                                source={{ uri: note.uploader.avatar_url }}
+                                style={styles.authorAvatar}
+                              />
+                            ) : (
+                              <View
+                                style={[
+                                  styles.authorAvatar,
+                                  styles.authorAvatarFallback,
+                                  { backgroundColor: colors.primary },
+                                ]}
+                              >
+                                <Text style={styles.authorInitials}>
+                                  {initials(note.uploader?.full_name)}
+                                </Text>
+                              </View>
+                            )}
+                            <Text style={[styles.authorName, { color: colors.text }]}>
+                              {note.uploader?.full_name || "Campus Peer"}
+                            </Text>
+                          </Pressable>
+
+                          <Text style={[styles.fileSizeText, { color: colors.muted }]}>
+                            {formatBytes(note.file_size_bytes)}
+                          </Text>
+                        </Row>
+                      </View>
+                    </Row>
+                  </Pressable>
 
                   {/* Actions Bar */}
                   <Row style={[styles.cardActionBar, { borderTopColor: colors.border }]}>
                     <Pressable
                       onPress={() => handleOpenReader(note)}
-                      style={[styles.readBtn, { backgroundColor: colors.primary }]}
+                      style={[
+                        styles.readBtn,
+                        {
+                          backgroundColor:
+                            note.source_type === "google_drive" ? "#059669" : colors.primary,
+                        },
+                      ]}
                     >
-                      <MaterialCommunityIcons name="book-open-page-variant-outline" size={16} color="#fff" />
-                      <Text style={styles.readBtnText}>Read PDF</Text>
+                      <MaterialCommunityIcons
+                        name={
+                          note.source_type === "google_drive"
+                            ? "lightning-bolt"
+                            : "book-open-page-variant-outline"
+                        }
+                        size={16}
+                        color="#fff"
+                      />
+                      <Text style={styles.readBtnText}>
+                        {note.source_type === "google_drive"
+                          ? "Stream & Read Note"
+                          : "Read Fullscreen PDF"}
+                      </Text>
                     </Pressable>
 
-                    <Pressable
-                      onPress={() => handleLaunchInAppBrowser(note.file_url)}
-                      style={[styles.iconActionBtn, { borderColor: colors.border }]}
-                    >
-                      <MaterialCommunityIcons name="open-in-new" size={17} color={colors.text} />
-                    </Pressable>
+                    {/* Manual R2 Cache Button for Drive note if not yet cached */}
+                    {note.source_type === "google_drive" &&
+                      !(note.r2_cached_at || note.sync_status === "synced") && (
+                        <Pressable
+                          onPress={() => handleCacheNoteToR2(note.id)}
+                          disabled={cachingNoteId === note.id}
+                          style={[
+                            styles.iconActionBtn,
+                            {
+                              borderColor: "rgba(16, 185, 129, 0.4)",
+                              backgroundColor: isDark ? "rgba(6, 78, 59, 0.3)" : "#ecfdf5",
+                            },
+                          ]}
+                          accessibilityLabel="Mirror to Cloudflare R2"
+                        >
+                          {cachingNoteId === note.id ? (
+                            <ActivityIndicator size="small" color="#10B981" />
+                          ) : (
+                            <MaterialCommunityIcons
+                              name="cloud-download-outline"
+                              size={17}
+                              color="#10B981"
+                            />
+                          )}
+                        </Pressable>
+                      )}
 
                     <Pressable
                       onPress={() => handleShareNote(note)}
@@ -655,162 +1084,21 @@ export default function NoteVaultScreen() {
       </ScrollView>
 
       {/* ------------------------------------------------------------- */}
-      {/* IN-APP PDF READER MODAL */}
+      {/* FULL-SCREEN IN-APP PDF READER */}
       {/* ------------------------------------------------------------- */}
-      <Modal
-        visible={Boolean(readerNote)}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setReaderNote(null)}
-      >
-        <View style={[styles.readerContainer, { backgroundColor: colors.background }]}>
-          {/* Reader Top Bar */}
-          <Row
-            style={[
-              styles.readerHeader,
-              { backgroundColor: colors.surface, borderBottomColor: colors.border },
-            ]}
-          >
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[styles.readerTitle, { color: colors.text }]} numberOfLines={1}>
-                {readerNote?.title}
-              </Text>
-              <Text style={[styles.readerMeta, { color: colors.muted }]} numberOfLines={1}>
-                {[readerNote?.department, readerNote?.course_code, formatBytes(readerNote?.file_size_bytes)]
-                  .filter(Boolean)
-                  .join(" • ")}
-              </Text>
-            </View>
-
-            <Row style={{ gap: 8, alignItems: "center" }}>
-              <Pressable
-                onPress={() => {
-                  if (readerNote) handleShareNote(readerNote);
-                }}
-                hitSlop={8}
-                style={[styles.readerIconBtn, { borderColor: colors.border }]}
-              >
-                <MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.text} />
-              </Pressable>
-
-              <Pressable
-                onPress={() => {
-                  if (readerNote) {
-                    triggerHaptic();
-                    void Clipboard.setStringAsync(readerNote.file_url);
-                    Alert.alert("Link Copied", "PDF direct link copied to clipboard.");
-                  }
-                }}
-                hitSlop={8}
-                style={[styles.readerIconBtn, { borderColor: colors.border }]}
-              >
-                <MaterialCommunityIcons name="link-variant" size={18} color={colors.text} />
-              </Pressable>
-
-              <Pressable
-                onPress={() => setReaderNote(null)}
-                hitSlop={8}
-                style={[styles.readerCloseBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <MaterialCommunityIcons name="close" size={20} color={colors.text} />
-              </Pressable>
-            </Row>
-          </Row>
-
-          {/* Reader Main Display */}
-          {readerNote && (
-            <View style={{ flex: 1 }}>
-              {Platform.OS === "web" ? (
-                // Web In-App iframe
-                <View style={{ flex: 1 }}>
-                  {/* @ts-ignore - web iframe */}
-                  <iframe
-                    src={readerNote.file_url}
-                    style={{ width: "100%", height: "100%", border: "none" }}
-                    title={readerNote.title}
-                  />
-                </View>
-              ) : (
-                // Mobile In-App Viewer Hub
-                <ScrollView contentContainerStyle={styles.mobileReaderHub}>
-                  <View
-                    style={[
-                      styles.hubCard,
-                      { backgroundColor: colors.surface, borderColor: colors.border },
-                    ]}
-                  >
-                    <MaterialCommunityIcons name="file-pdf-box" size={68} color="#EF4444" />
-                    <H2 style={{ textAlign: "center", marginTop: 8 }}>{readerNote.title}</H2>
-                    {readerNote.description ? (
-                      <Text style={[styles.hubDesc, { color: colors.muted }]}>
-                        {readerNote.description}
-                      </Text>
-                    ) : null}
-
-                    {/* Metadata Specs */}
-                    <View
-                      style={[
-                        styles.hubSpecsTable,
-                        { backgroundColor: isDark ? "#1e293b50" : "#f8fafc", borderColor: colors.border },
-                      ]}
-                    >
-                      <Row style={styles.hubSpecRow}>
-                        <Text style={[styles.hubSpecKey, { color: colors.muted }]}>Storage Provider</Text>
-                        <Text style={[styles.hubSpecVal, { color: colors.primary }]}>Cloudflare R2</Text>
-                      </Row>
-                      <Row style={styles.hubSpecRow}>
-                        <Text style={[styles.hubSpecKey, { color: colors.muted }]}>File Size</Text>
-                        <Text style={[styles.hubSpecVal, { color: colors.text }]}>
-                          {formatBytes(readerNote.file_size_bytes)}
-                        </Text>
-                      </Row>
-                      <Row style={styles.hubSpecRow}>
-                        <Text style={[styles.hubSpecKey, { color: colors.muted }]}>Department</Text>
-                        <Text style={[styles.hubSpecVal, { color: colors.text }]}>
-                          {readerNote.department || "General"}
-                        </Text>
-                      </Row>
-                      <Row style={styles.hubSpecRow}>
-                        <Text style={[styles.hubSpecKey, { color: colors.muted }]}>Semester</Text>
-                        <Text style={[styles.hubSpecVal, { color: colors.text }]}>
-                          {readerNote.semester || "All"}
-                        </Text>
-                      </Row>
-                      <Row style={styles.hubSpecRow}>
-                        <Text style={[styles.hubSpecKey, { color: colors.muted }]}>Visibility</Text>
-                        <Text style={[styles.hubSpecVal, { color: colors.text }]}>
-                          {readerNote.visibility === "community"
-                            ? readerNote.community_name || "Community"
-                            : "Public Campus"}
-                        </Text>
-                      </Row>
-                    </View>
-
-                    {/* Launch Native In-App Browser Reader */}
-                    <View style={{ width: "100%", marginTop: 16 }}>
-                      <Button
-                        title="Launch Fullscreen Reader"
-                        variant="primary"
-                        icon="open-in-new"
-                        onPress={() => handleLaunchInAppBrowser(readerNote.file_url)}
-                      />
-                    </View>
-
-                    <View style={{ width: "100%", marginTop: 8 }}>
-                      <Button
-                        title="Share / Save PDF"
-                        variant="secondary"
-                        icon="share-variant-outline"
-                        onPress={() => handleShareNote(readerNote)}
-                      />
-                    </View>
-                  </View>
-                </ScrollView>
-              )}
-            </View>
-          )}
-        </View>
-      </Modal>
+      {readerNote && (
+        <FullScreenPdfReader
+          visible={Boolean(readerNote)}
+          url={resolveNoteStreamUrl(readerNote)}
+          title={readerNote.title}
+          uploaderName={readerNote.uploader?.full_name}
+          department={readerNote.department}
+          courseCode={readerNote.course_code}
+          fileSizeBytes={readerNote.file_size_bytes}
+          onClose={() => setReaderNote(null)}
+          onShare={() => handleShareNote(readerNote)}
+        />
+      )}
 
       {/* ------------------------------------------------------------- */}
       {/* UPLOAD PDF MODAL */}
@@ -833,7 +1121,7 @@ export default function NoteVaultScreen() {
           >
             <View>
               <H2 style={{ fontSize: 18 }}>Upload to Note Vault</H2>
-              <Muted style={{ fontSize: 12 }}>Cloudflare R2 • Content-Addressable Storage</Muted>
+              <Muted style={{ fontSize: 12 }}>Cloudflare R2 • Turbo Compression Engine</Muted>
             </View>
             <Pressable
               onPress={() => setUploadModalVisible(false)}
@@ -864,14 +1152,37 @@ export default function NoteVaultScreen() {
                 color={selectedDoc ? colors.primary : colors.muted}
               />
               <Text style={[styles.pickDocTitle, { color: colors.text }]}>
-                {selectedDoc ? selectedDoc.name : "Select PDF Document"}
+                {selectedDoc ? selectedDoc.name : "Select PDF Document (up to 250 MB)"}
               </Text>
               <Text style={[styles.pickDocSub, { color: colors.muted }]}>
                 {selectedDoc
-                  ? `${formatBytes(selectedDoc.size)} • PDF Ready`
-                  : "Tap to browse PDF notes, lecture slides, or exam sheets"}
+                  ? `${formatBytes(selectedDoc.size)} • PDF Ready for Turbo Compression`
+                  : "Tap to browse PDF notes, lecture slides, books, or exam sheets"}
               </Text>
             </Pressable>
+
+            {/* Compressor Info Banner when large document picked */}
+            {selectedDoc && (selectedDoc.size || 0) > 3 * 1024 * 1024 && (
+              <View
+                style={[
+                  styles.compressorNotice,
+                  {
+                    backgroundColor: isDark ? "#064e3b30" : "#ecfdf5",
+                    borderColor: isDark ? "#05966950" : "#a7f3d0",
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons name="lightning-bolt" size={22} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.compressorTitle, { color: colors.text }]}>
+                    R2 Turbo Compressor Active ({formatBytes(selectedDoc.size)})
+                  </Text>
+                  <Text style={[styles.compressorDesc, { color: colors.muted }]}>
+                    High-res slide images and redundant streams will be automatically compressed down to a few MB for fastest upload and instant loading.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {/* Note Title */}
             <View style={styles.formGroup}>
@@ -1081,15 +1392,315 @@ export default function NoteVaultScreen() {
               />
             </View>
 
+            {/* In-Flight Upload & Compressor Progress Display */}
+            {isUploading && (
+              <View
+                style={[
+                  styles.uploadProgressBox,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <ActivityIndicator size="small" color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.progressStageText, { color: colors.text }]}>
+                    {uploadStatusText || "Streaming & Compressing PDF..."}
+                  </Text>
+                  <Text style={[styles.progressSubText, { color: colors.muted }]}>
+                    MozJPEG Optimization • Flate Deflate • Cloudflare R2 CAS
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {/* Upload Action Button */}
             <View style={{ marginTop: 12, marginBottom: 40 }}>
               <Button
-                title={isUploading ? "Optimizing & Saving to R2..." : "Upload PDF to Vault"}
+                title={isUploading ? "Compressing & Saving to R2..." : "Compress & Upload PDF"}
                 variant="primary"
                 disabled={isUploading}
                 loading={isUploading}
                 icon="cloud-upload-outline"
                 onPress={handleUploadSubmit}
+              />
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* GOOGLE DRIVE IMPORT MODAL */}
+      {/* ------------------------------------------------------------- */}
+      <Modal
+        visible={driveModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => {
+          if (!isSubmittingDrive) setDriveModalVisible(false);
+        }}
+      >
+        <View style={[styles.readerContainer, { backgroundColor: colors.background }]}>
+          {/* Modal Header */}
+          <Row
+            style={[
+              styles.readerHeader,
+              { backgroundColor: colors.surface, borderBottomColor: colors.border },
+            ]}
+          >
+            <Row style={{ alignItems: "center", gap: 8 }}>
+              <View style={[styles.driveIconHeaderWrap, { backgroundColor: isDark ? "#064e3b" : "#dcfce7" }]}>
+                <MaterialCommunityIcons name="google-drive" size={20} color="#10B981" />
+              </View>
+              <View>
+                <H2 style={{ fontSize: 17 }}>Sync Google Drive</H2>
+                <Muted style={{ fontSize: 11 }}>VPS Crawler • Cloudflare R2 Ingestion</Muted>
+              </View>
+            </Row>
+            <Pressable
+              onPress={() => setDriveModalVisible(false)}
+              disabled={isSubmittingDrive}
+              hitSlop={8}
+              style={[styles.readerCloseBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            >
+              <MaterialCommunityIcons name="close" size={20} color={colors.text} />
+            </Pressable>
+          </Row>
+
+          <ScrollView contentContainerStyle={styles.uploadForm} keyboardShouldPersistTaps="handled">
+            {/* Info callout */}
+            <LinearGradient
+              colors={isDark ? ["#064e3b40", "#022c2220"] : ["#ecfdf5", "#f0fdf4"]}
+              style={[styles.driveInfoCard, { borderColor: isDark ? "#05966950" : "#a7f3d0" }]}
+            >
+              <MaterialCommunityIcons name="lightning-bolt" size={22} color="#10B981" />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.driveInfoTitle, { color: isDark ? "#a7f3d0" : "#065f46" }]}>
+                  Automatic VPS Ingestion Pipeline
+                </Text>
+                <Text style={[styles.driveInfoDesc, { color: isDark ? "#6ee7b7" : "#047857" }]}>
+                  Provide any public or shared Google Drive folder or file link. The background task on our VPS crawls the directory, extracts metadata, indexes resources to the Vault, and archives an R2 manifest. Documents stream on-demand and auto-cache to Cloudflare R2.
+                </Text>
+              </View>
+            </LinearGradient>
+
+            {/* Drive URL Input */}
+            <View style={styles.formGroup}>
+              <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Google Drive Link *</Text>
+                {driveUrl.trim() ? (
+                  <Text style={[styles.detectedBadge, { color: "#10b981" }]}>
+                    {driveUrl.includes("/folders/")
+                      ? "📁 Folder Detected"
+                      : driveUrl.includes("/document/")
+                      ? "📝 Doc Detected"
+                      : driveUrl.includes("/presentation/")
+                      ? "📊 Slides Detected"
+                      : driveUrl.includes("/spreadsheets/")
+                      ? "📈 Sheet Detected"
+                      : "📄 File Detected"}
+                  </Text>
+                ) : null}
+              </Row>
+              <TextInput
+                placeholder="https://drive.google.com/drive/folders/... or docs.google.com/..."
+                placeholderTextColor={colors.muted}
+                value={driveUrl}
+                onChangeText={setDriveUrl}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={[
+                  styles.formInput,
+                  { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+                ]}
+              />
+              <Muted style={{ fontSize: 11 }}>
+                Folder links recursively catalog all PDF lecture notes, exam papers, and syllabus files.
+              </Muted>
+            </View>
+
+            {/* Department Selector */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Department</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {DEPARTMENTS.filter((d) => d !== "All").map((dept) => {
+                  const active = driveDept === dept;
+                  return (
+                    <Pressable
+                      key={dept}
+                      onPress={() => {
+                        triggerHaptic();
+                        setDriveDept(dept);
+                      }}
+                      style={[
+                        styles.filterPill,
+                        {
+                          backgroundColor: active ? colors.primary : colors.surface,
+                          borderColor: active ? colors.primary : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.filterPillText, { color: active ? "#fff" : colors.text }]}>
+                        {dept}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Semester Selector */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Semester</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {SEMESTERS.filter((s) => s !== "All").map((sem) => {
+                  const active = driveSem === sem;
+                  return (
+                    <Pressable
+                      key={sem}
+                      onPress={() => {
+                        triggerHaptic();
+                        setDriveSem(sem);
+                      }}
+                      style={[
+                        styles.filterPill,
+                        {
+                          backgroundColor: active ? colors.accent : colors.surface,
+                          borderColor: active ? colors.accent : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.filterPillText, { color: active ? "#fff" : colors.text }]}>
+                        {sem} Sem
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Course Code */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Course Code (Optional)</Text>
+              <TextInput
+                placeholder="e.g. CSE-3100 or EEE-2101"
+                placeholderTextColor={colors.muted}
+                value={driveCourseCode}
+                onChangeText={setDriveCourseCode}
+                style={[
+                  styles.formInput,
+                  { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+                ]}
+              />
+            </View>
+
+            {/* Visibility Mode */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Visibility & Access</Text>
+              <Row style={{ gap: 10 }}>
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setDriveVisibility("public");
+                  }}
+                  style={[
+                    styles.visOption,
+                    {
+                      borderColor: driveVisibility === "public" ? colors.primary : colors.border,
+                      backgroundColor: driveVisibility === "public" ? colors.primarySoft : colors.surface,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="earth"
+                    size={20}
+                    color={driveVisibility === "public" ? colors.primary : colors.muted}
+                  />
+                  <Text
+                    style={[
+                      styles.visOptionTitle,
+                      { color: driveVisibility === "public" ? colors.primary : colors.text },
+                    ]}
+                  >
+                    Public Campus
+                  </Text>
+                  <Text style={[styles.visOptionSub, { color: colors.muted }]}>
+                    Visible to all university students
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setDriveVisibility("community");
+                  }}
+                  style={[
+                    styles.visOption,
+                    {
+                      borderColor: driveVisibility === "community" ? colors.primary : colors.border,
+                      backgroundColor: driveVisibility === "community" ? colors.primarySoft : colors.surface,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="account-group"
+                    size={20}
+                    color={driveVisibility === "community" ? colors.primary : colors.muted}
+                  />
+                  <Text
+                    style={[
+                      styles.visOptionTitle,
+                      { color: driveVisibility === "community" ? colors.primary : colors.text },
+                    ]}
+                  >
+                    Community Only
+                  </Text>
+                  <Text style={[styles.visOptionSub, { color: colors.muted }]}>
+                    Restricted to club or batch peers
+                  </Text>
+                </Pressable>
+              </Row>
+            </View>
+
+            {/* Community Name if community */}
+            {driveVisibility === "community" && (
+              <View style={styles.formGroup}>
+                <Text style={[styles.formLabel, { color: colors.text }]}>Community / Batch Name</Text>
+                <TextInput
+                  placeholder="e.g. RUET CSE 2024 Batch"
+                  placeholderTextColor={colors.muted}
+                  value={driveCommunityName}
+                  onChangeText={setDriveCommunityName}
+                  style={[
+                    styles.formInput,
+                    { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+                  ]}
+                />
+              </View>
+            )}
+
+            {/* Tags */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: colors.text }]}>Tags (Comma-separated)</Text>
+              <TextInput
+                placeholder="GoogleDrive, Lecture Slides, Midterm, Hand notes"
+                placeholderTextColor={colors.muted}
+                value={driveTags}
+                onChangeText={setDriveTags}
+                style={[
+                  styles.formInput,
+                  { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+                ]}
+              />
+            </View>
+
+            {/* Submit Action */}
+            <View style={{ marginTop: 12, marginBottom: 40 }}>
+              <Button
+                title={isSubmittingDrive ? "Dispatching VPS Crawler..." : "Start VPS Background Ingestion"}
+                variant="primary"
+                disabled={isSubmittingDrive}
+                loading={isSubmittingDrive}
+                icon="cloud-sync"
+                onPress={handleDriveSubmit}
               />
             </View>
           </ScrollView>
@@ -1121,6 +1732,65 @@ const styles = StyleSheet.create({
   },
   headerSub: {
     fontSize: 12,
+  },
+  drivePillBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  drivePillText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  syncJobBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  syncJobTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  syncJobSub: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  driveIconHeaderWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  driveInfoCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  driveInfoTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  driveInfoDesc: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  detectedBadge: {
+    fontSize: 11,
+    fontWeight: "700",
   },
   uploadPillBtn: {
     flexDirection: "row",
@@ -1309,21 +1979,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  readerTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  readerMeta: {
-    fontSize: 12,
-  },
-  readerIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   readerCloseBtn: {
     width: 34,
     height: 34,
@@ -1331,41 +1986,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  mobileReaderHub: {
-    padding: 20,
-    alignItems: "center",
-  },
-  hubCard: {
-    width: "100%",
-    padding: 20,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  hubDesc: {
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  hubSpecsTable: {
-    width: "100%",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 16,
-    padding: 12,
-    gap: 8,
-  },
-  hubSpecRow: {
-    justifyContent: "space-between",
-  },
-  hubSpecKey: {
-    fontSize: 12,
-  },
-  hubSpecVal: {
-    fontSize: 12,
-    fontWeight: "700",
   },
   uploadForm: {
     padding: 16,
@@ -1388,6 +2008,39 @@ const styles = StyleSheet.create({
   pickDocSub: {
     fontSize: 12,
     textAlign: "center",
+  },
+  compressorNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  compressorTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  compressorDesc: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  uploadProgressBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  progressStageText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  progressSubText: {
+    fontSize: 11,
+    marginTop: 2,
   },
   formGroup: {
     gap: 6,

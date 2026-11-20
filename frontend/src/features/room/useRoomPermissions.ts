@@ -13,6 +13,9 @@ export function useRoomPermissions(roomId?: string) {
   const permissions: RoomPermissions = query.data ?? {
     role: null,
     isOwner: false,
+    isAdmin: false,
+    isTeacher: false,
+    isModerator: false,
     isMember: false,
     canPost: false,
     canAnnounce: false,
@@ -23,6 +26,8 @@ export function useRoomPermissions(roomId?: string) {
     canManageMembers: false,
     canManageRoles: false,
     canManageChannels: false,
+    assignableRoles: [],
+    roleHierarchy: { owner: 5, admin: 4, teacher: 4, moderator: 3, member: 2, guest: 1 },
   };
 
   return {

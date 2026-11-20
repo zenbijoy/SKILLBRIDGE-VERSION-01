@@ -5,6 +5,7 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -135,105 +136,112 @@ export default function NoteEditorScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={{ flex: 1, backgroundColor: 'transparent' }}
     >
       <SafeAreaView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 8 }}>
-      {/* Top bar */}
-      <View style={[s.topBar, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => {
-          if (isDirty) saveMutation.mutate();
-          router.back();
-        }} hitSlop={12}>
-          <MaterialCommunityIcons name="arrow-left" size={22} color={colors.text} />
-        </Pressable>
-
-        <Text style={[s.statusText, { color: colors.muted }]}>{statusText}</Text>
-
-        <Row style={{ gap: 8 }}>
-          <Pressable
-            onPress={() => saveMutation.mutate()}
-            disabled={!isDirty || saveMutation.isPending}
-            hitSlop={10}
-          >
-            <MaterialCommunityIcons
-              name="content-save-outline"
-              size={22}
-              color={isDirty ? colors.primary : colors.muted}
-            />
+        {/* Top bar */}
+        <View style={[s.topBar, { borderBottomColor: colors.border }]}>
+          <Pressable onPress={() => {
+            if (isDirty) saveMutation.mutate();
+            router.back();
+          }} hitSlop={12}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color={colors.text} />
           </Pressable>
-          <Pressable onPress={handleDelete} hitSlop={10}>
-            <MaterialCommunityIcons name="trash-can-outline" size={22} color={colors.danger} />
-          </Pressable>
-        </Row>
-      </View>
 
-      {/* Paper link badge (if linked to a paper) */}
-      {noteQuery.data?.paper_title ? (
-        <View style={[s.paperBadge, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}25` }]}>
-          <MaterialCommunityIcons name="file-document-outline" size={13} color={colors.primary} />
-          <Text style={[s.paperBadgeText, { color: colors.primary }]} numberOfLines={1}>
-            From paper: {noteQuery.data.paper_title}
-          </Text>
-        </View>
-      ) : null}
+          <Text style={[s.statusText, { color: colors.muted }]}>{statusText}</Text>
 
-      {/* Title */}
-      <TextInput
-        value={title}
-        onChangeText={handleTitleChange}
-        placeholder="Note title..."
-        placeholderTextColor={colors.muted}
-        style={[s.titleInput, { color: colors.text }]}
-        multiline
-        returnKeyType="next"
-        maxLength={200}
-      />
-
-      {/* Tags */}
-      <View style={s.tagsSection}>
-        <Row style={{ gap: 6, flexWrap: "wrap" }}>
-          {tags.map((tag) => (
+          <Row style={{ gap: 8 }}>
             <Pressable
-              key={tag}
-              onPress={() => removeTag(tag)}
-              style={[s.tag, { backgroundColor: `${colors.accent}18`, borderColor: `${colors.accent}30` }]}
+              onPress={() => saveMutation.mutate()}
+              disabled={!isDirty || saveMutation.isPending}
+              hitSlop={10}
             >
-              <Text style={[s.tagText, { color: colors.accent }]}>#{tag}</Text>
-              <MaterialCommunityIcons name="close" size={11} color={colors.accent} />
+              <MaterialCommunityIcons
+                name="content-save-outline"
+                size={22}
+                color={isDirty ? colors.primary : colors.muted}
+              />
             </Pressable>
-          ))}
-          <View style={[s.tagInput, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
-            <TextInput
-              value={tagInput}
-              onChangeText={setTagInput}
-              placeholder="Add tag..."
-              placeholderTextColor={colors.muted}
-              style={[s.tagInputText, { color: colors.text }]}
-              onSubmitEditing={addTag}
-              returnKeyType="done"
-              maxLength={30}
-            />
+            <Pressable onPress={handleDelete} hitSlop={10}>
+              <MaterialCommunityIcons name="trash-can-outline" size={22} color={colors.danger} />
+            </Pressable>
+          </Row>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Paper link badge (if linked to a paper) */}
+          {noteQuery.data?.paper_title ? (
+            <View style={[s.paperBadge, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}25` }]}>
+              <MaterialCommunityIcons name="file-document-outline" size={13} color={colors.primary} />
+              <Text style={[s.paperBadgeText, { color: colors.primary }]} numberOfLines={1}>
+                From paper: {noteQuery.data.paper_title}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Title */}
+          <TextInput
+            value={title}
+            onChangeText={handleTitleChange}
+            placeholder="Note title..."
+            placeholderTextColor={colors.muted}
+            style={[s.titleInput, { color: colors.text }]}
+            multiline
+            returnKeyType="next"
+            maxLength={200}
+          />
+
+          {/* Tags */}
+          <View style={s.tagsSection}>
+            <Row style={{ gap: 6, flexWrap: "wrap" }}>
+              {tags.map((tag) => (
+                <Pressable
+                  key={tag}
+                  onPress={() => removeTag(tag)}
+                  style={[s.tag, { backgroundColor: `${colors.accent}18`, borderColor: `${colors.accent}30` }]}
+                >
+                  <Text style={[s.tagText, { color: colors.accent }]}>#{tag}</Text>
+                  <MaterialCommunityIcons name="close" size={11} color={colors.accent} />
+                </Pressable>
+              ))}
+              <View style={[s.tagInput, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+                <TextInput
+                  value={tagInput}
+                  onChangeText={setTagInput}
+                  placeholder="Add tag..."
+                  placeholderTextColor={colors.muted}
+                  style={[s.tagInputText, { color: colors.text }]}
+                  onSubmitEditing={addTag}
+                  returnKeyType="done"
+                  maxLength={30}
+                />
+              </View>
+            </Row>
           </View>
-        </Row>
-      </View>
 
-      {/* Body */}
-      <TextInput
-        value={body}
-        onChangeText={handleBodyChange}
-        placeholder={"Start writing your research notes...\n\nYou can jot down:\n• Key findings\n• Methodology observations\n• Questions to explore\n• Quotes and citations"}
-        placeholderTextColor={colors.muted}
-        style={[s.bodyInput, { color: colors.text }]}
-        multiline
-        textAlignVertical="top"
-        maxLength={50000}
-      />
+          {/* Body */}
+          <TextInput
+            value={body}
+            onChangeText={handleBodyChange}
+            placeholder={"Start writing your research notes...\n\nYou can jot down:\n• Key findings\n• Methodology observations\n• Questions to explore\n• Quotes and citations"}
+            placeholderTextColor={colors.muted}
+            style={[s.bodyInput, { color: colors.text }]}
+            multiline
+            textAlignVertical="top"
+            maxLength={50000}
+          />
 
-      {/* Word count */}
-      <Text style={[s.wordCount, { color: colors.muted }]}>
-        {body.trim().split(/\s+/).filter(Boolean).length} words · {body.length} chars
-      </Text>
+          {/* Word count */}
+          <Text style={[s.wordCount, { color: colors.muted }]}>
+            {body.trim().split(/\s+/).filter(Boolean).length} words · {body.length} chars
+          </Text>
+        </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>
   );

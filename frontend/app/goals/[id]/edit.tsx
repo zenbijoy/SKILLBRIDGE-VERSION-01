@@ -15,12 +15,14 @@ import { useTheme } from "@/theme";
 import { useI18n } from "@/i18n";
 import { fetchGoal, updateGoal } from "@/features/growth/growthApi";
 import { Screen } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 export default function EditGoalScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const { t } = useI18n();
   const router = useRouter();
+  const keyboardHeight = useKeyboardHeight();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -106,10 +108,14 @@ export default function EditGoalScreen() {
 
   return (
     <Screen scroll={false}>
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.bg }]}
-      contentContainerStyle={styles.content}
-    >
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.bg }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: 60 + (keyboardHeight > 0 ? keyboardHeight : 20) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}

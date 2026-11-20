@@ -37,6 +37,7 @@ export interface Profile {
   timezone?: string;
   quiet_hours_start?: string;
   quiet_hours_end?: string;
+  is_online?: boolean;
 }
 
 export interface Skill {
@@ -87,6 +88,8 @@ export interface Session {
   starts_at: string;
   ends_at?: string | null;
   mode: RoomMode;
+  media?: "audio" | "video" | null;
+  session_type?: "voice" | "offline" | "video" | null;
   meeting_url?: string | null;
   campus_location?: string | null;
   status: string;
@@ -95,6 +98,67 @@ export interface Session {
   recording_provider?: "youtube" | "google_drive" | "r2" | "custom" | null;
   recording_status?: "none" | "recording" | "uploading" | "ready" | "failed" | null;
   recording_duration_seconds?: number | null;
+  teacher?: Profile | null;
+  attendees_count?: number;
+  is_attending?: boolean;
+}
+
+export interface RoomSessionRequest {
+  id: string;
+  room_id: string;
+  user_id: string;
+  title: string;
+  description?: string | null;
+  session_type: "voice" | "offline" | "video";
+  preferred_time?: string | null;
+  preferred_time_note?: string | null;
+  status: "pending" | "approved" | "rejected" | "converted_to_poll";
+  scheduled_session_id?: string | null;
+  poll_id?: string | null;
+  upvotes_count: number;
+  has_upvoted: boolean;
+  user?: Profile | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface RoomAssignment {
+  id: string;
+  room_id: string;
+  creator_id: string;
+  title: string;
+  description?: string | null;
+  total_points: number;
+  due_date: string;
+  attachment_url?: string | null;
+  attachment_path?: string | null;
+  status: "active" | "closed" | "archived";
+  created_at: string;
+  updated_at: string;
+  creator?: Profile | null;
+  submissionsCount?: number;
+  gradedCount?: number;
+  mySubmission?: RoomAssignmentSubmission | null;
+}
+
+export interface RoomAssignmentSubmission {
+  id: string;
+  assignment_id: string;
+  room_id: string;
+  student_id: string;
+  file_url: string;
+  storage_path: string;
+  file_name?: string | null;
+  file_size_bytes?: number | null;
+  student_notes?: string | null;
+  grade?: number | null;
+  feedback?: string | null;
+  graded_by?: string | null;
+  graded_at?: string | null;
+  status: "submitted" | "graded" | "resubmitted";
+  submitted_at: string;
+  updated_at: string;
+  student?: Profile | null;
 }
 
 export interface TeachingRequest {
@@ -144,11 +208,26 @@ export interface Message {
   created_at: string;
   edited_at?: string | null;
   attachment?: {
+    id?: string;
     url: string;
     type: string;
     name?: string;
     size?: number;
+    duration?: number;
+    storagePath?: string;
   } | null;
+  reactions?: {
+    id: string;
+    message_id: string;
+    user_id: string;
+    reaction: string;
+  }[];
+  sender?: {
+    id: string;
+    full_name?: string;
+    username?: string;
+    avatar_url?: string | null;
+  };
 }
 
 export interface DashboardWidget {
@@ -246,6 +325,9 @@ export interface RoomPostComment {
 export interface RoomPermissions {
   role: string | null;
   isOwner: boolean;
+  isAdmin?: boolean;
+  isTeacher?: boolean;
+  isModerator?: boolean;
   isMember: boolean;
   canPost: boolean;
   canAnnounce: boolean;
@@ -256,9 +338,11 @@ export interface RoomPermissions {
   canManageMembers: boolean;
   canManageRoles: boolean;
   canManageChannels: boolean;
+  assignableRoles?: string[];
+  roleHierarchy?: Record<string, number>;
 }
 
-export type ChannelType = "text" | "announcement" | "question" | "resource" | "media" | "voice";
+export type ChannelType = "text" | "announcement" | "question" | "resource" | "media" | "voice" | "common" | "private";
 
 export interface RoomChannel {
   id: string;
@@ -270,6 +354,13 @@ export interface RoomChannel {
   position: number;
   is_default: boolean;
   is_archived: boolean;
+  is_private?: boolean;
+  allowed_roles?: string[];
+  permissions_override?: {
+    is_private?: boolean;
+    allowed_roles?: string[];
+    channel_category?: string;
+  };
   conversation_id?: string | null;
   unread_count?: number;
   active_participants?: number;

@@ -13,11 +13,12 @@ type RoomMediaViewProps = {
   roomId: string;
   isHostOrMod?: boolean;
   isMember?: boolean;
+  resources?: any[];
 };
 
 type MediaFilter = "all" | "files" | "recordings" | "playlists";
 
-export function RoomMediaView({ roomId, isHostOrMod, isMember }: RoomMediaViewProps) {
+export function RoomMediaView({ roomId, isHostOrMod, isMember, resources }: RoomMediaViewProps) {
   const { colors } = useTheme();
   const [filter, setFilter] = useState<MediaFilter>("all");
 
@@ -140,7 +141,12 @@ export function RoomMediaView({ roomId, isHostOrMod, isMember }: RoomMediaViewPr
       {(filter === "all" || filter === "files") && (
         <View style={s.sectionBlock}>
           <Text style={[s.sectionTitle, { color: colors.muted }]}>ROOM DOCUMENTS & MATERIALS</Text>
-          <RoomMaterialsHub roomId={roomId} isMember={Boolean(isMember ?? isHostOrMod)} />
+          <RoomMaterialsHub
+            roomId={roomId}
+            isMember={Boolean(isMember ?? isHostOrMod)}
+            isHostOrMod={Boolean(isHostOrMod)}
+            initialResources={resources}
+          />
         </View>
       )}
 

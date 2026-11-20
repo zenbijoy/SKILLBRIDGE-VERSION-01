@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,15 +19,29 @@ import type { Profile, Room } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
 import { ActiveDot } from "@/features/presence/ActiveDot";
+import { RoomAdminHub } from "./RoomAdminHub";
+import { RoomTeacherHub } from "./RoomTeacherHub";
+import { RoomMemberHub } from "./RoomMemberHub";
+import { RoomRoleManagementModal } from "./RoomRoleManagementModal";
+import type { RoleTier } from "../roles/roleConfig";
 
-type RoomMoreViewProps = {
+type RoleFilter = "all" | "admin" | "teacher" | "member";
+
+export type RoomMoreViewProps = {
   room: Room;
   members: Profile[];
   currentUserId?: string;
   isOwner?: boolean;
+  isAdmin?: boolean;
+  isTeacher?: boolean;
+  role?: string | null;
   canManageMembers?: boolean;
+  canManageRoles?: boolean;
   canModerate?: boolean;
-  onPromoteRole?: (memberId: string, newRole: "teacher" | "moderator" | "member") => void;
+  canStartLive?: boolean;
+  canAnnounce?: boolean;
+  canPin?: boolean;
+  onPromoteRole?: (memberId: string, newRole: RoleTier) => void;
   onRemoveMember?: (memberId: string) => void;
   onLeaveRoom?: () => void;
   onOpenPinnedHub?: () => void;
@@ -37,6 +51,8 @@ type RoomMoreViewProps = {
   onOpenMonitoringCenter?: () => void;
   onOpenKnockRequests?: () => void;
   onOpenStudyPermissions?: () => void;
+  onTabChange?: (tab: any) => void;
+  onRoomUpdated?: (updated: Partial<Room>) => void;
 };
 
 export function RoomMoreView({
@@ -44,8 +60,15 @@ export function RoomMoreView({
   members,
   currentUserId,
   isOwner,
+  isAdmin,
+  isTeacher,
+  role,
   canManageMembers,
+  canManageRoles,
   canModerate,
+  canStartLive,
+  canAnnounce,
+  canPin,
   onPromoteRole,
   onRemoveMember,
   onLeaveRoom,
@@ -56,13 +79,64 @@ export function RoomMoreView({
   onOpenMonitoringCenter,
   onOpenKnockRequests,
   onOpenStudyPermissions,
+  onTabChange,
+  onRoomUpdated,
 }: RoomMoreViewProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { t } = useI18n();
   const qc = useQueryClient();
-  const [searchMember, setSearchMember] = useState("");
 
-  // Real mute state, read from the server (conversation_members.muted_until).
+  // Strict role-based capability boundaries
+  const isUserAdmin = Boolean(isOwner || role === "owner" || role === "admin");
+  const isUserTeacher = Boolean(isTeacher || role === "teacher");
+  const canAccessAdminHub = Boolean(isUserAdmin);
+  const canAccessTeacherHub = Boolean(isUserAdmin || isUserTeacher);
+  const isActualTeacher = Boolean(!isUserAdmin && isUserTeacher);
+
+  // Dynamic role filter tabs: Only show tabs the user is authorized to see
+  const availableRoleTabs = useMemo(() => {
+    if (canAccessAdminHub) {
+      return [
+        { key: "all" as const, label: "🌟 All Hubs" },
+        { key: "admin" as const, label: "👑 Admin" },
+        { key: "teacher" as const, label: "🎓 Teacher" },
+        { key: "member" as const, label: "🎒 Member" },
+      ];
+    }
+    if (canAccessTeacherHub) {
+      return [
+        { key: "teacher" as const, label: "🎓 Teacher Hub" },
+        { key: "member" as const, label: "🎒 Member Hub" },
+      ];
+    }
+    // Standard member / student has no need for tabs — they only have the member tools!
+    return [];
+  }, [canAccessAdminHub, canAccessTeacherHub]);
+
+  // Initial and reactive activeRoleFilter
+  const initialFilter: RoleFilter = canAccessAdminHub
+    ? "all"
+    : canAccessTeacherHub
+      ? "teacher"
+      : "member";
+  const [activeRoleFilter, setActiveRoleFilter] = useState<RoleFilter>(initialFilter);
+
+  useEffect(() => {
+    if (!canAccessAdminHub && activeRoleFilter === "admin") {
+      setActiveRoleFilter(canAccessTeacherHub ? "teacher" : "member");
+    } else if (!canAccessTeacherHub && (activeRoleFilter === "teacher" || activeRoleFilter === "all")) {
+      setActiveRoleFilter("member");
+    }
+  }, [canAccessAdminHub, canAccessTeacherHub, activeRoleFilter]);
+
+  // Role management staff modal
+  const [roleManagementModalOpen, setRoleManagementModalOpen] = useState(false);
+
+  // Member search & filter
+  const [searchMember, setSearchMember] = useState("");
+  const [memberRoleFilter, setMemberRoleFilter] = useState<"all" | "online" | "leaders">("all");
+
+  // Real mute state read from conversation_members.muted_until
   const conversationId = room.conversation_id ?? null;
   const muteQuery = useQuery({
     queryKey: ["room-mute", conversationId],
@@ -80,7 +154,6 @@ export function RoomMoreView({
         `/chat/conversations/${conversationId}/mute`,
         {
           method: "PATCH",
-          // 0 hours unmutes; 8760h (1y) mutes until the user turns it back off.
           body: JSON.stringify(mute ? { durationHours: 8760 } : { durationHours: 0 }),
         },
       ),
@@ -95,7 +168,7 @@ export function RoomMoreView({
     },
   });
 
-  // Real, persisted room report -> POST /rooms/:id/report
+  // Report room mutation
   const reportMutation = useMutation({
     mutationFn: (payload: { reason: string; details?: string }) =>
       api(`/rooms/${room.id}/report`, {
@@ -139,12 +212,22 @@ export function RoomMoreView({
     );
   };
 
-  const filteredMembers = members.filter((m) =>
-    searchMember.trim()
-      ? m.full_name?.toLowerCase().includes(searchMember.toLowerCase().trim()) ||
-        m.username?.toLowerCase().includes(searchMember.toLowerCase().trim())
-      : true,
-  );
+  // Filtered members list
+  const filteredMembers = useMemo(() => {
+    return members.filter((m) => {
+      // Search text filter
+      const q = searchMember.toLowerCase().trim();
+      if (q) {
+        const matchesName = m.full_name?.toLowerCase().includes(q);
+        const matchesUser = m.username?.toLowerCase().includes(q);
+        if (!matchesName && !matchesUser) return false;
+      }
+      // Quick filter
+      if (memberRoleFilter === "online") return Boolean((m as any).is_online);
+      if (memberRoleFilter === "leaders") return m.id === room.owner_id;
+      return true;
+    });
+  }, [members, searchMember, memberRoleFilter, room.owner_id]);
 
   const handleMemberAction = (member: Profile) => {
     triggerHaptic();
@@ -164,21 +247,16 @@ export function RoomMoreView({
       });
     }
 
-    if (isOwner && !isMe && onPromoteRole) {
+    if (canAccessAdminHub && !isMe && Boolean(canManageRoles || canManageMembers || isOwner) && onPromoteRole) {
       options.push({
-        text: "Assign Role (Teacher / Moderator)",
+        text: "Manage Member Role (Faculty Center)",
         onPress: () => {
-          Alert.alert("Manage Member Role", `Select role for ${member.full_name}:`, [
-            { text: "Cancel", style: "cancel" },
-            { text: "Teacher", onPress: () => onPromoteRole(member.id, "teacher") },
-            { text: "Moderator", onPress: () => onPromoteRole(member.id, "moderator") },
-            { text: "Regular Member", onPress: () => onPromoteRole(member.id, "member") },
-          ]);
+          setRoleManagementModalOpen(true);
         },
       });
     }
 
-    if (canManageMembers && !isMe && onRemoveMember) {
+    if (Boolean(canManageMembers || isOwner) && !isMe && onRemoveMember) {
       options.push({
         text: "Remove from Room",
         style: "destructive",
@@ -191,100 +269,225 @@ export function RoomMoreView({
       });
     }
 
-    Alert.alert(member.full_name, `@${member.username}`, options);
+    Alert.alert(member.full_name || `@${member.username}`, `@${member.username}`, options);
   };
 
   return (
-    <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-      {/* 1. ROOM INFO */}
-      <View style={s.sectionBlock}>
-        <Text style={[s.sectionTitle, { color: colors.muted }]}>ROOM INFORMATION</Text>
-        <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[s.roomDesc, { color: colors.text }]}>
-            {room.description || `Academic collaboration room for ${room.topic}.`}
-          </Text>
+    <>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 1. HERO IDENTITY CARD                                               */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      <View style={[s.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Row style={{ alignItems: "center", gap: 6 }}>
+              <View style={[s.topicPill, { backgroundColor: `${colors.primary}1A` }]}>
+                <Text style={[s.topicText, { color: colors.primary }]}>{room.topic}</Text>
+              </View>
+              <View style={[s.modePill, { backgroundColor: colors.surface2 }]}>
+                <Text style={[s.modeText, { color: colors.text }]}>{room.mode.toUpperCase()}</Text>
+              </View>
+            </Row>
 
-          <View style={[s.metaDivider, { backgroundColor: colors.divider }]} />
-
-          <Row style={s.metaRow}>
-            <MaterialCommunityIcons name="book-open-page-variant-outline" size={18} color={colors.primary} />
-            <Text style={[s.metaLabel, { color: colors.muted }]}>Topic / Subject:</Text>
-            <Text style={[s.metaValue, { color: colors.text }]}>{room.topic}</Text>
-          </Row>
-
-          <Row style={s.metaRow}>
-            <MaterialCommunityIcons name="lock-outline" size={18} color={colors.accent} />
-            <Text style={[s.metaLabel, { color: colors.muted }]}>Access Mode:</Text>
-            <Text style={[s.metaValue, { color: colors.text }]}>
-              {room.visibility === "public" ? "Public Learning Room" : "Private (Invite / Join Approval)"}
+            <Text style={[s.roomTitle, { color: colors.text }]} numberOfLines={2}>
+              {room.title}
             </Text>
-          </Row>
 
-          <Row style={s.metaRow}>
-            <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={colors.info} />
-            <Text style={[s.metaLabel, { color: colors.muted }]}>Format:</Text>
-            <Text style={[s.metaValue, { color: colors.text }]}>
-              {room.mode.toUpperCase()}{room.campus_location ? ` · ${room.campus_location}` : ""}
+            <Text style={[s.roomDesc, { color: colors.muted }]} numberOfLines={3}>
+              {room.description || `Academic learning and peer collaboration space for ${room.topic}.`}
             </Text>
-          </Row>
+          </View>
 
-          <Row style={s.metaRow}>
-            <MaterialCommunityIcons name="calendar-clock" size={18} color={colors.warning} />
-            <Text style={[s.metaLabel, { color: colors.muted }]}>Created:</Text>
-            <Text style={[s.metaValue, { color: colors.text }]}>
-              {room.created_at ? new Date(room.created_at).toLocaleDateString() : "Recently"}
-            </Text>
-          </Row>
-        </View>
-      </View>
-
-      {/* 2. NOTIFICATION SETTINGS — real, persisted mute via conversation_members.muted_until */}
-      <View style={s.sectionBlock}>
-        <Text style={[s.sectionTitle, { color: colors.muted }]}>ROOM NOTIFICATIONS</Text>
-        <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border, padding: 6 }]}>
-          <Pressable
-            onPress={() => {
-              triggerHaptic();
-              toggleMute.mutate(!isMuted);
-            }}
-            style={[s.prefRow, { backgroundColor: isMuted ? colors.primarySoft : "transparent" }]}
+          {/* User's Role Badge */}
+          <View
+            style={[
+              s.myRoleBadge,
+              {
+                backgroundColor: canAccessAdminHub ? "#F59E0B22" : isActualTeacher ? "#3B82F622" : "#10B98122",
+                borderColor: canAccessAdminHub ? "#F59E0B" : isActualTeacher ? "#3B82F6" : "#10B981",
+              },
+            ]}
           >
-            <View style={{ flex: 1 }}>
-              <Text style={[s.prefLabel, { color: isMuted ? colors.primary : colors.text }]}>
-                {isMuted ? "Room Muted" : "All Activity"}
-              </Text>
-              <Text style={[s.prefSub, { color: colors.muted }]}>
-                {isMuted
-                  ? "Notifications from this room are silenced"
-                  : "Posts, announcements & classroom sessions"}
-              </Text>
-            </View>
-            {toggleMute.isPending ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Switch
-                value={isMuted}
-                onValueChange={(next) => {
+            <Text
+              style={[
+                s.myRoleText,
+                { color: canAccessAdminHub ? "#F59E0B" : isActualTeacher ? "#3B82F6" : "#10B981" },
+              ]}
+            >
+              {canAccessAdminHub ? "👑 ADMIN" : isActualTeacher ? "🎓 TEACHER" : "🎒 MEMBER"}
+            </Text>
+          </View>
+        </Row>
+
+        <View style={[s.divider, { backgroundColor: colors.divider }]} />
+
+        {/* Hero Quick Toolbar */}
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <Row style={{ alignItems: "center", gap: 10 }}>
+            {/* Real Mute Switch */}
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                toggleMute.mutate(!isMuted);
+              }}
+              style={[
+                s.iconActionBtn,
+                {
+                  backgroundColor: isMuted ? "#EF44441A" : colors.surface2,
+                  borderColor: isMuted ? "#EF4444" : colors.divider,
+                },
+              ]}
+            >
+              {toggleMute.isPending ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Row style={{ alignItems: "center", gap: 6 }}>
+                  <MaterialCommunityIcons
+                    name={isMuted ? "bell-off-outline" : "bell-outline"}
+                    size={16}
+                    color={isMuted ? "#EF4444" : colors.text}
+                  />
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: isMuted ? "#EF4444" : colors.text }}>
+                    {isMuted ? "Muted" : "Active"}
+                  </Text>
+                </Row>
+              )}
+            </Pressable>
+
+            {/* Pinned Content quick link */}
+            {onOpenPinnedHub && (
+              <Pressable
+                onPress={() => {
                   triggerHaptic();
-                  toggleMute.mutate(next);
+                  onOpenPinnedHub();
                 }}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
+                style={[s.iconActionBtn, { backgroundColor: colors.surface2, borderColor: colors.divider }]}
+              >
+                <Row style={{ alignItems: "center", gap: 6 }}>
+                  <MaterialCommunityIcons name="pin-outline" size={16} color={colors.primary} />
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.text }}>Pinned Hub</Text>
+                </Row>
+              </Pressable>
             )}
-          </Pressable>
-        </View>
-        <Text style={[s.prefSub, { color: colors.muted, marginTop: 6, paddingHorizontal: 2 }]}>
-          {t("rooms.muteScopeNote", "Muting is applied to this room's chat and is saved to your account.")}
-        </Text>
+          </Row>
+
+          <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600" }}>
+            {members.length} member{members.length !== 1 ? "s" : ""}
+          </Text>
+        </Row>
       </View>
 
-      {/* 3. MEMBERS DIRECTORY */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 2. ROLE FILTER TABS (ONLY SHOWN IF USER HAS MULTIPLE HUBS)         */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {availableRoleTabs.length > 1 && (
+        <View style={s.filterRow}>
+          {availableRoleTabs.map((tab) => {
+            const isActive = activeRoleFilter === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => {
+                  triggerHaptic();
+                  setActiveRoleFilter(tab.key);
+                }}
+                style={[
+                  s.roleTabBtn,
+                  {
+                    backgroundColor: isActive ? colors.primary : colors.surface,
+                    borderColor: isActive ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    s.roleTabText,
+                    { color: isActive ? "#FFFFFF" : colors.text },
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 3. DEDICATED ROLE HUBS (STRICT ROLE-BASED ACCESS CONTROL)           */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+
+      {/* ADMIN HUB — STRICTLY Admin / Owner only */}
+      {canAccessAdminHub && (activeRoleFilter === "all" || activeRoleFilter === "admin") && (
+        <RoomAdminHub
+          room={room}
+          members={members}
+          currentUserId={currentUserId}
+          isOwner={isOwner}
+          canManageMembers={Boolean(canManageMembers || canManageRoles || isOwner)}
+          canModerate={Boolean(canModerate || isOwner)}
+          canAnnounce={Boolean(canAnnounce || isOwner)}
+          onOpenRoleManagement={() => setRoleManagementModalOpen(true)}
+          onOpenPinnedHub={onOpenPinnedHub}
+          onOpenModerationCenter={onOpenModerationCenter}
+          onOpenAnalytics={onOpenAnalytics}
+          onOpenSettings={onOpenSettings}
+          onOpenKnockRequests={onOpenKnockRequests}
+          onOpenStudyPermissions={onOpenStudyPermissions}
+          onOpenMonitoringCenter={onOpenMonitoringCenter}
+          onRoomUpdated={onRoomUpdated}
+        />
+      )}
+
+      {/* TEACHER HUB — STRICTLY Teacher, Admin, or Owner only */}
+      {canAccessTeacherHub && (activeRoleFilter === "all" || activeRoleFilter === "teacher") && (
+        <RoomTeacherHub
+          room={room}
+          members={members}
+          currentUserId={currentUserId}
+          isOwner={isOwner}
+          isTeacher={Boolean(isTeacher || role === "teacher" || canAccessAdminHub)}
+          canStartLive={canStartLive}
+          onOpenPinnedHub={onOpenPinnedHub}
+          onTabChange={onTabChange}
+        />
+      )}
+
+      {/* MEMBER HUB — Shown when selected, or for everyone if standard student */}
+      {(activeRoleFilter === "all" || activeRoleFilter === "member" || (!canAccessAdminHub && !canAccessTeacherHub)) && (
+        <RoomMemberHub
+          room={room}
+          members={members}
+          currentUserId={currentUserId}
+          onOpenPinnedHub={onOpenPinnedHub}
+        />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 4. MEMBERS DIRECTORY                                                */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
       <View style={s.sectionBlock}>
         <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <Text style={[s.sectionTitle, { color: colors.muted }]}>
-            MEMBERS DIRECTORY ({members.length})
-          </Text>
+          <Row style={{ alignItems: "center", gap: 8 }}>
+            <MaterialCommunityIcons name="account-group" size={18} color={colors.primary} />
+            <Text style={[s.sectionTitle, { color: colors.text }]}>
+              MEMBERS DIRECTORY ({members.length})
+            </Text>
+          </Row>
+
+          {canAccessAdminHub && Boolean(canManageRoles || canManageMembers || isOwner) && (
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                setRoleManagementModalOpen(true);
+              }}
+              style={[s.manageRolesBtn, { backgroundColor: `${colors.primary}1A`, borderColor: colors.primary }]}
+            >
+              <MaterialCommunityIcons name="shield-account" size={14} color={colors.primary} />
+              <Text style={[s.manageRolesBtnText, { color: colors.primary }]}>Manage Roles</Text>
+            </Pressable>
+          )}
         </Row>
 
         {/* Member Search Field */}
@@ -293,15 +496,58 @@ export function RoomMoreView({
           <TextInput
             value={searchMember}
             onChangeText={setSearchMember}
-            placeholder="Search room members..."
+            placeholder="Search by name, handle..."
             placeholderTextColor={colors.muted}
             style={[s.searchInput, { color: colors.text }]}
           />
+          {searchMember ? (
+            <Pressable onPress={() => setSearchMember("")} hitSlop={8}>
+              <MaterialCommunityIcons name="close-circle" size={16} color={colors.muted} />
+            </Pressable>
+          ) : null}
         </View>
 
+        {/* Quick Filter Chips */}
+        <Row style={{ gap: 8 }}>
+          {(
+            [
+              { key: "all", label: `All (${members.length})` },
+              { key: "online", label: "Online Now" },
+              { key: "leaders", label: "Room Owner" },
+            ] as const
+          ).map((f) => (
+            <Pressable
+              key={f.key}
+              onPress={() => {
+                triggerHaptic();
+                setMemberRoleFilter(f.key);
+              }}
+              style={[
+                s.filterChip,
+                {
+                  backgroundColor: memberRoleFilter === f.key ? `${colors.primary}22` : colors.surface,
+                  borderColor: memberRoleFilter === f.key ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color: memberRoleFilter === f.key ? colors.primary : colors.muted,
+                }}
+              >
+                {f.label}
+              </Text>
+            </Pressable>
+          ))}
+        </Row>
+
+        {/* Members List */}
         <View style={[s.membersList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {filteredMembers.map((member, idx) => {
-            const isLast = idx === filteredMembers.length - 1;
+          {filteredMembers.slice(0, 50).map((member, idx) => {
+            const isLast = idx === Math.min(filteredMembers.length, 50) - 1;
+            const isMemberOwner = member.id === room.owner_id;
             return (
               <Pressable
                 key={member.id}
@@ -313,9 +559,9 @@ export function RoomMoreView({
                 ]}
               >
                 <View style={{ position: "relative" }}>
-                  <View style={[s.memberAvatar, { backgroundColor: colors.primarySoft }]}>
+                  <View style={[s.memberAvatar, { backgroundColor: `${colors.primary}1A` }]}>
                     <Text style={{ color: colors.primary, fontWeight: "900", fontSize: 13 }}>
-                      {member.full_name?.[0] || "U"}
+                      {(member.full_name || member.username || "U")[0].toUpperCase()}
                     </Text>
                   </View>
                   <ActiveDot
@@ -327,11 +573,11 @@ export function RoomMoreView({
                 <View style={{ flex: 1, gap: 2 }}>
                   <Row style={{ alignItems: "center", gap: 6 }}>
                     <Text style={[s.memberName, { color: colors.text }]} numberOfLines={1}>
-                      {member.full_name}
+                      {member.full_name || `@${member.username}`}
                     </Text>
-                    {member.id === room.owner_id && (
-                      <View style={[s.roleBadge, { backgroundColor: colors.primarySoft }]}>
-                        <Text style={[s.roleBadgeText, { color: colors.primary }]}>OWNER</Text>
+                    {isMemberOwner && (
+                      <View style={[s.roleBadge, { backgroundColor: "#F59E0B22" }]}>
+                        <Text style={[s.roleBadgeText, { color: "#F59E0B" }]}>OWNER</Text>
                       </View>
                     )}
                   </Row>
@@ -346,165 +592,11 @@ export function RoomMoreView({
         </View>
       </View>
 
-      {/* 4. COLLABORATION TOOLS */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 5. SAFETY & ACTIONS ZONE                                            */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
       <View style={s.sectionBlock}>
-        <Text style={[s.sectionTitle, { color: colors.muted }]}>ROOM TOOLS & COLLABORATION</Text>
-        <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border, padding: 6 }]}>
-          {onOpenPinnedHub && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                onOpenPinnedHub();
-              }}
-              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
-            >
-              <View style={[s.toolIcon, { backgroundColor: colors.primarySoft }]}>
-                <MaterialCommunityIcons name="pin-outline" size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[s.toolTitle, { color: colors.text }]}>Pinned Content Hub</Text>
-                <Text style={[s.toolSub, { color: colors.muted }]}>
-                  Important posts, files, recordings & announcements
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
-            </Pressable>
-          )}
-
-          {canModerate && onOpenMonitoringCenter && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                onOpenMonitoringCenter();
-              }}
-              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
-            >
-              <View style={[s.toolIcon, { backgroundColor: "#10B98120" }]}>
-                <MaterialCommunityIcons name="monitor-dashboard" size={18} color="#10B981" />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[s.toolTitle, { color: colors.text }]}>Live Room Monitoring Center</Text>
-                <Text style={[s.toolSub, { color: colors.muted }]}>
-                  Real-time telemetry, participant stream health & intervention
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
-            </Pressable>
-          )}
-
-          {canModerate && onOpenKnockRequests && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                onOpenKnockRequests();
-              }}
-              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
-            >
-              <View style={[s.toolIcon, { backgroundColor: colors.primarySoft }]}>
-                <MaterialCommunityIcons name="account-clock" size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[s.toolTitle, { color: colors.text }]}>Knock & Waiting Requests</Text>
-                <Text style={[s.toolSub, { color: colors.muted }]}>
-                  Review lobby requests & toggle open access for all
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
-            </Pressable>
-          )}
-
-          {canModerate && onOpenModerationCenter && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                onOpenModerationCenter();
-              }}
-              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
-            >
-              <View style={[s.toolIcon, { backgroundColor: "#EF444420" }]}>
-                <MaterialCommunityIcons name="shield-account-outline" size={18} color={colors.danger} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[s.toolTitle, { color: colors.text }]}>Moderation & Safety Center</Text>
-                <Text style={[s.toolSub, { color: colors.muted }]}>
-                  Content reports, member flags & audit activity
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
-            </Pressable>
-          )}
-
-          {canModerate && onOpenAnalytics && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                onOpenAnalytics();
-              }}
-              style={[
-                s.toolRow,
-                (isOwner && onOpenSettings) && { borderBottomWidth: 1, borderBottomColor: colors.divider },
-              ]}
-            >
-              <View style={[s.toolIcon, { backgroundColor: colors.primarySoft }]}>
-                <MaterialCommunityIcons name="chart-box-outline" size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[s.toolTitle, { color: colors.text }]}>Room Insights & Health</Text>
-                <Text style={[s.toolSub, { color: colors.muted }]}>
-                  Active member metrics, engagement & contributors
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
-            </Pressable>
-          )}
-
-          {isOwner && onOpenStudyPermissions && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                onOpenStudyPermissions();
-              }}
-              style={[s.toolRow, { borderBottomWidth: 1, borderBottomColor: colors.divider }]}
-            >
-              <View style={[s.toolIcon, { backgroundColor: colors.primarySoft }]}>
-                <MaterialCommunityIcons name="shield-account-outline" size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[s.toolTitle, { color: colors.text }]}>{t("live.studyPermissionsTitle")}</Text>
-                <Text style={[s.toolSub, { color: colors.muted }]}>
-                  {t("live.studyPermissionsSub")}
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
-            </Pressable>
-          )}
-
-          {isOwner && onOpenSettings && (
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                onOpenSettings();
-              }}
-              style={s.toolRow}
-            >
-              <View style={[s.toolIcon, { backgroundColor: colors.surface2 }]}>
-                <MaterialCommunityIcons name="cog-outline" size={18} color={colors.text} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[s.toolTitle, { color: colors.text }]}>Room Settings & Modules</Text>
-                <Text style={[s.toolSub, { color: colors.muted }]}>
-                  Configure active features, entry tab & invite links
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
-            </Pressable>
-          )}
-        </View>
-      </View>
-
-      {/* 5. ACTIONS & DANGER ZONE */}
-      <View style={s.sectionBlock}>
-        <Text style={[s.sectionTitle, { color: colors.muted }]}>ROOM ACTIONS</Text>
+        <Text style={[s.sectionTitle, { color: colors.muted }]}>ROOM ACTIONS & INTEGRITY</Text>
         <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Pressable
             onPress={() => {
@@ -544,6 +636,28 @@ export function RoomMoreView({
         </View>
       </View>
     </ScrollView>
+
+    {/* WORLD-CLASS ROLE MANAGEMENT & STAFF MODAL */}
+    <RoomRoleManagementModal
+      visible={roleManagementModalOpen}
+      room={room}
+      members={members}
+      currentUserId={currentUserId}
+      isOwner={isOwner}
+      canManageRoles={isUserAdmin}
+      userRole={role}
+      onClose={() => setRoleManagementModalOpen(false)}
+      onPromoteRole={onPromoteRole}
+      onRemoveMember={onRemoveMember}
+      onOwnershipTransferred={(newOwnerId) => {
+        onRoomUpdated?.({ owner_id: newOwnerId });
+        qc.invalidateQueries({ queryKey: ["room", room.id] });
+        qc.invalidateQueries({ queryKey: ["room-permissions", room.id] });
+        qc.invalidateQueries({ queryKey: ["room-teachers", room.id] });
+        qc.invalidateQueries({ queryKey: ["room-members", room.id] });
+      }}
+    />
+    </>
   );
 }
 
@@ -551,58 +665,85 @@ const s = StyleSheet.create({
   scroll: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 28,
+    paddingBottom: 36,
     gap: 16,
   },
-  sectionBlock: {
-    gap: 6,
+  heroCard: {
+    padding: 16,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: 12,
   },
-  sectionTitle: {
+  topicPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  topicText: {
     fontSize: 11,
     fontWeight: "800",
-    letterSpacing: 0.6,
-    paddingHorizontal: 2,
   },
-  infoCard: {
-    padding: 14,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: 10,
+  modePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  modeText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  roomTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.2,
   },
   roomDesc: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
   },
-  metaDivider: {
+  myRoleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  myRoleText: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  divider: {
     height: 1,
-    marginVertical: 2,
   },
-  metaRow: {
-    alignItems: "center",
+  iconActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  filterRow: {
+    flexDirection: "row",
     gap: 8,
   },
-  metaLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  metaValue: {
-    fontSize: 12,
-    fontWeight: "700",
+  roleTabBtn: {
     flex: 1,
-  },
-  prefRow: {
-    flexDirection: "row",
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: radius.sm,
+    justifyContent: "center",
   },
-  prefLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  prefSub: {
+  roleTabText: {
     fontSize: 11,
+    fontWeight: "800",
+  },
+  sectionBlock: {
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   searchBox: {
     flexDirection: "row",
@@ -617,6 +758,12 @@ const s = StyleSheet.create({
     flex: 1,
     fontSize: 13,
   },
+  filterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
   membersList: {
     borderRadius: radius.md,
     borderWidth: 1,
@@ -630,9 +777,9 @@ const s = StyleSheet.create({
     gap: 10,
   },
   memberAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -652,34 +799,32 @@ const s = StyleSheet.create({
     fontSize: 9,
     fontWeight: "900",
   },
+  infoCard: {
+    padding: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  manageRolesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  manageRolesBtnText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
   },
   actionRowText: {
     fontSize: 13,
-  },
-  toolRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 12,
-  },
-  toolIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toolTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  toolSub: {
-    fontSize: 11,
   },
 });

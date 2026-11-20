@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import type { RoomPost, RoomPostComment } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 type RoomPostCommentsProps = {
   post: RoomPost | null;
@@ -36,6 +37,7 @@ export function RoomPostComments({
 }: RoomPostCommentsProps) {
   const { colors } = useTheme();
   const qc = useQueryClient();
+  const keyboardHeight = useKeyboardHeight();
   const [commentText, setCommentText] = useState("");
 
   const commentsQuery = useQuery({
@@ -76,23 +78,29 @@ export function RoomPostComments({
 
   return (
     <Modal visible={Boolean(post)} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={s.backdrop}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={[s.modalCard, { backgroundColor: colors.surface }]}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <View
+          style={[
+            s.backdrop,
+            Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
+          ]}
         >
-          {/* Header */}
-          <Row style={[s.headerRow, { borderBottomColor: colors.border }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.headerTitle, { color: colors.text }]}>Discussion & Comments</Text>
-              <Text style={[s.headerSub, { color: colors.muted }]} numberOfLines={1}>
-                {post.title || post.body.slice(0, 40)}
-              </Text>
-            </View>
-            <Pressable hitSlop={12} onPress={onClose} style={s.closeBtn}>
-              <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-            </Pressable>
-          </Row>
+          <View style={[s.modalCard, { backgroundColor: colors.surface }]}>
+            {/* Header */}
+            <Row style={[s.headerRow, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.headerTitle, { color: colors.text }]}>Discussion & Comments</Text>
+                <Text style={[s.headerSub, { color: colors.muted }]} numberOfLines={1}>
+                  {post.title || post.body.slice(0, 40)}
+                </Text>
+              </View>
+              <Pressable hitSlop={12} onPress={onClose} style={s.closeBtn}>
+                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
+              </Pressable>
+            </Row>
 
           {/* Comment List */}
           {commentsQuery.isLoading ? (
@@ -111,6 +119,7 @@ export function RoomPostComments({
               data={comments}
               keyExtractor={(item) => item.id}
               contentContainerStyle={s.listContent}
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
                 const isAuthor = currentUserId && item.author_id === currentUserId;
                 return (
@@ -176,8 +185,9 @@ export function RoomPostComments({
               )}
             </Pressable>
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -184,6 +184,30 @@ test("Room Live & Open Sessions API Suite", async (t) => {
     assert.strictEqual(res.body.roomName, `skillbridge-open-${OPEN_SESSION_ID}`);
   });
 
+  await t.test("POST /api/v1/rooms/:id/live/open - rejects non-teacher regular member when no session live", async () => {
+    activeUserId = USER_B; // Regular Member
+    mockAdmin.from = (table?: string) => {
+      if (table === "rooms") {
+        return createMockChain({ id: ROOM_ID, owner_id: USER_A, visibility: "public", knock_mode_enabled: false });
+      }
+      if (table === "room_members") {
+        return createMockChain({ role: "member" });
+      }
+      if (table === "room_open_sessions") {
+        return createMockChain(null); // No live session
+      }
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post(`/api/v1/rooms/${ROOM_ID}/live/open`)
+      .set(authHeader)
+      .send({ media: "audio" });
+
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(res.body.code, "TEACHER_REQUIRED");
+  });
+
   await t.test("POST /api/v1/rooms/:id/live/open - returns 409 when study session is active (SB004)", async () => {
     activeUserId = USER_A;
     const originalRpc = mockAdmin.rpc;

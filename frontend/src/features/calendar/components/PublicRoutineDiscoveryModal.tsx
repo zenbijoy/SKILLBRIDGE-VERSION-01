@@ -102,7 +102,10 @@ export function PublicRoutineDiscoveryModal({
     try {
       await api(`/calendar/routines/${routineId}/validate`, {
         method: "POST",
-        body: JSON.stringify({ action: "confirm" }),
+        body: JSON.stringify({
+          action: "confirm",
+          status: "confirmed",
+        }),
       });
       Alert.alert(
         "Thank you!",
@@ -125,7 +128,9 @@ export function PublicRoutineDiscoveryModal({
         method: "POST",
         body: JSON.stringify({
           action: "report",
+          status: "reported",
           reason: reportReason.trim(),
+          comment: reportReason.trim(),
         }),
       });
       setIsReportOpen(false);

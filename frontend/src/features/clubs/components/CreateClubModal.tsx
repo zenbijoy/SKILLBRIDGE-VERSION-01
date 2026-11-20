@@ -9,6 +9,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeProvider";
@@ -17,6 +19,7 @@ import { CLUB_CATEGORIES } from "../constants";
 import { useI18n } from "../../../i18n";
 import { clubErrorMessage } from "../lib/apiErrors";
 import api from "../../../services/api";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface CreateClubModalProps {
   visible: boolean;
@@ -31,6 +34,7 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
 }) => {
   const { colors } = useTheme();
   const { t } = useI18n();
+  const keyboardHeight = useKeyboardHeight();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -139,48 +143,60 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
       transparent
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
         <View
           style={[
-            styles.modalCard,
-            { backgroundColor: colors.surface, borderColor: colors.border },
+            styles.modalOverlay,
+            Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
           ]}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: colors.text }]}>
-                Create a University Club
-              </Text>
-              <Text style={[styles.stepSub, { color: colors.textSecondary }]}>
-                Step {step} of 3 ·{" "}
-                {step === 1
-                  ? "Identity & Category"
-                  : step === 2
-                  ? "Mission & Story"
-                  : "Governance & Contact"}
-              </Text>
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.title, { color: colors.text }]}>
+                  Create a University Club
+                </Text>
+                <Text style={[styles.stepSub, { color: colors.textSecondary }]}>
+                  Step {step} of 3 ·{" "}
+                  {step === 1
+                    ? "Identity & Category"
+                    : step === 2
+                    ? "Mission & Story"
+                    : "Governance & Contact"}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={onClose}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
 
-          {/* Progress Bar */}
-          <View style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressBar,
-                {
-                  backgroundColor: colors.primary,
-                  width: step === 1 ? "33%" : step === 2 ? "66%" : "100%",
-                },
-              ]}
-            />
-          </View>
+            {/* Progress Bar */}
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressBar,
+                  {
+                    backgroundColor: colors.primary,
+                    width: step === 1 ? "33%" : step === 2 ? "66%" : "100%",
+                  },
+                ]}
+              />
+            </View>
 
-          {/* Form Content */}
-          <ScrollView contentContainerStyle={styles.formScroll}>
+            {/* Form Content */}
+            <ScrollView
+              contentContainerStyle={styles.formScroll}
+              keyboardShouldPersistTaps="handled"
+            >
             {step === 1 && (
               <>
                 <Text style={[styles.inputLabel, { color: colors.text }]}>
@@ -562,7 +578,8 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
             )}
           </View>
         </View>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

@@ -88,7 +88,9 @@ export const IncomingCallModal: React.FC = () => {
   }, [incomingCall, pulse1, pulse2, buttonPulse]);
 
   // Fix C-1/C-6/C-7: Robust Socket Event Listeners for Incoming Call
-  // - Busy guard: If already in an active call, auto-reject new incoming call with "busy"
+  // - Busy guard: If already in an active connected call, auto-reject new incoming call with "busy"
+  // - Clear stale or non-connected calls so incoming calls are never blocked
+  // - Dual listener: Listen to both `call:incoming` AND `notification:new` (kind="call")
   // - Multi-tab (Web): Use BroadcastChannel so only one tab rings at a time
   useEffect(() => {
     // Web: BroadcastChannel so only the tab that answers the call rings.
@@ -115,15 +117,25 @@ export const IncomingCallModal: React.FC = () => {
       type: "audio" | "video";
       provider?: "webrtc" | "livekit";
     }) => {
-      // Fix C-7/C-10: If already in an active call, auto-reject with "busy"
-      const { activeCall } = useCallStore.getState();
-      if (activeCall && activeCall.status !== "ended" && activeCall.status !== "declined" && activeCall.status !== "failed") {
+      const { activeCall, resetCall } = useCallStore.getState();
+      const isActuallyBusy =
+        activeCall &&
+        activeCall.status === "connected" &&
+        activeCall.startedAt &&
+        Date.now() - activeCall.startedAt < 300_000;
+
+      if (isActuallyBusy) {
         const socket = getSocket();
         socket?.emit("call:reject", { callId: data.callId, reason: "busy" });
         import("../services/callApi").then(({ rejectCallApi }) => {
           rejectCallApi(data.callId, "busy").catch(() => {});
         }).catch(() => {});
         return;
+      }
+
+      // If activeCall was in a non-connected state (e.g. stale initiating or ended), reset it
+      if (activeCall && activeCall.status !== "connected") {
+        resetCall();
       }
 
       triggerHaptic();
@@ -134,6 +146,57 @@ export const IncomingCallModal: React.FC = () => {
         callerAvatar: data.callerAvatar,
         type: data.type || "video",
         provider: data.provider || "webrtc",
+      });
+    });
+
+    const unsubNotification = onSocket("notification:new", (notif: any) => {
+      if (!notif) return;
+      const isCall =
+        notif.kind === "call" ||
+        notif.data?.type === "call" ||
+        Boolean(notif.data?.callType) ||
+        (typeof notif.title === "string" && notif.title.toLowerCase().includes("incoming"));
+      if (!isCall) return;
+
+      const callId = notif.data?.callId;
+      if (!callId) return;
+
+      // Avoid re-processing if already showing this incoming call
+      const current = useCallStore.getState().incomingCall;
+      if (current && current.callId === callId) return;
+
+      const { activeCall, resetCall } = useCallStore.getState();
+      const isActuallyBusy =
+        activeCall &&
+        activeCall.status === "connected" &&
+        activeCall.startedAt &&
+        Date.now() - activeCall.startedAt < 300_000;
+
+      if (isActuallyBusy) {
+        const socket = getSocket();
+        socket?.emit("call:reject", { callId, reason: "busy" });
+        import("../services/callApi").then(({ rejectCallApi }) => {
+          rejectCallApi(callId, "busy").catch(() => {});
+        }).catch(() => {});
+        return;
+      }
+
+      if (activeCall && activeCall.status !== "connected") {
+        resetCall();
+      }
+
+      triggerHaptic();
+      setIncomingCall({
+        callId,
+        callerId: notif.data?.callerId || "",
+        callerName:
+          notif.data?.callerName ||
+          (typeof notif.title === "string"
+            ? notif.title.replace(/^Incoming (audio|video|voice)?\s*call/i, "").trim() || "Peer"
+            : "Peer"),
+        callerAvatar: notif.data?.callerAvatar || null,
+        type: (notif.data?.callType || notif.data?.type || "video") === "audio" ? "audio" : "video",
+        provider: notif.data?.provider || "webrtc",
       });
     });
 
@@ -155,6 +218,7 @@ export const IncomingCallModal: React.FC = () => {
 
     return () => {
       unsubIncoming();
+      unsubNotification();
       unsubReject();
       unsubEnd();
       broadcastChannel?.close();
@@ -250,7 +314,7 @@ export const IncomingCallModal: React.FC = () => {
   return (
     <Modal visible={Boolean(incomingCall)} transparent={false} animationType="fade">
       <StatusBar barStyle="light-content" backgroundColor="#070C18" />
-      <View style={[styles.container, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 36 }]}>
+      <View style={[styles.container, { paddingTop: Math.max(insets.top, 28) + 12, paddingBottom: Math.max(insets.bottom, 24) + 16 }]}>
         {/* Top Header Information */}
         <View style={styles.header}>
           <View style={styles.securityBadge}>
@@ -390,7 +454,7 @@ export const IncomingCallModal: React.FC = () => {
           onRequestClose={() => setShowQuickReplies(false)}
         >
           <View style={styles.quickReplyOverlay}>
-            <View style={[styles.quickReplySheet, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={[styles.quickReplySheet, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
               <View style={styles.sheetHandle} />
               <Text style={styles.quickReplyTitle}>Quick Message & Decline</Text>
               <Text style={styles.quickReplySub}>

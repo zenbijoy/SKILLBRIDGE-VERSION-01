@@ -8,12 +8,15 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { DayOfWeek, RoutineEntry } from "../types";
 import { useTheme, radius } from "@/theme";
 import { DAYS_OF_WEEK } from "../constants";
 import { triggerHaptic } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface ManualClassModalProps {
   visible: boolean;
@@ -29,6 +32,7 @@ export function ManualClassModal({
   onSave,
 }: ManualClassModalProps) {
   const { colors, isDark } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
 
   const [courseCode, setCourseCode] = useState(
     initialData?.course_code ?? ""
@@ -80,27 +84,40 @@ export function ManualClassModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
         <View
           style={[
-            styles.sheet,
-            {
-              backgroundColor: isDark ? colors.surface : "#FFFFFF",
-              borderColor: isDark ? colors.border : "#E2E8F0",
-            },
+            styles.overlay,
+            Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
           ]}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>
-              {initialData ? "Edit Class" : "Add Routine Class"}
-            </Text>
-            <Pressable onPress={onClose} style={styles.closeBtn}>
-              <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-            </Pressable>
-          </View>
+          <View
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: isDark ? colors.surface : "#FFFFFF",
+                borderColor: isDark ? colors.border : "#E2E8F0",
+              },
+            ]}
+          >
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>
+                {initialData ? "Edit Class" : "Add Routine Class"}
+              </Text>
+              <Pressable onPress={onClose} style={styles.closeBtn}>
+                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
+              </Pressable>
+            </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.body}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             {/* Type selector: CLASS vs LAB */}
             <View style={styles.typeSelectorRow}>
               {(["CLASS", "LAB", "OTHER"] as const).map((t) => (
@@ -329,7 +346,8 @@ export function ManualClassModal({
             </Pressable>
           </View>
         </View>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

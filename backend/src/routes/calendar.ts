@@ -392,9 +392,70 @@ import {
   extractRoutine,
   heuristicFallback,
   analyzeConflicts,
+  normalizeDay,
+  normalizeTime,
   type DayOfWeek,
   type ExtractedRoutineEntry,
 } from "../services/routineAiExtractor.js";
+
+// Flexible routine entry schema that seamlessly accepts both camelCase and snake_case properties
+const RoutineEntryFlexibleSchema = z
+  .object({
+    id: z.string().optional(),
+    courseCode: z.string().optional(),
+    course_code: z.string().optional(),
+    courseTitle: z.string().optional(),
+    course_title: z.string().optional(),
+    day: z.string().optional(),
+    day_of_week: z.string().optional(),
+    startTime: z.string().optional(),
+    start_time: z.string().optional(),
+    endTime: z.string().optional(),
+    end_time: z.string().optional(),
+    room: z.string().optional().nullable(),
+    instructor: z.string().optional().nullable(),
+    type: z.enum(["CLASS", "LAB", "OTHER"]).default("CLASS"),
+    groupName: z.string().optional().nullable(),
+    group_name: z.string().optional().nullable(),
+    confidence: z.enum(["high", "medium", "low", "ambiguous"]).optional(),
+    warnings: z.array(z.string()).optional(),
+    is_confirmed: z.boolean().optional(),
+    isConfirmed: z.boolean().optional(),
+  })
+  .transform((e) => {
+    const course_code = (e.courseCode || e.course_code || "").trim();
+    const course_title = (e.courseTitle || e.course_title || "").trim();
+
+    const rawDay = (e.day || e.day_of_week || "Sunday").trim();
+    const day = (normalizeDay(rawDay) || "Sunday") as DayOfWeek;
+
+    const rawStart = e.startTime || e.start_time || "10:00";
+    const rawEnd = e.endTime || e.end_time || "11:00";
+    const start_time = normalizeTime(rawStart) || rawStart;
+    const end_time = normalizeTime(rawEnd) || rawEnd;
+
+    return {
+      id: e.id,
+      courseCode: course_code || course_title || "Course",
+      courseTitle: course_title || course_code || "Class",
+      course_code: course_code || course_title || "Course",
+      course_title: course_title || course_code || "Class",
+      day,
+      day_of_week: day,
+      startTime: start_time,
+      start_time,
+      endTime: end_time,
+      end_time,
+      room: e.room || null,
+      instructor: e.instructor || null,
+      type: e.type || "CLASS",
+      groupName: e.groupName || e.group_name || null,
+      group_name: e.groupName || e.group_name || null,
+      confidence: e.confidence || "high",
+      warnings: e.warnings || [],
+      is_confirmed: e.is_confirmed ?? e.isConfirmed ?? true,
+    };
+  });
 
 // Helper: Normalize academic group
 function buildAcademicGroup(uni: string, dept: string, sem: string, sec: string): string {
@@ -776,54 +837,67 @@ calendar.post(
   "/routines",
   wrap(async (req, res) => {
     const userId = req.userId!;
+
+    // Fetch user profile for intelligent defaults if fields omitted
+    const { data: profile } = await admin
+      .from("academic_profiles")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
     const body = z
       .object({
         title: z.string().min(1).max(100),
-        university: z.string().min(1).max(100),
-        department: z.string().min(1).max(100),
-        semester: z.string().min(1).max(50),
-        section: z.string().min(1).max(20),
+        university: z.string().max(100).optional(),
+        department: z.string().max(100).optional(),
+        semester: z.string().max(50).optional(),
+        section: z.string().max(20).optional(),
         batch: z.string().max(50).optional(),
-        entries: z
-          .array(
-            z.object({
-              courseCode: z.string().min(1),
-              courseTitle: z.string().min(1),
-              day: z.enum(DAYS_OF_WEEK),
-              startTime: z.string(),
-              endTime: z.string(),
-              room: z.string().optional().nullable(),
-              instructor: z.string().optional().nullable(),
-              type: z.enum(["CLASS", "LAB", "OTHER"]).default("CLASS"),
-              groupName: z.string().optional().nullable(),
-            }),
-          )
-          .default([]),
+        academic_group: z.string().optional(),
+        academicGroup: z.string().optional(),
+        source_type: z.enum(["manual", "pdf_import", "public_copy"]).optional(),
+        sourceType: z.enum(["manual", "pdf_import", "public_copy"]).optional(),
+        is_active: z.boolean().optional(),
+        isActive: z.boolean().optional(),
+        entries: z.array(RoutineEntryFlexibleSchema).default([]),
       })
       .parse(req.body);
 
-    const group = buildAcademicGroup(
-      body.university,
-      body.department,
-      body.semester,
-      body.section,
-    );
+    const uni = (body.university || profile?.university || "RUET").trim();
+    const dept = (body.department || profile?.department || "CSE").trim();
+    const sem = (body.semester || profile?.semester || "2nd Year").trim();
+    const sec = (body.section || profile?.section || "A").trim();
+    const batch = (body.batch || profile?.batch || "").trim() || null;
+    const group =
+      body.academic_group ||
+      body.academicGroup ||
+      profile?.academic_group ||
+      buildAcademicGroup(uni, dept, sem, sec);
+    const shouldActivate = body.is_active ?? body.isActive ?? false;
+
+    if (shouldActivate) {
+      await admin
+        .from("academic_routines")
+        .update({ is_active: false })
+        .eq("user_id", userId)
+        .eq("is_active", true);
+    }
 
     const { data: routine, error } = await admin
       .from("academic_routines")
       .insert({
         user_id: userId,
         title: body.title,
-        university: body.university,
-        department: body.department,
-        semester: body.semester,
-        section: body.section,
-        batch: body.batch || null,
+        university: uni,
+        department: dept,
+        semester: sem,
+        section: sec,
+        batch,
         academic_group: group,
         version: 1,
-        is_active: false,
+        is_active: shouldActivate,
         is_public: false,
-        source_type: "manual",
+        source_type: body.source_type || body.sourceType || "manual",
         verification_status: "user_verified",
       })
       .select()
@@ -834,15 +908,15 @@ calendar.post(
     if (body.entries.length > 0) {
       const entryRows = body.entries.map((e) => ({
         routine_id: routine.id,
-        course_code: e.courseCode,
-        course_title: e.courseTitle,
-        day_of_week: e.day,
-        start_time: e.startTime,
-        end_time: e.endTime,
+        course_code: e.course_code,
+        course_title: e.course_title,
+        day_of_week: e.day_of_week,
+        start_time: e.start_time,
+        end_time: e.end_time,
         room: e.room || null,
         instructor: e.instructor || null,
         type: e.type,
-        group_name: e.groupName || null,
+        group_name: e.group_name || null,
         confidence: "high",
         warnings: [],
         is_confirmed: true,
@@ -865,55 +939,79 @@ calendar.put(
     const body = z
       .object({
         title: z.string().optional(),
-        entries: z
-          .array(
-            z.object({
-              id: z.string().optional(),
-              courseCode: z.string().min(1),
-              courseTitle: z.string().min(1),
-              day: z.enum(DAYS_OF_WEEK),
-              startTime: z.string(),
-              endTime: z.string(),
-              room: z.string().optional().nullable(),
-              instructor: z.string().optional().nullable(),
-              type: z.enum(["CLASS", "LAB", "OTHER"]).default("CLASS"),
-              groupName: z.string().optional().nullable(),
-              confidence: z.enum(["high", "medium", "low", "ambiguous"]).optional(),
-              warnings: z.array(z.string()).optional(),
-            }),
-          )
-          .optional(),
+        academic_group: z.string().optional(),
+        academicGroup: z.string().optional(),
+        university: z.string().optional(),
+        department: z.string().optional(),
+        semester: z.string().optional(),
+        section: z.string().optional(),
+        entries: z.array(RoutineEntryFlexibleSchema).optional(),
       })
       .parse(req.body);
 
-    const { data: routine } = await admin
+    let { data: routine } = await admin
       .from("academic_routines")
       .select("*")
       .eq("id", id)
       .eq("user_id", userId)
       .maybeSingle();
 
+    // In case the routine was in-memory draft fallback that hasn't been saved to DB yet
+    if (!routine) {
+      const acadGroup = body.academic_group || body.academicGroup || "RUET CSE 2nd Year A";
+      const { data: created, error: createError } = await admin
+        .from("academic_routines")
+        .insert({
+          id,
+          user_id: userId,
+          title: body.title || "Academic Routine",
+          university: body.university || "RUET",
+          department: body.department || "CSE",
+          semester: body.semester || "2nd Year",
+          section: body.section || "A",
+          academic_group: acadGroup,
+          version: 1,
+          is_active: false,
+          is_public: false,
+          source_type: "pdf_import",
+          verification_status: "user_verified",
+        })
+        .select()
+        .single();
+
+      if (!createError && created) {
+        routine = created;
+      }
+    }
+
     if (!routine) return res.status(404).json({ error: "Routine not found or unauthorized" });
 
-    if (body.title) {
+    const updateFields: Record<string, any> = { updated_at: new Date().toISOString() };
+    if (body.title) updateFields.title = body.title;
+    if (body.academic_group || body.academicGroup) {
+      updateFields.academic_group = body.academic_group || body.academicGroup;
+    }
+    if (body.section) updateFields.section = body.section;
+
+    if (Object.keys(updateFields).length > 1) {
       await admin
         .from("academic_routines")
-        .update({ title: body.title, updated_at: new Date().toISOString() })
+        .update(updateFields)
         .eq("id", id);
     }
 
     if (body.entries) {
       // Re-evaluate conflicts
       const enrichedEntries: ExtractedRoutineEntry[] = body.entries.map((e) => ({
-        courseCode: e.courseCode,
-        courseTitle: e.courseTitle,
-        day: e.day,
-        startTime: e.startTime,
-        endTime: e.endTime,
+        courseCode: e.course_code,
+        courseTitle: e.course_title,
+        day: e.day_of_week as DayOfWeek,
+        startTime: e.start_time,
+        endTime: e.end_time,
         room: e.room || null,
         instructor: e.instructor || null,
         type: e.type,
-        groupName: e.groupName || null,
+        groupName: e.group_name || null,
         confidence: e.confidence || "high",
         warnings: e.warnings || [],
       }));
@@ -939,12 +1037,15 @@ calendar.put(
         is_confirmed: true,
       }));
 
-      await admin.from("routine_entries").insert(rows);
+      if (rows.length > 0) {
+        await admin.from("routine_entries").insert(rows);
+      }
 
       await admin
         .from("academic_routines")
         .update({
           raw_metadata: {
+            ...(routine.raw_metadata || {}),
             conflicts,
             hasAmbiguity,
             overallConfidence: hasAmbiguity ? "medium" : "high",
@@ -973,12 +1074,40 @@ calendar.post(
     const userId = req.userId!;
     const { id } = req.params;
 
-    const { data: routine } = await admin
+    let { data: routine } = await admin
       .from("academic_routines")
       .select("*")
       .eq("id", id)
       .eq("user_id", userId)
       .maybeSingle();
+
+    if (!routine) {
+      // In case it was an in-memory draft that hadn't yet been persisted
+      const { data: created, error: createError } = await admin
+        .from("academic_routines")
+        .insert({
+          id,
+          user_id: userId,
+          title: "Active Class Routine",
+          university: "RUET",
+          department: "CSE",
+          semester: "2nd Year",
+          section: "A",
+          academic_group: "RUET CSE 2nd Year A",
+          version: 1,
+          is_active: true,
+          is_public: false,
+          source_type: "pdf_import",
+          verification_status: "user_verified",
+          verified_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (!createError && created) {
+        routine = created;
+      }
+    }
 
     if (!routine) return res.status(404).json({ error: "Routine not found" });
 
@@ -987,7 +1116,8 @@ calendar.post(
       .from("academic_routines")
       .update({ is_active: false })
       .eq("user_id", userId)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .neq("id", id);
 
     // Set this one as active and user_verified
     const { data: updated, error } = await admin
@@ -1026,7 +1156,14 @@ calendar.post(
   wrap(async (req, res) => {
     const userId = req.userId!;
     const { id } = req.params;
-    const { is_public } = z.object({ is_public: z.boolean() }).parse(req.body);
+    const body = z
+      .object({
+        is_public: z.boolean().optional(),
+        isPublic: z.boolean().optional(),
+      })
+      .parse(req.body);
+
+    const is_public = body.is_public ?? body.isPublic ?? true;
 
     const { data: routine } = await admin
       .from("academic_routines")
@@ -1134,6 +1271,14 @@ calendar.post(
   wrap(async (req, res) => {
     const userId = req.userId!;
     const { id } = req.params;
+    const body = z
+      .object({
+        activate: z.boolean().optional(),
+      })
+      .optional()
+      .parse(req.body);
+
+    const shouldActivate = Boolean(body?.activate || req.query.activate === "true");
 
     const { data: source } = await admin
       .from("academic_routines")
@@ -1144,7 +1289,15 @@ calendar.post(
 
     if (!source) return res.status(404).json({ error: "Public routine not found" });
 
-    // Create personal copy as draft
+    if (shouldActivate) {
+      await admin
+        .from("academic_routines")
+        .update({ is_active: false })
+        .eq("user_id", userId)
+        .eq("is_active", true);
+    }
+
+    // Create personal copy
     const { data: newRoutine, error: insertError } = await admin
       .from("academic_routines")
       .insert({
@@ -1157,10 +1310,11 @@ calendar.post(
         batch: source.batch,
         academic_group: source.academic_group,
         version: 1,
-        is_active: false,
+        is_active: shouldActivate,
         is_public: false,
         source_type: "public_copy",
-        verification_status: "ai_draft", // Requires review!
+        verification_status: shouldActivate ? "user_verified" : "ai_draft",
+        verified_at: shouldActivate ? new Date().toISOString() : null,
         raw_metadata: { copiedFrom: source.id },
       })
       .select()
@@ -1182,7 +1336,7 @@ calendar.post(
       group_name: e.group_name,
       confidence: "high",
       warnings: [],
-      is_confirmed: false,
+      is_confirmed: shouldActivate,
     }));
 
     if (entries.length > 0) {
@@ -1191,7 +1345,9 @@ calendar.post(
 
     res.status(201).json({
       success: true,
-      message: "Routine copied to your drafts. Please review and verify it before activating.",
+      message: shouldActivate
+        ? "Routine copied and activated! Timetable synced with your calendar."
+        : "Routine copied to your drafts. Please review and verify it before activating.",
       routine: newRoutine,
     });
   }),
@@ -1206,22 +1362,33 @@ calendar.post(
 
     const body = z
       .object({
-        status: z.enum(["confirmed", "reported"]),
+        status: z.enum(["confirmed", "reported"]).optional(),
+        action: z.enum(["confirm", "confirmed", "report", "reported"]).optional(),
         issue_category: z
           .enum(["wrong_time", "wrong_course", "wrong_section", "outdated", "duplicate", "other"])
           .optional(),
+        issueCategory: z
+          .enum(["wrong_time", "wrong_course", "wrong_section", "outdated", "duplicate", "other"])
+          .optional(),
         comment: z.string().max(500).optional(),
+        reason: z.string().max(500).optional(),
       })
       .parse(req.body);
+
+    const status =
+      body.status ||
+      (body.action === "confirm" || body.action === "confirmed" ? "confirmed" : "reported");
+    const comment = body.comment || body.reason || null;
+    const issue_category = body.issue_category || body.issueCategory || null;
 
     const { data, error } = await admin
       .from("routine_validations")
       .upsert({
         routine_id: id,
         user_id: userId,
-        status: body.status,
-        issue_category: body.issue_category || null,
-        comment: body.comment || null,
+        status,
+        issue_category,
+        comment,
         created_at: new Date().toISOString(),
       })
       .select()
@@ -1230,7 +1397,7 @@ calendar.post(
     if (error) throw error;
 
     // Update routine status flag if reported
-    if (body.status === "reported") {
+    if (status === "reported") {
       await admin
         .from("academic_routines")
         .update({ verification_status: "reported_issue" })
@@ -1250,22 +1417,40 @@ calendar.post(
 
     const body = z
       .object({
-        routine_entry_id: z.string().uuid(),
+        routine_entry_id: z.string().uuid().optional(),
+        routineEntryId: z.string().uuid().optional(),
         custom_room: z.string().max(50).optional().nullable(),
+        customRoom: z.string().max(50).optional().nullable(),
         custom_instructor: z.string().max(100).optional().nullable(),
+        customInstructor: z.string().max(100).optional().nullable(),
         custom_start_time: z.string().optional().nullable(),
+        customStartTime: z.string().optional().nullable(),
         custom_end_time: z.string().optional().nullable(),
+        customEndTime: z.string().optional().nullable(),
         custom_notes: z.string().max(500).optional().nullable(),
-        is_hidden: z.boolean().default(false),
+        customNotes: z.string().max(500).optional().nullable(),
+        is_hidden: z.boolean().optional(),
+        isHidden: z.boolean().optional(),
       })
       .parse(req.body);
+
+    const routineEntryId = body.routine_entry_id || body.routineEntryId;
+    if (!routineEntryId) {
+      return res.status(400).json({ error: "routine_entry_id is required" });
+    }
 
     const { data, error } = await admin
       .from("user_routine_overrides")
       .upsert({
         user_id: userId,
         routine_id,
-        ...body,
+        routine_entry_id: routineEntryId,
+        custom_room: body.custom_room ?? body.customRoom ?? null,
+        custom_instructor: body.custom_instructor ?? body.customInstructor ?? null,
+        custom_start_time: body.custom_start_time ?? body.customStartTime ?? null,
+        custom_end_time: body.custom_end_time ?? body.customEndTime ?? null,
+        custom_notes: body.custom_notes ?? body.customNotes ?? null,
+        is_hidden: body.is_hidden ?? body.isHidden ?? false,
       })
       .select()
       .single();
@@ -1347,8 +1532,8 @@ calendar.get(
       const datesInRange = getDatesInRange(startDate, endDate);
 
       for (const dateStr of datesInRange) {
-        const dObj = new Date(dateStr);
-        const dayName = DAYS_OF_WEEK[dObj.getDay()] || "Sunday";
+        const dObj = new Date(dateStr + "T12:00:00Z");
+        const dayName = DAYS_OF_WEEK[dObj.getUTCDay()] || "Sunday";
 
         const matchingEntries = (routineEntries || []).filter(
           (entry) => entry.day_of_week === dayName,
@@ -1616,45 +1801,56 @@ calendar.post(
     const userId = req.userId!;
     const body = z
       .object({
-        routine_entry_id: z.string().uuid(),
+        routine_entry_id: z.string().uuid().optional(),
+        routineEntryId: z.string().uuid().optional(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        exception_type: z.enum(["cancelled", "rescheduled", "makeup", "extra"]),
+        exception_type: z.enum(["cancelled", "rescheduled", "makeup", "extra"]).optional(),
+        exceptionType: z.enum(["cancelled", "rescheduled", "makeup", "extra"]).optional(),
         note: z.string().max(200).optional(),
+        notes: z.string().max(200).optional(),
         start_time: z.string().optional(),
+        startTime: z.string().optional(),
         end_time: z.string().optional(),
+        endTime: z.string().optional(),
       })
       .parse(req.body);
+
+    const routineEntryId = body.routine_entry_id || body.routineEntryId;
+    const exceptionType = body.exception_type || body.exceptionType;
+    if (!routineEntryId || !exceptionType) {
+      return res.status(400).json({ error: "routine_entry_id and exception_type are required" });
+    }
 
     const { data: entry } = await admin
       .from("routine_entries")
       .select("*")
-      .eq("id", body.routine_entry_id)
+      .eq("id", routineEntryId)
       .single();
 
     if (!entry) return res.status(404).json({ error: "Routine entry not found" });
 
     const title =
-      body.exception_type === "cancelled"
+      exceptionType === "cancelled"
         ? `[Cancelled] ${entry.course_code}`
-        : `[${body.exception_type}] ${entry.course_code}`;
+        : `[${exceptionType}] ${entry.course_code}`;
 
     const { data, error } = await admin
       .from("academic_calendar_events")
       .insert({
         user_id: userId,
-        routine_entry_id: body.routine_entry_id,
+        routine_entry_id: routineEntryId,
         title,
         event_type: entry.type,
         course_code: entry.course_code,
         course_title: entry.course_title,
-        description: body.note || "",
+        description: body.note || body.notes || "",
         location: entry.room,
         instructor: entry.instructor,
         date: body.date,
-        start_time: body.start_time || entry.start_time,
-        end_time: body.end_time || entry.end_time,
+        start_time: body.start_time || body.startTime || entry.start_time,
+        end_time: body.end_time || body.endTime || entry.end_time,
         is_exception: true,
-        exception_type: body.exception_type,
+        exception_type: exceptionType,
         original_date: body.date,
       })
       .select()

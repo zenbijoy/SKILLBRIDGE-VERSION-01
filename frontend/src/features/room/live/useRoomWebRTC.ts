@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { Platform, PermissionsAndroid } from "react-native";
 import { getSocket } from "@/lib/socket";
 import { fetchIceServers, IceServerItem } from "@/features/calls/services/iceServers";
 import { createPeerConnection } from "@/features/calls/services/peerConnection";
 import { mediaDevices, RTCIceCandidate, RTCSessionDescription, isWebRTCSupported } from "@/features/calls/services/webrtc";
 import { triggerHaptic } from "@/components/ui";
+
+let NativeAudioSession: any = null;
+if (Platform.OS !== "web") {
+  try {
+    NativeAudioSession = require("@livekit/react-native").AudioSession;
+  } catch (_) {}
+}
 
 export interface RoomPeerMetadata {
   socketId: string;
@@ -140,6 +148,8 @@ export function useRoomWebRTC({
   const [localStream, setLocalStream] = useState<any | null>(null);
   const [remotePeers, setRemotePeers] = useState<RoomRemotePeer[]>([]);
   const [isMuted, setIsMuted] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [isLocalSpeaking, setIsLocalSpeaking] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(initialMedia === "video");
   const [isFrontCamera, setIsFrontCamera] = useState(true);
   const [isHandRaised, setIsHandRaised] = useState(false);
@@ -207,11 +217,47 @@ export function useRoomWebRTC({
   const pendingCandidatesRef = useRef<Map<string, any[]>>(new Map()); // socketId -> RTCIceCandidate[]
   const isJoinedRef = useRef(false);
 
+  // VAD & Audio Monitoring References
+  const audioContextRef = useRef<any>(null);
+  const analyserRef = useRef<any>(null);
+  const vadIntervalRef = useRef<any>(null);
+  const speakingDebounceTimerRef = useRef<any>(null);
+  const isSpeakingReportedRef = useRef<boolean>(false);
+  const isMutedRef = useRef(false);
+  const activeSpeakerIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
   // 1. Initialize Local Audio / Video Tracks
   const setupLocalMedia = useCallback(
     async (mediaType: "audio" | "video"): Promise<any> => {
       if (!isWebRTCSupported() || !mediaDevices?.getUserMedia) {
         throw new Error("WebRTC media capture is not supported on this platform.");
+      }
+
+      // Android runtime permissions for audio & video
+      if (Platform.OS === "android") {
+        try {
+          const perms = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+          if (mediaType === "video") {
+            perms.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+          }
+          await PermissionsAndroid.requestMultiple(perms);
+        } catch (permErr) {
+          console.warn("[useRoomWebRTC] Android permission request error:", permErr);
+        }
+      }
+
+      // Initialize Native AudioSession for VoIP communication
+      if (NativeAudioSession) {
+        try {
+          await NativeAudioSession.startAudioSession();
+          await NativeAudioSession.selectAudioOutput(isSpeakerOn ? "speaker" : "earpiece");
+        } catch (audioErr) {
+          console.warn("[useRoomWebRTC] Native audio session start error:", audioErr);
+        }
       }
 
       // Reuse active tracks if already live
@@ -241,6 +287,11 @@ export function useRoomWebRTC({
 
       try {
         const stream = await mediaDevices.getUserMedia(constraints);
+        if (stream?.getAudioTracks) {
+          stream.getAudioTracks().forEach((track: any) => {
+            track.enabled = !isMutedRef.current;
+          });
+        }
         localStreamRef.current = stream;
         setLocalStream(stream);
         setIsVideoOn(mediaType === "video");
@@ -248,13 +299,18 @@ export function useRoomWebRTC({
       } catch (err: any) {
         console.warn("Requested constraints failed, attempting audio-only fallback:", err?.message || err);
         const fallbackStream = await mediaDevices.getUserMedia({ audio: true, video: false });
+        if (fallbackStream?.getAudioTracks) {
+          fallbackStream.getAudioTracks().forEach((track: any) => {
+            track.enabled = !isMutedRef.current;
+          });
+        }
         localStreamRef.current = fallbackStream;
         setLocalStream(fallbackStream);
         setIsVideoOn(false);
         return fallbackStream;
       }
     },
-    [isFrontCamera],
+    [isFrontCamera, isSpeakerOn],
   );
 
   // Helper: Create peer connection to a specific remote peer socket
@@ -287,21 +343,32 @@ export function useRoomWebRTC({
 
         // Handle remote stream / track arrival
         pc.ontrack = (event: any) => {
-          const remoteStream = event.streams?.[0] || new (window as any).MediaStream([event.track]);
+          let remoteStream = event.streams?.[0];
+          if (!remoteStream && typeof window !== "undefined" && (window as any).MediaStream) {
+            try {
+              remoteStream = new (window as any).MediaStream([event.track]);
+            } catch (_) {}
+          }
           const current = remotePeersDataRef.current.get(targetSocketId) || {
             socketId: targetSocketId,
             userId: peerInfo.userId,
             name: peerInfo.name,
             avatarUrl: peerInfo.avatarUrl,
             role: peerInfo.role,
-            stream: remoteStream,
+            stream: remoteStream || null,
             isMuted: peerInfo.isMuted,
             isVideoEnabled: peerInfo.isVideoEnabled,
             isSpeaking: peerInfo.isSpeaking,
             isHandRaised: peerInfo.isHandRaised,
           };
-          current.stream = remoteStream;
-          remotePeersDataRef.current.set(targetSocketId, current);
+          if (remoteStream) {
+            current.stream = remoteStream;
+          } else if (current.stream && event.track && typeof current.stream.addTrack === "function") {
+            try {
+              current.stream.addTrack(event.track);
+            } catch (_) {}
+          }
+          remotePeersDataRef.current.set(targetSocketId, { ...current });
           setRemotePeers(Array.from(remotePeersDataRef.current.values()));
         };
 
@@ -319,8 +386,10 @@ export function useRoomWebRTC({
               isSpeaking: peerInfo.isSpeaking,
               isHandRaised: peerInfo.isHandRaised,
             };
-            current.stream = event.stream;
-            remotePeersDataRef.current.set(targetSocketId, current);
+            if (event.stream) {
+              current.stream = event.stream;
+            }
+            remotePeersDataRef.current.set(targetSocketId, { ...current });
             setRemotePeers(Array.from(remotePeersDataRef.current.values()));
           };
         }
@@ -334,6 +403,27 @@ export function useRoomWebRTC({
               type: "candidate",
               signal: event.candidate,
             });
+          }
+        };
+
+        // Auto-recover from transient ICE connection failures (e.g. WiFi <-> 4G handover)
+        pc.oniceconnectionstatechange = () => {
+          const state = pc.iceConnectionState || pc.connectionState;
+          if (state === "failed") {
+            console.warn(`[useRoomWebRTC] ICE failed with peer ${targetSocketId}, restarting ICE`);
+            if (isInitiator) {
+              pc.createOffer({ iceRestart: true })
+                .then((offer: any) => pc.setLocalDescription(offer))
+                .then(() => {
+                  socket.emit("room:webrtc:signal", {
+                    roomId,
+                    toSocketId: targetSocketId,
+                    type: "offer",
+                    signal: pc.localDescription,
+                  });
+                })
+                .catch((e: any) => console.warn(`ICE restart failed with ${targetSocketId}:`, e));
+            }
           }
         };
 
@@ -468,6 +558,34 @@ export function useRoomWebRTC({
     }
     localStreamRef.current = null;
     setLocalStream(null);
+
+    // Stop Native VoIP AudioSession
+    if (NativeAudioSession) {
+      try {
+        NativeAudioSession.stopAudioSession();
+      } catch (_) {}
+    }
+
+    // Clean up Web Audio VAD & timers
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      try {
+        audioContextRef.current.close().catch(() => {});
+      } catch (_) {}
+    }
+    audioContextRef.current = null;
+    analyserRef.current = null;
+
+    if (vadIntervalRef.current) {
+      clearInterval(vadIntervalRef.current);
+      vadIntervalRef.current = null;
+    }
+    if (speakingDebounceTimerRef.current) {
+      clearTimeout(speakingDebounceTimerRef.current);
+      speakingDebounceTimerRef.current = null;
+    }
+    isSpeakingReportedRef.current = false;
+    setIsLocalSpeaking(false);
+
     isJoinedRef.current = false;
     setConnectionStatus("disconnected");
   }, [roomId]);
@@ -551,12 +669,19 @@ export function useRoomWebRTC({
       try {
         if (type === "offer") {
           const desc = RTCSessionDescription ? new RTCSessionDescription(signal) : signal;
+          if (pc.signalingState !== "stable") {
+            try {
+              await pc.setLocalDescription({ type: "rollback" } as any);
+            } catch (_) {}
+          }
           await pc.setRemoteDescription(desc);
 
-          // Drain queued candidates
+          // Drain queued candidates safely (never allow candidate error to break SDP answer)
           const queued = pendingCandidatesRef.current.get(fromSocketId) || [];
           for (const cand of queued) {
-            await pc.addIceCandidate(cand);
+            try {
+              await pc.addIceCandidate(cand);
+            } catch (_) {}
           }
           pendingCandidatesRef.current.delete(fromSocketId);
 
@@ -573,16 +698,20 @@ export function useRoomWebRTC({
           const desc = RTCSessionDescription ? new RTCSessionDescription(signal) : signal;
           await pc.setRemoteDescription(desc);
 
-          // Drain queued candidates
+          // Drain queued candidates safely
           const queued = pendingCandidatesRef.current.get(fromSocketId) || [];
           for (const cand of queued) {
-            await pc.addIceCandidate(cand);
+            try {
+              await pc.addIceCandidate(cand);
+            } catch (_) {}
           }
           pendingCandidatesRef.current.delete(fromSocketId);
         } else if (type === "candidate") {
           const cand = RTCIceCandidate ? new RTCIceCandidate(signal) : signal;
           if (pc.remoteDescription && pc.remoteDescription.type) {
-            await pc.addIceCandidate(cand);
+            try {
+              await pc.addIceCandidate(cand);
+            } catch (_) {}
           } else {
             const list = pendingCandidatesRef.current.get(fromSocketId) || [];
             list.push(cand);
@@ -614,9 +743,18 @@ export function useRoomWebRTC({
         if (typeof payload.audioLevel === "number") peer.audioLevel = payload.audioLevel;
 
         if (payload.isSpeaking) {
+          activeSpeakerIdRef.current = peer.userId;
           setActiveSpeakerId(peer.userId);
+        } else {
+          setTimeout(() => {
+            if (activeSpeakerIdRef.current === peer.userId) {
+              activeSpeakerIdRef.current = null;
+              setActiveSpeakerId((cur) => (cur === peer.userId ? null : cur));
+            }
+          }, 1200);
         }
 
+        remotePeersDataRef.current.set(socketId, { ...peer });
         setRemotePeers(Array.from(remotePeersDataRef.current.values()));
       }
     };
@@ -645,6 +783,7 @@ export function useRoomWebRTC({
       const peer = remotePeersDataRef.current.get(payload.socketId);
       if (peer) {
         peer.isHandRaised = payload.isHandRaised;
+        remotePeersDataRef.current.set(payload.socketId, { ...peer });
         setRemotePeers(Array.from(remotePeersDataRef.current.values()));
       }
       triggerHaptic();
@@ -799,21 +938,171 @@ export function useRoomWebRTC({
     return () => clearInterval(interval);
   }, [connectionStatus]);
 
+  // Setup Web Audio VAD Analyser when localStream changes
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStream) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+            audioContextRef.current.close().catch(() => {});
+          }
+          const ctx = new AudioCtx();
+          if (ctx.state === "suspended") {
+            ctx.resume().catch(() => {});
+          }
+          const source = ctx.createMediaStreamSource(localStream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.4;
+          source.connect(analyser);
+
+          audioContextRef.current = ctx;
+          analyserRef.current = analyser;
+        } catch (err) {
+          console.warn("[useRoomWebRTC] Web Audio Analyser setup warning:", err);
+        }
+      }
+    }
+
+    return () => {
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        audioContextRef.current.close().catch(() => {});
+      }
+      analyserRef.current = null;
+    };
+  }, [localStream]);
+
+  // VAD volume checker loop
+  useEffect(() => {
+    const socket = getSocket();
+
+    vadIntervalRef.current = setInterval(() => {
+      if (isMuted || !localStreamRef.current) {
+        if (isSpeakingReportedRef.current) {
+          isSpeakingReportedRef.current = false;
+          setIsLocalSpeaking(false);
+          if (activeSpeakerIdRef.current === "local") {
+            activeSpeakerIdRef.current = null;
+            setActiveSpeakerId((cur) => (cur === "local" ? null : cur));
+          }
+          socket?.emit("room:webrtc:state", { roomId, isSpeaking: false, audioLevel: 0 });
+        }
+        return;
+      }
+
+      if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+        audioContextRef.current.resume().catch(() => {});
+      }
+
+      let volume = 0;
+
+      // 1. Web Audio Analyser (Web)
+      if (analyserRef.current) {
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        volume = sum / dataArray.length; // 0..255
+      }
+
+      // 2. WebRTC peer connection stats fallback (Native & Web)
+      if (volume === 0 && peerConnectionsRef.current.size > 0) {
+        const firstPc = peerConnectionsRef.current.values().next().value;
+        if (firstPc && typeof firstPc.getStats === "function") {
+          firstPc.getStats().then((stats: any) => {
+            if (!stats) return;
+            stats.forEach((report: any) => {
+              if (
+                (report.type === "media-source" && report.kind === "audio") ||
+                (report.type === "outbound-rtp" && report.kind === "audio")
+              ) {
+                if (typeof report.audioLevel === "number") {
+                  volume = report.audioLevel * 100;
+                }
+              }
+            });
+          }).catch(() => {});
+        }
+      }
+
+      const isSpeakingNow = volume > 10; // Speech threshold
+
+      if (isSpeakingNow) {
+        if (speakingDebounceTimerRef.current) {
+          clearTimeout(speakingDebounceTimerRef.current);
+          speakingDebounceTimerRef.current = null;
+        }
+        if (!isSpeakingReportedRef.current) {
+          isSpeakingReportedRef.current = true;
+          setIsLocalSpeaking(true);
+          activeSpeakerIdRef.current = "local";
+          setActiveSpeakerId("local");
+          socket?.emit("room:webrtc:state", {
+            roomId,
+            isSpeaking: true,
+            audioLevel: Math.min(1, volume / 100),
+          });
+        }
+      } else {
+        if (isSpeakingReportedRef.current && !speakingDebounceTimerRef.current) {
+          speakingDebounceTimerRef.current = setTimeout(() => {
+            isSpeakingReportedRef.current = false;
+            setIsLocalSpeaking(false);
+            if (activeSpeakerIdRef.current === "local") {
+              activeSpeakerIdRef.current = null;
+              setActiveSpeakerId((cur) => (cur === "local" ? null : cur));
+            }
+            socket?.emit("room:webrtc:state", { roomId, isSpeaking: false, audioLevel: 0 });
+            speakingDebounceTimerRef.current = null;
+          }, 450);
+        }
+      }
+    }, 120);
+
+    return () => {
+      if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
+      if (speakingDebounceTimerRef.current) clearTimeout(speakingDebounceTimerRef.current);
+    };
+  }, [roomId, isMuted]);
+
   // 5. Controls
   const toggleMicrophone = useCallback(() => {
     const stream = localStreamRef.current;
     if (stream?.getAudioTracks) {
-      const nextMuted = !isMuted;
+      const nextMuted = !isMutedRef.current;
+      isMutedRef.current = nextMuted;
       stream.getAudioTracks().forEach((track: any) => {
         track.enabled = !nextMuted;
       });
       setIsMuted(nextMuted);
 
       const socket = getSocket();
-      socket?.emit("room:webrtc:state", { roomId, isMuted: nextMuted });
+      socket?.emit("room:webrtc:state", { roomId, isMuted: nextMuted, isSpeaking: false });
+      if (nextMuted) {
+        setIsLocalSpeaking(false);
+        isSpeakingReportedRef.current = false;
+        if (activeSpeakerIdRef.current === "local") {
+          activeSpeakerIdRef.current = null;
+          setActiveSpeakerId((cur) => (cur === "local" ? null : cur));
+        }
+      }
       triggerHaptic();
     }
-  }, [roomId, isMuted]);
+  }, [roomId]);
+
+  const toggleSpeaker = useCallback(() => {
+    setIsSpeakerOn((prev) => {
+      const next = !prev;
+      if (NativeAudioSession) {
+        NativeAudioSession.selectAudioOutput(next ? "speaker" : "earpiece").catch(() => {});
+      }
+      triggerHaptic();
+      return next;
+    });
+  }, []);
 
   const toggleCamera = useCallback(async () => {
     const stream = localStreamRef.current;
@@ -1103,6 +1392,8 @@ export function useRoomWebRTC({
     localStream,
     remotePeers,
     isMuted,
+    isSpeakerOn,
+    isLocalSpeaking,
     isVideoOn,
     isFrontCamera,
     isHandRaised,
@@ -1133,6 +1424,7 @@ export function useRoomWebRTC({
     join,
     leave,
     toggleMicrophone,
+    toggleSpeaker,
     toggleCamera,
     toggleCameraFacing,
     toggleRaiseHand,

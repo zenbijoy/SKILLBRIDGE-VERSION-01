@@ -125,51 +125,39 @@ export async function ensureClubWorkspace(clubId: string, actorUserId: string): 
 
 /**
  * Idempotently provisions or retrieves a private Room OS collaboration workspace for a Research Project.
+ * Ensures the room, primary conversation, default channels, and all team memberships are fully synced
+ * so real-time workspace chat works immediately without permission or missing channel errors.
  */
 export async function ensureResearchWorkspace(projectId: string, ownerId: string): Promise<string> {
-  // 1. Check in-memory cache
-  if (researchRoomCache.has(projectId)) {
-    return researchRoomCache.get(projectId)!;
-  }
-
-  // 2. Fetch research project from DB
+  // 1. Fetch research project from DB
   const { data: project } = await admin
     .from("research_projects")
     .select("id, title, description, owner_id, room_id")
     .eq("id", projectId)
     .maybeSingle();
 
-  if (project?.room_id) {
-    researchRoomCache.set(projectId, project.room_id);
-    return project.room_id;
-  }
-
   const title = project?.title || "Research Project";
   const desc = project?.description || "Private research team collaboration space.";
+  const effectiveOwner = project?.owner_id || ownerId;
 
-  // 3. Provision new private room
-  const { data: newRoom, error: roomErr } = await admin
-    .from("rooms")
-    .insert({
-      title: `${title} Lab`,
-      description: desc,
-      topic: "Academic Research",
-      visibility: "private",
-      mode: "online",
-      capacity: 50,
-      owner_id: ownerId,
-      tags: ["research", "academic"],
-      enabled_modules: ["posts", "chat", "learn", "media"],
-      default_landing_tab: "posts",
-    } as any)
-    .select("id")
-    .single();
+  let roomId = project?.room_id || (researchRoomCache.has(projectId) ? researchRoomCache.get(projectId)! : null);
 
-  let roomId = newRoom?.id;
+  if (roomId) {
+    // Verify room actually exists
+    const { data: existingRoom } = await admin
+      .from("rooms")
+      .select("id, conversation_id")
+      .eq("id", roomId)
+      .maybeSingle();
 
-  if (roomErr || !roomId) {
-    // Basic insert fallback
-    const { data: basicRoom, error: basicErr } = await admin
+    if (!existingRoom) {
+      roomId = null;
+    }
+  }
+
+  // 2. Provision new private room if not present
+  if (!roomId) {
+    const { data: newRoom, error: roomErr } = await admin
       .from("rooms")
       .insert({
         title: `${title} Lab`,
@@ -177,27 +165,167 @@ export async function ensureResearchWorkspace(projectId: string, ownerId: string
         topic: "Academic Research",
         visibility: "private",
         mode: "online",
-        capacity: 50,
-        owner_id: ownerId,
-      })
+        capacity: 100,
+        owner_id: effectiveOwner,
+        tags: ["research", "academic", "workspace"],
+        enabled_modules: ["posts", "chat", "learn", "media"],
+        default_landing_tab: "chat",
+      } as any)
       .select("id")
       .single();
 
-    if (basicErr) throw basicErr;
-    roomId = basicRoom.id;
+    if (newRoom?.id) {
+      roomId = newRoom.id;
+    } else {
+      // Fallback insert without extra fields
+      const { data: basicRoom, error: basicErr } = await admin
+        .from("rooms")
+        .insert({
+          title: `${title} Lab`,
+          description: desc,
+          topic: "Academic Research",
+          visibility: "private",
+          mode: "online",
+          capacity: 100,
+          owner_id: effectiveOwner,
+        })
+        .select("id")
+        .single();
+
+      if (basicErr) throw basicErr;
+      roomId = basicRoom.id;
+    }
+
+    // Link room_id on research_project
+    await admin.from("research_projects").update({ room_id: roomId } as any).eq("id", projectId);
   }
 
   researchRoomCache.set(projectId, roomId);
 
-  // Auto-add project owner as owner in room_members
-  await admin.from("room_members").upsert({
-    room_id: roomId,
-    user_id: ownerId,
-    role: "owner",
-  } as any);
+  // 3. Ensure primary conversation for the room
+  const { data: roomRecord } = await admin
+    .from("rooms")
+    .select("id, conversation_id")
+    .eq("id", roomId)
+    .single();
 
-  // Link room_id on research_project
-  await admin.from("research_projects").update({ room_id: roomId } as any).eq("id", projectId);
+  let roomConvId = roomRecord?.conversation_id;
+  if (!roomConvId) {
+    const { data: newConv } = await admin
+      .from("conversations")
+      .insert({
+        kind: "room",
+        title: `${title} Lab Chat`,
+        created_by: effectiveOwner,
+      })
+      .select("id")
+      .single();
+
+    if (newConv?.id) {
+      roomConvId = newConv.id;
+      await admin.from("rooms").update({ conversation_id: roomConvId }).eq("id", roomId);
+    }
+  }
+
+  // 4. Ensure default channels (#general & #paper-discussions) exist in room_channels
+  const { data: existingChannels } = await admin
+    .from("room_channels")
+    .select("id, name, is_default, conversation_id")
+    .eq("room_id", roomId)
+    .eq("is_archived", false);
+
+  if (!existingChannels || existingChannels.length === 0) {
+    // Seed default #general channel linked to roomConvId
+    await admin.from("room_channels").insert([
+      {
+        room_id: roomId,
+        name: "general",
+        slug: "general",
+        type: "text",
+        description: "General lab discussion and team collaboration",
+        position: 0,
+        is_default: true,
+        conversation_id: roomConvId,
+        created_by: effectiveOwner,
+        permissions_override: { is_private: false, channel_category: "common" },
+      },
+      {
+        room_id: roomId,
+        name: "paper-discussions",
+        slug: "paper-discussions",
+        type: "text",
+        description: "Discuss research papers, methodologies, and literature reviews",
+        position: 1,
+        is_default: false,
+        conversation_id: roomConvId,
+        created_by: effectiveOwner,
+        permissions_override: { is_private: false, channel_category: "common" },
+      },
+    ]);
+  } else if (roomConvId) {
+    // Ensure default channel has conversation_id attached
+    const defaultChan = existingChannels.find((c) => c.is_default) || existingChannels[0];
+    if (defaultChan && !defaultChan.conversation_id) {
+      await admin.from("room_channels").update({ conversation_id: roomConvId }).eq("id", defaultChan.id);
+    }
+  }
+
+  // 5. Ensure owner membership in room_members and conversation_members
+  await admin.from("room_members").upsert(
+    {
+      room_id: roomId,
+      user_id: effectiveOwner,
+      role: "owner",
+    } as any,
+    { onConflict: "room_id,user_id" },
+  );
+
+  if (roomConvId) {
+    try {
+      await admin.from("conversation_members").upsert(
+        {
+          conversation_id: roomConvId,
+          user_id: effectiveOwner,
+          role: "owner",
+        },
+        { onConflict: "conversation_id,user_id" },
+      );
+    } catch {}
+  }
+
+  // 6. Sync all accepted research project members into room_members & conversation_members
+  const { data: members } = await admin
+    .from("research_members")
+    .select("user_id, role")
+    .eq("project_id", projectId);
+
+  if (members && members.length > 0) {
+    for (const m of members) {
+      if (m.user_id && m.user_id !== effectiveOwner) {
+        await admin.from("room_members").upsert(
+          {
+            room_id: roomId,
+            user_id: m.user_id,
+            role: "member",
+          } as any,
+          { onConflict: "room_id,user_id" },
+        );
+
+        if (roomConvId) {
+          try {
+            await admin.from("conversation_members").upsert(
+              {
+                conversation_id: roomConvId,
+                user_id: m.user_id,
+                role: "member",
+              },
+              { onConflict: "conversation_id,user_id" },
+            );
+          } catch {}
+        }
+      }
+    }
+  }
 
   return roomId;
 }

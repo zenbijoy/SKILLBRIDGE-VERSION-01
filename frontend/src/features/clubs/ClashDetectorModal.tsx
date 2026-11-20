@@ -1,10 +1,23 @@
 import { useState } from "react";
-import { View, Text, StyleSheet, Modal, Pressable, ActivityIndicator, Alert, TextInput } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Card, Pill, Row } from "@/components/ui";
 import { useTheme, radius } from "@/theme";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 export type ClashItem = {
   target_event_id: string;
@@ -42,6 +55,7 @@ export function ClashDetectorModal({
   onProceedAnyway?: () => void;
 }) {
   const { colors } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
   const [selectedClash, setSelectedClash] = useState<ClashItem | null>(null);
   const [proposedTime, setProposedTime] = useState("");
   const [negotiationNote, setNegotiationNote] = useState("");
@@ -84,41 +98,54 @@ export function ClashDetectorModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <Row style={{ alignItems: "center", gap: 8 }}>
-              <MaterialCommunityIcons name="calendar-alert" size={24} color={colors.warning} />
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Schedule Conflict Check</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <View
+          style={[
+            styles.backdrop,
+            Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
+          ]}
+        >
+          <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Row style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <Row style={{ alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="calendar-alert" size={24} color={colors.warning} />
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Schedule Conflict Check</Text>
+              </Row>
+              <Pressable onPress={onClose}>
+                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
+              </Pressable>
             </Row>
-            <Pressable onPress={onClose}>
-              <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-            </Pressable>
-          </Row>
 
-          {isLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: 32 }} />
-          ) : clashes.length === 0 ? (
-            <View style={{ alignItems: "center", paddingVertical: 24, gap: 12 }}>
-              <MaterialCommunityIcons name="check-decagram" size={48} color={colors.success} />
-              <Text style={[styles.safeTitle, { color: colors.text }]}>No Schedule Clashes Detected!</Text>
-              <Text style={{ color: colors.muted, textAlign: "center", fontSize: 13 }}>
-                Your proposed timing is completely clear of conflicts across university clubs and venues.
-              </Text>
-              {onProceedAnyway && (
-                <Pressable
-                  onPress={onProceedAnyway}
-                  style={[styles.proceedBtn, { backgroundColor: colors.success }]}
-                >
-                  <Text style={styles.proceedBtnText}>Publish Event</Text>
-                </Pressable>
-              )}
-            </View>
-          ) : (
-            <View>
-              <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 12 }}>
-                Found {clashes.length} potential clash(es). Review conflicts or negotiate timing:
-              </Text>
+            {isLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: 32 }} />
+            ) : clashes.length === 0 ? (
+              <View style={{ alignItems: "center", paddingVertical: 24, gap: 12 }}>
+                <MaterialCommunityIcons name="check-decagram" size={48} color={colors.success} />
+                <Text style={[styles.safeTitle, { color: colors.text }]}>No Schedule Clashes Detected!</Text>
+                <Text style={{ color: colors.muted, textAlign: "center", fontSize: 13 }}>
+                  Your proposed timing is completely clear of conflicts across university clubs and venues.
+                </Text>
+                {onProceedAnyway && (
+                  <Pressable
+                    onPress={onProceedAnyway}
+                    style={[styles.proceedBtn, { backgroundColor: colors.success }]}
+                  >
+                    <Text style={styles.proceedBtnText}>Publish Event</Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : (
+              <ScrollView
+                style={{ maxHeight: 440 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 12 }}>
+                  Found {clashes.length} potential clash(es). Review conflicts or negotiate timing:
+                </Text>
               {onProceedAnyway && !data?.has_critical_clash && (
                 <Row style={{ justifyContent: "flex-end", marginBottom: 10 }}>
                   <Pressable onPress={onProceedAnyway} style={styles.proceedSmallBtn}>
@@ -199,10 +226,11 @@ export function ClashDetectorModal({
                   </Row>
                 </Card>
               )}
-            </View>
+            </ScrollView>
           )}
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

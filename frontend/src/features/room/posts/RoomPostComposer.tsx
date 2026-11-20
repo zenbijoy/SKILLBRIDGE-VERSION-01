@@ -14,6 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { RoomPostType } from "@/types";
 import { Row, triggerHaptic } from "@/components/ui";
 import { radius, useTheme } from "@/theme";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 type RoomPostComposerProps = {
   roomId: string;
@@ -45,6 +46,7 @@ export function RoomPostComposer({
   onSubmit,
 }: RoomPostComposerProps) {
   const { colors } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
   const setIsOpen = (next: boolean) => {
@@ -176,7 +178,13 @@ export function RoomPostComposer({
             </Pressable>
           </Row>
 
-          <ScrollView contentContainerStyle={s.modalScroll} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            contentContainerStyle={[
+              s.modalScroll,
+              { paddingBottom: 40 + (keyboardHeight > 0 ? keyboardHeight : 20) },
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Post Type Selector */}
             <Text style={[s.sectionLabel, { color: colors.muted }]}>SELECT CONTENT TYPE</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>

@@ -12,7 +12,7 @@ import { wrap } from "../middleware/error.js";
 import { logger } from "../lib/logger.js";
 import { audit } from "../services/audit.js";
 import { roomLiveLimiter } from "../middleware/rateLimiters.js";
-import { getSocketServer, roomPresenceRoom } from "../socket.js";
+import { getSocketServer, roomPresenceRoom, broadcastRoomSession } from "../socket.js";
 import { NotificationService } from "../services/notificationService.js";
 import { generateCloudflareIceServers } from "../services/turn.js";
 
@@ -265,12 +265,17 @@ export async function getRoomLiveStatusPayload(roomId: string, userId?: string) 
     let canStartOpen = false;
     let reason: string | undefined;
 
+    const isTeacher = Boolean(isOwner || role === "owner" || role === "admin" || role === "teacher");
+
     if (!isMember) {
       reason = "Membership required to participate in sessions";
     } else if (studyWindowActive) {
       reason = "A study session is currently live or scheduled to start within 2 minutes";
     } else if (openSessionPayload) {
       reason = "An open session is already in progress";
+    } else if (!isTeacher) {
+      reason = "Only a room teacher or admin can start a live session";
+      canStartOpen = false;
     } else {
       canStartOpen = true;
     }
@@ -355,6 +360,7 @@ roomLive.get(
 // ─────────────────────────────────────────────────────────────────────────────
 const openSessionSchema = z.object({
   media: z.enum(["audio", "video"]).default("audio"),
+  preferredProvider: z.enum(["livekit", "webrtc"]).optional(),
 });
 
 roomLive.post(
@@ -367,11 +373,30 @@ roomLive.post(
     const userId = req.userId!;
     const body = openSessionSchema.parse(req.body || {});
 
-    const { isMember, role } = await getRoomMembership(roomId, userId);
+    const { isMember, role, isOwner } = await getRoomMembership(roomId, userId);
     if (!isMember) {
       return res.status(403).json({
         error: "Join the learning room first to start a session",
         code: "MEMBERSHIP_REQUIRED",
+        roomId,
+      });
+    }
+
+    const isTeacher = Boolean(isOwner || role === "owner" || role === "admin" || role === "teacher");
+
+    // Check if an open session is already live
+    const { data: existingSession } = await admin
+      .from("room_open_sessions")
+      .select("id, status")
+      .eq("room_id", roomId)
+      .eq("status", "live")
+      .maybeSingle();
+
+    // If no session is live, only a teacher or admin may initiate a new session
+    if (!existingSession && !isTeacher) {
+      return res.status(403).json({
+        error: "Only a room teacher or admin can start a live session. You can request a session from your teachers.",
+        code: "TEACHER_REQUIRED",
         roomId,
       });
     }
@@ -416,11 +441,12 @@ roomLive.post(
     const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : userId);
     const isHost = result.host_id === userId;
 
+    const useLiveKit = hasLiveKit && body.preferredProvider === "livekit";
     let token = `webrtc_session_${result.session_id}`;
     let provider: "livekit" | "webrtc" = "webrtc";
     let liveUrl = "";
 
-    if (hasLiveKit) {
+    if (useLiveKit) {
       try {
         const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
           identity: userId,
@@ -564,6 +590,19 @@ roomLive.post(
     const sessionId = z.string().uuid().parse(req.params.sessionId);
     const userId = req.userId!;
 
+    const tokenReqBody = z
+      .object({
+        preferredProvider: z.enum(["livekit", "webrtc"]).optional(),
+      })
+      .parse(req.body || {});
+    const tokenReqQuery = z
+      .object({
+        preferredProvider: z.enum(["livekit", "webrtc"]).optional(),
+      })
+      .parse(req.query || {});
+    const preferredProvider = tokenReqBody.preferredProvider || tokenReqQuery.preferredProvider;
+    const useLiveKit = hasLiveKit && preferredProvider === "livekit";
+
     const { isMember, role } = await getRoomMembership(roomId, userId);
     if (!isMember) {
       return res.status(403).json({
@@ -616,7 +655,7 @@ roomLive.post(
       let provider: "livekit" | "webrtc" = "webrtc";
       let liveUrl = "";
 
-      if (hasLiveKit) {
+      if (useLiveKit) {
         try {
           const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
             identity: userId,
@@ -708,7 +747,7 @@ roomLive.post(
     let provider: "livekit" | "webrtc" = "webrtc";
     let liveUrl = "";
 
-    if (hasLiveKit) {
+    if (useLiveKit) {
       try {
         const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
           identity: userId,
@@ -1080,6 +1119,7 @@ roomLive.post(
         title: body.title,
         media: body.media,
         mode: "online",
+        session_type: body.media === "audio" ? "voice" : "video",
         status: "scheduled",
         starts_at: startsAt,
         ends_at: body.endsAt || null,
@@ -1089,6 +1129,7 @@ roomLive.post(
 
     if (insertErr) throw insertErr;
 
+    broadcastRoomSession(roomId, "created", { session: newSession });
     void broadcastRoomLiveStatus(roomId);
     void audit(userId, "room:study_session_scheduled", "session", newSession.id, { roomId, title: body.title, startsAt });
     res.status(201).json({ session: newSession });
@@ -1140,6 +1181,7 @@ roomLive.patch(
       .single();
 
     if (error) throw error;
+    broadcastRoomSession(roomId, "updated", { session: updated });
     void broadcastRoomLiveStatus(roomId);
     res.json({ session: updated });
   }),
@@ -1173,6 +1215,7 @@ roomLive.delete(
       await client.deleteRoom(`skillbridge-session-${sessionId}`).catch(() => {});
     }
 
+    broadcastRoomSession(roomId, "deleted", { sessionId });
     void broadcastRoomLiveStatus(roomId);
     res.json({ success: true, cancelledSessionId: sessionId });
   }),

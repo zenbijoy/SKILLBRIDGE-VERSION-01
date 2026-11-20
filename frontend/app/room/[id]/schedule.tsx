@@ -17,21 +17,24 @@ export default function ScheduleRoom() {
     d.setHours(14, 0, 0, 0);
     return d.toISOString();
   });
-  const [mode, setMode] = useState<"online" | "offline" | "hybrid">("online");
+  const [sessionType, setSessionType] = useState<"video" | "voice" | "offline">("video");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
 
   const m = useMutation({
     mutationFn: () => {
-      if ((mode === "offline" || mode === "hybrid") && !location.trim()) {
-        throw new Error("Campus location is required for in-person or hybrid sessions.");
+      if (sessionType === "offline" && !location.trim()) {
+        throw new Error("Campus location is required for in-person campus sessions.");
       }
-      return api("/sessions", {
+      return api(`/rooms/${id}/classes`, {
         method: "POST",
         body: JSON.stringify({
-          room_id: id,
+          title: title.trim() || "Peer Study & Live Session",
+          description: description.trim(),
           starts_at: starts,
-          mode,
-          campus_location: mode === "online" ? undefined : location.trim() || undefined,
+          session_type: sessionType,
+          campus_location: sessionType === "offline" ? location.trim() : null,
         }),
       });
     },
@@ -39,7 +42,7 @@ export default function ScheduleRoom() {
       triggerHaptic();
       qc.invalidateQueries({ queryKey: ["room", id] });
       qc.invalidateQueries({ queryKey: ["schedule"] });
-      Alert.alert("Session scheduled! 🚀", "Room members have received notification invitations.");
+      Alert.alert("Live Session Scheduled! 🚀", "Room members have received notification invitations.");
       router.back();
     },
     onError: (e: any) => Alert.alert("Scheduling failed", e.message),
@@ -59,8 +62,22 @@ export default function ScheduleRoom() {
         Create a class time or project deadline. Room members will receive automated push notifications and calendar sync.
       </Muted>
 
+      <Card>
+        <H2>1. Session Details</H2>
+        <Field
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Session title, e.g. Algorithms & Dynamic Programming"
+        />
+        <Field
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Description or agenda (optional)"
+        />
+      </Card>
+
       <Card tone="glow">
-        <H2>1. Pick Date & Time</H2>
+        <H2>2. Pick Date & Time</H2>
         <Muted>Quick presets or custom ISO timestamp:</Muted>
         <Row style={{ marginTop: 4 }}>
           <Pill tone="primary" onPress={() => setPresetDate(4)}>In 4 hours</Pill>
@@ -80,20 +97,20 @@ export default function ScheduleRoom() {
       </Card>
 
       <Card>
-        <H2>2. Session Classroom Format</H2>
+        <H2>3. Session Format</H2>
         <View style={s.modeSelector}>
           {[
-            { key: "online", label: "🌐 Online LiveKit Video", desc: "Interactive video with screen share & audio" },
+            { key: "video", label: "📹 Online Video Classroom", desc: "Interactive LiveKit video with screen share & stage" },
+            { key: "voice", label: "🎙️ Online Voice Discussion", desc: "LiveKit audio-only stage for voice talks & Q&A" },
             { key: "offline", label: "📍 Campus Physical Meetup", desc: "Library, faculty room, lab or campus cafe" },
-            { key: "hybrid", label: "⚡ Hybrid (LiveKit + Campus)", desc: "Simultaneous in-person & online stream" },
           ].map((item) => {
-            const active = mode === item.key;
+            const active = sessionType === item.key;
             return (
               <Pressable
                 key={item.key}
                 onPress={() => {
                   triggerHaptic();
-                  setMode(item.key as any);
+                  setSessionType(item.key as any);
                 }}
                 style={[
                   s.modeCard,
@@ -113,7 +130,7 @@ export default function ScheduleRoom() {
           })}
         </View>
 
-        {mode !== "online" ? (
+        {sessionType === "offline" ? (
           <View style={{ marginTop: 8 }}>
             <Field
               value={location}

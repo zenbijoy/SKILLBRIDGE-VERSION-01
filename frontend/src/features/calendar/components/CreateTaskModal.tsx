@@ -8,6 +8,8 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { CalendarEvent, CalendarEventType, EventPriority } from "../types";
@@ -15,6 +17,7 @@ import { useTheme, radius } from "@/theme";
 import { EVENT_TYPE_CONFIG } from "../constants";
 import { formatDateIso } from "../utils/dateUtils";
 import { triggerHaptic } from "@/components/ui";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 
 interface CreateTaskModalProps {
   visible: boolean;
@@ -43,6 +46,7 @@ export function CreateTaskModal({
   onSave,
 }: CreateTaskModalProps) {
   const { colors, isDark } = useTheme();
+  const keyboardHeight = useKeyboardHeight();
 
   const [title, setTitle] = useState(initialData?.title ?? "");
   const [eventType, setEventType] = useState<CalendarEventType>(
@@ -94,32 +98,45 @@ export function CreateTaskModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
         <View
           style={[
-            styles.sheet,
-            {
-              backgroundColor: isDark ? colors.surface : "#FFFFFF",
-              borderColor: isDark ? colors.border : "#E2E8F0",
-            },
+            styles.overlay,
+            Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
           ]}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>
-                {initialData ? "Edit Academic Task" : "Create Academic Task"}
-              </Text>
-              <Text style={[styles.headerSub, { color: colors.muted }]}>
-                Assignments, Quizzes, Exams & Deadlines
-              </Text>
+          <View
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: isDark ? colors.surface : "#FFFFFF",
+                borderColor: isDark ? colors.border : "#E2E8F0",
+              },
+            ]}
+          >
+            {/* Header */}
+            <View style={styles.header}>
+              <View>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>
+                  {initialData ? "Edit Academic Task" : "Create Academic Task"}
+                </Text>
+                <Text style={[styles.headerSub, { color: colors.muted }]}>
+                  Assignments, Quizzes, Exams & Deadlines
+                </Text>
+              </View>
+              <Pressable onPress={onClose} style={styles.closeBtn}>
+                <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
+              </Pressable>
             </View>
-            <Pressable onPress={onClose} style={styles.closeBtn}>
-              <MaterialCommunityIcons name="close" size={22} color={colors.muted} />
-            </Pressable>
-          </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.body}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
             {/* Event Type Pills Selector */}
             <Text style={[styles.label, { color: colors.muted, marginBottom: 6 }]}>
               Event Category *
@@ -369,7 +386,8 @@ export function CreateTaskModal({
             </Pressable>
           </View>
         </View>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

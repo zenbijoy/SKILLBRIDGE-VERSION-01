@@ -43,23 +43,17 @@ export default function CallScreen() {
   // /call/<callId> (+ optional ?callId=). The store is the source of truth when
   // IncomingCallModal already populated it; otherwise resolve from the route.
   const { activeCall, startCall, setCallStatus, setMinimized } = useCallStore();
-  const queryCallId = acceptedCallId;
-  // When the store already holds this call, this screen is a join/resume — never re-initiate.
+  const explicitCallId = acceptedCallId;
+  const explicitTargetId = targetParam || calleeParam;
   const storeCallId = activeCall?.callId;
-  const isJoiningExistingCall =
-    Boolean(storeCallId) &&
-    activeCall?.status !== "ended" &&
-    activeCall?.status !== "declined" &&
-    activeCall?.status !== "failed" &&
-    (storeCallId === routeSegment || storeCallId === queryCallId || Boolean(queryCallId));
-  // Outgoing target is explicit via query (?targetId / ?userId) or, when this is
-  // NOT an existing-call join, the route segment itself is the peer id.
-  const targetId: string | undefined = targetParam || calleeParam || (isJoiningExistingCall ? activeCall?.peer.id : routeSegment);
-  const existingCallId: string | undefined = isJoiningExistingCall ? storeCallId : queryCallId;
+  const isStoreCall = Boolean(storeCallId && (storeCallId === routeSegment || storeCallId === explicitCallId));
+  const isExplicitOutgoing = Boolean(explicitTargetId || params.name || params.avatar);
+  const effectiveCallId: string | undefined =
+    explicitCallId || (isStoreCall ? storeCallId : undefined) || (!isExplicitOutgoing ? routeSegment : undefined);
+  const targetId: string | undefined =
+    explicitTargetId || (isStoreCall ? activeCall?.peer.id : (isExplicitOutgoing ? routeSegment : undefined));
   const isPeerOnline = useUserPresence(targetId);
   const [controlsVisible, setControlsVisible] = useState(true);
-  // Set when a cold-start (app killed → tap call notification) resolves
-  // to a call that is no longer live, so we can show a missed-call notice.
   const [coldStartStatus, setColdStartStatus] = useState<"restoring" | "missed" | null>(null);
 
   // Animated breathing pulse for the avatar during calling / audio
@@ -75,9 +69,15 @@ export default function CallScreen() {
     return () => pulseAnim.stop();
   }, [avatarPulse]);
 
-  // Un-minimize when entering CallScreen
+  // Un-minimize when entering CallScreen, and cleanup on exit
   useEffect(() => {
     setMinimized(false);
+    return () => {
+      const current = useCallStore.getState().activeCall;
+      if (current && !current.isMinimized && current.status !== "connected") {
+        useCallStore.getState().resetCall();
+      }
+    };
   }, [setMinimized]);
 
   const {
@@ -91,7 +91,7 @@ export default function CallScreen() {
     toggleVideoTrack,
     toggleSpeaker,
     toggleCameraFacing,
-  } = useWebRTCCall(activeCall?.callId || existingCallId);
+  } = useWebRTCCall(activeCall?.callId || effectiveCallId);
 
   const insets = useSafeAreaInsets();
 
@@ -104,7 +104,7 @@ export default function CallScreen() {
     let isCancelled = false;
 
     async function restoreCallFromNotification() {
-      if (!existingCallId || activeCall) return;
+      if (!effectiveCallId || activeCall) return;
 
       setColdStartStatus("restoring");
       try {
@@ -114,10 +114,10 @@ export default function CallScreen() {
           connectSocket(sessionData.session.access_token);
         }
 
-        const record = await getCallApi(existingCallId);
+        const record = await getCallApi(effectiveCallId);
         if (isCancelled) return;
 
-        if (record.status === "ringing") {
+        if (record.status === "ringing" || record.status === "accepted" || record.status === "connected") {
           // Open incoming call screen for ringing status so user can choose Accept or Decline (Bug 7)
           const isCaller = record.caller_id === currentUserId;
           const peerId = isCaller ? record.callee_id : record.caller_id;
@@ -134,7 +134,7 @@ export default function CallScreen() {
             type: (record.type as "audio" | "video") || "video",
             provider: (record.metadata as any)?.provider || "webrtc",
           });
-          setCallStatus("ringing");
+          setCallStatus(record.status === "ringing" ? "ringing" : "connecting");
           setColdStartStatus(null);
         } else if (
           record.status === "missed" ||
@@ -150,18 +150,22 @@ export default function CallScreen() {
         }
       } catch (err) {
         console.error("Failed to fetch call record:", err);
-        setColdStartStatus("missed");
+        if (routeSegment && !explicitCallId) {
+          setColdStartStatus(null);
+        } else {
+          setColdStartStatus("missed");
+        }
       }
     }
 
-    if (existingCallId && !activeCall) {
+    if (effectiveCallId && !activeCall) {
       void restoreCallFromNotification();
     }
 
     return () => {
       isCancelled = true;
     };
-  }, [existingCallId, activeCall, startCall, setCallStatus]);
+  }, [effectiveCallId, activeCall, startCall, setCallStatus, routeSegment, explicitCallId]);
 
   // Fix C-3: Auto-timeout ring after 60s (caller side) if callee never responds.
   // If activeCall transitions away from ringing/initiating, the timeout is cancelled.
@@ -227,7 +231,7 @@ export default function CallScreen() {
     async function startOutgoingCall() {
       // Join/resume path: IncomingCallModal (or a banner/tap) already created the
       // call record and populated the store.
-      if (existingCallId) {
+      if (effectiveCallId) {
         // If callee is still in ringing status (waiting for user to accept), do not auto-initialize media (Bug 7)
         if (activeCall?.role === "callee" && activeCall?.status === "ringing") {
           return;
@@ -235,7 +239,7 @@ export default function CallScreen() {
 
         if (activeCall?.provider === "livekit") {
           const socket = getSocket();
-          socket?.emit("call:ready", { callId: existingCallId });
+          socket?.emit("call:ready", { callId: effectiveCallId });
           return;
         }
         try {
@@ -243,7 +247,7 @@ export default function CallScreen() {
           await setupPeerConnection(stream);
           // Signal to caller that callee is ready for WebRTC SDP offer
           const socket = getSocket();
-          socket?.emit("call:ready", { callId: existingCallId });
+          socket?.emit("call:ready", { callId: effectiveCallId });
         } catch (err: any) {
           if (!isCancelled) {
             console.error("Failed to prepare media for existing call:", err);
@@ -290,9 +294,9 @@ export default function CallScreen() {
     // cold start from a notification, `activeCall` is populated
     // by the restore effect above — don't race ahead and open
     // the mic/camera before we know whether the call is live.
-    const shouldJoinExistingCall = Boolean(existingCallId && activeCall && activeCall.status !== "ringing");
+    const shouldJoinExistingCall = Boolean(effectiveCallId && activeCall && activeCall.status !== "ringing");
     const shouldStartOutgoingCall =
-      !existingCallId &&
+      !effectiveCallId &&
       (!activeCall || (targetId && activeCall.peer.id !== targetId));
 
     if (shouldJoinExistingCall || shouldStartOutgoingCall) {
@@ -303,7 +307,7 @@ export default function CallScreen() {
       isCancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, name, avatar, type, activeCall?.status]);
+  }, [targetId, name, avatar, type, activeCall?.status, effectiveCallId]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -391,7 +395,7 @@ export default function CallScreen() {
 
   return (
     <Pressable
-      style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}
+      style={styles.container}
       onPress={() => {
         if (isConnected && isVideo) {
           setControlsVisible((prev) => !prev);
@@ -483,7 +487,7 @@ export default function CallScreen() {
 
           {/* Local PIP Video preview if connected with video */}
           {isConnected && isVideo && localStream ? (
-            <View style={styles.pipContainer}>
+            <View style={[styles.pipContainer, { top: Math.max(insets.top, 16) + 60 }]}>
               <VideoView
                 stream={localStream}
                 style={styles.pipVideo}
@@ -503,7 +507,7 @@ export default function CallScreen() {
 
       {/* Top Header Bar */}
       {controlsVisible && (
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 16) }]}>
           <Pressable onPress={handleMinimize} hitSlop={12} style={styles.backButton}>
             <MaterialCommunityIcons name="chevron-down" size={28} color="#FFFFFF" />
           </Pressable>
@@ -528,28 +532,32 @@ export default function CallScreen() {
         </View>
       )}
 
-      {/* Call Controls Bar or Incoming Ringing Actions (Bug 7) */}
+      {/* Call Controls Bar or Incoming Ringing Actions */}
       {controlsVisible && (
-        <View style={{ width: "100%", paddingBottom: Math.max(insets.bottom, 12), zIndex: 30 }}>
+        <View style={[styles.bottomDock, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           {activeCall?.role === "callee" && activeCall?.status === "ringing" ? (
             <View style={styles.incomingActionsRow}>
-              <Pressable
-                onPress={handleIncomingDecline}
-                style={[styles.incomingActionBtn, styles.incomingDeclineBtn]}
-                accessibilityLabel="Decline Call"
-              >
-                <MaterialCommunityIcons name="phone-hangup" size={32} color="#FFFFFF" />
+              <View style={styles.incomingActionWrapper}>
+                <Pressable
+                  onPress={handleIncomingDecline}
+                  style={[styles.incomingActionBtn, styles.incomingDeclineBtn]}
+                  accessibilityLabel="Decline Call"
+                >
+                  <MaterialCommunityIcons name="phone-hangup" size={32} color="#FFFFFF" />
+                </Pressable>
                 <Text style={styles.incomingActionText}>Decline</Text>
-              </Pressable>
+              </View>
 
-              <Pressable
-                onPress={handleIncomingAccept}
-                style={[styles.incomingActionBtn, styles.incomingAcceptBtn]}
-                accessibilityLabel="Accept Call"
-              >
-                <MaterialCommunityIcons name="phone" size={32} color="#FFFFFF" />
+              <View style={styles.incomingActionWrapper}>
+                <Pressable
+                  onPress={handleIncomingAccept}
+                  style={[styles.incomingActionBtn, styles.incomingAcceptBtn]}
+                  accessibilityLabel="Accept Call"
+                >
+                  <MaterialCommunityIcons name="phone" size={32} color="#FFFFFF" />
+                </Pressable>
                 <Text style={styles.incomingActionText}>Accept</Text>
-              </Pressable>
+              </View>
             </View>
           ) : (
             <CallControls
@@ -574,16 +582,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#080E1A",
-    justifyContent: "space-between",
+    justifyContent: "center",
     alignItems: "center",
   },
   topBar: {
-    width: "100%",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    zIndex: 10,
+    paddingBottom: 12,
+    zIndex: 40,
   },
   backButton: {
     width: 40,
@@ -615,7 +627,6 @@ const styles = StyleSheet.create({
   centerProfile: {
     alignItems: "center",
     gap: 12,
-    marginTop: -40,
   },
   avatarContainer: {
     width: 120,
@@ -690,39 +701,59 @@ const styles = StyleSheet.create({
   },
   pipContainer: {
     position: "absolute",
-    top: 110,
-    right: 20,
-    width: 100,
-    height: 150,
+    right: 16,
+    width: 104,
+    height: 156,
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 2,
     borderColor: "#38BDF8",
-    zIndex: 10,
+    zIndex: 35,
     backgroundColor: "#000000",
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
   pipVideo: {
     width: "100%",
     height: "100%",
   },
+  bottomDock: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 40,
+  },
   incomingActionsRow: {
     flexDirection: "row",
     justifyContent: "space-evenly",
     alignItems: "center",
-    paddingHorizontal: 32,
-    paddingVertical: 16,
+    width: "100%",
+    paddingHorizontal: 36,
+    paddingVertical: 12,
+  },
+  incomingActionWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   incomingActionBtn: {
     alignItems: "center",
     justifyContent: "center",
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    elevation: 4,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    elevation: 6,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
   incomingDeclineBtn: {
     backgroundColor: "#EF4444",
@@ -732,8 +763,8 @@ const styles = StyleSheet.create({
   },
   incomingActionText: {
     color: "#FFFFFF",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
-    marginTop: 4,
+    letterSpacing: 0.2,
   },
 });

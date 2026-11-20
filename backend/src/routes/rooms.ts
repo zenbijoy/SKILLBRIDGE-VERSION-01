@@ -24,6 +24,8 @@ import {
 } from "../services/storage.js";
 
 import { audit } from "../services/audit.js";
+import { generateCloudflareIceServers } from "../services/turn.js";
+import { broadcastRoomSession } from "../socket.js";
 
 export const rooms = Router();
 
@@ -668,6 +670,27 @@ rooms.post(
 
     if (memberError) throw memberError;
 
+    // Auto-enroll new member into room conversation and common channels
+    try {
+      const { data: rm } = await admin.from("rooms").select("conversation_id").eq("id", roomId).maybeSingle();
+      if (rm?.conversation_id) {
+        await admin.from("conversation_members").upsert(
+          { conversation_id: rm.conversation_id, user_id: request.requester_id, role: "member" },
+          { onConflict: "conversation_id,user_id" },
+        );
+      }
+      const { data: channels } = await admin.from("room_channels").select("conversation_id, is_private, permissions_override").eq("room_id", roomId);
+      for (const ch of channels ?? []) {
+        const isPriv = Boolean(ch.is_private || ch.permissions_override?.is_private);
+        if (!isPriv && ch.conversation_id) {
+          await admin.from("conversation_members").upsert(
+            { conversation_id: ch.conversation_id, user_id: request.requester_id, role: "member" },
+            { onConflict: "conversation_id,user_id" },
+          );
+        }
+      }
+    } catch {}
+
     // Notify the requester
     await audit(req.userId!, "admin.room.join_request.accept", "room_join_request", requestId, {
       roomId,
@@ -731,7 +754,7 @@ rooms.get(
         .maybeSingle(),
       admin
         .from("room_members")
-        .select("role, profiles(id, full_name, username, avatar_url, reputation)")
+        .select("role, user_id, profiles(id, full_name, username, avatar_url, reputation, is_online)")
         .eq("room_id", id)
         .limit(100),
       admin
@@ -740,8 +763,18 @@ rooms.get(
           "id,status,note,created_at,volunteer:profiles!teaching_requests_volunteer_id_fkey(id, full_name, username, avatar_url)",
         )
         .eq("room_id", id),
-      admin.from("sessions").select("*").eq("room_id", id).order("starts_at"),
-      admin.from("resources").select("id,title,url,kind,created_at").eq("room_id", id),
+      admin
+        .from("sessions")
+        .select("*, teacher:teacher_id(id, full_name, username, avatar_url), session_participants(user_id, status)")
+        .eq("room_id", id)
+        .order("starts_at"),
+      admin
+        .from("resources")
+        .select(
+          "id,title,description,url,storage_path,kind,uploader_id,created_at,uploader:profiles(id, full_name, username, avatar_url, reputation)",
+        )
+        .eq("room_id", id)
+        .order("created_at", { ascending: false }),
     ]);
     // ── Preview mode: private/invite rooms show limited teaser without 403 ──
     // New users can see title, topic, 3 top posts + next session before joining.
@@ -833,6 +866,7 @@ rooms.get(
         username: p?.username ?? "user",
         avatar_url: p?.avatar_url ?? null,
         reputation: p?.reputation ?? 0,
+        is_online: Boolean(p?.is_online),
       };
     });
 
@@ -848,18 +882,51 @@ rooms.get(
       (tr: any) => tr.volunteer?.id === req.userId! || (tr as any).volunteer_id === req.userId!,
     ) ?? null;
 
+    const normalizedSessions = (sessions ?? []).map((s: any) => {
+      const participants = s.session_participants || [];
+      const confirmedParticipants = participants.filter((p: any) => p.status === "confirmed");
+      const isAttending = participants.some((p: any) => p.user_id === req.userId && p.status === "confirmed");
+      const teacherProfile = Array.isArray(s.teacher) ? s.teacher[0] : s.teacher;
+      const resolvedSessionType =
+        s.session_type || (s.mode === "offline" ? "offline" : (s.media === "audio" ? "voice" : "video"));
+
+      return {
+        ...s,
+        session_type: resolvedSessionType,
+        attendees_count: confirmedParticipants.length,
+        is_attending: isAttending,
+        teacher: teacherProfile || null,
+      };
+    });
+
     res.json({
       room: normalizedRoom,
       membership,
       members: normalizedMembers,
       teachingRequests: teach ?? [],
       myTeachingRequest,
-      sessions: sessions ?? [],
+      sessions: normalizedSessions,
       resources: resources ?? [],
       liveSession,
       liveParticipantCount,
       unreadCount,
     });
+  }),
+);
+
+rooms.get(
+  "/:id/resources",
+  wrap(async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const { data: list, error } = await admin
+      .from("resources")
+      .select(
+        "id,title,description,url,storage_path,kind,uploader_id,created_at,uploader:profiles(id, full_name, username, avatar_url, reputation)",
+      )
+      .eq("room_id", id)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ resources: list ?? [] });
   }),
 );
 
@@ -1135,7 +1202,10 @@ rooms.post(
         starts_at: z.string().datetime(),
         ends_at: z.string().datetime().optional(),
         mode: z.enum(["online", "offline", "hybrid"]).default("online"),
+        session_type: z.enum(["voice", "offline", "video"]).optional(),
+        media: z.enum(["audio", "video"]).optional(),
         campus_location: z.string().max(200).optional().nullable(),
+        requestId: z.string().uuid().optional(),
       })
       .parse(req.body);
 
@@ -1146,8 +1216,45 @@ rooms.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+    const { data: roomCheck } = await admin
+      .from("rooms")
+      .select("owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    const isRoomLeader =
+      (roomCheck && roomCheck.owner_id === req.userId) ||
+      (member && ["owner", "admin", "teacher", "moderator"].includes(member.role));
+
+    if (!isRoomLeader) {
       return res.status(403).json({ error: "Teacher, moderator, or owner role required to schedule classes" });
+    }
+
+    // Resolve mode, media, and session_type cleanly
+    let resolvedMode = body.mode;
+    let resolvedMedia: "audio" | "video" = body.media || "video";
+    let resolvedSessionType: "voice" | "offline" | "video" = "video";
+
+    if (body.session_type) {
+      resolvedSessionType = body.session_type;
+      if (body.session_type === "voice") {
+        resolvedMode = "online";
+        resolvedMedia = "audio";
+      } else if (body.session_type === "offline") {
+        resolvedMode = "offline";
+        resolvedMedia = "audio";
+      } else if (body.session_type === "video") {
+        resolvedMode = "online";
+        resolvedMedia = "video";
+      }
+    } else {
+      if (body.mode === "offline") {
+        resolvedSessionType = "offline";
+      } else if (body.media === "audio") {
+        resolvedSessionType = "voice";
+      } else {
+        resolvedSessionType = "video";
+      }
     }
 
     const { data: session, error } = await admin
@@ -1155,18 +1262,41 @@ rooms.post(
       .insert({
         room_id: roomId,
         teacher_id: req.userId!,
+        created_by: req.userId!,
         title: body.title,
         description: body.description,
         starts_at: body.starts_at,
         ends_at: body.ends_at,
-        mode: body.mode,
-        campus_location: body.mode === "online" ? null : body.campus_location,
+        mode: resolvedMode,
+        media: resolvedMedia,
+        session_type: resolvedSessionType,
+        campus_location: resolvedMode === "online" ? null : body.campus_location,
         status: "scheduled",
       })
-      .select()
+      .select(`
+        id, room_id, teacher_id, created_by, title, description, starts_at, ends_at,
+        mode, media, session_type, campus_location, status, created_at,
+        profiles:teacher_id (id, full_name, username, avatar_url)
+      `)
       .single();
 
     if (error) throw error;
+
+    // If scheduled in response to a member's session request, link and approve it
+    if (body.requestId) {
+      await admin
+        .from("room_session_requests")
+        .update({
+          status: "approved",
+          scheduled_session_id: session.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", body.requestId)
+        .eq("room_id", roomId);
+    }
+
+    // Real-time broadcast to room
+    broadcastRoomSession(roomId, "created", { session });
 
     // Notify room members
     const { data: members } = await admin
@@ -1180,13 +1310,14 @@ rooms.post(
       .eq("id", roomId)
       .maybeSingle();
 
-    for (const m of (members ?? []).slice(0, 100)) {
-      if (m.user_id !== req.userId) {
+    const memberList = Array.isArray(members) ? members : [];
+    for (const m of memberList.slice(0, 100)) {
+      if (m.user_id && m.user_id !== req.userId) {
         void NotificationService.dispatch({
           userId: m.user_id,
           type: "ROOM_SESSION_LIVE",
           title: "New Class Scheduled 🎓",
-          body: `"${body.title}" was scheduled in ${roomData?.title || "your room"}.`,
+          body: `"${body.title}" (${resolvedSessionType.toUpperCase()}) was scheduled in ${roomData?.title || "your room"}.`,
           entityType: "room",
           entityId: roomId,
           data: { roomId, sessionId: session.id, route: "room" },
@@ -1195,6 +1326,126 @@ rooms.post(
     }
 
     res.status(201).json({ session });
+  }),
+);
+
+// PATCH /api/v1/rooms/:id/classes/:sessionId - Edit an existing scheduled class
+rooms.patch(
+  "/:id/classes/:sessionId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const sessionId = z.string().uuid().parse(req.params.sessionId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    const { data: roomCheck } = await admin
+      .from("rooms")
+      .select("owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    const isRoomLeader =
+      (roomCheck && roomCheck.owner_id === req.userId) ||
+      (member && ["owner", "admin", "teacher", "moderator"].includes(member.role));
+
+    if (!isRoomLeader) {
+      return res.status(403).json({ error: "Teacher or owner role required to edit classes" });
+    }
+
+    const body = z
+      .object({
+        title: z.string().trim().min(3).max(150).optional(),
+        description: z.string().max(1000).optional(),
+        starts_at: z.string().datetime().optional(),
+        ends_at: z.string().datetime().optional().nullable(),
+        session_type: z.enum(["voice", "offline", "video"]).optional(),
+        campus_location: z.string().max(200).optional().nullable(),
+        status: z.enum(["scheduled", "live", "completed", "cancelled"]).optional(),
+      })
+      .parse(req.body);
+
+    const updates: Record<string, any> = {};
+    if (body.title !== undefined) updates.title = body.title;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.starts_at !== undefined) updates.starts_at = body.starts_at;
+    if (body.ends_at !== undefined) updates.ends_at = body.ends_at;
+    if (body.campus_location !== undefined) updates.campus_location = body.campus_location;
+    if (body.status !== undefined) updates.status = body.status;
+
+    if (body.session_type) {
+      updates.session_type = body.session_type;
+      if (body.session_type === "voice") {
+        updates.mode = "online";
+        updates.media = "audio";
+      } else if (body.session_type === "offline") {
+        updates.mode = "offline";
+        updates.media = "audio";
+      } else if (body.session_type === "video") {
+        updates.mode = "online";
+        updates.media = "video";
+      }
+    }
+
+    const { data: updated, error } = await admin
+      .from("sessions")
+      .update(updates)
+      .eq("id", sessionId)
+      .eq("room_id", roomId)
+      .select(`
+        id, room_id, teacher_id, created_by, title, description, starts_at, ends_at,
+        mode, media, session_type, campus_location, status, created_at,
+        teacher:teacher_id (id, full_name, username, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    broadcastRoomSession(roomId, "updated", { session: updated });
+    res.json({ session: updated });
+  }),
+);
+
+// DELETE /api/v1/rooms/:id/classes/:sessionId - Cancel or remove a scheduled class
+rooms.delete(
+  "/:id/classes/:sessionId",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const sessionId = z.string().uuid().parse(req.params.sessionId);
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    const { data: roomCheck } = await admin
+      .from("rooms")
+      .select("owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    const isRoomLeader =
+      (roomCheck && roomCheck.owner_id === req.userId) ||
+      (member && ["owner", "admin", "teacher", "moderator"].includes(member.role));
+
+    if (!isRoomLeader) {
+      return res.status(403).json({ error: "Teacher or owner role required to delete classes" });
+    }
+
+    await admin
+      .from("sessions")
+      .update({ status: "cancelled" })
+      .eq("id", sessionId)
+      .eq("room_id", roomId);
+
+    broadcastRoomSession(roomId, "deleted", { sessionId });
+    res.json({ success: true, cancelledSessionId: sessionId });
   }),
 );
 
@@ -2011,24 +2262,102 @@ rooms.get(
     }
 
     const isOwner = uid === room.owner_id || memberRole === "owner";
-    const isTeacher = memberRole === "teacher";
-    const isMod = memberRole === "moderator";
+    const isAdmin = isOwner || memberRole === "admin";
+    const isTeacher = isAdmin || memberRole === "teacher";
+    const isMod = isTeacher || memberRole === "moderator";
     const isMember = Boolean(memberRole);
+
+    let assignableRoles: string[] = [];
+    if (isOwner) {
+      assignableRoles = ["admin", "teacher", "moderator", "member", "guest"];
+    } else if (isAdmin) {
+      assignableRoles = ["teacher", "moderator", "member", "guest"];
+    }
 
     res.json({
       role: memberRole,
       isOwner,
+      isAdmin,
+      isTeacher,
+      isModerator: isMod,
       isMember,
       canPost: isMember,
-      canAnnounce: isOwner || isTeacher || isMod,
-      canPin: isOwner || isTeacher || isMod,
-      canModerate: isOwner || isMod,
-      canStartLive: isOwner || isTeacher,
+      canAnnounce: isTeacher || isMod,
+      canPin: isTeacher || isMod,
+      canModerate: isTeacher || isMod,
+      canStartLive: isTeacher,
       canUploadResource: isMember,
-      canManageMembers: isOwner || isMod,
-      canManageRoles: isOwner,
-      canManageChannels: isOwner || isTeacher || isMod,
+      canManageMembers: isTeacher || isMod,
+      canManageRoles: isOwner || isAdmin,
+      canManageChannels: isAdmin,
+      assignableRoles,
+      roleHierarchy: { owner: 5, admin: 4, teacher: 4, moderator: 3, member: 2, guest: 1 },
     });
+  }),
+);
+
+// GET /api/v1/rooms/:id/teachers - List all teachers and admins of this room
+rooms.get(
+  "/:id/teachers",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const { data: room } = await admin
+      .from("rooms")
+      .select("owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    // Fetch members with role owner, admin, or teacher
+    const { data: teacherMembers } = await admin
+      .from("room_members")
+      .select("user_id, role, profiles(id, full_name, username, avatar_url, headline, is_online)")
+      .eq("room_id", roomId)
+      .in("role", ["owner", "admin", "teacher"]);
+
+    const teachersList: any[] = [];
+    const seenUserIds = new Set<string>();
+
+    for (const m of (teacherMembers as any[]) || []) {
+      const p = m.profiles || {};
+      const uId = m.user_id;
+      seenUserIds.add(uId);
+      teachersList.push({
+        id: uId,
+        full_name: p.full_name || "Instructor",
+        username: p.username || "teacher",
+        avatar_url: p.avatar_url || null,
+        headline: p.headline || null,
+        role: m.role === "owner" ? "Lead Teacher (Admin)" : m.role === "admin" ? "Admin Teacher" : "Teacher",
+        is_owner: uId === room.owner_id,
+        is_online: Boolean(p.is_online),
+      });
+    }
+
+    // Ensure room owner is included if not in teacherMembers
+    if (!seenUserIds.has(room.owner_id)) {
+      const { data: ownerProfile } = await admin
+        .from("profiles")
+        .select("id, full_name, username, avatar_url, headline, is_online")
+        .eq("id", room.owner_id)
+        .maybeSingle();
+
+      if (ownerProfile) {
+        teachersList.unshift({
+          id: ownerProfile.id,
+          full_name: ownerProfile.full_name || "Lead Teacher",
+          username: ownerProfile.username || "admin",
+          avatar_url: ownerProfile.avatar_url || null,
+          headline: ownerProfile.headline || null,
+          role: "Lead Teacher (Admin)",
+          is_owner: true,
+          is_online: Boolean(ownerProfile.is_online),
+        });
+      }
+    }
+
+    res.json({ teachers: teachersList });
   }),
 );
 
@@ -2426,7 +2755,7 @@ rooms.post(
   }),
 );
 
-// PATCH /api/v1/rooms/:id/members/:memberId/role - Promote/demote room role
+// PATCH /api/v1/rooms/:id/members/:memberId/role - Promote/demote a member's role
 rooms.patch(
   "/:id/members/:memberId/role",
   wrap(async (req, res) => {
@@ -2434,9 +2763,17 @@ rooms.patch(
     const targetUserId = z.string().uuid().parse(req.params.memberId);
     const body = z
       .object({
-        role: z.enum(["owner", "admin", "moderator", "member", "guest"]).optional(),
+        role: z.enum(["owner", "admin", "teacher", "moderator", "member", "guest"]),
       })
       .parse(req.body);
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, owner_id, title")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room) return res.status(404).json({ error: "Room not found" });
 
     const { data: requester } = await admin
       .from("room_members")
@@ -2447,27 +2784,48 @@ rooms.patch(
 
     if (!requester) return res.status(403).json({ error: "You are not a member of this room" });
 
-    // Define role hierarchy: owner > admin > moderator > member > guest
-    const roleHierarchy = { owner: 5, admin: 4, moderator: 3, member: 2, guest: 1 } as const;
-    const requesterLevel = (roleHierarchy as any)[requester.role] || 0;
-    const targetLevel = (body.role ? (roleHierarchy as any)[body.role] : 0) || 0;
+    // Strict role hierarchy: owner (5) > admin (4) = teacher (4) > moderator (3) > member (2) > guest (1)
+    const roleHierarchy = { owner: 5, admin: 4, teacher: 4, moderator: 3, member: 2, guest: 1 } as const;
+    const isOwner = req.userId === room.owner_id || requester.role === "owner";
+    const requesterLevel = isOwner ? 5 : ((roleHierarchy as any)[requester.role] || 0);
+    const targetNewLevel = (roleHierarchy as any)[body.role] || 0;
 
-    // Prevent demoting below guest or promoting above owner
-    if (targetLevel > roleHierarchy["owner"]) {
-      return res.status(400).json({ error: "Cannot promote beyond owner" });
-    }
-    if (targetLevel < roleHierarchy["guest"]) {
-      return res.status(400).json({ error: "Cannot demote below guest" });
+    // Only room owner or admin can assign teacher or manage roles
+    if (requesterLevel < 4) {
+      return res.status(403).json({ error: "Only the room admin or owner can manage member roles" });
     }
 
-    // Owner can only be changed by owner
-    if (body.role === "owner" && requester.role !== "owner") {
-      return res.status(403).json({ error: "Only the current owner can change owner" });
+    // Verify target member exists
+    const { data: targetMember } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", targetUserId)
+      .maybeSingle();
+
+    if (!targetMember) {
+      return res.status(404).json({ error: "Target member not found in this room" });
     }
 
-    // Prevent removing the last owner
-    if (body.role !== "owner" && requester.role === "owner" && targetLevel < roleHierarchy["owner"]) {
-      return res.status(400).json({ error: "Owner must always have at least one other owner or admin" });
+    // Protect Room Owner from demotion or role changes through this endpoint
+    if (targetUserId === room.owner_id && body.role !== "owner") {
+      return res.status(400).json({ error: "Room owner cannot be demoted. Use transfer ownership instead." });
+    }
+
+    // Only current sovereign owner can promote anyone to owner
+    if (body.role === "owner" && !isOwner) {
+      return res.status(403).json({ error: "Only the current room owner can transfer or assign ownership" });
+    }
+
+    // Non-owner Admins cannot touch members of equal or higher rank (other Admins or Owner)
+    if (!isOwner) {
+      const targetCurrentLevel = targetUserId === room.owner_id ? 5 : ((roleHierarchy as any)[targetMember.role] || 0);
+      if (targetCurrentLevel >= requesterLevel) {
+        return res.status(403).json({ error: "You cannot modify the role of a member with equal or higher rank" });
+      }
+      if (targetNewLevel >= requesterLevel) {
+        return res.status(403).json({ error: "You cannot promote a member to your rank or higher" });
+      }
     }
 
     const { data: updated, error } = await admin
@@ -2482,10 +2840,118 @@ rooms.patch(
 
     await audit(req.userId!, "admin.room.member.role", "room_member", targetUserId, {
       roomId,
+      previousRole: targetMember.role,
       newRole: body.role,
     });
 
+    await invalidateRoomCache();
+
+    // Broadcast real-time socket event room-wide
+    try {
+      const { getSocketServer } = await import("../socket.js");
+      getSocketServer()?.to(`room:${roomId}`).emit("room:member:role_updated", {
+        roomId,
+        userId: targetUserId,
+        previousRole: targetMember.role,
+        role: body.role,
+        updatedBy: req.userId!,
+      });
+    } catch {}
+
+    // Dispatch notification to the updated member
+    try {
+      const roleTitles: Record<string, string> = {
+        admin: "Room Admin",
+        teacher: "Teacher / Instructor",
+        moderator: "Community Moderator",
+        member: "Enrolled Student",
+        guest: "Guest Auditor",
+      };
+      void NotificationService.dispatch({
+        userId: targetUserId,
+        type: "ROOM_ROLE_UPDATED",
+        title: "Role Updated in " + (room.title || "Room"),
+        body: `You are now designated as a ${roleTitles[body.role] || body.role}.`,
+        category: "rooms",
+        priority: "high",
+        entityType: "room",
+        entityId: roomId,
+        data: { roomId, role: body.role },
+      });
+    } catch {}
+
     res.json({ success: true, role: updated.role });
+  }),
+);
+
+// POST /api/v1/rooms/:id/transfer-ownership - Transfer room ownership to another member
+rooms.post(
+  "/:id/transfer-ownership",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const body = z.object({ newOwnerId: z.string().uuid() }).parse(req.body);
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    if (room.owner_id !== req.userId!) {
+      return res.status(403).json({ error: "Only the current room owner can transfer sovereignty" });
+    }
+
+    if (body.newOwnerId === req.userId!) {
+      return res.status(400).json({ error: "Cannot transfer ownership to yourself" });
+    }
+
+    // Verify new owner is a member of the room
+    const { data: targetMember } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", body.newOwnerId)
+      .maybeSingle();
+
+    if (!targetMember) {
+      return res.status(400).json({ error: "Target user is not a member of this room" });
+    }
+
+    // Update rooms.owner_id
+    await admin.from("rooms").update({ owner_id: body.newOwnerId }).eq("id", roomId);
+
+    // Update new owner's role in room_members to owner
+    await admin
+      .from("room_members")
+      .update({ role: "owner" })
+      .eq("room_id", roomId)
+      .eq("user_id", body.newOwnerId);
+
+    // Demote previous owner to admin
+    await admin
+      .from("room_members")
+      .update({ role: "admin" })
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!);
+
+    await audit(req.userId!, "admin.room.transfer_ownership", "room", roomId, {
+      previousOwner: req.userId!,
+      newOwner: body.newOwnerId,
+    });
+
+    await invalidateRoomCache();
+
+    try {
+      const { getSocketServer } = await import("../socket.js");
+      getSocketServer()?.to(`room:${roomId}`).emit("room:ownership_transferred", {
+        roomId,
+        newOwnerId: body.newOwnerId,
+        previousOwnerId: req.userId!,
+      });
+    } catch {}
+
+    res.json({ success: true, newOwnerId: body.newOwnerId });
   }),
 );
 
@@ -2496,6 +2962,14 @@ rooms.delete(
     const roomId = z.string().uuid().parse(req.params.id);
     const targetUserId = z.string().uuid().parse(req.params.memberId);
 
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
     const { data: requester } = await admin
       .from("room_members")
       .select("role")
@@ -2503,11 +2977,22 @@ rooms.delete(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!requester || !["owner", "moderator"].includes(requester.role)) {
+    if (!requester) return res.status(403).json({ error: "You are not a member of this room" });
+
+    const roleHierarchy = { owner: 5, admin: 4, teacher: 4, moderator: 3, member: 2, guest: 1 } as const;
+    const isOwner = req.userId === room.owner_id || requester.role === "owner";
+    const requesterLevel = isOwner ? 5 : ((roleHierarchy as any)[requester.role] || 0);
+
+    // Owners, admins, teachers, and moderators can remove members
+    if (requesterLevel < 3) {
       return res.status(403).json({ error: "Permission denied to remove member" });
     }
 
-    // Protect owner from removal
+    // Protect room owner from removal
+    if (targetUserId === room.owner_id) {
+      return res.status(400).json({ error: "Cannot remove room owner" });
+    }
+
     const { data: target } = await admin
       .from("room_members")
       .select("role")
@@ -2515,8 +3000,13 @@ rooms.delete(
       .eq("user_id", targetUserId)
       .maybeSingle();
 
-    if (target?.role === "owner") {
-      return res.status(400).json({ error: "Cannot remove room owner" });
+    if (!target) return res.status(404).json({ error: "Target member not found in this room" });
+
+    const targetLevel = (roleHierarchy as any)[target.role] || 0;
+
+    // Requester cannot remove someone of equal or higher rank (unless requester is owner)
+    if (!isOwner && targetLevel >= requesterLevel) {
+      return res.status(403).json({ error: "You cannot remove a member with equal or higher rank" });
     }
 
     const { error } = await admin
@@ -2526,6 +3016,22 @@ rooms.delete(
       .eq("user_id", targetUserId);
 
     if (error) throw error;
+
+    await audit(req.userId!, "admin.room.member.removed", "room_member", targetUserId, {
+      roomId,
+      targetRole: target.role,
+    });
+    await invalidateRoomCache();
+
+    try {
+      const { getSocketServer } = await import("../socket.js");
+      getSocketServer()?.to(`room:${roomId}`).emit("room:member:removed", {
+        roomId,
+        userId: targetUserId,
+        removedBy: req.userId!,
+      });
+    } catch {}
+
     res.json({ success: true });
   }),
 );
@@ -2564,7 +3070,7 @@ rooms.get(
 
 // ── PROMPT 5: ADVANCED ROOM COLLABORATION ──
 
-// GET /api/v1/rooms/:id/channels - List room channels (auto-seeds #general if empty)
+// GET /api/v1/rooms/:id/channels - List room channels (auto-seeds #general if empty, filters private channels)
 rooms.get(
   "/:id/channels",
   wrap(async (req, res) => {
@@ -2584,6 +3090,43 @@ rooms.get(
 
     if (!room) return res.status(404).json({ error: "Room not found" });
 
+    // Ensure room has a primary conversation linked
+    let roomConvId = room.conversation_id;
+    if (!roomConvId) {
+      const { data: newRoomConv } = await admin
+        .from("conversations")
+        .insert({
+          kind: "room",
+          title: "General Room Chat",
+          created_by: room.owner_id,
+        })
+        .select("id")
+        .single();
+      if (newRoomConv) {
+        roomConvId = newRoomConv.id;
+        await admin.from("rooms").update({ conversation_id: roomConvId }).eq("id", roomId);
+        if (room.owner_id) {
+          try {
+            await admin.from("conversation_members").upsert(
+              { conversation_id: roomConvId, user_id: room.owner_id, role: "owner" },
+              { onConflict: "conversation_id,user_id" },
+            );
+          } catch {}
+        }
+      }
+    }
+
+    // Determine caller's role in this room
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+
+    const isOwner = req.userId === room.owner_id;
+    const isEducator = isOwner || ["owner", "teacher", "moderator", "admin", "host"].includes(member?.role || "");
+
     const { data: existingChannels, error } = await admin
       .from("room_channels")
       .select("*")
@@ -2594,41 +3137,69 @@ rooms.get(
 
     if (error) throw error;
 
-    if (existingChannels && existingChannels.length > 0) {
-      return res.json({ channels: existingChannels });
-    }
+    let channelsToReturn = existingChannels ?? [];
 
-    // Auto-seed default #general channel if none exists
-    const { data: seededChannel, error: seedErr } = await admin
-      .from("room_channels")
-      .insert({
-        room_id: roomId,
-        name: "general",
-        slug: "general",
-        type: "text",
-        description: "General discussion for this room",
-        position: 0,
-        is_default: true,
-        conversation_id: room.conversation_id,
-        created_by: room.owner_id,
-      })
-      .select()
-      .single();
-
-    if (seedErr) {
-      const { data: retryChannels } = await admin
+    if (channelsToReturn.length === 0) {
+      // Auto-seed default #general channel if none exists
+      const { data: seededChannel, error: seedErr } = await admin
         .from("room_channels")
-        .select("*")
-        .eq("room_id", roomId)
-        .order("position", { ascending: true });
-      return res.json({ channels: retryChannels ?? [] });
+        .insert({
+          room_id: roomId,
+          name: "general",
+          slug: "general",
+          type: "text",
+          description: "Common discussion for everyone in this room",
+          position: 0,
+          is_default: true,
+          conversation_id: roomConvId,
+          created_by: room.owner_id,
+          permissions_override: { is_private: false, channel_category: "common" },
+        })
+        .select()
+        .single();
+
+      if (seedErr) {
+        const { data: retryChannels } = await admin
+          .from("room_channels")
+          .select("*")
+          .eq("room_id", roomId)
+          .order("position", { ascending: true });
+        channelsToReturn = retryChannels ?? [];
+      } else if (seededChannel) {
+        channelsToReturn = [seededChannel];
+      }
     }
 
-    res.json({ channels: [seededChannel] });
+    // Filter private channels: only educators & staff can see private channels
+    const filteredChannels = channelsToReturn.filter((ch: any) => {
+      const isPriv = Boolean(ch.is_private || ch.type === "private" || ch.permissions_override?.is_private);
+      if (!isPriv) return true;
+      if (isEducator) return true;
+      const allowed = ch.allowed_roles || ch.permissions_override?.allowed_roles || ["owner", "teacher", "moderator", "admin"];
+      return member && allowed.includes(member.role);
+    });
+
+    // Ensure member is enrolled in conversation_members for visible channels
+    if (member && filteredChannels.length > 0) {
+      const convIds = filteredChannels
+        .map((c: any) => c.conversation_id)
+        .filter((cid: string | null): cid is string => Boolean(cid));
+      
+      for (const cid of convIds) {
+        try {
+          await admin.from("conversation_members").upsert(
+            { conversation_id: cid, user_id: req.userId!, role: member.role || "member" },
+            { onConflict: "conversation_id,user_id" },
+          );
+        } catch {}
+      }
+    }
+
+    res.json({ channels: filteredChannels });
   }),
 );
 
-// POST /api/v1/rooms/:id/channels - Create new channel
+// POST /api/v1/rooms/:id/channels - Create new channel (common or private)
 rooms.post(
   "/:id/channels",
   wrap(async (req, res) => {
@@ -2636,12 +3207,15 @@ rooms.post(
     const body = z
       .object({
         name: z.string().trim().min(2).max(50),
-        type: z.enum(["text", "announcement", "question", "resource", "media", "voice"]).default("text"),
+        type: z.enum(["text", "announcement", "question", "resource", "media", "voice", "common", "private"]).default("text"),
+        is_private: z.boolean().optional().default(false),
+        allowed_roles: z.array(z.string()).optional(),
         description: z.string().max(300).optional().default(""),
         position: z.number().int().optional().default(0),
       })
       .parse(req.body);
 
+    const { data: room } = await admin.from("rooms").select("owner_id, conversation_id").eq("id", roomId).maybeSingle();
     const { data: member } = await admin
       .from("room_members")
       .select("role")
@@ -2649,49 +3223,142 @@ rooms.post(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "teacher", "moderator"].includes(member.role)) {
+    const isOwner = req.userId === room?.owner_id;
+    const canCreate = isOwner || (member && ["owner", "teacher", "moderator", "admin"].includes(member.role));
+
+    if (!canCreate) {
       return res.status(403).json({ error: "Unauthorized to create channels" });
     }
 
-    const slug = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const isPrivate = Boolean(body.is_private || body.type === "private");
+    const allowedRoles = isPrivate
+      ? (body.allowed_roles && body.allowed_roles.length > 0 ? body.allowed_roles : ["owner", "teacher", "moderator", "admin"])
+      : [];
+
+    const baseSlug = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const slug = baseSlug || `channel-${Date.now().toString().slice(-4)}`;
 
     let channelConvId: string | null = null;
-    if (["text", "announcement"].includes(body.type)) {
+    const isTextual = ["text", "announcement", "question", "common", "private"].includes(body.type) || isPrivate;
+    if (isTextual) {
       const { data: conv } = await admin
         .from("conversations")
         .insert({
           kind: "room",
           title: `#${slug}`,
+          created_by: req.userId!,
         })
         .select("id")
         .single();
-      if (conv) channelConvId = conv.id;
-    }
-
-    const { data: channel, error } = await admin
-      .from("room_channels")
-      .insert({
-        room_id: roomId,
-        name: body.name.trim(),
-        slug,
-        type: body.type,
-        description: body.description,
-        position: body.position,
-        is_default: false,
-        created_by: req.userId!,
-        conversation_id: channelConvId,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        return res.status(409).json({ error: "A channel with this name already exists in this room" });
+      
+      if (conv) {
+        channelConvId = conv.id;
+        
+        // Enroll appropriate room members immediately
+        if (isPrivate) {
+          const { data: staffMembers } = await admin
+            .from("room_members")
+            .select("user_id, role")
+            .eq("room_id", roomId)
+            .in("role", allowedRoles);
+          
+          const membersToInsert = (staffMembers ?? []).map((m: any) => ({
+            conversation_id: conv.id,
+            user_id: m.user_id,
+            role: m.role || "teacher",
+          }));
+          if (!membersToInsert.some((m) => m.user_id === req.userId!)) {
+            membersToInsert.push({ conversation_id: conv.id, user_id: req.userId!, role: member?.role || "owner" });
+          }
+          if (membersToInsert.length > 0) {
+            try {
+              await admin.from("conversation_members").upsert(membersToInsert, { onConflict: "conversation_id,user_id" });
+            } catch {}
+          }
+        } else {
+          // Common channel: enroll all room members
+          const { data: allMembers } = await admin
+            .from("room_members")
+            .select("user_id, role")
+            .eq("room_id", roomId);
+          
+          const membersToInsert = (allMembers ?? []).map((m: any) => ({
+            conversation_id: conv.id,
+            user_id: m.user_id,
+            role: m.role || "member",
+          }));
+          if (!membersToInsert.some((m) => m.user_id === req.userId!)) {
+            membersToInsert.push({ conversation_id: conv.id, user_id: req.userId!, role: member?.role || "member" });
+          }
+          if (membersToInsert.length > 0) {
+            try {
+              await admin.from("conversation_members").upsert(membersToInsert, { onConflict: "conversation_id,user_id" });
+            } catch {}
+          }
+        }
       }
-      throw error;
     }
 
-    res.status(201).json({ channel });
+    const dbType = body.type === "private" || body.type === "common" ? "text" : body.type;
+    const channelPayload: Record<string, any> = {
+      room_id: roomId,
+      name: body.name.trim(),
+      slug,
+      type: dbType,
+      description: body.description,
+      position: body.position,
+      is_default: false,
+      is_private: isPrivate,
+      allowed_roles: allowedRoles,
+      permissions_override: {
+        is_private: isPrivate,
+        allowed_roles: allowedRoles,
+        channel_category: isPrivate ? "private" : "common",
+      },
+      created_by: req.userId!,
+      conversation_id: channelConvId,
+    };
+
+    let channelResult = null;
+    try {
+      const { data: channel, error } = await admin
+        .from("room_channels")
+        .insert(channelPayload)
+        .select()
+        .single();
+      if (error) throw error;
+      channelResult = channel;
+    } catch (insertErr: any) {
+      if (insertErr?.message?.includes("column") || insertErr?.code === "42703") {
+        delete channelPayload.is_private;
+        delete channelPayload.allowed_roles;
+        const { data: fallbackChannel, error: fbErr } = await admin
+          .from("room_channels")
+          .insert(channelPayload)
+          .select()
+          .single();
+        if (fbErr) throw fbErr;
+        channelResult = fallbackChannel;
+      } else {
+        if (insertErr.code === "23505") {
+          return res.status(409).json({ error: "A channel with this name already exists in this room" });
+        }
+        throw insertErr;
+      }
+    }
+
+    // Socket.io broadcast to room participants
+    try {
+      const io = (await import("../socket.js")).getSocketServer();
+      if (io) {
+        io.to(`room:${roomId}`).emit("room:channel:created", {
+          roomId,
+          channel: channelResult,
+        });
+      }
+    } catch {}
+
+    res.status(201).json({ channel: channelResult });
   }),
 );
 
@@ -2707,9 +3374,11 @@ rooms.patch(
         description: z.string().max(300).optional(),
         position: z.number().int().optional(),
         is_archived: z.boolean().optional(),
+        is_private: z.boolean().optional(),
       })
       .parse(req.body);
 
+    const { data: room } = await admin.from("rooms").select("owner_id, conversation_id").eq("id", roomId).maybeSingle();
     const { data: member } = await admin
       .from("room_members")
       .select("role")
@@ -2717,7 +3386,10 @@ rooms.patch(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "moderator"].includes(member.role)) {
+    const isOwner = req.userId === room?.owner_id;
+    const canModify = isOwner || (member && ["owner", "teacher", "moderator", "admin"].includes(member.role));
+
+    if (!canModify) {
       return res.status(403).json({ error: "Unauthorized to modify channels" });
     }
 
@@ -2729,6 +3401,10 @@ rooms.patch(
     if (body.description !== undefined) updateData.description = body.description;
     if (body.position !== undefined) updateData.position = body.position;
     if (body.is_archived !== undefined) updateData.is_archived = body.is_archived;
+    if (body.is_private !== undefined) {
+      updateData.is_private = body.is_private;
+      updateData.permissions_override = { is_private: body.is_private };
+    }
 
     const { data: updated, error } = await admin
       .from("room_channels")
@@ -2750,6 +3426,7 @@ rooms.delete(
     const roomId = z.string().uuid().parse(req.params.id);
     const channelId = z.string().uuid().parse(req.params.channelId);
 
+    const { data: room } = await admin.from("rooms").select("owner_id, conversation_id").eq("id", roomId).maybeSingle();
     const { data: member } = await admin
       .from("room_members")
       .select("role")
@@ -2757,13 +3434,16 @@ rooms.delete(
       .eq("user_id", req.userId!)
       .maybeSingle();
 
-    if (!member || !["owner", "moderator"].includes(member.role)) {
+    const isOwner = req.userId === room?.owner_id;
+    const canDelete = isOwner || (member && ["owner", "teacher", "moderator", "admin"].includes(member.role));
+
+    if (!canDelete) {
       return res.status(403).json({ error: "Unauthorized to delete channels" });
     }
 
     const { data: targetChannel } = await admin
       .from("room_channels")
-      .select("is_default")
+      .select("is_default, conversation_id")
       .eq("id", channelId)
       .eq("room_id", roomId)
       .maybeSingle();
@@ -2780,6 +3460,18 @@ rooms.delete(
       .eq("room_id", roomId);
 
     if (error) throw error;
+
+    // Socket.io broadcast to room participants
+    try {
+      const io = (await import("../socket.js")).getSocketServer();
+      if (io) {
+        io.to(`room:${roomId}`).emit("room:channel:deleted", {
+          roomId,
+          channelId,
+        });
+      }
+    } catch {}
+
     res.json({ success: true });
   }),
 );
@@ -3152,18 +3844,11 @@ rooms.delete(
   }),
 );
 
-// POST /api/v1/rooms/:id/voice/token - (Deprecated Shim) Generate LiveKit token for open Voice Session
+// POST /api/v1/rooms/:id/voice/token - (Deprecated Shim) Generate WebRTC / LiveKit token for open Voice Session
 rooms.post(
   "/:id/voice/token",
   wrap(async (req, res) => {
     const roomId = z.string().uuid().parse(req.params.id);
-
-    if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_URL) {
-      return res.status(503).json({
-        error: "LiveKit voice service is not configured",
-        code: "LIVEKIT_NOT_CONFIGURED",
-      });
-    }
 
     let { data: member } = await admin
       .from("room_members")
@@ -3243,32 +3928,53 @@ rooms.post(
     const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : req.userId!);
     const roomName = result.livekit_room;
 
-    const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-      identity: req.userId!,
-      name: participantName,
-      ttl: "4h",
-      metadata: JSON.stringify({
-        kind: "open",
-        openSessionId: result.session_id,
-        roomId,
-        mode: "voice",
-        role: member.role,
-        fullName: profile?.full_name,
-        avatarUrl: profile?.avatar_url,
-      }),
-    });
+    const preferredProvider = (req.body as any)?.preferredProvider;
+    const hasLiveKit = Boolean(env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_URL);
+    const useLiveKit = hasLiveKit && preferredProvider === "livekit";
+    let token = `webrtc_session_${result.session_id}`;
+    let provider: "livekit" | "webrtc" = "webrtc";
+    let liveUrl = "";
 
-    at.addGrant({
-      roomJoin: true,
-      room: roomName,
-      canSubscribe: true,
-      canPublish: true,
-      canPublishData: true,
-    });
+    if (useLiveKit) {
+      try {
+        const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
+          identity: req.userId!,
+          name: participantName,
+          ttl: "4h",
+          metadata: JSON.stringify({
+            kind: "open",
+            openSessionId: result.session_id,
+            roomId,
+            mode: "voice",
+            role: member.role,
+            fullName: profile?.full_name,
+            avatarUrl: profile?.avatar_url,
+          }),
+        });
+
+        at.addGrant({
+          roomJoin: true,
+          room: roomName,
+          canSubscribe: true,
+          canPublish: true,
+          canPublishData: true,
+        });
+
+        token = await at.toJwt();
+        provider = "livekit";
+        liveUrl = env.LIVEKIT_URL!;
+      } catch (e) {
+        logger.warn({ err: (e as Error).message }, "LiveKit voice token generation failed, using WebRTC fallback");
+      }
+    }
+
+    const iceConfig = await generateCloudflareIceServers();
 
     res.json({
-      url: env.LIVEKIT_URL,
-      token: await at.toJwt(),
+      provider,
+      url: liveUrl,
+      token,
+      iceServers: iceConfig.iceServers,
       roomName,
       participantName,
       canPublish: true,
@@ -4163,7 +4869,7 @@ rooms.post(
     const requestId = req.params.requestId;
     const userId = req.userId!;
 
-    const { data: room } = await admin.from("rooms").select("owner_id").eq("id", roomId).maybeSingle();
+    const { data: room } = await admin.from("rooms").select("owner_id, conversation_id").eq("id", roomId).maybeSingle();
     const { data: member } = await admin.from("room_members").select("role").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
     if (room?.owner_id !== userId && member?.role !== "owner" && member?.role !== "moderator") {
       return res.status(403).json({ error: "Unauthorized" });
@@ -4185,6 +4891,27 @@ rooms.post(
         },
         { onConflict: "room_id,user_id" },
       );
+
+      // Auto-enroll admitted user into room conversation and common channels
+      try {
+        const { data: rm } = await admin.from("rooms").select("conversation_id").eq("id", roomId).maybeSingle();
+        if (rm?.conversation_id) {
+          await admin.from("conversation_members").upsert(
+            { conversation_id: rm.conversation_id, user_id: requesterId, role: "member" },
+            { onConflict: "conversation_id,user_id" },
+          );
+        }
+        const { data: channels } = await admin.from("room_channels").select("conversation_id, is_private, permissions_override").eq("room_id", roomId);
+        for (const ch of channels ?? []) {
+          const isPriv = Boolean(ch.is_private || ch.permissions_override?.is_private);
+          if (!isPriv && ch.conversation_id) {
+            await admin.from("conversation_members").upsert(
+              { conversation_id: ch.conversation_id, user_id: requesterId, role: "member" },
+              { onConflict: "conversation_id,user_id" },
+            );
+          }
+        }
+      } catch {}
 
       try {
         await admin.from("room_knock_requests").update({
@@ -4214,7 +4941,7 @@ rooms.post(
     const requestId = req.params.requestId;
     const userId = req.userId!;
 
-    const { data: room } = await admin.from("rooms").select("owner_id").eq("id", roomId).maybeSingle();
+    const { data: room } = await admin.from("rooms").select("owner_id, conversation_id").eq("id", roomId).maybeSingle();
     const { data: member } = await admin.from("room_members").select("role").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
     if (room?.owner_id !== userId && member?.role !== "owner" && member?.role !== "moderator") {
       return res.status(403).json({ error: "Unauthorized" });
@@ -4254,7 +4981,7 @@ rooms.post(
     const userId = req.userId!;
     const body = z.object({ openForEveryone: z.boolean() }).parse(req.body);
 
-    const { data: room } = await admin.from("rooms").select("owner_id").eq("id", roomId).maybeSingle();
+    const { data: room } = await admin.from("rooms").select("owner_id, conversation_id").eq("id", roomId).maybeSingle();
     const { data: member } = await admin.from("room_members").select("role").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
     if (room?.owner_id !== userId && member?.role !== "owner" && member?.role !== "moderator") {
       return res.status(403).json({ error: "Unauthorized" });
@@ -4283,6 +5010,17 @@ rooms.post(
             role: "member",
           }));
           await admin.from("room_members").upsert(membersToInsert, { onConflict: "room_id,user_id" });
+          
+          if (room?.conversation_id) {
+            const convMembers = pending.map((p) => ({
+              conversation_id: room.conversation_id,
+              user_id: p.user_id,
+              role: "member",
+            }));
+            try {
+              await admin.from("conversation_members").upsert(convMembers, { onConflict: "conversation_id,user_id" });
+            } catch {}
+          }
           await admin.from("room_knock_requests").update({ status: "admitted" }).eq("room_id", roomId).eq("status", "pending");
 
           const io = (await import("../socket.js")).getSocketServer();
@@ -4417,7 +5155,7 @@ rooms.post(
       })
       .parse(req.body);
 
-    const { data: room } = await admin.from("rooms").select("owner_id").eq("id", roomId).maybeSingle();
+    const { data: room } = await admin.from("rooms").select("owner_id, conversation_id").eq("id", roomId).maybeSingle();
     const { data: member } = await admin.from("room_members").select("role").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
 
     if (room?.owner_id !== userId && member?.role !== "owner" && member?.role !== "moderator") {
@@ -4457,4 +5195,71 @@ rooms.post(
     res.json({ success: true, action: body.action });
   }),
 );
+
+// 8. POST /api/v1/rooms/:id/volunteer - Student volunteer application for TA or Moderator
+rooms.post(
+  "/:id/volunteer",
+  wrap(async (req, res) => {
+    const roomId = z.string().uuid().parse(req.params.id);
+    const userId = req.userId!;
+    const body = z
+      .object({
+        role: z.enum(["moderator", "teacher"]).default("moderator"),
+        message: z.string().trim().min(5).max(1000),
+      })
+      .parse(req.body);
+
+    const { data: room } = await admin
+      .from("rooms")
+      .select("id, title, owner_id")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!member) {
+      return res.status(403).json({ error: "Join room before applying to volunteer" });
+    }
+
+    if (member.role === "owner" || member.role === "admin" || member.role === "teacher") {
+      return res.status(400).json({ error: `You are already a ${member.role} in this room` });
+    }
+
+    const { data: applicantProfile } = await admin
+      .from("profiles")
+      .select("id, full_name, username")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const applicantName = applicantProfile?.full_name || applicantProfile?.username || "A student";
+
+    if (room.owner_id && room.owner_id !== userId) {
+      void NotificationService.dispatch({
+        userId: room.owner_id,
+        type: "ROOM_KNOCK",
+        title: "Volunteer Application! 🎓",
+        body: `${applicantName} volunteered to be a ${body.role === "teacher" ? "Teaching Assistant / Tutor" : "Discussion Moderator"}: "${body.message.slice(0, 80)}"`,
+        priority: "high",
+        entityType: "room",
+        entityId: roomId,
+        data: { roomId, applicantId: userId, requestedRole: body.role, route: "room" },
+      });
+    }
+
+    await audit(userId, "room.volunteer_application", "room", roomId, {
+      requestedRole: body.role,
+      message: body.message,
+    });
+
+    res.json({ success: true, message: "Application submitted to room leadership!" });
+  }),
+);
+
 

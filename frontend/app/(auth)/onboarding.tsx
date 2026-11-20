@@ -20,6 +20,7 @@ import { useI18n } from "@/i18n";
 import { radius, useTheme } from "@/theme";
 import { Button, Card, H1, H2, Muted, Pill, Row, Screen, triggerHaptic } from "@/components/ui";
 import { usePreferencesStore, type AppLanguage } from "@/state/usePreferencesStore";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import type { Profile } from "@/types";
 
 const STEP_IDS = [
@@ -113,6 +114,7 @@ export default function ProgressiveOnboardingScreen() {
   const setLanguage = usePreferencesStore((state) => state.setLanguage);
   const setPushEnabled = usePreferencesStore((state) => state.setPushEnabled);
   const queryClient = useQueryClient();
+  const keyboardHeight = useKeyboardHeight();
   const params = useLocalSearchParams<{ step?: string; mode?: string }>();
 
   const isEditMode = params.mode === "edit";
@@ -643,7 +645,10 @@ export default function ProgressiveOnboardingScreen() {
     <Screen scroll={false} keyboardAvoiding={false}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: 40 + (keyboardHeight > 0 ? keyboardHeight : 20) },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
