@@ -79,6 +79,10 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
         Alert.alert("Required", "Please enter a club name.");
         return;
       }
+      if (name.trim().length < 3) {
+        Alert.alert("Required", "Club name must be at least 3 characters.");
+        return;
+      }
       setStep(2);
     } else if (step === 2) {
       if (!description.trim()) {
@@ -95,11 +99,19 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
   };
 
   const handleCreateClub = async () => {
+    const trimmedEmail = contactEmail.trim();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      Alert.alert("Invalid Email", "Please enter a valid official contact email address or leave it blank.");
+      return;
+    }
+
     try {
       setSubmitting(true);
       const social_links: Record<string, string> = {};
       if (website.trim()) social_links.website = website.trim();
       if (facebook.trim()) social_links.facebook = facebook.trim();
+
+      const parsedYear = foundedYear.trim() ? parseInt(foundedYear.trim(), 10) : undefined;
 
       const res = await api.post("/clubs", {
         name: name.trim(),
@@ -110,9 +122,9 @@ export const CreateClubModal: React.FC<CreateClubModalProps> = ({
         department: department.trim() || undefined,
         mission: mission.trim() || undefined,
         vision: vision.trim() || undefined,
-        founded_year: foundedYear ? parseInt(foundedYear, 10) : undefined,
+        founded_year: !isNaN(parsedYear as number) ? parsedYear : undefined,
         membership_type: membershipType,
-        contact_email: contactEmail.trim() || undefined,
+        contact_email: trimmedEmail || undefined,
         social_links: Object.keys(social_links).length ? social_links : undefined,
       });
 

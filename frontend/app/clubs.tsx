@@ -55,6 +55,7 @@ export default function ClubsScreen() {
     queryFn: async () => {
       const res = await api.get<{
         memberships: { role: string; clubs: ClubItem }[];
+        follows?: { club_id: string; clubs: ClubItem }[];
         followed_clubs?: ClubItem[];
       }>("/clubs/mine");
       const joined = (res.data?.memberships ?? [])
@@ -68,10 +69,17 @@ export default function ClubsScreen() {
         })
         .filter(Boolean) as ClubItem[];
 
-      const followed = (res.data?.followed_clubs ?? []).map((c: ClubItem) => ({
-        ...c,
-        is_following: true,
-      }));
+      const rawFollows = res.data?.followed_clubs ?? res.data?.follows ?? [];
+      const followed = rawFollows
+        .map((f: any) => {
+          const c = f.clubs || f;
+          if (!c || !c.id) return null;
+          return {
+            ...c,
+            is_following: true,
+          };
+        })
+        .filter(Boolean) as ClubItem[];
 
       return { joined, followed };
     },
@@ -81,8 +89,8 @@ export default function ClubsScreen() {
   const recommendedQuery = useQuery({
     queryKey: ["recommended-clubs"],
     queryFn: async () => {
-      const res = await api.get<{ clubs: ClubItem[] }>("/clubs/recommended");
-      return res.data?.clubs ?? [];
+      const res = await api.get<{ clubs?: ClubItem[]; recommended?: ClubItem[] }>("/clubs/recommended");
+      return res.data?.recommended ?? res.data?.clubs ?? [];
     },
   });
 

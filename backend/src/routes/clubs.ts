@@ -120,9 +120,11 @@ clubs.get(
       .eq("user_id", req.userId!)
       .eq("clubs.is_archived", false);
 
+    const followedClubs = (followData ?? []).map((f: any) => f.clubs).filter(Boolean);
     res.json({
       memberships: memberData ?? [],
       follows: followData ?? [],
+      followed_clubs: followedClubs,
     });
   }),
 );
@@ -178,7 +180,7 @@ clubs.get(
       };
     });
 
-    res.json({ recommended });
+    res.json({ recommended, clubs: recommended });
   }),
 );
 
@@ -314,16 +316,21 @@ clubs.post(
   wrap(async (req, res) => {
     const b = z
       .object({
-        name: z.string().min(3).max(120),
-        tagline: z.string().max(180).optional(),
-        description: z.string().max(3000).optional(),
-        university: z.string().max(150).optional(),
-        department: z.string().max(100).optional(),
-        category: z.string().max(60).optional(),
-        membership_type: z.enum(["open", "application", "invite_only"]).optional(),
-        logo_url: z.string().url().optional().or(z.literal("")),
-        banner_url: z.string().url().optional().or(z.literal("")),
-        contact_email: z.string().email().optional().or(z.literal("")),
+        name: z.string().trim().min(3, "Club name must be at least 3 characters").max(120),
+        tagline: z.string().trim().max(180).optional().nullable(),
+        description: z.string().trim().max(3000).optional().nullable(),
+        university: z.string().trim().max(150).optional().nullable(),
+        department: z.string().trim().max(100).optional().nullable(),
+        category: z.string().trim().max(60).optional().nullable(),
+        membership_type: z.enum(["open", "application", "invite_only"]).optional().default("open"),
+        logo_url: z.string().url().optional().or(z.literal("")).nullable(),
+        banner_url: z.string().url().optional().or(z.literal("")).nullable(),
+        contact_email: z.string().trim().email().optional().or(z.literal("")).nullable(),
+        contact_phone: z.string().trim().max(30).optional().nullable(),
+        mission: z.string().trim().max(3000).optional().nullable(),
+        vision: z.string().trim().max(3000).optional().nullable(),
+        founded_year: z.union([z.number(), z.string().transform((v) => parseInt(v, 10))]).optional().nullable(),
+        social_links: z.record(z.string(), z.string()).optional().nullable(),
       })
       .parse(req.body);
 
@@ -339,13 +346,18 @@ clubs.post(
     await admin
       .from("clubs")
       .update({
-        tagline: b.tagline?.trim() ?? null,
-        department: b.department?.trim() ?? null,
-        category: b.category ?? "General",
-        membership_type: b.membership_type ?? "open",
+        tagline: b.tagline?.trim() || null,
+        department: b.department?.trim() || null,
+        category: b.category || "General",
+        membership_type: b.membership_type || "open",
         logo_url: b.logo_url || null,
         banner_url: b.banner_url || null,
-        contact_email: b.contact_email || null,
+        contact_email: b.contact_email?.trim() || null,
+        contact_phone: b.contact_phone?.trim() || null,
+        mission: b.mission?.trim() || null,
+        vision: b.vision?.trim() || null,
+        founded_year: typeof b.founded_year === "number" && !isNaN(b.founded_year) ? b.founded_year : null,
+        social_links: b.social_links || {},
       })
       .eq("id", clubId);
 
@@ -755,7 +767,7 @@ clubs.get(
       .from("club_posts")
       .select(`
         *,
-        author:profiles(id, full_name, username, avatar_url, department)
+        author:profiles!club_posts_author_id_fkey(id, full_name, username, avatar_url, department)
       `)
       .eq("club_id", clubId);
 
@@ -851,7 +863,7 @@ clubs.post(
       })
       .select(`
         *,
-        author:profiles(id, full_name, username, avatar_url, department)
+        author:profiles!club_posts_author_id_fkey(id, full_name, username, avatar_url, department)
       `)
       .single();
 
@@ -978,7 +990,7 @@ clubs.get(
       .from("club_post_comments")
       .select(`
         *,
-        author:profiles(id, full_name, username, avatar_url)
+        author:profiles!club_post_comments_author_id_fkey(id, full_name, username, avatar_url)
       `)
       .eq("post_id", postId)
       .order("created_at", { ascending: true });
@@ -1005,7 +1017,7 @@ clubs.post(
       })
       .select(`
         *,
-        author:profiles(id, full_name, username, avatar_url)
+        author:profiles!club_post_comments_author_id_fkey(id, full_name, username, avatar_url)
       `)
       .single();
 
@@ -1529,7 +1541,7 @@ clubs.get(
       .from("club_applications")
       .select(`
         *,
-        applicant:profiles(id, full_name, username, avatar_url, department, bio)
+        applicant:profiles!club_applications_user_id_fkey(id, full_name, username, avatar_url, department, bio)
       `)
       .eq("club_id", clubId);
 

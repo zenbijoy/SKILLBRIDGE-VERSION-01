@@ -48,56 +48,37 @@ export async function ensureClubWorkspace(clubId: string, actorUserId: string): 
   // Check if a room with title already exists for this club
   const { data: existingRoom } = await admin
     .from("rooms")
-    .select("id")
+    .select("id, conversation_id")
     .eq("title", `${clubName} Community`)
     .maybeSingle();
 
   if (existingRoom) {
-    clubRoomCache.set(clubId, existingRoom.id);
-    // Attempt to persist to club record if column exists
-    await admin.from("clubs").update({ room_id: existingRoom.id } as any).eq("id", clubId);
-    return existingRoom.id;
-  }
-
-  // Provision new room
-  const { data: newRoom, error: roomErr } = await admin
-    .from("rooms")
-    .insert({
-      title: `${clubName} Community`,
-      description: clubDesc || `Official collaboration workspace for ${clubName}`,
-      topic: "Student Club",
-      visibility: "public",
-      mode: "hybrid",
-      capacity: Math.min(250, env.MAX_ROOM_CAPACITY || 250),
-      owner_id: actorUserId,
-      tags: ["club", "campus-life"],
-      enabled_modules: ["posts", "chat", "learn", "media"],
-      default_landing_tab: "posts",
-    } as any)
-    .select("id")
-    .single();
-
-  if (roomErr) {
-    // If insert failed due to constraint or column, fallback to basic fields
-    const { data: basicRoom, error: basicErr } = await admin
-      .from("rooms")
-      .insert({
-        title: `${clubName} Community`,
-        description: clubDesc || `Official collaboration workspace for ${clubName}`,
-        topic: "Student Club",
-        visibility: "public",
-        mode: "hybrid",
-        capacity: Math.min(250, env.MAX_ROOM_CAPACITY || 250),
-        owner_id: actorUserId,
-      })
-      .select("id")
-      .single();
-
-    if (basicErr) throw basicErr;
-    const roomId = basicRoom.id;
+    let roomId = existingRoom.id;
     clubRoomCache.set(clubId, roomId);
 
-    // Auto-add creator as owner in room_members
+    // Ensure conversation exists for chat
+    if (!existingRoom.conversation_id) {
+      const { data: newConv } = await admin
+        .from("conversations")
+        .insert({
+          kind: "room",
+          title: `${clubName} Community Chat`,
+          created_by: actorUserId,
+        })
+        .select("id")
+        .single();
+
+      if (newConv?.id) {
+        await admin.from("rooms").update({ conversation_id: newConv.id } as any).eq("id", roomId);
+        await admin.from("conversation_members").upsert({
+          conversation_id: newConv.id,
+          user_id: actorUserId,
+          role: "owner",
+        } as any);
+      }
+    }
+
+    // Ensure actor is member of room
     await admin.from("room_members").upsert({
       room_id: roomId,
       user_id: actorUserId,
@@ -108,17 +89,58 @@ export async function ensureClubWorkspace(clubId: string, actorUserId: string): 
     return roomId;
   }
 
-  const roomId = newRoom.id;
+  // Provision new room atomically with conversation
+  const { data: createdRoomId, error: rpcErr } = await admin.rpc("create_room_atomic", {
+    p_title: `${clubName} Community`,
+    p_description: clubDesc || `Official collaboration workspace for ${clubName}`,
+    p_topic: "Student Club",
+    p_visibility: "public",
+    p_mode: "hybrid",
+    p_capacity: Math.min(250, env.MAX_ROOM_CAPACITY || 250),
+    p_rules: "",
+    p_tags: ["club", "campus-life"],
+    p_campus_location: null,
+    p_owner_id: actorUserId,
+  });
+
+  let roomId = createdRoomId;
+
+  if (rpcErr || !roomId) {
+    // Fallback: manual insert
+    const { data: newRoom, error: roomErr } = await admin
+      .from("rooms")
+      .insert({
+        title: `${clubName} Community`,
+        description: clubDesc || `Official collaboration workspace for ${clubName}`,
+        topic: "Student Club",
+        visibility: "public",
+        mode: "hybrid",
+        capacity: Math.min(250, env.MAX_ROOM_CAPACITY || 250),
+        owner_id: actorUserId,
+        tags: ["club", "campus-life"],
+        enabled_modules: ["posts", "chat", "learn", "media"],
+        default_landing_tab: "posts",
+      } as any)
+      .select("id")
+      .single();
+
+    if (roomErr) throw roomErr;
+    roomId = newRoom.id;
+
+    await admin.from("room_members").upsert({
+      room_id: roomId,
+      user_id: actorUserId,
+      role: "owner",
+    } as any);
+  } else {
+    // Configure modules and default tab
+    await admin.from("rooms").update({
+      enabled_modules: ["posts", "chat", "learn", "media"],
+      default_landing_tab: "posts",
+    } as any).eq("id", roomId);
+  }
+
   clubRoomCache.set(clubId, roomId);
-
-  // Auto-add creator as owner in room_members
-  await admin.from("room_members").upsert({
-    room_id: roomId,
-    user_id: actorUserId,
-    role: "owner",
-  } as any);
-
-  // Link room_id on club
   await admin.from("clubs").update({ room_id: roomId } as any).eq("id", clubId);
 
   return roomId;
