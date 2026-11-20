@@ -37,9 +37,10 @@ import { PasswordField } from "./ui/PasswordField";
 import { ScreenContainer } from "./ui/ScreenContainer";
 import { triggerHaptic } from "./ui/haptics";
 import { SkillBridgeLoader, type SkillBridgeLoaderProps } from "./ui/SkillBridgeLoader";
+import { Icon, type IconProps, type SemanticIconName } from "./ui/Icon";
 
-export { AppTextField, PasswordField, ScreenContainer, triggerHaptic, SkillBridgeLoader, AutoHideHeader };
-export type { SkillBridgeLoaderProps };
+export { AppTextField, PasswordField, ScreenContainer, triggerHaptic, SkillBridgeLoader, AutoHideHeader, Icon };
+export type { SkillBridgeLoaderProps, IconProps, SemanticIconName };
 
 /** Memoize StyleSheet.create() so it only recalculates on theme change. */
 function useStyles() {

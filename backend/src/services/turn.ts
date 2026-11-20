@@ -26,12 +26,18 @@ const DEFAULT_STUN_SERVERS: IceServerConfig[] = [
   },
 ];
 
+let cachedIceServers: { response: IceServersResponse; expiresAt: number } | null = null;
+
 /**
  * Generates client-safe ICE server configuration.
  * Uses public STUN by default, and Cloudflare TURN short-lived credentials if enabled.
  * Never logs or exposes root API tokens to clients.
  */
 export async function generateCloudflareIceServers(): Promise<IceServersResponse> {
+  if (cachedIceServers && Date.now() < cachedIceServers.expiresAt) {
+    return cachedIceServers.response;
+  }
+
   if (!env.CLOUDFLARE_TURN_ENABLED || !env.CLOUDFLARE_TURN_KEY_ID || !env.CLOUDFLARE_TURN_API_TOKEN) {
     return {
       iceServers: DEFAULT_STUN_SERVERS,
@@ -71,11 +77,20 @@ export async function generateCloudflareIceServers(): Promise<IceServersResponse
     }
 
     const data = await response.json();
-    return {
+    const result: IceServersResponse = {
       iceServers: data.iceServers || DEFAULT_STUN_SERVERS,
       ttl,
       provider: "cloudflare-turn",
     };
+
+    // Cache valid TURN response until 5 minutes before TTL expiry (minimum 5 minutes)
+    const cacheDurationMs = Math.max(300, ttl - 300) * 1000;
+    cachedIceServers = {
+      response: result,
+      expiresAt: Date.now() + cacheDurationMs,
+    };
+
+    return result;
   } catch (err: any) {
     logger.warn(
       {

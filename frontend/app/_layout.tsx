@@ -6,6 +6,8 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, Pressable, Platform, LogBox } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
+import { useFonts } from "expo-font";
+import { MaterialCommunityIcons, Ionicons, Feather } from "@expo/vector-icons";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { registerPush, useNotificationRouting } from "@/lib/notifications";
 import { connectSocket, disconnectSocket, getSocket } from "@/lib/socket";
@@ -60,6 +62,11 @@ const client = new QueryClient({
 function Gate() {
   const { session, initializing } = useAuth();
   const [minSplashElapsed, setMinSplashElapsed] = useState(false);
+  const [fontsLoaded] = useFonts({
+    ...MaterialCommunityIcons.font,
+    ...Ionicons.font,
+    ...Feather.font,
+  });
 
   useEffect(() => {
     // Hide native static splash immediately once React Native root mounts
@@ -73,7 +80,7 @@ function Gate() {
     return () => clearTimeout(timer);
   }, []);
 
-  const loading = initializing || !minSplashElapsed;
+  const loading = initializing || !minSplashElapsed || !fontsLoaded;
   const segments = useSegments();
   const router = useRouter();
   const pushEnabled = usePreferencesStore((state) => state.pushEnabled);

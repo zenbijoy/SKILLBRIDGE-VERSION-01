@@ -92,17 +92,31 @@ async function requestWithHeaders(path: string, init: RequestInit, accessToken?:
   headers.set("X-App-Version", Constants.expoConfig?.version ?? "2.0.0");
   headers.set("X-App-Locale", usePreferencesStore.getState().language);
   headers.set("X-Data-Saver", usePreferencesStore.getState().dataSaver);
-  if (init.body && !isFormData(init.body) && !headers.has("Content-Type")) {
+
+  let effectiveBody = init.body;
+  if (
+    effectiveBody &&
+    typeof effectiveBody === "object" &&
+    !isFormData(effectiveBody) &&
+    !(typeof Blob !== "undefined" && effectiveBody instanceof Blob) &&
+    !(typeof ArrayBuffer !== "undefined" && effectiveBody instanceof ArrayBuffer)
+  ) {
+    try {
+      effectiveBody = JSON.stringify(effectiveBody);
+    } catch {}
+  }
+
+  if (effectiveBody && !isFormData(effectiveBody) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   try {
-    return await fetchWithColdStartRetry(`${BASE}${normalizedPath}`, { ...init, headers });
+    return await fetchWithColdStartRetry(`${BASE}${normalizedPath}`, { ...init, body: effectiveBody, headers });
   } catch (error) {
     if (!isProduction && BASE !== "http://localhost:4000/api/v1") {
       try {
-        return await fetchWithColdStartRetry(`http://localhost:4000/api/v1${normalizedPath}`, { ...init, headers });
+        return await fetchWithColdStartRetry(`http://localhost:4000/api/v1${normalizedPath}`, { ...init, body: effectiveBody, headers });
       } catch {
         // Local fallback also failed
       }

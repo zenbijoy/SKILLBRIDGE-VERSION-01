@@ -23,6 +23,7 @@ help.get(
       .from("room_questions")
       .select(`
         id, room_id, title, body, is_resolved, upvotes_count, created_at,
+        subject, topic, urgency, tags,
         author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url, university),
         room:rooms!room_questions_room_id_fkey(id, title, visibility),
         answers:room_question_answers(
@@ -43,11 +44,44 @@ help.get(
       query = query.eq("is_resolved", false);
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
+    if (urgency && ["normal", "today", "exam_soon"].includes(urgency)) {
+      query = query.eq("urgency", urgency);
+    }
+
+    if (subject) {
+      query = query.ilike("subject", `%${subject}%`);
+    }
+
+    let { data, error } = await query;
+
+    if (error) {
+      // Fallback query if subject/topic/urgency columns not yet populated
+      const fallbackQuery = admin
+        .from("room_questions")
+        .select(`
+          id, room_id, title, body, is_resolved, upvotes_count, created_at,
+          author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url, university),
+          room:rooms!room_questions_room_id_fkey(id, title, visibility),
+          answers:room_question_answers(
+            id, body, is_accepted, upvotes_count, created_at,
+            author:profiles!room_question_answers_author_id_fkey(id, full_name, username, avatar_url)
+          )
+        `)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      let fb = mine ? fallbackQuery.eq("author_id", req.userId!) : fallbackQuery;
+      if (status === "resolved") fb = fb.eq("is_resolved", true);
+      else if (status === "open") fb = fb.eq("is_resolved", false);
+
+      const fbRes = await fb;
+      if (fbRes.error) throw fbRes.error;
+      data = fbRes.data as any;
+    }
 
     // Filter out private room questions unless user is a member or author
-    const filtered = (data ?? []).filter((q: any) => {
+    const rawList = Array.isArray(data) ? data : data ? [data] : [];
+    const filtered = rawList.filter((q: any) => {
       if (q.author?.id === req.userId) return true;
       if (q.room?.visibility === "private") return false;
       return true;
@@ -125,11 +159,14 @@ help.post(
     if (body.target === "room" && body.roomId) {
       targetRoomId = body.roomId;
       // Auto-ensure membership
-      await admin.from("room_members").upsert({
-        room_id: targetRoomId,
-        user_id: req.userId!,
-        role: "member",
-      } as any);
+      await admin.from("room_members").upsert(
+        {
+          room_id: targetRoomId,
+          user_id: req.userId!,
+          role: "member",
+        } as any,
+        { onConflict: "room_id,user_id" },
+      );
     } else {
       // Get user's university for campus help room
       const { data: profile } = await admin
@@ -138,13 +175,16 @@ help.post(
         .eq("id", req.userId!)
         .maybeSingle();
 
-      targetRoomId = await ensureCampusHelpWorkspace(profile?.university || "Campus");
+      targetRoomId = await ensureCampusHelpWorkspace(profile?.university || "Campus", req.userId);
       // Auto-ensure membership in campus help room
-      await admin.from("room_members").upsert({
-        room_id: targetRoomId,
-        user_id: req.userId!,
-        role: "member",
-      } as any);
+      await admin.from("room_members").upsert(
+        {
+          room_id: targetRoomId,
+          user_id: req.userId!,
+          role: "member",
+        } as any,
+        { onConflict: "room_id,user_id" },
+      );
     }
 
     const title = body.title?.trim() || body.body.slice(0, 80).trim();
@@ -161,9 +201,11 @@ help.post(
         topic: body.topic?.trim() || null,
         urgency: body.urgency,
         tags: body.tags,
+        is_campus_wide: body.target === "campus",
       } as any)
       .select(`
         id, room_id, title, body, is_resolved, upvotes_count, created_at,
+        subject, topic, urgency, tags,
         author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url)
       `)
       .single();
@@ -171,7 +213,7 @@ help.post(
     let createdQuestion = question;
 
     if (error) {
-      // Fallback insert without extra columns if DB schema cache hasn't synced
+      // Fallback 1: insert without extra columns if DB schema cache hasn't synced
       const { data: fallbackQuestion, error: fallbackErr } = await admin
         .from("room_questions")
         .insert({
@@ -186,8 +228,34 @@ help.post(
         `)
         .single();
 
-      if (fallbackErr) throw fallbackErr;
-      createdQuestion = fallbackQuestion;
+      if (fallbackErr) {
+        // Fallback 2: insert without join in case foreign key relationship name changed
+        const { data: rawQ, error: rawErr } = await admin
+          .from("room_questions")
+          .insert({
+            room_id: targetRoomId,
+            author_id: req.userId!,
+            title,
+            body: body.body.trim(),
+          })
+          .select("id, room_id, title, body, is_resolved, upvotes_count, created_at")
+          .single();
+
+        if (rawErr) throw rawErr;
+
+        const { data: authorProf } = await admin
+          .from("profiles")
+          .select("id, full_name, username, avatar_url")
+          .eq("id", req.userId!)
+          .maybeSingle();
+
+        createdQuestion = {
+          ...rawQ,
+          author: authorProf || { id: req.userId!, full_name: "Student", username: "student", avatar_url: null },
+        } as any;
+      } else {
+        createdQuestion = fallbackQuestion as any;
+      }
     }
 
     if (!createdQuestion) {
@@ -236,10 +304,11 @@ help.get(
   wrap(async (req, res) => {
     const { id } = req.params;
 
-    const { data: q, error } = await admin
+    let { data: q, error } = await admin
       .from("room_questions")
       .select(`
         id, room_id, title, body, is_resolved, upvotes_count, created_at, accepted_answer_id,
+        subject, topic, urgency, tags,
         author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url, university, department),
         room:rooms!room_questions_room_id_fkey(id, title, visibility),
         answers:room_question_answers(
@@ -250,7 +319,24 @@ help.get(
       .eq("id", id)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      const fb = await admin
+        .from("room_questions")
+        .select(`
+          id, room_id, title, body, is_resolved, upvotes_count, created_at, accepted_answer_id,
+          author:profiles!room_questions_author_id_fkey(id, full_name, username, avatar_url, university, department),
+          room:rooms!room_questions_room_id_fkey(id, title, visibility),
+          answers:room_question_answers(
+            id, question_id, body, is_accepted, upvotes_count, created_at,
+            author:profiles!room_question_answers_author_id_fkey(id, full_name, username, avatar_url, university, department)
+          )
+        `)
+        .eq("id", id)
+        .maybeSingle();
+      if (fb.error) throw fb.error;
+      q = fb.data as any;
+    }
+
     if (!q) {
       return res.status(404).json({ error: "Question not found" });
     }
@@ -388,7 +474,39 @@ help.post(
     if (getErr) throw getErr;
     if (!q) return res.status(404).json({ error: "Question not found" });
 
-    const newCount = (q.upvotes_count || 0) + 1;
+    let newCount = (q.upvotes_count || 0) + 1;
+    let isUpvoted = true;
+
+    try {
+      const { data: existingVote } = await admin
+        .from("room_question_votes")
+        .select("question_id")
+        .eq("question_id", id)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+
+      if (existingVote) {
+        // Toggle off
+        await admin
+          .from("room_question_votes")
+          .delete()
+          .eq("question_id", id)
+          .eq("user_id", req.userId!);
+        newCount = Math.max(0, (q.upvotes_count || 0) - 1);
+        isUpvoted = false;
+      } else {
+        await admin
+          .from("room_question_votes")
+          .insert({ question_id: id, user_id: req.userId! } as any);
+        newCount = (q.upvotes_count || 0) + 1;
+        isUpvoted = true;
+      }
+    } catch {
+      // Table fallback
+      newCount = (q.upvotes_count || 0) + 1;
+      isUpvoted = true;
+    }
+
     const { error: updateErr } = await admin
       .from("room_questions")
       .update({ upvotes_count: newCount })
@@ -397,7 +515,7 @@ help.post(
     if (updateErr) throw updateErr;
 
     // Award question author (+2 points) when upvoted by someone else
-    if (q.author_id && q.author_id !== req.userId) {
+    if (isUpvoted && q.author_id && q.author_id !== req.userId) {
       try {
         await admin.rpc("award_reputation_atomic", {
           p_user_id: q.author_id,

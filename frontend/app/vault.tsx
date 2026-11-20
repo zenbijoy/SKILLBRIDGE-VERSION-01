@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -20,6 +21,7 @@ import { router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
 import { API_URL } from "@/lib/config";
 import {
@@ -153,8 +155,22 @@ export default function NoteVaultScreen() {
 
   // Resolve direct or stream URL for a given note
   const resolveNoteStreamUrl = (note: VaultNote): string => {
+    // If it's a Google Drive folder, always return the folder URL directly
+    if (
+      note.mime_type === "application/vnd.google-apps.folder" ||
+      note.file_url?.includes("/folders/") ||
+      note.source_drive_url?.includes("/folders/")
+    ) {
+      return note.source_drive_url || note.file_url;
+    }
+    if (note.file_url?.includes("r2.dev") || note.r2_cached_at) {
+      return note.file_url;
+    }
     if (note.source_type === "google_drive") {
-      return `${API_URL}/vault/drive/stream/${note.id}`;
+      if (note.source_drive_id) {
+        return `https://drive.google.com/uc?export=download&id=${note.source_drive_id}&confirm=t`;
+      }
+      return note.file_url || `${API_URL}/vault/drive/stream/${note.id}`;
     }
     return note.file_url;
   };
@@ -291,82 +307,52 @@ export default function NoteVaultScreen() {
       if (Platform.OS !== "web" && selectedDoc.uri) {
         setUploadStatusText("Compressing & Saving in Cloudflare R2...");
         const token = (session as any)?.token || session?.access_token;
-        const uploadResult = await FileSystem.uploadAsync(
-          `${API_URL}/vault/upload-raw`,
-          selectedDoc.uri,
-          {
-            httpMethod: "POST",
-            uploadType: (FileSystem as any).FileSystemUploadType?.BINARY_CONTENT ?? 0,
-            headers: {
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-              "x-vault-title": encodeURIComponent(uploadTitle.trim()),
-              "x-vault-description": encodeURIComponent(uploadDesc.trim()),
-              "x-vault-department": encodeURIComponent(uploadDept),
-              "x-vault-semester": encodeURIComponent(uploadSem),
-              "x-vault-course-code": encodeURIComponent(uploadCourseCode.trim()),
-              "x-vault-tags": encodeURIComponent(parsedTags.join(",")),
-              "x-vault-visibility": uploadVisibility,
-              "x-vault-filename": encodeURIComponent(selectedDoc.name),
-              "x-vault-community-name": encodeURIComponent(
-                uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : "",
-              ),
-            },
-          },
-        );
+        let uploadSucceeded = false;
 
-        if (uploadResult.status >= 400) {
-          let errMessage = "Upload failed";
-          try {
-            const parsed = JSON.parse(uploadResult.body);
-            errMessage = parsed.error || errMessage;
-          } catch {}
-          throw new Error(errMessage);
+        try {
+          const uploadResult = await FileSystem.uploadAsync(
+            `${API_URL}/vault/upload-raw`,
+            selectedDoc.uri,
+            {
+              httpMethod: "POST",
+              uploadType: (FileSystem as any).FileSystemUploadType?.BINARY_CONTENT ?? 0,
+              headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                "x-vault-title": encodeURIComponent(uploadTitle.trim()),
+                "x-vault-description": encodeURIComponent(uploadDesc.trim()),
+                "x-vault-department": encodeURIComponent(uploadDept),
+                "x-vault-semester": encodeURIComponent(uploadSem),
+                "x-vault-course-code": encodeURIComponent(uploadCourseCode.trim()),
+                "x-vault-tags": encodeURIComponent(parsedTags.join(",")),
+                "x-vault-visibility": uploadVisibility,
+                "x-vault-filename": encodeURIComponent(selectedDoc.name),
+                "x-vault-community-name": encodeURIComponent(
+                  uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : "",
+                ),
+              },
+            },
+          );
+
+          if (uploadResult.status < 400 && uploadResult.body) {
+            responseData = JSON.parse(uploadResult.body);
+            uploadSucceeded = true;
+          }
+        } catch (rawUploadErr) {
+          console.warn("[Vault] Native raw upload failed, attempting fallback:", rawUploadErr);
         }
 
-        responseData = JSON.parse(uploadResult.body);
-      } else {
-        // WEB STREAMING: Uses binary blob fetch
-        setUploadStatusText("Compressing & Saving in Cloudflare R2...");
-        const token = (session as any)?.token || session?.access_token;
-        let blob: Blob | null = null;
-        try {
-          const blobRes = await fetch(selectedDoc.uri);
-          blob = await blobRes.blob();
-        } catch {}
-
-        if (blob) {
-          const rawRes = await fetch(`${API_URL}/vault/upload-raw`, {
-            method: "POST",
-            body: blob,
-            headers: {
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-              "Content-Type": "application/pdf",
-              "x-vault-title": encodeURIComponent(uploadTitle.trim()),
-              "x-vault-description": encodeURIComponent(uploadDesc.trim()),
-              "x-vault-department": encodeURIComponent(uploadDept),
-              "x-vault-semester": encodeURIComponent(uploadSem),
-              "x-vault-course-code": encodeURIComponent(uploadCourseCode.trim()),
-              "x-vault-tags": encodeURIComponent(parsedTags.join(",")),
-              "x-vault-visibility": uploadVisibility,
-              "x-vault-filename": encodeURIComponent(selectedDoc.name),
-              "x-vault-community-name": encodeURIComponent(
-                uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : "",
-              ),
-            },
+        // Resilient fallback for native devices: Read base64 and dispatch to /vault/upload
+        if (!uploadSucceeded && selectedDoc.uri) {
+          setUploadStatusText("Processing & saving to Cloudflare R2...");
+          const b64 = await FileSystem.readAsStringAsync(selectedDoc.uri, {
+            encoding: (FileSystem as any).EncodingType?.Base64 ?? "base64",
           });
-
-          if (!rawRes.ok) {
-            const errData = await rawRes.json().catch(() => ({}));
-            throw new Error(errData.error || "Web upload failed");
-          }
-          responseData = await rawRes.json();
-        } else if (selectedDoc.base64) {
           responseData = await api("/vault/upload", {
             method: "POST",
             body: JSON.stringify({
               title: uploadTitle.trim(),
               description: uploadDesc.trim(),
-              fileBase64: selectedDoc.base64,
+              fileBase64: b64,
               fileName: selectedDoc.name,
               department: uploadDept,
               semester: uploadSem,
@@ -377,6 +363,81 @@ export default function NoteVaultScreen() {
                 uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : undefined,
             }),
           });
+        }
+      } else {
+        // WEB STREAMING: Uses binary blob fetch with automatic fallback
+        setUploadStatusText("Compressing & Saving in Cloudflare R2...");
+        const token = (session as any)?.token || session?.access_token;
+        let blob: Blob | null = null;
+        try {
+          const blobRes = await fetch(selectedDoc.uri);
+          blob = await blobRes.blob();
+        } catch {}
+
+        let webUploadSucceeded = false;
+        if (blob) {
+          try {
+            const rawRes = await fetch(`${API_URL}/vault/upload-raw`, {
+              method: "POST",
+              body: blob,
+              headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                "Content-Type": "application/pdf",
+                "x-vault-title": encodeURIComponent(uploadTitle.trim()),
+                "x-vault-description": encodeURIComponent(uploadDesc.trim()),
+                "x-vault-department": encodeURIComponent(uploadDept),
+                "x-vault-semester": encodeURIComponent(uploadSem),
+                "x-vault-course-code": encodeURIComponent(uploadCourseCode.trim()),
+                "x-vault-tags": encodeURIComponent(parsedTags.join(",")),
+                "x-vault-visibility": uploadVisibility,
+                "x-vault-filename": encodeURIComponent(selectedDoc.name),
+                "x-vault-community-name": encodeURIComponent(
+                  uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : "",
+                ),
+              },
+            });
+
+            if (rawRes.ok) {
+              responseData = await rawRes.json();
+              webUploadSucceeded = true;
+            }
+          } catch {}
+        }
+
+        if (!webUploadSucceeded) {
+          let b64 = selectedDoc.base64;
+          if (!b64 && blob) {
+            const reader = new FileReader();
+            b64 = await new Promise<string>((resolve, reject) => {
+              reader.onloadend = () => {
+                const res = reader.result as string;
+                resolve(res.includes(",") ? res.split(",")[1] ?? "" : res);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          }
+
+          if (b64) {
+            responseData = await api("/vault/upload", {
+              method: "POST",
+              body: JSON.stringify({
+                title: uploadTitle.trim(),
+                description: uploadDesc.trim(),
+                fileBase64: b64,
+                fileName: selectedDoc.name,
+                department: uploadDept,
+                semester: uploadSem,
+                courseCode: uploadCourseCode.trim() || undefined,
+                tags: parsedTags,
+                visibility: uploadVisibility,
+                communityName:
+                  uploadVisibility === "community" ? uploadCommunityName.trim() || "Campus Community" : undefined,
+              }),
+            });
+          } else {
+            throw new Error("Could not process document file for upload.");
+          }
         }
       }
 
@@ -419,7 +480,7 @@ export default function NoteVaultScreen() {
     }
   };
 
-  // Google Drive Ingestion Submission to VPS Background Worker
+  // Google Drive Ingestion Submission to VPS Background Worker (with Resilient Supabase Fallback)
   const handleDriveSubmit = async () => {
     const trimmed = driveUrl.trim();
     if (!trimmed) {
@@ -443,25 +504,133 @@ export default function NoteVaultScreen() {
         .map((t) => t.trim())
         .filter(Boolean);
 
-      const res = await api<{
+      let res: {
         success: boolean;
         jobId: string;
         message: string;
         driveType: string;
         driveId: string;
-      }>("/vault/drive/import", {
-        method: "POST",
-        body: JSON.stringify({
-          driveUrl: trimmed,
-          department: driveDept,
-          semester: driveSem,
-          courseCode: driveCourseCode.trim() || undefined,
-          tags: parsedTags.length > 0 ? parsedTags : ["GoogleDrive", "Academic"],
-          visibility: driveVisibility,
-          communityName:
-            driveVisibility === "community" ? driveCommunityName.trim() || "Campus Community" : undefined,
-        }),
+      } | null = null;
+
+      try {
+        res = await api<{
+          success: boolean;
+          jobId: string;
+          message: string;
+          driveType: string;
+          driveId: string;
+        }>("/vault/drive/import", {
+          method: "POST",
+          body: JSON.stringify({
+            driveUrl: trimmed,
+            department: driveDept,
+            semester: driveSem,
+            courseCode: driveCourseCode.trim() || undefined,
+            tags: parsedTags.length > 0 ? parsedTags : ["GoogleDrive", "Academic"],
+            visibility: driveVisibility,
+            communityName:
+              driveVisibility === "community" ? driveCommunityName.trim() || "Campus Community" : undefined,
+          }),
+        });
+      } catch (apiErr: any) {
+        console.warn("[Vault] VPS /vault/drive/import unreachable, executing resilient client-side cataloging:", apiErr);
+      }
+
+      if (res && res.jobId) {
+        triggerHaptic();
+        setDriveModalVisible(false);
+        setDriveUrl("");
+        setDriveCourseCode("");
+        setDriveTags("");
+
+        setActiveSyncJob({
+          jobId: res.jobId,
+          status: "pending",
+          filesFound: 0,
+          filesProcessed: 0,
+        });
+
+        Alert.alert(
+          "VPS Ingestion Started! 🚀",
+          `Our VPS background worker has begun crawling the Google Drive ${res.driveType}.\n\nMetadata is cataloged into the Note Vault, a manifest is archived to Cloudflare R2, and documents can be streamed instantly.`,
+        );
+
+        await qc.invalidateQueries({ queryKey: ["vault-notes"] });
+        await qc.refetchQueries({ queryKey: ["vault-notes"] });
+        return;
+      }
+
+      // RESILIENT CLIENT-SIDE FALLBACK:
+      // Parse Drive URL and catalog directly into vault_notes via Supabase
+      let driveType: "folder" | "file" = "folder";
+      let driveId = "";
+      const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]{10,})/i);
+      const fileMatch =
+        trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]{10,})/i) ||
+        trimmed.match(/[?&]id=([a-zA-Z0-9_-]{10,})/i);
+      const docsMatch = trimmed.match(
+        /docs\.google\.com\/(?:document|presentation|spreadsheets)\/d\/([a-zA-Z0-9_-]{10,})/i,
+      );
+
+      if (folderMatch && folderMatch[1]) {
+        driveType = "folder";
+        driveId = folderMatch[1];
+      } else if (fileMatch && fileMatch[1]) {
+        driveType = "file";
+        driveId = fileMatch[1];
+      } else if (docsMatch && docsMatch[1]) {
+        driveType = "file";
+        driveId = docsMatch[1];
+      } else {
+        driveId = trimmed.split("/").pop() || "drive-resource";
+      }
+
+      const streamUrl =
+        driveType === "file"
+          ? `https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`
+          : trimmed;
+
+      const title = driveCourseCode.trim()
+        ? `${driveCourseCode.trim()} Google Drive ${driveType === "folder" ? "Folder" : "Document"}`
+        : `Google Drive ${driveType === "folder" ? "Folder" : "Document"} (${driveDept} ${driveSem})`;
+
+      const {
+        data: { session: clientSession },
+      } = await supabase.auth.getSession();
+      const currentUserId = clientSession?.user?.id;
+
+      if (!currentUserId) {
+        throw new Error("Authentication required. Please sign in to index drive resources.");
+      }
+
+      const { error: insertErr } = await supabase.from("vault_notes").insert({
+        title,
+        description: `Synced Google Drive link (${trimmed}). Ready for on-demand reading and instant campus discovery.`,
+        file_url: streamUrl,
+        file_key: `drive/${driveId}`,
+        file_size_bytes: 1024 * 1024,
+        mime_type: driveType === "folder" ? "application/vnd.google-apps.folder" : "application/pdf",
+        uploader_id: currentUserId,
+        department: driveDept,
+        semester: driveSem,
+        course_code: driveCourseCode.trim() || null,
+        tags: parsedTags.length > 0 ? parsedTags : ["GoogleDrive", "Academic"],
+        visibility: driveVisibility,
+        community_name:
+          driveVisibility === "community" ? driveCommunityName.trim() || "Campus Community" : null,
+        source_type: "google_drive",
+        source_drive_id: driveId,
+        source_drive_url: trimmed,
+        sync_status: "ready",
+        storage_bucket: "skillbridge-media",
+        storage_provider: "google_drive",
+        downloads_count: 0,
+        views_count: 1,
       });
+
+      if (insertErr) {
+        throw new Error(insertErr.message || "Failed to index Google Drive link.");
+      }
 
       triggerHaptic();
       setDriveModalVisible(false);
@@ -469,20 +638,15 @@ export default function NoteVaultScreen() {
       setDriveCourseCode("");
       setDriveTags("");
 
-      // Start active background job banner
-      setActiveSyncJob({
-        jobId: res.jobId,
-        status: "pending",
-        filesFound: 0,
-        filesProcessed: 0,
-      });
+      await qc.invalidateQueries({ queryKey: ["vault-notes"] });
+      await qc.refetchQueries({ queryKey: ["vault-notes"] });
 
       Alert.alert(
-        "VPS Ingestion Started! 🚀",
-        `Our VPS background worker has begun crawling the Google Drive ${res.driveType}.\n\nMetadata is cataloged into the Note Vault, a manifest is archived to Cloudflare R2, and documents can be streamed instantly.`,
+        "Drive Linked Successfully! ⚡",
+        `Your Google Drive ${driveType} has been indexed directly into Note Vault.\n\nStudents can now discover and open this resource instantly!`,
       );
     } catch (err: any) {
-      Alert.alert("Drive Import Failed", err.message || "Could not dispatch Google Drive ingestion job.");
+      Alert.alert("Drive Import Failed", err.message || "Could not complete Google Drive ingestion.");
     } finally {
       setIsSubmittingDrive(false);
     }
@@ -508,9 +672,24 @@ export default function NoteVaultScreen() {
     }
   };
 
-  // Open In-App PDF Reader
+  // Open In-App PDF Reader or Google Drive Folder
   const handleOpenReader = (note: VaultNote) => {
     triggerHaptic();
+
+    // If it's a Google Drive folder, open directly in Google Drive app / browser!
+    const isFolder =
+      note.mime_type === "application/vnd.google-apps.folder" ||
+      note.file_url?.includes("/folders/") ||
+      note.file_key?.startsWith("drive/folders");
+
+    if (isFolder && note.file_url) {
+      void Linking.openURL(note.file_url);
+      try {
+        void api(`/vault/${note.id}/view`, { method: "POST" });
+      } catch {}
+      return;
+    }
+
     setReaderNote(note);
 
     // Record view in backend

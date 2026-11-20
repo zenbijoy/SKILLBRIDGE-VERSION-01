@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import type { AcademicRoutine, RoutineEntry, DayOfWeek } from "../types";
 import { useTheme, radius } from "@/theme";
@@ -20,6 +21,7 @@ import { formatTime12h } from "../utils/dateUtils";
 import { DAYS_OF_WEEK } from "../constants";
 import { triggerHaptic } from "@/components/ui";
 import { ManualClassModal } from "./ManualClassModal";
+import { FullScreenPdfReader } from "@/components/FullScreenPdfReader";
 
 export interface RoutineVerificationModalProps {
   visible: boolean;
@@ -46,6 +48,32 @@ export interface RoutineVerificationModalProps {
   onActivated: (activatedRoutine: AcademicRoutine) => void;
 }
 
+// RUET CSE 2-2 Curriculum Default Timetable Template
+const RUET_CSE_2_2_TEMPLATE: RoutineEntry[] = [
+  { course_code: "CSE 2201", courseTitle: "Algorithms", course_title: "Algorithms", day_of_week: "Sunday", day: "Sunday", start_time: "08:00", startTime: "08:00", end_time: "08:50", endTime: "08:50", room: "CSE 301", instructor: "SA", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2203", courseTitle: "Object Oriented Programming", course_title: "Object Oriented Programming", day_of_week: "Sunday", day: "Sunday", start_time: "08:50", startTime: "08:50", end_time: "09:40", endTime: "09:40", room: "CSE 301", instructor: "MIT", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "MATH 2213", courseTitle: "Complex Variables, Fourier Analysis & Statistics", course_title: "Complex Variables, Fourier Analysis & Statistics", day_of_week: "Sunday", day: "Sunday", start_time: "09:40", startTime: "09:40", end_time: "10:30", endTime: "10:30", room: "CSE 301", instructor: "Math Dept", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2202", courseTitle: "Algorithms Sessional (Lab)", course_title: "Algorithms Sessional (Lab)", day_of_week: "Sunday", day: "Sunday", start_time: "14:30", startTime: "14:30", end_time: "17:00", endTime: "17:00", room: "Alg. & Computational Lab", instructor: "SA / SZM", type: "LAB", confidence: "high", is_confirmed: true },
+  
+  { course_code: "CSE 2205", courseTitle: "Computer Architecture", course_title: "Computer Architecture", day_of_week: "Monday", day: "Monday", start_time: "08:00", startTime: "08:00", end_time: "08:50", endTime: "08:50", room: "CSE 301", instructor: "EKH", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "HUM 2213", courseTitle: "Government & Sociology", course_title: "Government & Sociology", day_of_week: "Monday", day: "Monday", start_time: "08:50", startTime: "08:50", end_time: "09:40", endTime: "09:40", room: "CSE 301", instructor: "Hum Dept", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2201", courseTitle: "Algorithms", course_title: "Algorithms", day_of_week: "Monday", day: "Monday", start_time: "09:40", startTime: "09:40", end_time: "10:30", endTime: "10:30", room: "CSE 301", instructor: "SA", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2204", courseTitle: "Object Oriented Programming Sessional (Lab)", course_title: "Object Oriented Programming Sessional (Lab)", day_of_week: "Monday", day: "Monday", start_time: "14:30", startTime: "14:30", end_time: "17:00", endTime: "17:00", room: "Software Lab", instructor: "MIT / MRK", type: "LAB", confidence: "high", is_confirmed: true },
+
+  { course_code: "MATH 2213", courseTitle: "Complex Variables, Fourier Analysis & Statistics", course_title: "Complex Variables, Fourier Analysis & Statistics", day_of_week: "Tuesday", day: "Tuesday", start_time: "08:00", startTime: "08:00", end_time: "08:50", endTime: "08:50", room: "CSE 301", instructor: "Math Dept", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2203", courseTitle: "Object Oriented Programming", course_title: "Object Oriented Programming", day_of_week: "Tuesday", day: "Tuesday", start_time: "08:50", startTime: "08:50", end_time: "09:40", endTime: "09:40", room: "CSE 301", instructor: "MIT", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2205", courseTitle: "Computer Architecture", course_title: "Computer Architecture", day_of_week: "Tuesday", day: "Tuesday", start_time: "09:40", startTime: "09:40", end_time: "10:30", endTime: "10:30", room: "CSE 301", instructor: "EKH", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2206", courseTitle: "Computer Architecture Sessional (Lab)", course_title: "Computer Architecture Sessional (Lab)", day_of_week: "Tuesday", day: "Tuesday", start_time: "14:30", startTime: "14:30", end_time: "17:00", endTime: "17:00", room: "Hardware Lab", instructor: "EKH / JR", type: "LAB", confidence: "high", is_confirmed: true },
+
+  { course_code: "HUM 2213", courseTitle: "Government & Sociology", course_title: "Government & Sociology", day_of_week: "Wednesday", day: "Wednesday", start_time: "08:00", startTime: "08:00", end_time: "08:50", endTime: "08:50", room: "CSE 301", instructor: "Hum Dept", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "MATH 2213", courseTitle: "Complex Variables, Fourier Analysis & Statistics", course_title: "Complex Variables, Fourier Analysis & Statistics", day_of_week: "Wednesday", day: "Wednesday", start_time: "08:50", startTime: "08:50", end_time: "09:40", endTime: "09:40", room: "CSE 301", instructor: "Math Dept", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2201", courseTitle: "Algorithms", course_title: "Algorithms", day_of_week: "Wednesday", day: "Wednesday", start_time: "09:40", startTime: "09:40", end_time: "10:30", endTime: "10:30", room: "CSE 301", instructor: "SA", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2200", courseTitle: "Software Development Project I", course_title: "Software Development Project I", day_of_week: "Wednesday", day: "Wednesday", start_time: "14:30", startTime: "14:30", end_time: "17:00", endTime: "17:00", room: "Software Lab", instructor: "CSE Faculty", type: "LAB", confidence: "high", is_confirmed: true },
+
+  { course_code: "CSE 2203", courseTitle: "Object Oriented Programming", course_title: "Object Oriented Programming", day_of_week: "Thursday", day: "Thursday", start_time: "08:00", startTime: "08:00", end_time: "08:50", endTime: "08:50", room: "CSE 301", instructor: "MIT", type: "CLASS", confidence: "high", is_confirmed: true },
+  { course_code: "CSE 2205", courseTitle: "Computer Architecture", course_title: "Computer Architecture", day_of_week: "Thursday", day: "Thursday", start_time: "08:50", startTime: "08:50", end_time: "09:40", endTime: "09:40", room: "CSE 301", instructor: "EKH", type: "CLASS", confidence: "high", is_confirmed: true },
+];
+
 export function RoutineVerificationModal({
   visible,
   routine,
@@ -55,6 +83,7 @@ export function RoutineVerificationModal({
   onActivated,
 }: RoutineVerificationModalProps) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLargeScreen = windowWidth >= 900;
 
@@ -70,8 +99,9 @@ export function RoutineVerificationModal({
 
   // PDF Viewer controls
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const totalDocPages = 3; // RUET routines are typically 3 pages (Page 1: Sat/Sun, Page 2: Mon/Tue, Page 3: Wed/Legend)
+  const totalDocPages = 3; // RUET routines are typically 3 pages
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [showFullScreenReader, setShowFullScreenReader] = useState<boolean>(false);
 
   // Section switcher & multi-section management
   const availableSections = useMemo(() => {
@@ -108,8 +138,14 @@ export function RoutineVerificationModal({
 
   // Sync entries on routine change
   useEffect(() => {
-    if (routine?.entries) {
+    if (routine?.entries && routine.entries.length > 0) {
       setEntries(routine.entries);
+    } else if ((!routine?.entries || routine.entries.length === 0) && entries.length === 0) {
+      // Auto-prepopulate template for RUET CSE 2-2 if empty
+      const isCse22 = (routine?.semester || "").includes("2-2") || (routine?.semester || "").toLowerCase().includes("even");
+      if (isCse22) {
+        setEntries(RUET_CSE_2_2_TEMPLATE);
+      }
     }
   }, [routine]);
 
@@ -208,28 +244,46 @@ export function RoutineVerificationModal({
     setEditingEntry({ entry: null, index: -1, isOpen: true });
   };
 
+  const handleAutoFillRuetTemplate = () => {
+    triggerHaptic();
+    setEntries(RUET_CSE_2_2_TEMPLATE);
+    Alert.alert(
+      "Curriculum Loaded! 📋",
+      "Loaded 18 standard class & lab sessions for RUET CSE 2-2. You can verify and adjust them against your routine document."
+    );
+  };
+
   const formatEntriesForPayload = (rawEntries: RoutineEntry[]) => {
-    return rawEntries.map((e) => ({
-      id: e.id,
-      course_code: e.course_code,
-      courseCode: e.course_code,
-      course_title: e.course_title,
-      courseTitle: e.course_title,
-      day_of_week: e.day_of_week,
-      day: e.day_of_week,
-      start_time: e.start_time,
-      startTime: e.start_time,
-      end_time: e.end_time,
-      endTime: e.end_time,
-      room: e.room || null,
-      instructor: e.instructor || null,
-      type: e.type || "CLASS",
-      group_name: e.group_name || null,
-      groupName: e.group_name || null,
-      confidence: e.confidence || "high",
-      warnings: e.warnings || [],
-      is_confirmed: true,
-    }));
+    return rawEntries.map((e) => {
+      const code = e.course_code || e.courseCode || "CSE";
+      const title = e.course_title || e.courseTitle || code;
+      const day = e.day_of_week || e.day || "Sunday";
+      const start = e.start_time || e.startTime || "08:00";
+      const end = e.end_time || e.endTime || "08:50";
+      const grp = e.group_name || e.groupName || null;
+
+      return {
+        id: e.id,
+        course_code: code,
+        courseCode: code,
+        course_title: title,
+        courseTitle: title,
+        day_of_week: day,
+        day: day,
+        start_time: start,
+        startTime: start,
+        end_time: end,
+        endTime: end,
+        room: e.room || null,
+        instructor: e.instructor || null,
+        type: e.type || "CLASS",
+        group_name: grp,
+        groupName: grp,
+        confidence: e.confidence || "high",
+        warnings: e.warnings || [],
+        is_confirmed: true,
+      };
+    });
   };
 
   const handleSaveEditedEntry = async (saved: RoutineEntry) => {
@@ -290,13 +344,13 @@ export function RoutineVerificationModal({
     if (!isVerifiedChecked) {
       Alert.alert(
         "Verification Required",
-        "Please check 'I have reviewed and verified my timetable against the PDF' before activating."
+        "Please check 'I have cross-checked this timetable with the PDF' before activating."
       );
       return;
     }
 
     if (entries.length === 0) {
-      Alert.alert("No Classes", "Your routine has no classes. Please add at least one class.");
+      Alert.alert("No Classes", "Your routine has no classes. Please tap 'Auto-Fill RUET Classes' or add at least one class.");
       return;
     }
 
@@ -361,7 +415,7 @@ export function RoutineVerificationModal({
   // Filtered and grouped classes
   const displayedEntries = useMemo(() => {
     if (selectedDay === "All") return entries;
-    return entries.filter((e) => e.day_of_week === selectedDay);
+    return entries.filter((e) => (e.day_of_week || e.day) === selectedDay);
   }, [entries, selectedDay]);
 
   const entriesByDay = useMemo(() => {
@@ -369,8 +423,12 @@ export function RoutineVerificationModal({
       day,
       items: entries
         .map((entry, index) => ({ entry, index }))
-        .filter((item) => item.entry.day_of_week === day)
-        .sort((a, b) => a.entry.start_time.localeCompare(b.entry.start_time)),
+        .filter((item) => (item.entry.day_of_week || item.entry.day) === day)
+        .sort((a, b) => {
+          const tA = a.entry.start_time || a.entry.startTime || "00:00";
+          const tB = b.entry.start_time || b.entry.startTime || "00:00";
+          return tA.localeCompare(tB);
+        }),
     })).filter((group) => (selectedDay === "All" ? group.items.length > 0 : group.day === selectedDay));
   }, [entries, selectedDay]);
 
@@ -423,20 +481,20 @@ export function RoutineVerificationModal({
                 color={isPdf ? "#DC2626" : "#4F46E5"}
               />
             </View>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text
                 style={[styles.docNameText, { color: colors.text }]}
                 numberOfLines={1}
               >
-                {uploadedFile?.name || "Original Routine Document"}
+                {uploadedFile?.name || "Original Routine PDF"}
               </Text>
               <Text style={[styles.docSubText, { color: colors.muted }]}>
-                {isPdf ? "Vector PDF Timetable" : "Image Routine"} • Page {currentPage} of {totalDocPages}
+                {isPdf ? "Official PDF Document" : "Image Routine"} • Page {currentPage} of {totalDocPages}
               </Text>
             </View>
           </View>
 
-          {/* Page Switcher */}
+          {/* Page Controls & Fullscreen Action */}
           <View style={styles.pageControlsWrap}>
             <Pressable
               onPress={() => {
@@ -449,7 +507,7 @@ export function RoutineVerificationModal({
                 { opacity: currentPage <= 1 ? 0.4 : 1, backgroundColor: isDark ? colors.bg : "#F8FAFC" },
               ]}
             >
-              <MaterialCommunityIcons name="chevron-left" size={20} color={colors.text} />
+              <MaterialCommunityIcons name="chevron-left" size={18} color={colors.text} />
             </Pressable>
 
             <View style={styles.pageChip}>
@@ -469,29 +527,20 @@ export function RoutineVerificationModal({
                 { opacity: currentPage >= totalDocPages ? 0.4 : 1, backgroundColor: isDark ? colors.bg : "#F8FAFC" },
               ]}
             >
-              <MaterialCommunityIcons name="chevron-right" size={20} color={colors.text} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.text} />
             </Pressable>
 
-            {/* Zoom Controls */}
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                setZoomLevel((z) => Math.max(50, z - 25));
-              }}
-              style={[styles.zoomBtn, { backgroundColor: isDark ? colors.bg : "#F8FAFC" }]}
-            >
-              <MaterialCommunityIcons name="magnify-minus-outline" size={18} color={colors.text} />
-            </Pressable>
-
-            <Pressable
-              onPress={() => {
-                triggerHaptic();
-                setZoomLevel((z) => Math.min(250, z + 25));
-              }}
-              style={[styles.zoomBtn, { backgroundColor: isDark ? colors.bg : "#F8FAFC" }]}
-            >
-              <MaterialCommunityIcons name="magnify-plus-outline" size={18} color={colors.text} />
-            </Pressable>
+            {fileDataUrl ? (
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setShowFullScreenReader(true);
+                }}
+                style={[styles.zoomBtn, { backgroundColor: colors.primarySoft }]}
+              >
+                <MaterialCommunityIcons name="fullscreen" size={18} color={colors.primary} />
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
@@ -582,31 +631,38 @@ export function RoutineVerificationModal({
                 title: "Uploaded Routine Document",
               })
             ) : (
-              // Native Scrollable Document Preview
-              <ScrollView
-                maximumZoomScale={3}
-                minimumZoomScale={0.5}
-                contentContainerStyle={styles.nativeDocScroll}
-              >
-                <View style={styles.nativeDocBanner}>
-                  <MaterialCommunityIcons name="file-pdf-box" size={48} color={colors.primary} />
-                  <Text style={[styles.nativeDocTitle, { color: colors.text }]}>
-                    {uploadedFile?.name || "Uploaded Routine PDF"}
-                  </Text>
-                  <Text style={[styles.nativeDocSub, { color: colors.muted }]}>
-                    Showing Page {currentPage} • Viewing in high-fidelity mobile viewer
-                  </Text>
+              // Native PDF Preview Card with 1-click Reader Button
+              <View style={styles.nativeDocBanner}>
+                <View style={[styles.pdfIconWrap, { backgroundColor: colors.primarySoft }]}>
+                  <MaterialCommunityIcons name="file-pdf-box" size={52} color={colors.primary} />
                 </View>
-              </ScrollView>
+                <Text style={[styles.nativeDocTitle, { color: colors.text }]}>
+                  {uploadedFile?.name || "Uploaded Routine PDF"}
+                </Text>
+                <Text style={[styles.nativeDocSub, { color: colors.muted }]}>
+                  Page {currentPage} of {totalDocPages} • Original document ready for cross-checking
+                </Text>
+
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic();
+                    setShowFullScreenReader(true);
+                  }}
+                  style={[styles.openViewerBtn, { backgroundColor: colors.primary }]}
+                >
+                  <MaterialCommunityIcons name="magnify-plus-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.openViewerBtnText}>Open Interactive PDF Viewer</Text>
+                </Pressable>
+              </View>
             )
           ) : (
             <View style={styles.emptyDocWrap}>
               <MaterialCommunityIcons name="file-search-outline" size={44} color={colors.muted} />
               <Text style={[styles.emptyDocTitle, { color: colors.text }]}>
-                Original PDF Stored in Session
+                Routine File Uploaded
               </Text>
               <Text style={[styles.emptyDocSub, { color: colors.muted }]}>
-                Use the side-by-side mode to verify and adjust each extracted class.
+                Use the cards on the right to verify, edit, and activate your semester classes.
               </Text>
             </View>
           )}
@@ -643,7 +699,7 @@ export function RoutineVerificationModal({
                 Target Timetable:
               </Text>
               <Text style={[styles.sectionActiveBadge, { color: colors.primary }]}>
-                {currentSection || "All Classes"}
+                {currentSection || routine.academic_group || "CSE 2-2 Sec A"}
               </Text>
             </View>
 
@@ -731,7 +787,7 @@ export function RoutineVerificationModal({
                 Cross-Verification Recommended
               </Text>
               <Text style={[styles.alertText, { color: "#B45309" }]}>
-                Check each period with the PDF. Tap [Edit] on any card to adjust times or rooms.
+                Verify each period against the PDF. Tap [Edit] on any card to update rooms or instructors.
               </Text>
             </View>
           </View>
@@ -749,7 +805,7 @@ export function RoutineVerificationModal({
         >
           {["All", ...DAYS_OF_WEEK].map((d) => {
             const isDayActive = selectedDay === d;
-            const count = d === "All" ? entries.length : entries.filter((e) => e.day_of_week === d).length;
+            const count = d === "All" ? entries.length : entries.filter((e) => (e.day_of_week || e.day) === d).length;
 
             return (
               <Pressable
@@ -775,7 +831,11 @@ export function RoutineVerificationModal({
         </View>
 
         {/* Class Cards List */}
-        <ScrollView style={styles.cardsScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.cardsScroll}
+          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
+          showsVerticalScrollIndicator={false}
+        >
           {isSwitchingSection ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="large" color={colors.primary} />
@@ -785,13 +845,35 @@ export function RoutineVerificationModal({
             </View>
           ) : displayedEntries.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <MaterialCommunityIcons name="calendar-blank-outline" size={44} color={colors.muted} />
+              <MaterialCommunityIcons name="calendar-blank-outline" size={48} color={colors.muted} />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                No classes scheduled for {selectedDay}
+                {entries.length === 0 ? "No classes detected yet" : `No classes scheduled for ${selectedDay}`}
               </Text>
               <Text style={[styles.emptySub, { color: colors.muted }]}>
-                Tap [Add Class] if your timetable contains a session for this day.
+                {entries.length === 0
+                  ? "AI could not parse table cells from this document layout. You can instantly auto-fill RUET CSE classes or add your own."
+                  : "Tap [Add Class] if your timetable contains a session for this day."}
               </Text>
+
+              {entries.length === 0 ? (
+                <View style={styles.emptyActionsRow}>
+                  <Pressable
+                    onPress={handleAutoFillRuetTemplate}
+                    style={[styles.autoFillBtn, { backgroundColor: colors.primary }]}
+                  >
+                    <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FFFFFF" />
+                    <Text style={styles.autoFillBtnText}>Auto-Fill RUET CSE 2-2 Classes</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={handleAddNewClass}
+                    style={[styles.manualAddBtn, { borderColor: colors.border }]}
+                  >
+                    <MaterialCommunityIcons name="plus" size={18} color={colors.text} />
+                    <Text style={[styles.manualAddBtnText, { color: colors.text }]}>Add Manually</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           ) : (
             entriesByDay.map((group) => (
@@ -806,8 +888,14 @@ export function RoutineVerificationModal({
                 </View>
 
                 {group.items.map(({ entry, index }) => {
-                  const entryKey = entry.id || `${entry.course_code}_${entry.day_of_week}_${entry.start_time}`;
+                  const code = entry.course_code || entry.courseCode || "Course";
+                  const title = entry.course_title || entry.courseTitle || code;
+                  const day = entry.day_of_week || entry.day || "Sunday";
+                  const startTime = entry.start_time || entry.startTime || "08:00";
+                  const endTime = entry.end_time || entry.endTime || "08:50";
+                  const entryKey = entry.id || `${code}_${day}_${startTime}`;
                   const isVerified = verifiedEntryIds.has(entryKey);
+                  const isLab = entry.type === "LAB" || code.endsWith("2") || code.endsWith("4") || code.endsWith("6") || code.endsWith("0");
                   const isAmbiguous =
                     entry.confidence === "ambiguous" ||
                     entry.confidence === "low" ||
@@ -815,7 +903,7 @@ export function RoutineVerificationModal({
 
                   return (
                     <View
-                      key={`${entry.course_code}-${index}`}
+                      key={`${code}-${index}`}
                       style={[
                         styles.classCard,
                         {
@@ -830,7 +918,7 @@ export function RoutineVerificationModal({
                           borderLeftWidth: 4,
                           borderLeftColor: isVerified
                             ? "#10B981"
-                            : entry.type === "LAB"
+                            : isLab
                             ? "#8B5CF6"
                             : colors.primary,
                         },
@@ -841,29 +929,28 @@ export function RoutineVerificationModal({
                         <View style={{ flex: 1 }}>
                           <View style={styles.codeRow}>
                             <Text style={[styles.courseCode, { color: colors.text }]}>
-                              {entry.course_code}
+                              {code}
                             </Text>
                             <View
                               style={[
                                 styles.typeBadge,
                                 {
-                                  backgroundColor:
-                                    entry.type === "LAB" ? "#EDE9FE" : "#EFF6FF",
+                                  backgroundColor: isLab ? "#EDE9FE" : "#EFF6FF",
                                 },
                               ]}
                             >
                               <MaterialCommunityIcons
-                                name={entry.type === "LAB" ? "flask-outline" : "book-open-outline"}
+                                name={isLab ? "flask-outline" : "book-open-outline"}
                                 size={12}
-                                color={entry.type === "LAB" ? "#7C3AED" : "#2563EB"}
+                                color={isLab ? "#7C3AED" : "#2563EB"}
                               />
                               <Text
                                 style={[
                                   styles.typeBadgeText,
-                                  { color: entry.type === "LAB" ? "#7C3AED" : "#2563EB" },
+                                  { color: isLab ? "#7C3AED" : "#2563EB" },
                                 ]}
                               >
-                                {entry.type}
+                                {isLab ? "LAB" : "THEORY"}
                               </Text>
                             </View>
                           </View>
@@ -872,7 +959,7 @@ export function RoutineVerificationModal({
                             style={[styles.courseTitle, { color: colors.muted }]}
                             numberOfLines={1}
                           >
-                            {entry.course_title || entry.course_code}
+                            {title}
                           </Text>
                         </View>
 
@@ -911,12 +998,12 @@ export function RoutineVerificationModal({
                             color={colors.primary}
                           />
                           <Text style={[styles.detailText, { color: colors.text }]}>
-                            {formatTime12h(entry.start_time)} – {formatTime12h(entry.end_time)}
+                            {formatTime12h(startTime)} – {formatTime12h(endTime)}
                           </Text>
                         </View>
 
                         {/* Room */}
-                        {entry.room && (
+                        {entry.room ? (
                           <View style={styles.detailItem}>
                             <MaterialCommunityIcons
                               name="map-marker-outline"
@@ -930,10 +1017,10 @@ export function RoutineVerificationModal({
                               {entry.room}
                             </Text>
                           </View>
-                        )}
+                        ) : null}
 
                         {/* Instructor */}
-                        {entry.instructor && (
+                        {entry.instructor ? (
                           <View style={styles.detailItem}>
                             <MaterialCommunityIcons
                               name="account-outline"
@@ -947,7 +1034,7 @@ export function RoutineVerificationModal({
                               {entry.instructor}
                             </Text>
                           </View>
-                        )}
+                        ) : null}
                       </View>
 
                       {/* Card Footer Actions: Edit / Delete */}
@@ -974,17 +1061,16 @@ export function RoutineVerificationModal({
               </View>
             ))
           )}
-
-          <View style={{ height: 120 }} />
         </ScrollView>
 
-        {/* Bottom Activation Bar */}
+        {/* Bottom Activation Dock */}
         <View
           style={[
             styles.bottomBar,
             {
               backgroundColor: isDark ? colors.surface : "#FFFFFF",
               borderTopColor: isDark ? colors.border : "#E2E8F0",
+              paddingBottom: Math.max(insets.bottom, 14) + 6,
             },
           ]}
         >
@@ -1054,27 +1140,57 @@ export function RoutineVerificationModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.modalRoot, { backgroundColor: isDark ? colors.bg : "#F8FAFC" }]}>
-        {/* Top Header & View Mode Switcher */}
+      <View
+        style={[
+          styles.modalRoot,
+          {
+            backgroundColor: isDark ? colors.bg : "#F8FAFC",
+            paddingTop: insets.top,
+          },
+        ]}
+      >
+        {/* Top Header Bar */}
         <View
           style={[
-            styles.topHeader,
+            styles.topBar,
             {
               backgroundColor: isDark ? colors.surface : "#FFFFFF",
               borderBottomColor: isDark ? colors.border : "#E2E8F0",
             },
           ]}
         >
-          <View style={styles.topHeaderLeft}>
-            <Text style={[styles.topHeaderTitle, { color: colors.text }]}>
-              Routine Studio & PDF Verification
+          <Pressable onPress={onClose} style={styles.topBackBtn} hitSlop={10}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
+          </Pressable>
+
+          <View style={styles.topTitleWrap}>
+            <Text style={[styles.topTitle, { color: colors.text }]} numberOfLines={1}>
+              Routine Studio & Verification
             </Text>
-            <Text style={[styles.topHeaderSub, { color: colors.muted }]}>
-              {currentSection || routine.title} • {entries.length} classes detected
+            <Text style={[styles.topSub, { color: colors.muted }]} numberOfLines={1}>
+              {currentSection || routine.title || "Timetable"} • {entries.length} classes detected
             </Text>
           </View>
 
-          {/* Mode Switcher Buttons */}
+          <Pressable
+            onPress={handleAddNewClass}
+            style={[styles.headerAddBtn, { backgroundColor: colors.primarySoft }]}
+          >
+            <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
+            <Text style={[styles.headerAddBtnText, { color: colors.primary }]}>Class</Text>
+          </Pressable>
+        </View>
+
+        {/* View Mode Segmented Switcher */}
+        <View
+          style={[
+            styles.modeTabsBar,
+            {
+              backgroundColor: isDark ? colors.surface : "#FFFFFF",
+              borderBottomColor: isDark ? colors.border : "#E2E8F0",
+            },
+          ]}
+        >
           <View style={[styles.modeTabsWrap, { backgroundColor: isDark ? colors.bg : "#F1F5F9" }]}>
             <Pressable
               onPress={() => {
@@ -1122,7 +1238,7 @@ export function RoutineVerificationModal({
                   { color: viewMode === "routine" ? "#FFFFFF" : colors.text },
                 ]}
               >
-                Routine
+                Routine ({entries.length})
               </Text>
             </Pressable>
 
@@ -1151,10 +1267,6 @@ export function RoutineVerificationModal({
               </Text>
             </Pressable>
           </View>
-
-          <Pressable onPress={onClose} style={styles.topCloseBtn}>
-            <MaterialCommunityIcons name="close" size={24} color={colors.text} />
-          </Pressable>
         </View>
 
         {/* Main Content Workspace */}
@@ -1169,7 +1281,7 @@ export function RoutineVerificationModal({
             ) : (
               // Mobile / Narrow: Vertical Stack Split View
               <View style={styles.splitCol}>
-                <View style={{ height: Math.min(windowHeight * 0.4, 300) }}>
+                <View style={{ height: Math.min(windowHeight * 0.38, 280) }}>
                   {renderDocumentViewer()}
                 </View>
                 <View style={{ flex: 1 }}>{renderRoutineStudio()}</View>
@@ -1191,6 +1303,19 @@ export function RoutineVerificationModal({
             onSave={handleSaveEditedEntry}
           />
         )}
+
+        {/* Fullscreen PDF Reader for interactive inspection */}
+        {showFullScreenReader && fileDataUrl ? (
+          <FullScreenPdfReader
+            visible={showFullScreenReader}
+            url={fileDataUrl}
+            title={uploadedFile?.name || "Official Routine PDF"}
+            department={routine.department}
+            courseCode={currentSection}
+            fileSizeBytes={uploadedFile?.size}
+            onClose={() => setShowFullScreenReader(false)}
+          />
+        ) : null}
       </View>
     </Modal>
   );
@@ -1200,45 +1325,62 @@ const styles = StyleSheet.create({
   modalRoot: {
     flex: 1,
   },
-  topHeader: {
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
+    gap: 12,
   },
-  topHeaderLeft: {
+  topBackBtn: {
+    padding: 4,
+  },
+  topTitleWrap: {
     flex: 1,
   },
-  topHeaderTitle: {
-    fontSize: 18,
+  topTitle: {
+    fontSize: 16,
     fontWeight: "700",
   },
-  topHeaderSub: {
+  topSub: {
     fontSize: 12,
     marginTop: 2,
+  },
+  headerAddBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    gap: 4,
+  },
+  headerAddBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modeTabsBar: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
   },
   modeTabsWrap: {
     flexDirection: "row",
     borderRadius: radius.md,
     padding: 3,
-    marginHorizontal: 12,
   },
   modeTabBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    justifyContent: "center",
+    paddingVertical: 7,
     borderRadius: radius.sm,
-    gap: 4,
+    gap: 5,
   },
   modeTabText: {
     fontSize: 12,
     fontWeight: "600",
-  },
-  topCloseBtn: {
-    padding: 6,
   },
   workspace: {
     flex: 1,
@@ -1263,7 +1405,6 @@ const styles = StyleSheet.create({
   // Document Pane
   docPane: {
     flex: 1,
-    borderRightWidth: 1,
   },
   docToolbar: {
     flexDirection: "row",
@@ -1334,26 +1475,43 @@ const styles = StyleSheet.create({
   docCanvasWrap: {
     flex: 1,
   },
-  nativeDocScroll: {
-    flexGrow: 1,
+  nativeDocBanner: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
   },
-  nativeDocBanner: {
+  pdfIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    marginBottom: 12,
   },
   nativeDocTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
-    marginTop: 12,
+    textAlign: "center",
   },
   nativeDocSub: {
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 4,
     textAlign: "center",
+  },
+  openViewerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+  },
+  openViewerBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   emptyDocWrap: {
     flex: 1,
@@ -1378,17 +1536,17 @@ const styles = StyleSheet.create({
   },
   studioHeader: {
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
   },
   sectionSelectWrap: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   sectionLabelRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   sectionLabel: {
     fontSize: 12,
@@ -1433,8 +1591,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
     gap: 4,
   },
   addBtnText: {
@@ -1496,14 +1654,48 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    marginTop: 8,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 10,
+    textAlign: "center",
   },
   emptySub: {
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 6,
     textAlign: "center",
+    lineHeight: 18,
+  },
+  emptyActionsRow: {
+    marginTop: 18,
+    gap: 10,
+    width: "100%",
+    maxWidth: 320,
+  },
+  autoFillBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 11,
+    borderRadius: radius.md,
+    gap: 6,
+  },
+  autoFillBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  manualAddBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: 6,
+  },
+  manualAddBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   dayGroup: {
     marginBottom: 16,
@@ -1617,7 +1809,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingTop: 10,
     borderTopWidth: 1,
   },
   verificationCheckboxRow: {

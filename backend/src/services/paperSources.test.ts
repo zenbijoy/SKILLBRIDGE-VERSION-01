@@ -11,12 +11,13 @@ test("Real-Time Paper Sources Service Test Suite", async (t) => {
   await t.test("getAvailableSources returns all active academic paper APIs", () => {
     const sources = getAvailableSources();
     assert.ok(Array.isArray(sources));
-    assert.strictEqual(sources.length, 6);
+    assert.strictEqual(sources.length, 7);
 
     const ids = sources.map((s) => s.id);
     assert.ok(ids.includes("all"));
     assert.ok(ids.includes("arxiv"));
     assert.ok(ids.includes("openalex"));
+    assert.ok(ids.includes("doaj"));
     assert.ok(ids.includes("europepmc"));
     assert.ok(ids.includes("crossref"));
     assert.ok(ids.includes("semanticscholar"));

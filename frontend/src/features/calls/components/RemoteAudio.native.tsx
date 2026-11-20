@@ -1,11 +1,12 @@
 import React, { useEffect } from "react";
 import { AudioSession } from "@livekit/react-native";
 import { RemoteAudioProps } from "./RemoteAudio";
+import { useCallStore } from "../store/callStore";
 
 /**
  * Native VoIP AudioSession manager.
  * Configures iOS AVAudioSession and Android AudioManager for crisp two-way call audio,
- * handles speaker/earpiece routing, and terminates the session upon unmount.
+ * handles speaker/earpiece routing, and terminates the session upon call end (safe with minimization).
  */
 export const RemoteAudio: React.FC<RemoteAudioProps> = ({ isSpeakerOn }) => {
   useEffect(() => {
@@ -18,9 +19,12 @@ export const RemoteAudio: React.FC<RemoteAudioProps> = ({ isSpeakerOn }) => {
     })();
 
     return () => {
-      try {
-        AudioSession.stopAudioSession();
-      } catch {}
+      const currentCall = useCallStore.getState().activeCall;
+      if (!currentCall || !currentCall.isMinimized || currentCall.status === "ended" || currentCall.status === "failed") {
+        try {
+          AudioSession.stopAudioSession();
+        } catch {}
+      }
     };
   }, []);
 

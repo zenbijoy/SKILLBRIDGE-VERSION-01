@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { logger } from "../lib/logger.js";
 import { admin } from "../lib/db.js";
 import { wrap } from "../middleware/error.js";
 import { notifyUser } from "../services/push.js";
@@ -18,6 +19,7 @@ import {
 import {
   searchAcademicPapers,
   getLatestRealtimePapers,
+  getCuratedDisciplinePapers,
   resolvePaper,
   getAvailableSources,
 } from "../services/paperSources.js";
@@ -415,9 +417,14 @@ research.get(
 research.get(
   "/papers/latest",
   wrap(async (req, res) => {
-    const discipline = typeof req.query.discipline === "string" ? req.query.discipline : undefined;
-    const papers = await getLatestRealtimePapers(discipline);
-    res.json({ data: papers, discipline: discipline || "AI & Machine Learning" });
+    const discipline = typeof req.query.discipline === "string" ? req.query.discipline : "AI & Machine Learning";
+    try {
+      const papers = await getLatestRealtimePapers(discipline);
+      return res.json({ data: papers, discipline });
+    } catch (err) {
+      logger.warn({ err, discipline }, "Realtime papers failed, serving curated");
+      return res.json({ data: getCuratedDisciplinePapers(discipline), discipline });
+    }
   }),
 );
 
@@ -447,9 +454,25 @@ research.get(
 research.get(
   "/papers/:paperId",
   wrap(async (req, res) => {
-    const paperId = String(req.params.paperId);
-    const paper = await resolvePaper(paperId);
-    res.json(paper);
+    const paperId = String(req.params.paperId || "").trim();
+    if (!paperId || paperId === "undefined" || paperId === "null") {
+      return res.status(400).json({ error: "Invalid paper ID" });
+    }
+    if (paperId === "latest") {
+      const discipline = typeof req.query.discipline === "string" ? req.query.discipline : undefined;
+      const papers = await getLatestRealtimePapers(discipline);
+      return res.json({ data: papers, discipline: discipline || "AI & Machine Learning" });
+    }
+    if (paperId === "sources") {
+      return res.json({ sources: getAvailableSources() });
+    }
+    try {
+      const paper = await resolvePaper(paperId);
+      return res.json(paper);
+    } catch (err) {
+      logger.warn({ err, paperId }, "Paper resolution failed");
+      return res.status(404).json({ error: "Paper not found" });
+    }
   }),
 );
 

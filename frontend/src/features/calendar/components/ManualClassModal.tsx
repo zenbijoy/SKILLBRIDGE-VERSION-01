@@ -35,19 +35,19 @@ export function ManualClassModal({
   const keyboardHeight = useKeyboardHeight();
 
   const [courseCode, setCourseCode] = useState(
-    initialData?.course_code ?? ""
+    initialData?.course_code ?? (initialData as any)?.courseCode ?? ""
   );
   const [courseTitle, setCourseTitle] = useState(
-    initialData?.course_title ?? ""
+    initialData?.course_title ?? (initialData as any)?.courseTitle ?? ""
   );
   const [dayOfWeek, setDayOfWeek] = useState<DayOfWeek>(
-    initialData?.day_of_week ?? "Sunday"
+    (initialData?.day_of_week ?? (initialData as any)?.day ?? "Sunday") as DayOfWeek
   );
   const [startTime, setStartTime] = useState(
-    initialData?.start_time ?? "10:00"
+    initialData?.start_time ?? (initialData as any)?.startTime ?? "08:00"
   );
   const [endTime, setEndTime] = useState(
-    initialData?.end_time ?? "11:00"
+    initialData?.end_time ?? (initialData as any)?.endTime ?? "08:50"
   );
   const [room, setRoom] = useState(initialData?.room ?? "");
   const [instructor, setInstructor] = useState(
@@ -59,22 +59,27 @@ export function ManualClassModal({
 
   const handleSave = () => {
     if (!courseCode.trim()) {
-      Alert.alert("Course Code Required", "Please enter course code (e.g. CSE 2103)");
+      Alert.alert("Course Code Required", "Please enter course code (e.g. CSE 2201)");
       return;
     }
     if (!startTime.trim() || !endTime.trim()) {
-      Alert.alert("Time Required", "Please enter start and end time (e.g. 10:00 and 11:00)");
+      Alert.alert("Time Required", "Please enter start and end time (e.g. 08:00 and 08:50)");
       return;
     }
 
     triggerHaptic();
+    const finalCode = courseCode.trim().toUpperCase();
+    const finalTitle = courseTitle.trim() || finalCode;
+    const finalStart = startTime.trim();
+    const finalEnd = endTime.trim();
+
     onSave({
       id: initialData?.id,
-      course_code: courseCode.trim().toUpperCase(),
-      course_title: courseTitle.trim() || courseCode.trim().toUpperCase(),
+      course_code: finalCode,
+      course_title: finalTitle,
       day_of_week: dayOfWeek,
-      start_time: startTime.trim(),
-      end_time: endTime.trim(),
+      start_time: finalStart,
+      end_time: finalEnd,
       room: room.trim() || null,
       instructor: instructor.trim() || null,
       type,

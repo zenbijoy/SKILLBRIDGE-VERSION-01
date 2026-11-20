@@ -659,21 +659,43 @@ calendar.post(
         if (extraction.classes && extraction.classes.length > 0) {
           entryRows = extraction.classes.map((c: any) => ({
             routine_id: routine.id,
-            course_code: c.courseCode,
-            course_title: c.courseTitle,
-            day_of_week: c.day,
-            start_time: c.startTime,
-            end_time: c.endTime,
+            course_code: c.courseCode || c.course_code,
+            courseCode: c.courseCode || c.course_code,
+            course_title: c.courseTitle || c.course_title,
+            courseTitle: c.courseTitle || c.course_title,
+            day_of_week: c.day || c.day_of_week,
+            day: c.day || c.day_of_week,
+            start_time: c.startTime || c.start_time,
+            startTime: c.startTime || c.start_time,
+            end_time: c.endTime || c.end_time,
+            endTime: c.endTime || c.end_time,
             room: c.room,
             instructor: c.instructor,
             type: c.type,
-            group_name: c.groupName,
+            group_name: c.groupName || c.group_name,
+            groupName: c.groupName || c.group_name,
             confidence: c.confidence,
             warnings: c.warnings || [],
             is_confirmed: false,
           }));
 
-          await admin.from("routine_entries").insert(entryRows);
+          // Clean payload for DB schema (DB table uses snake_case columns)
+          const dbRows = entryRows.map((e) => ({
+            routine_id: e.routine_id,
+            course_code: e.course_code,
+            course_title: e.course_title,
+            day_of_week: e.day_of_week,
+            start_time: e.start_time,
+            end_time: e.end_time,
+            room: e.room,
+            instructor: e.instructor,
+            type: e.type,
+            group_name: e.group_name,
+            confidence: e.confidence,
+            warnings: e.warnings,
+            is_confirmed: e.is_confirmed,
+          }));
+          await admin.from("routine_entries").insert(dbRows);
         }
 
         // Audit log
@@ -698,15 +720,21 @@ calendar.post(
       entryRows = (extraction.classes || []).map((c: any) => ({
         id: crypto.randomUUID(),
         routine_id: routineId,
-        course_code: c.courseCode,
-        course_title: c.courseTitle,
-        day_of_week: c.day,
-        start_time: c.startTime,
-        end_time: c.endTime,
+        course_code: c.courseCode || c.course_code,
+        courseCode: c.courseCode || c.course_code,
+        course_title: c.courseTitle || c.course_title,
+        courseTitle: c.courseTitle || c.course_title,
+        day_of_week: c.day || c.day_of_week,
+        day: c.day || c.day_of_week,
+        start_time: c.startTime || c.start_time,
+        startTime: c.startTime || c.start_time,
+        end_time: c.endTime || c.end_time,
+        endTime: c.endTime || c.end_time,
         room: c.room,
         instructor: c.instructor,
         type: c.type,
-        group_name: c.groupName,
+        group_name: c.groupName || c.group_name,
+        groupName: c.groupName || c.group_name,
         confidence: c.confidence,
         warnings: c.warnings || [],
         is_confirmed: false,

@@ -19,13 +19,23 @@ const DEFAULT_STUN_SERVERS: IceServerItem[] = [
   },
 ];
 
+let cachedClientIceServers: { servers: IceServerItem[]; expiresAt: number } | null = null;
+
 /**
  * Fetch ephemeral ICE servers (STUN + short-lived Cloudflare TURN)
  */
 export async function fetchIceServers(): Promise<IceServerItem[]> {
+  if (cachedClientIceServers && Date.now() < cachedClientIceServers.expiresAt) {
+    return cachedClientIceServers.servers;
+  }
+
   try {
     const res = await api<{ iceServers: IceServerItem[]; provider: string }>("/calls/ice-servers");
     if (res && res.iceServers && res.iceServers.length > 0) {
+      cachedClientIceServers = {
+        servers: res.iceServers,
+        expiresAt: Date.now() + 10 * 60 * 1000, // Cache for 10 minutes
+      };
       return res.iceServers;
     }
   } catch (err) {

@@ -159,7 +159,7 @@ export const userConnections = new Map<string, number>();
 // In-memory per-socket rate limiter for signaling abuse protection
 const socketRateLimits = new Map<string, { count: number; resetAt: number }>();
 
-function checkSignalingRateLimit(socketId: string, limit = 60, windowMs = 10000): boolean {
+function checkSignalingRateLimit(socketId: string, limit = 150, windowMs = 10000): boolean {
   const now = Date.now();
   const entry = socketRateLimits.get(socketId);
   if (!entry || now > entry.resetAt) {
@@ -169,6 +169,9 @@ function checkSignalingRateLimit(socketId: string, limit = 60, windowMs = 10000)
   entry.count++;
   return entry.count <= limit;
 }
+
+// In-memory call peer authorization cache for instant sub-millisecond lookup
+export const callPeerCache = new Map<string, { callerId: string; calleeId: string; expiresAt: number }>();
 
 // Server-side call signaling buffer (Bug 3: prevents dropped offer/ICE during navigation)
 export interface BufferedCallSignaling {
@@ -579,9 +582,17 @@ export function setupSocket(io: SocketServer) {
     // WebRTC 1:1 Call Signaling Protocol Handlers (Secured & Rate Limited)
     // =========================================================================
 
-    // Server-authoritative peer resolver
+    // Server-authoritative peer resolver with in-memory caching for zero-latency candidate exchange
     async function getAuthorizedCallPeer(callId: string): Promise<string | null> {
       if (!callId || typeof callId !== "string" || callId.length > 36) return null;
+
+      const cached = callPeerCache.get(callId);
+      if (cached && Date.now() < cached.expiresAt) {
+        if (cached.callerId === userId) return cached.calleeId;
+        if (cached.calleeId === userId) return cached.callerId;
+        return null;
+      }
+
       const { data: callRecord } = await admin
         .from("calls")
         .select("caller_id, callee_id, status")
@@ -589,6 +600,13 @@ export function setupSocket(io: SocketServer) {
         .maybeSingle();
 
       if (!callRecord) return null;
+
+      callPeerCache.set(callId, {
+        callerId: callRecord.caller_id,
+        calleeId: callRecord.callee_id,
+        expiresAt: Date.now() + 180_000,
+      });
+
       if (callRecord.caller_id === userId) return callRecord.callee_id;
       if (callRecord.callee_id === userId) return callRecord.caller_id;
       return null;
@@ -660,9 +678,9 @@ export function setupSocket(io: SocketServer) {
       if (!callId) return;
       const safeReason = typeof reason === "string" ? reason.slice(0, 50) : "declined";
 
-      callSignalingBuffer.delete(callId);
-
       const peerId = await getAuthorizedCallPeer(callId);
+      callSignalingBuffer.delete(callId);
+      callPeerCache.delete(callId);
       if (!peerId) return;
       io.to(`user:${peerId}`).emit("call:reject", { callId, reason: safeReason });
     });
@@ -673,9 +691,9 @@ export function setupSocket(io: SocketServer) {
       const { callId, durationSeconds = 0 } = payload || {};
       if (!callId) return;
 
-      callSignalingBuffer.delete(callId);
-
       const peerId = await getAuthorizedCallPeer(callId);
+      callSignalingBuffer.delete(callId);
+      callPeerCache.delete(callId);
       if (!peerId) return;
       io.to(`user:${peerId}`).emit("call:end", {
         callId,
@@ -693,9 +711,10 @@ export function setupSocket(io: SocketServer) {
       if (!peerId) return;
       io.to(`user:${peerId}`).emit("call:ready", { callId });
 
-      // Replay any buffered offer and ICE candidates directly to the ready peer (Bug 3)
+      // Replay any buffered offer and ICE candidates directly to the ready peer, then clear to avoid duplicate offers
       const buffered = callSignalingBuffer.get(callId);
       if (buffered) {
+        callSignalingBuffer.delete(callId);
         if (buffered.offer) {
           socket.emit("call:offer", { callId, sdp: buffered.offer });
         }

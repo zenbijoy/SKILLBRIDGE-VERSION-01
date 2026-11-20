@@ -1,4 +1,5 @@
 import { admin } from "../lib/db.js";
+import { env } from "../config/env.js";
 
 // In-memory fallback mapping in case remote Supabase column schema cache has not yet refreshed
 const clubRoomCache = new Map<string, string>();
@@ -67,7 +68,7 @@ export async function ensureClubWorkspace(clubId: string, actorUserId: string): 
       topic: "Student Club",
       visibility: "public",
       mode: "hybrid",
-      capacity: 500,
+      capacity: Math.min(250, env.MAX_ROOM_CAPACITY || 250),
       owner_id: actorUserId,
       tags: ["club", "campus-life"],
       enabled_modules: ["posts", "chat", "learn", "media"],
@@ -86,7 +87,7 @@ export async function ensureClubWorkspace(clubId: string, actorUserId: string): 
         topic: "Student Club",
         visibility: "public",
         mode: "hybrid",
-        capacity: 500,
+        capacity: Math.min(250, env.MAX_ROOM_CAPACITY || 250),
         owner_id: actorUserId,
       })
       .select("id")
@@ -333,7 +334,10 @@ export async function ensureResearchWorkspace(projectId: string, ownerId: string
 /**
  * Ensures or retrieves the canonical Campus Help room.
  */
-export async function ensureCampusHelpWorkspace(university = "Campus"): Promise<string> {
+export async function ensureCampusHelpWorkspace(
+  university = "Campus",
+  fallbackUserId?: string,
+): Promise<string> {
   const cacheKey = university.toLowerCase().trim();
   if (campusHelpRoomCache.has(cacheKey)) {
     return campusHelpRoomCache.get(cacheKey)!;
@@ -343,10 +347,11 @@ export async function ensureCampusHelpWorkspace(university = "Campus"): Promise<
   const { data: existing } = await admin
     .from("rooms")
     .select("id")
-    .ilike("title", `%${university}%Help%`)
+    .or(`title.ilike.%${university}%Help%,title.ilike.%Academic Help%,title.ilike.%Campus Help%`)
+    .limit(1)
     .maybeSingle();
 
-  if (existing) {
+  if (existing?.id) {
     campusHelpRoomCache.set(cacheKey, existing.id);
     return existing.id;
   }
@@ -358,10 +363,12 @@ export async function ensureCampusHelpWorkspace(university = "Campus"): Promise<
     .limit(1)
     .maybeSingle();
 
-  const ownerId = adminUser?.id;
+  const ownerId = adminUser?.id || fallbackUserId;
   if (!ownerId) {
-    throw new Error("No system profile available to initialize Campus Help workspace");
+    throw new Error("No profile available to initialize Campus Help workspace");
   }
+
+  const maxCapacity = Math.min(250, env.MAX_ROOM_CAPACITY || 250);
 
   const { data: newRoom, error } = await admin
     .from("rooms")
@@ -371,16 +378,18 @@ export async function ensureCampusHelpWorkspace(university = "Campus"): Promise<
       topic: "Academic Help",
       visibility: "public",
       mode: "online",
-      capacity: 5000,
+      capacity: maxCapacity,
       owner_id: ownerId,
       tags: ["help", "qa", "academics"],
       enabled_modules: ["posts", "chat", "learn"],
       default_landing_tab: "learn",
     } as any)
     .select("id")
-    .single();
+    .maybeSingle();
 
-  if (error || !newRoom) {
+  let roomId = newRoom?.id;
+
+  if (error || !roomId) {
     const { data: basicRoom, error: bErr } = await admin
       .from("rooms")
       .insert({
@@ -389,19 +398,28 @@ export async function ensureCampusHelpWorkspace(university = "Campus"): Promise<
         topic: "Academic Help",
         visibility: "public",
         mode: "online",
-        capacity: 5000,
+        capacity: maxCapacity,
         owner_id: ownerId,
       })
       .select("id")
       .single();
 
     if (bErr) throw bErr;
-    campusHelpRoomCache.set(cacheKey, basicRoom.id);
-    return basicRoom.id;
+    roomId = basicRoom.id;
   }
 
-  campusHelpRoomCache.set(cacheKey, newRoom.id);
-  return newRoom.id;
+  // Auto-add owner to room_members
+  await admin.from("room_members").upsert(
+    {
+      room_id: roomId,
+      user_id: ownerId,
+      role: "owner",
+    } as any,
+    { onConflict: "room_id,user_id" },
+  );
+
+  campusHelpRoomCache.set(cacheKey, roomId);
+  return roomId;
 }
 
 /**

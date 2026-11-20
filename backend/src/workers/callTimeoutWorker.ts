@@ -1,6 +1,7 @@
 import { admin } from "../lib/db.js";
 import { getSocketServer } from "../socket.js";
 import { logger } from "../lib/logger.js";
+import { notifyUser } from "../services/push.js";
 
 // A call that stays in "ringing" longer than this is treated as missed.
 // This mirrors WhatsApp/Phone behaviour: if the callee never answers
@@ -41,14 +42,29 @@ export function startCallTimeoutWorker(): { stop: () => void } | null {
 
           if (updateErr) continue;
 
-          // Notify the caller that the call was missed.
+          // Notify both caller and callee that the call was missed / timed out
           if (io) {
             io.to(`user:${call.caller_id}`).emit("call:missed", {
               callId: call.id,
               calleeId: call.callee_id,
               type: call.type,
             });
+            io.to(`user:${call.callee_id}`).emit("call:missed", {
+              callId: call.id,
+              callerId: call.caller_id,
+              type: call.type,
+            });
           }
+
+          // Push to callee to clear incoming call notification & ringtone
+          notifyUser(
+            call.callee_id,
+            "Missed Call",
+            "Missed call",
+            "call",
+            { type: "call_ended", callId: call.id, reason: "missed" },
+            { priority: "high", bypassQuietHours: true },
+          ).catch(() => {});
         }
 
         logger.info(

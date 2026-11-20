@@ -39,6 +39,7 @@ import type {
   ResearchCollection,
   ResearchWorkspaceSummary,
 } from "@/features/research/types";
+import { getCuratedDisciplinePapers } from "@/features/research/types";
 
 type PaperDetail = SSPaper;
 type CitationRef = {
@@ -87,7 +88,17 @@ export default function PaperDetailScreen() {
 
   const paperQuery = useQuery({
     queryKey: ["paper-detail", paperId],
-    queryFn: () => api<PaperDetail>(`/research/papers/${encodeURIComponent(paperId)}`),
+    queryFn: async () => {
+      try {
+        const res = await api<PaperDetail>(`/research/papers/${encodeURIComponent(paperId)}`);
+        if (res && res.title) return res;
+      } catch (err) {
+        console.warn("[PaperDetailScreen] Remote paper fetch failed, checking fallback:", err);
+      }
+      const match = getCuratedDisciplinePapers("All").find((p) => p.paperId === paperId);
+      if (match) return match as PaperDetail;
+      throw new Error("This paper could not be loaded from academic sources.");
+    },
     enabled: Boolean(paperId),
   });
 

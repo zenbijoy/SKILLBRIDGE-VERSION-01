@@ -50,6 +50,8 @@ export function PaperCard({ paper, index = 0, isSaved = false, onSaveToggle, com
     ? "arXiv ⚡"
     : paper.source === "openalex"
     ? "OpenAlex 📚"
+    : paper.source === "doaj"
+    ? "DOAJ 📖"
     : paper.source === "europepmc"
     ? "Europe PMC 🧬"
     : paper.source === "crossref"

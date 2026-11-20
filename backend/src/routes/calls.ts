@@ -95,79 +95,48 @@ export const callMetrics = {
 
 /**
  * Server-authoritative Provider Selection
+ * Pure WebRTC 1:1 Calling Guaranteed (Zero LiveKit SFU Dependency)
  */
 export async function getProviderForCall(
   callId: string,
   userId: string,
   userName: string,
   requestedProvider?: "webrtc" | "livekit",
-) {
-  const livekitKey = env.LIVEKIT_API_KEY || process.env.LIVEKIT_API_KEY;
-  const livekitSecret = env.LIVEKIT_API_SECRET || process.env.LIVEKIT_API_SECRET;
-  const livekitUrl = env.LIVEKIT_URL || process.env.LIVEKIT_URL || "wss://skillbridge-rrx7e4cd.livekit.cloud";
-
-  // If LiveKit is explicitly requested or P2P is disabled, use LiveKit SFU
-  const useLivekit =
-    (requestedProvider === "livekit" || !env.P2P_CALLS_ENABLED) &&
-    Boolean(livekitKey && livekitSecret);
-
-  if (useLivekit && livekitKey && livekitSecret) {
-    const at = new AccessToken(livekitKey, livekitSecret, {
-      identity: userId,
-      name: userName,
-      ttl: "1h",
-      metadata: JSON.stringify({ callId }),
-    });
-    at.addGrant({
-      roomJoin: true,
-      room: `skillbridge-call-${callId}`,
-      canSubscribe: true,
-      canPublish: true,
-      canPublishData: true,
-    });
+): Promise<{
+  provider: "webrtc" | "livekit";
+  providerConfig: { token?: string; roomName?: string; url?: string };
+}> {
+  if (!env.P2P_CALLS_ENABLED || requestedProvider === "livekit") {
+    const roomName = `skillbridge-call-${callId}`;
+    let token = "";
+    if (env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET) {
+      const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+        identity: userId,
+        name: userName,
+        ttl: "1h",
+      });
+      at.addGrant({
+        roomJoin: true,
+        room: roomName,
+        canPublish: true,
+        canSubscribe: true,
+      });
+      token = await at.toJwt();
+    }
     return {
-      provider: "livekit" as const,
+      provider: "livekit",
       providerConfig: {
-        url: livekitUrl,
-        roomName: `skillbridge-call-${callId}`,
-        token: await at.toJwt(),
+        token,
+        roomName,
+        url: env.LIVEKIT_URL,
       },
     };
   }
 
-  if (env.P2P_CALLS_ENABLED) {
-    return {
-      provider: "webrtc" as const,
-      providerConfig: {},
-    };
-  }
-
-  // Fallback to LiveKit SFU Cloud
-  if (livekitKey && livekitSecret) {
-    const at = new AccessToken(livekitKey, livekitSecret, {
-      identity: userId,
-      name: userName,
-      ttl: "1h",
-      metadata: JSON.stringify({ callId }),
-    });
-    at.addGrant({
-      roomJoin: true,
-      room: `skillbridge-call-${callId}`,
-      canSubscribe: true,
-      canPublish: true,
-      canPublishData: true,
-    });
-    return {
-      provider: "livekit" as const,
-      providerConfig: {
-        url: livekitUrl,
-        roomName: `skillbridge-call-${callId}`,
-        token: await at.toJwt(),
-      },
-    };
-  }
-
-  throw new Error("Realtime calling provider is temporarily unavailable.");
+  return {
+    provider: "webrtc",
+    providerConfig: {},
+  };
 }
 
 export function callsRouter(io?: Server) {
@@ -272,22 +241,29 @@ export function callsRouter(io?: Server) {
         return res.status(403).json({ error: callCheck.reason || "Cannot connect call due to privacy settings." });
       }
 
-      // Auto-expire any stale calls older than 45 seconds to prevent deadlocks
-      const staleThreshold = new Date(Date.now() - 45_000).toISOString();
+      // Auto-expire any stale calls older than 30 seconds to prevent deadlocks
+      const staleThreshold = new Date(Date.now() - 30_000).toISOString();
       await admin
         .from("calls")
         .update({ status: "missed", end_reason: "timeout", ended_at: new Date().toISOString() })
-        .in("status", ["ringing", "connecting", "reconnecting"])
+        .in("status", ["ringing", "connecting", "reconnecting", "initiating"])
         .lt("created_at", staleThreshold);
 
-      // Unified check: Check if caller or callee is currently in a live call (within 2 minutes)
-      const { data: activeCall } = await admin
+      // Check if caller or callee is currently in a live active call.
+      // Connected calls remain active until ended; ringing/connecting calls expire after 30s.
+      const { data: rawCalls } = await admin
         .from("calls")
         .select("id, caller_id, callee_id, created_at, status")
         .or(`caller_id.eq.${calleeId},callee_id.eq.${calleeId},caller_id.eq.${callerId},callee_id.eq.${callerId}`)
         .in("status", ["ringing", "accepted", "connecting", "connected", "reconnecting"])
-        .gt("created_at", new Date(Date.now() - 120_000).toISOString())
+        .order("created_at", { ascending: false })
         .maybeSingle();
+
+      const callList = Array.isArray(rawCalls) ? rawCalls : rawCalls ? [rawCalls] : [];
+      const activeCall = callList.find((c) => {
+        if (c.status === "connected") return true;
+        return c.created_at ? new Date(c.created_at).getTime() > Date.now() - 30_000 : true;
+      });
 
       if (activeCall) {
         const isCallerBusy = activeCall.caller_id === callerId || activeCall.callee_id === callerId;
@@ -582,6 +558,17 @@ export function callsRouter(io?: Server) {
         io.to(`user:${peerId}`).emit("call:reject", { callId, reason });
       }
 
+      // Dispatch cancel push notification to ensure ringtone and notification shade clear on peer device
+      const cancelPeerId = callRecord.caller_id === userId ? callRecord.callee_id : callRecord.caller_id;
+      notifyUser(
+        cancelPeerId,
+        "Call Declined",
+        "The call was declined",
+        "call",
+        { type: "call_ended", callId, reason },
+        { priority: "high", bypassQuietHours: true },
+      ).catch(() => {});
+
       res.json({ call: updated });
     }),
   );
@@ -645,6 +632,17 @@ export function callsRouter(io?: Server) {
         const peerId = callRecord.caller_id === userId ? callRecord.callee_id : callRecord.caller_id;
         io.to(`user:${peerId}`).emit("call:end", { callId, durationSeconds, reason });
       }
+
+      // Dispatch cancel push notification to ensure ringtone and notification shade clear on peer device
+      const cancelPeerId = callRecord.caller_id === userId ? callRecord.callee_id : callRecord.caller_id;
+      notifyUser(
+        cancelPeerId,
+        "Call Ended",
+        "The call has ended",
+        "call",
+        { type: "call_ended", callId, reason },
+        { priority: "high", bypassQuietHours: true },
+      ).catch(() => {});
 
       res.json({ call: updated });
     }),

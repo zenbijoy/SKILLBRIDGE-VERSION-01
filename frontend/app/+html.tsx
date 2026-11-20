@@ -1,8 +1,48 @@
 import { ScrollViewStyleReset } from "expo-router/html";
 import type { PropsWithChildren } from "react";
+import { generateCssVariables, darkSemanticColors } from "../src/theme/tokens";
 
 // Web styling resets and dynamic professional animations
 const webGlobalStyles = `
+${generateCssVariables(darkSemanticColors)}
+
+/* Safety Icon Font-Face declarations for React Native Web */
+@font-face {
+  font-family: 'material-community';
+  src: url('/fonts/MaterialCommunityIcons.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'MaterialCommunityIcons';
+  src: url('/fonts/MaterialCommunityIcons.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Material Design Icons';
+  src: url('/fonts/MaterialCommunityIcons.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ionicons';
+  src: url('/fonts/Ionicons.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Ionicons';
+  src: url('/fonts/Ionicons.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'feather';
+  src: url('/fonts/Feather.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Feather';
+  src: url('/fonts/Feather.ttf') format('truetype');
+  font-display: swap;
+}
+
 /* CSS Resets for React Native Web */
 html, body, #root {
   height: 100%;
@@ -16,32 +56,38 @@ html, body, #root {
   text-rendering: optimizeLegibility;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', Helvetica, Arial, sans-serif;
   scroll-behavior: smooth;
+  background-color: var(--bg-base, #090A0F);
+  color: var(--text-primary, #F8FAFC);
 }
 
 /* Custom Sleek Web Scrollbars */
 ::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.35);
+  background: rgba(148, 163, 184, 0.25);
   border-radius: 9999px;
-  transition: background 0.2s ease;
+  transition: background 0.15s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.65);
+  background: rgba(148, 163, 184, 0.50);
 }
 
 /* Smooth selection tint */
 ::selection {
-  background: rgba(37, 99, 235, 0.28);
+  background: rgba(99, 102, 241, 0.35);
   color: inherit;
 }
 
-/* Remove default focus outline halo on mouse click, keep accessible */
+/* Accessible keyboard focus ring */
+:focus-visible {
+  outline: 2px solid var(--border-focus, #6366F1) !important;
+  outline-offset: 2px !important;
+}
 :focus:not(:focus-visible) {
   outline: none;
 }

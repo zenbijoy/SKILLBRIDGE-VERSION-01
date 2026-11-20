@@ -118,11 +118,7 @@ export const IncomingCallModal: React.FC = () => {
       provider?: "webrtc" | "livekit";
     }) => {
       const { activeCall, resetCall } = useCallStore.getState();
-      const isActuallyBusy =
-        activeCall &&
-        activeCall.status === "connected" &&
-        activeCall.startedAt &&
-        Date.now() - activeCall.startedAt < 300_000;
+      const isActuallyBusy = activeCall && activeCall.status === "connected";
 
       if (isActuallyBusy) {
         const socket = getSocket();
@@ -166,11 +162,7 @@ export const IncomingCallModal: React.FC = () => {
       if (current && current.callId === callId) return;
 
       const { activeCall, resetCall } = useCallStore.getState();
-      const isActuallyBusy =
-        activeCall &&
-        activeCall.status === "connected" &&
-        activeCall.startedAt &&
-        Date.now() - activeCall.startedAt < 300_000;
+      const isActuallyBusy = activeCall && activeCall.status === "connected";
 
       if (isActuallyBusy) {
         const socket = getSocket();
@@ -202,16 +194,24 @@ export const IncomingCallModal: React.FC = () => {
 
     const unsubReject = onSocket("call:reject", (data: { callId?: string }) => {
       const current = useCallStore.getState().incomingCall;
-      if (current && current.callId === data?.callId) {
-        callSounds.stopAll();
+      if (current && (!data?.callId || current.callId === data?.callId)) {
+        callSounds.stopAll().catch(() => {});
         setIncomingCall(null);
       }
     });
 
     const unsubEnd = onSocket("call:end", (data: { callId?: string }) => {
       const current = useCallStore.getState().incomingCall;
-      if (current && current.callId === data?.callId) {
-        callSounds.stopAll();
+      if (current && (!data?.callId || current.callId === data?.callId)) {
+        callSounds.stopAll().catch(() => {});
+        setIncomingCall(null);
+      }
+    });
+
+    const unsubMissed = onSocket("call:missed", (data: { callId?: string }) => {
+      const current = useCallStore.getState().incomingCall;
+      if (current && (!data?.callId || current.callId === data?.callId)) {
+        callSounds.stopAll().catch(() => {});
         setIncomingCall(null);
       }
     });
@@ -221,6 +221,7 @@ export const IncomingCallModal: React.FC = () => {
       unsubNotification();
       unsubReject();
       unsubEnd();
+      unsubMissed();
       broadcastChannel?.close();
     };
   }, [setIncomingCall]);
@@ -244,17 +245,17 @@ export const IncomingCallModal: React.FC = () => {
           avatarUrl: call.callerAvatar,
         },
         type: call.type,
-        provider: res.provider,
-        providerConfig: res.providerConfig,
+        provider: "webrtc",
+        providerConfig: {},
       });
       setIncomingCall(null);
-      // Fix C-1: Notify other browser tabs that this tab answered the call
+      // Notify other browser tabs that this tab answered the call
       if (typeof BroadcastChannel !== "undefined") {
         const bc = new BroadcastChannel("skillbridge-call");
         bc.postMessage({ type: "call:answered", callId: call.callId });
         bc.close();
       }
-      router.push(`/call/${call.callId}?callId=${call.callId}` as any);
+      router.push(`/call/${call.callId}?callId=${call.callId}&autoAccept=true` as any);
     } catch (err) {
       console.error("Failed to accept incoming call:", err);
       setIncomingCall(null);

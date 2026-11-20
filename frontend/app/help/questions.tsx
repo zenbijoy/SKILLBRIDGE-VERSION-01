@@ -22,6 +22,7 @@ import { AskHelpComposerModal } from "@/features/help/AskHelpComposerModal";
 import {
   deriveStatus,
   DOUBT_REWARDS,
+  filterQuestions,
   formatRelativeTime,
   getUrgencyMeta,
   matchesSearch,
@@ -50,25 +51,25 @@ export default function HelpQuestionsScreen() {
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery<{
     questions: HelpQuestionSummary[];
   }>({
-    queryKey: ["help-questions", filterStatus, onlyMine],
+    queryKey: ["help-questions", onlyMine],
     queryFn: () =>
       api<{ questions: HelpQuestionSummary[] }>(
-        `/help/questions?status=${filterStatus}&mine=${onlyMine}&limit=50`,
+        `/help/questions?mine=${onlyMine}&limit=100`,
       ),
   });
 
   const questions = useMemo(() => data?.questions ?? [], [data]);
-  // Live counts derived from the real payload — never hardcoded.
+  // Live counts derived from the full question list — stays stable across tab switches.
   const stats = useMemo(() => summarizeQuestions(questions), [questions]);
 
   const visibleQuestions = useMemo(() => {
-    let list = questions;
-    if (filterStatus === "unanswered") {
-      list = list.filter((q) => q.answersCount === 0 && !q.isResolved && !q.hasAcceptedAnswer);
-    }
-    if (!search.trim()) return list;
-    return list.filter((q) => matchesSearch(q, search));
-  }, [questions, filterStatus, search]);
+    return filterQuestions(questions, {
+      status: filterStatus,
+      onlyMine,
+      userId: null,
+      search,
+    });
+  }, [questions, filterStatus, onlyMine, search]);
 
   const openComposer = () => {
     triggerHaptic();
@@ -368,23 +369,25 @@ export default function HelpQuestionsScreen() {
       {/* FlatList is the scroller */}
       <View style={{ flex: 1, paddingHorizontal: 16 }}>{listBody()}</View>
 
-      {/* Single, prominent Extended Floating Ask Button */}
-      <Pressable
-        onPress={openComposer}
-        style={({ pressed }) => [
-          s.extendedFab,
-          {
-            backgroundColor: colors.primary,
-            bottom: Math.max(insets.bottom, 16) + 70,
-            opacity: pressed ? 0.9 : 1,
-          },
-        ]}
-        accessibilityLabel="Ask a new doubt"
-        accessibilityRole="button"
-      >
-        <MaterialCommunityIcons name="plus-circle-outline" size={20} color="#FFFFFF" />
-        <Text style={s.extendedFabText}>Ask Doubt</Text>
-      </Pressable>
+      {/* Extended Floating Ask Button - visible when list has items to prevent overlapping with Empty state CTA */}
+      {visibleQuestions.length > 0 && (
+        <Pressable
+          onPress={openComposer}
+          style={({ pressed }) => [
+            s.extendedFab,
+            {
+              backgroundColor: colors.primary,
+              bottom: Math.max(insets.bottom, 16) + 20,
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}
+          accessibilityLabel="Ask a new doubt"
+          accessibilityRole="button"
+        >
+          <MaterialCommunityIcons name="plus-circle-outline" size={20} color="#FFFFFF" />
+          <Text style={s.extendedFabText}>Ask Doubt</Text>
+        </Pressable>
+      )}
 
       {/* Real composer wired to POST /help/questions with rewards */}
       <AskHelpComposerModal visible={showComposer} onClose={() => setShowComposer(false)} />

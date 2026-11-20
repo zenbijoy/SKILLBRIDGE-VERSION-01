@@ -14,7 +14,7 @@ class CallSoundManager {
   private async prepareAudioMode(speaker = true): Promise<void> {
     try {
       await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
+        allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
         shouldDuckAndroid: true,

@@ -27,10 +27,10 @@ curl -fSL -o "$REPO_DIR/release-apk/SkillBridge.apk" "https://pub-44498fcb7a6f4c
 cp -f "$REPO_DIR/release-apk/SkillBridge.apk" "$REPO_DIR/SkillBridge.apk" || true
 
 echo "[3/6] Building container images..."
-docker compose -f "$INFRA_DIR/docker-compose.yml" build
+docker compose -f "$INFRA_DIR/docker-compose.yml" build --pull
 
 echo "[4/6] Restarting microservices..."
-docker compose -f "$INFRA_DIR/docker-compose.yml" up -d --remove-orphans
+docker compose -f "$INFRA_DIR/docker-compose.yml" up -d --force-recreate --remove-orphans
 
 echo "[5/6] Waiting for health status..."
 sleep 6
@@ -38,6 +38,7 @@ docker compose -f "$INFRA_DIR/docker-compose.yml" ps
 
 echo "[6/6] Verifying production endpoints..."
 curl -sI https://ruetskillbridge.duckdns.org/api/v1/health | head -n 1
+curl -sI https://ruetskillbridge.duckdns.org/api/v1/vault | head -n 1
 curl -sI https://ruetskillbridgeadmin.duckdns.org | head -n 1
 curl -sI https://ruetskillbridgeweb.duckdns.org | head -n 1
 curl -sI https://skillbridgeapk.duckdns.org | head -n 1

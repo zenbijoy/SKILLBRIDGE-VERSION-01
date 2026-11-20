@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { View, Text, StyleSheet, Image, Pressable, Animated } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useWebRTCCall } from "@/features/calls/hooks/useWebRTCCall";
+import { useWebRTCCall, terminateActiveMediaSession } from "@/features/calls/hooks/useWebRTCCall";
+import { callSounds } from "@/features/calls/services/callSounds";
 import { useCallStore } from "@/features/calls/store/callStore";
 import { CallControls } from "@/features/calls/components/CallControls";
 import { ConnectionQuality } from "@/features/calls/components/ConnectionQuality";
@@ -26,6 +27,7 @@ export default function CallScreen() {
     name?: string | string[];
     avatar?: string | string[];
     type?: "audio" | "video" | string | string[];
+    autoAccept?: string | string[];
   }>();
   const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const routeSegment = first(params.id);
@@ -38,6 +40,12 @@ export default function CallScreen() {
   const avatar = rawAvatar ? decodeURIComponent(rawAvatar) : undefined;
   const rawType = first(params.type);
   const type: "audio" | "video" = rawType === "audio" ? "audio" : "video";
+  const autoAcceptParam = first(params.autoAccept);
+
+  // Termination and duplicate initiation guards
+  const isEndingRef = useRef(false);
+  const hasInitiatedRef = useRef(false);
+  const hasSentReadyRef = useRef(false);
 
   // Outgoing calls route as /call/<peerId>. Incoming accept / resume routes as
   // /call/<callId> (+ optional ?callId=). The store is the source of truth when
@@ -73,8 +81,11 @@ export default function CallScreen() {
   useEffect(() => {
     setMinimized(false);
     return () => {
+      isEndingRef.current = true;
       const current = useCallStore.getState().activeCall;
-      if (current && !current.isMinimized && current.status !== "connected") {
+      if (!current || !current.isMinimized || current.status === "ended" || current.status === "failed") {
+        terminateActiveMediaSession();
+        callSounds.stopAll().catch(() => {});
         useCallStore.getState().resetCall();
       }
     };
@@ -229,40 +240,43 @@ export default function CallScreen() {
     let isCancelled = false;
 
     async function startOutgoingCall() {
+      if (isEndingRef.current) return;
+
       // Join/resume path: IncomingCallModal (or a banner/tap) already created the
       // call record and populated the store.
       if (effectiveCallId) {
-        // If callee is still in ringing status (waiting for user to accept), do not auto-initialize media (Bug 7)
+        // If callee is still in ringing status (waiting for user to accept), do not auto-initialize media
         if (activeCall?.role === "callee" && activeCall?.status === "ringing") {
           return;
         }
 
-        if (activeCall?.provider === "livekit") {
-          const socket = getSocket();
-          socket?.emit("call:ready", { callId: effectiveCallId });
-          return;
-        }
         try {
           const stream = await initLocalMedia(activeCall?.type || (type as "audio" | "video"));
           await setupPeerConnection(stream);
-          // Signal to caller that callee is ready for WebRTC SDP offer
-          const socket = getSocket();
-          socket?.emit("call:ready", { callId: effectiveCallId });
+          // Signal to caller that callee is ready for WebRTC SDP offer exactly once
+          if (!hasSentReadyRef.current) {
+            hasSentReadyRef.current = true;
+            const socket = getSocket();
+            socket?.emit("call:ready", { callId: effectiveCallId });
+          }
         } catch (err: any) {
-          if (!isCancelled) {
+          if (!isCancelled && !isEndingRef.current) {
             console.error("Failed to prepare media for existing call:", err);
             setCallStatus("failed");
           }
         }
         return;
       }
-      if (!targetId) return;
+
+      if (!targetId || isEndingRef.current) return;
+      if (hasInitiatedRef.current) return;
+      hasInitiatedRef.current = true;
       if (activeCall && targetId && activeCall.peer.id === targetId) return;
 
       try {
         setCallStatus("initiating");
         const callResponse = await initiateCallApi(targetId, type as "audio" | "video", "webrtc");
-        if (isCancelled) return;
+        if (isCancelled || isEndingRef.current) return;
 
         startCall({
           callId: callResponse.call.id,
@@ -273,30 +287,27 @@ export default function CallScreen() {
             avatarUrl: avatar || null,
           },
           type: type as "audio" | "video",
-          provider: callResponse.provider,
-          providerConfig: callResponse.providerConfig,
+          provider: "webrtc",
+          providerConfig: {},
         });
 
-        // Initialize local media and peer connection only for WebRTC fallback
-        if (callResponse.provider !== "livekit") {
-          const stream = await initLocalMedia(type as "audio" | "video");
-          await setupPeerConnection(stream);
-        }
+        // Initialize local media and pure WebRTC peer connection
+        const stream = await initLocalMedia(type as "audio" | "video");
+        await setupPeerConnection(stream);
       } catch (err: any) {
-        if (!isCancelled) {
+        if (!isCancelled && !isEndingRef.current) {
           console.error("Failed to initiate outgoing call:", err);
           setCallStatus("failed");
         }
       }
     }
 
-    // Only initialise media once the call state is known. On a
-    // cold start from a notification, `activeCall` is populated
-    // by the restore effect above — don't race ahead and open
-    // the mic/camera before we know whether the call is live.
+    // Only initialise media once the call state is known
     const shouldJoinExistingCall = Boolean(effectiveCallId && activeCall && activeCall.status !== "ringing");
     const shouldStartOutgoingCall =
       !effectiveCallId &&
+      !isEndingRef.current &&
+      !hasInitiatedRef.current &&
       (!activeCall || (targetId && activeCall.peer.id !== targetId));
 
     if (shouldJoinExistingCall || shouldStartOutgoingCall) {
@@ -308,6 +319,18 @@ export default function CallScreen() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, name, avatar, type, activeCall?.status, effectiveCallId]);
+
+  // Auto-accept call when opened directly from notification "Accept" action
+  useEffect(() => {
+    if (
+      autoAcceptParam === "true" &&
+      activeCall?.role === "callee" &&
+      activeCall?.status === "ringing" &&
+      !isEndingRef.current
+    ) {
+      void handleIncomingAccept();
+    }
+  }, [autoAcceptParam, activeCall?.status, activeCall?.role]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -321,19 +344,23 @@ export default function CallScreen() {
     router.back();
   };
 
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
     triggerHaptic();
     setMinimized(false);
-    endCall("hangup");
+    await endCall("hangup");
+    terminateActiveMediaSession();
+    await callSounds.stopAll().catch(() => {});
     router.back();
   };
 
   const handleIncomingAccept = async () => {
-    if (!activeCall) return;
+    if (!activeCall || isEndingRef.current) return;
     triggerHaptic();
     try {
       setCallStatus("connecting");
-      const res = await acceptCallApi(activeCall.callId);
+      await acceptCallApi(activeCall.callId);
       const socket = getSocket();
       socket?.emit("call:accept", { callId: activeCall.callId });
 
@@ -342,14 +369,15 @@ export default function CallScreen() {
         role: activeCall.role,
         peer: activeCall.peer,
         type: activeCall.type,
-        provider: res.provider,
-        providerConfig: res.providerConfig,
+        provider: "webrtc",
+        providerConfig: {},
       });
       setCallStatus("connecting");
 
-      if (res.provider !== "livekit") {
-        const stream = await initLocalMedia(activeCall.type);
-        await setupPeerConnection(stream);
+      const stream = await initLocalMedia(activeCall.type);
+      await setupPeerConnection(stream);
+      if (!hasSentReadyRef.current) {
+        hasSentReadyRef.current = true;
         socket?.emit("call:ready", { callId: activeCall.callId });
       }
     } catch (err) {
@@ -359,14 +387,17 @@ export default function CallScreen() {
   };
 
   const handleIncomingDecline = async () => {
-    if (!activeCall) return;
+    if (isEndingRef.current || !activeCall) return;
+    isEndingRef.current = true;
     triggerHaptic();
     try {
       await rejectCallApi(activeCall.callId, "declined");
       const socket = getSocket();
       socket?.emit("call:reject", { callId: activeCall.callId, reason: "declined" });
     } catch {}
-    endCall("declined");
+    await endCall("declined");
+    terminateActiveMediaSession();
+    await callSounds.stopAll().catch(() => {});
     router.back();
   };
 
@@ -387,7 +418,10 @@ export default function CallScreen() {
       const stream = await initLocalMedia(activeCall.type);
       await setupPeerConnection(stream);
       const socket = getSocket();
-      socket?.emit("call:ready", { callId: activeCall.callId });
+      if (!hasSentReadyRef.current) {
+        hasSentReadyRef.current = true;
+        socket?.emit("call:ready", { callId: activeCall.callId });
+      }
     } catch (fallbackErr) {
       console.error("WebRTC fallback setup error:", fallbackErr);
     }

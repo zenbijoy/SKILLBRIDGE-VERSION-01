@@ -43,6 +43,21 @@ function serializeSdp(sdp: any) {
   };
 }
 
+let activeMediaSession: {
+  stream: any | null;
+  pc: any | null;
+  cleanup: () => void;
+} | null = null;
+
+export function terminateActiveMediaSession() {
+  if (activeMediaSession) {
+    try {
+      activeMediaSession.cleanup();
+    } catch {}
+    activeMediaSession = null;
+  }
+}
+
 export function useWebRTCCall(callId?: string) {
   const {
     activeCall,
@@ -90,6 +105,45 @@ export function useWebRTCCall(callId?: string) {
   // Trickle ICE Candidate Queue (Prevents dropped candidates before remoteDescription is set)
   const pendingCandidatesRef = useRef<any[]>([]);
 
+  const syncActiveSession = useCallback(() => {
+    activeMediaSession = {
+      stream: localStreamRef.current,
+      pc: pcRef.current,
+      cleanup: () => {
+        if (localStreamRef.current) {
+          try {
+            localStreamRef.current.getTracks().forEach((t: any) => {
+              try { t.stop(); } catch {}
+            });
+          } catch {}
+          localStreamRef.current = null;
+        }
+        if (pcRef.current) {
+          try {
+            pcRef.current.ontrack = null;
+            pcRef.current.onicecandidate = null;
+            pcRef.current.onconnectionstatechange = null;
+            pcRef.current.oniceconnectionstatechange = null;
+            pcRef.current.close();
+          } catch {}
+          pcRef.current = null;
+        }
+        callSounds.stopAll().catch(() => {});
+      },
+    };
+  }, []);
+
+  // Guarantee hardware media tracks and PeerConnection close on unmount
+  useEffect(() => {
+    return () => {
+      const current = useCallStore.getState().activeCall;
+      if (!current || !current.isMinimized || current.status === "ended" || current.status === "failed") {
+        terminateActiveMediaSession();
+        callSounds.stopAll().catch(() => {});
+      }
+    };
+  }, []);
+
   // 1. Initialize Local Media Stream (Single-flight safe)
   const initLocalMedia = useCallback(
     async (type: "audio" | "video" = "video") => {
@@ -127,12 +181,14 @@ export function useWebRTCCall(callId?: string) {
           const stream = await mediaDevices.getUserMedia(constraints);
           localStreamRef.current = stream;
           setLocalStream(stream);
+          syncActiveSession();
           return stream;
         } catch (err: any) {
           console.warn("Could not capture requested video constraints, attempting audio-only fallback:", err);
           const fallbackStream = await mediaDevices.getUserMedia({ audio: true, video: false });
           localStreamRef.current = fallbackStream;
           setLocalStream(fallbackStream);
+          syncActiveSession();
           return fallbackStream;
         } finally {
           mediaInitPromiseRef.current = null;
@@ -345,6 +401,7 @@ export function useWebRTCCall(callId?: string) {
           const iceServers = await fetchIceServers();
           const pc = createPeerConnection(iceServers, forceRelay);
           pcRef.current = pc;
+          syncActiveSession();
 
           // Add local media tracks
           if (stream && typeof stream.getTracks === "function") {
@@ -498,7 +555,8 @@ export function useWebRTCCall(callId?: string) {
         }
       }
 
-      // Stop all local tracks safely
+      // Stop all local tracks safely and terminate active session
+      terminateActiveMediaSession();
       if (localStreamRef.current) {
         try {
           localStreamRef.current.getTracks().forEach((t: any) => {

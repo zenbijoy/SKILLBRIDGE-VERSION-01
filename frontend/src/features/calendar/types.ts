@@ -47,14 +47,20 @@ export interface RoutineEntry {
   id?: string;
   routine_id?: string;
   course_code: string;
+  courseCode?: string;
   course_title: string;
+  courseTitle?: string;
   day_of_week: DayOfWeek;
+  day?: DayOfWeek | string;
   start_time: string; // HH:MM 24h
+  startTime?: string;
   end_time: string;   // HH:MM 24h
+  endTime?: string;
   room?: string | null;
   instructor?: string | null;
   type: "CLASS" | "LAB" | "OTHER";
   group_name?: string | null;
+  groupName?: string | null;
   confidence?: RoutineConfidence;
   warnings?: string[];
   is_confirmed?: boolean;

@@ -171,7 +171,19 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
       const callId = data?.callId;
 
       if (callId) {
+        // Always stop incoming sound and vibration on user action
+        import("@/features/calls/services/callSounds").then(({ callSounds }) => {
+          callSounds.stopAll().catch(() => {});
+        });
+        import("react-native").then(({ Vibration }) => {
+          Vibration.cancel();
+        });
+        Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
+
         if (actionId === "decline") {
+          import("@/features/calls/store/callStore").then(({ useCallStore }) => {
+            useCallStore.getState().setIncomingCall(null);
+          });
           import("@/features/calls/services/callApi").then(({ rejectCallApi }) => {
             rejectCallApi(callId, "declined").catch(() => {});
           });
@@ -181,7 +193,13 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
           return;
         }
 
-        // "accept" or banner tap opens directly into the call screen
+        // "accept" action opens and auto-accepts the call immediately
+        if (actionId === "accept") {
+          router.push(`/call/${callId}?callId=${callId}&autoAccept=true` as any);
+          return;
+        }
+
+        // Banner tap opens the call screen
         router.push(`/call/${callId}?callId=${callId}` as any);
         return;
       }
@@ -201,6 +219,20 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data as Record<string, any> | undefined;
+
+      // Handle remote cancellation or call ended push
+      if (data?.type === "call_ended" || data?.type === "call_cancelled") {
+        import("@/features/calls/services/callSounds").then(({ callSounds }) => {
+          callSounds.stopAll().catch(() => {});
+        });
+        import("react-native").then(({ Vibration }) => {
+          Vibration.cancel();
+        });
+        useCallStore.getState().setIncomingCall(null);
+        Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => {});
+        return;
+      }
+
       if (data?.callId) {
         const { activeCall, setIncomingCall } = useCallStore.getState();
         if (activeCall && activeCall.status === "connected") return;
@@ -210,7 +242,7 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
           callerName: data.callerName || "SkillBridge User",
           callerAvatar: data.callerAvatar || null,
           type: data.callType === "audio" ? "audio" : "video",
-          provider: data.provider || "webrtc",
+          provider: "webrtc",
         });
       }
     });
@@ -241,7 +273,12 @@ export function useNotificationRouting(router: ReturnType<typeof useRouter>) {
       router.push("/schedule" as any);
     } else if (data.callId) {
       // Direct call routing
-      router.push(`/call/${data.callId}?callId=${data.callId}` as any);
+      const actionId = lastNotificationResponse?.actionIdentifier;
+      if (actionId === "accept") {
+        router.push(`/call/${data.callId}?callId=${data.callId}&autoAccept=true` as any);
+      } else {
+        router.push(`/call/${data.callId}?callId=${data.callId}` as any);
+      }
     }
   }, [lastNotificationResponse, router]);
 }

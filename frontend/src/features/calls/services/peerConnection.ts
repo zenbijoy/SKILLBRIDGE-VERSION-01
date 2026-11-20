@@ -11,6 +11,7 @@ export function createPeerConnection(iceServers: IceServerItem[], forceTurn = fa
     iceTransportPolicy: forceTurn ? "relay" : "all",
     bundlePolicy: "max-bundle",
     rtcpMuxPolicy: "require",
+    iceCandidatePoolSize: 10,
   };
 
   const pc = new RTCPeerConnection(configuration);
