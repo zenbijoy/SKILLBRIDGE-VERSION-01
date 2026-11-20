@@ -19,14 +19,14 @@ interface FeatureItem {
 
 const items: FeatureItem[] = [
   { icon: "newspaper-variant-outline", label: "Campus Feed", labelBn: "ক্যাম্পাস ফিড", badge: "Trending", badgeBn: "ট্রেন্ডিং", color: "#3B82F6", target: "/feed" as any },
-  { icon: "help-circle-outline", label: "Ask Doubt", labelBn: "প্রশ্ন জিজ্ঞাসা", badge: "Live Q&A", badgeBn: "লাইভ Q&A", color: "#F59E0B", target: "ask_help" },
-  { icon: "account-group-outline", label: "Study Rooms", labelBn: "স্টাডি রুম", badge: "Video & Chat", badgeBn: "ভিডিও ও চ্যাট", color: "#8B5CF6", target: "/rooms" },
   { icon: "calendar-clock", label: "Timetable", labelBn: "ক্লাস রুটিন", badge: "Classes", badgeBn: "ক্লাস", color: "#10B981", target: "/schedule" },
   { icon: "brain", label: "Skill Quizzes", labelBn: "স্কিল কুইজ", badge: "Earn XP", badgeBn: "XP অর্জন", color: "#EC4899", target: "/quiz" },
-  { icon: "flask-outline", label: "Research Labs", labelBn: "রিসার্চ ল্যাব", badge: "Collaborate", badgeBn: "কোলাবরেশন", color: "#06B6D4", target: "/research" },
   { icon: "calendar-star", label: "Campus Events", labelBn: "ক্যাম্পাস ইভেন্ট", badge: "Workshops", badgeBn: "ওয়ার্কশপ", color: "#6366F1", target: "/events" },
-  { icon: "file-document-outline", label: "Note Vault", labelBn: "নোট ভল্ট", badge: "PDFs", badgeBn: "পিডিএফ", color: "#14B8A6", target: "/vault" as any },
+  { icon: "flask-outline", label: "Research Labs", labelBn: "রিসার্চ ল্যাব", badge: "Collaborate", badgeBn: "কোলাবরেশন", color: "#06B6D4", target: "/research" },
   { icon: "account-multiple-outline", label: "Peer Network", labelBn: "সহপাঠী নেটওয়ার্ক", badge: "Mentors", badgeBn: "মেন্টর", color: "#F97316", target: "/connections" },
+  { icon: "help-circle-outline", label: "Ask Doubt", labelBn: "প্রশ্ন জিজ্ঞাসা", badge: "Live Q&A", badgeBn: "লাইভ Q&A", color: "#F59E0B", target: "ask_help" },
+  { icon: "account-group-outline", label: "Study Rooms", labelBn: "স্টাডি রুম", badge: "Video & Chat", badgeBn: "ভিডিও ও চ্যাট", color: "#8B5CF6", target: "/rooms" },
+  { icon: "file-document-outline", label: "Note Vault", labelBn: "নোট ভল্ট", badge: "PDFs", badgeBn: "পিডিএফ", color: "#14B8A6", target: "/vault" as any },
 ];
 
 export function FeatureGrid({ compact = false }: { compact?: boolean }) {

@@ -134,12 +134,14 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         badge: "new",
       },
       {
-        key: "student-clubs",
-        icon: "account-group-outline",
-        title: "Club Directory",
-        subtitle: "Browse all campus societies",
-        route: "/clubs",
-        colorKey: "warning",
+        key: "vault-storage",
+        icon: "archive-outline",
+        title: "Study Vault",
+        titleKey: "tools.studyVaultTitle",
+        subtitle: "Uploaded PDFs, notes & documents",
+        subtitleKey: "tools.studyVaultSubtitle",
+        route: "/vault",
+        color: "#0EA5E9",
       },
     ],
   },
@@ -265,14 +267,6 @@ const TOOL_CATALOG: ToolCategoryDef[] = [
         route: "/events",
         colorKey: "danger",
         badge: "new",
-      },
-      {
-        key: "study-rooms",
-        icon: "door-open",
-        title: "Study Rooms",
-        subtitle: "Discord & Telegram spaces",
-        route: "/room/create",
-        color: "#6366F1",
       },
       {
         key: "campus-leaderboard",
@@ -625,51 +619,51 @@ const ToolsProfileCard = memo(function ToolsProfileCard({
         </Pressable>
       </View>
 
-      {/* Quick 1-tap Hubs Shortcut Strip */}
+      {/* Quick 1-tap Account Shortcut Strip */}
       <View style={s.quickHubsStrip}>
         <Pressable
           accessibilityRole="button"
           onPress={() => {
             triggerHaptic();
-            router.push("/club/manage" as any);
+            router.push("/settings/profile" as any);
           }}
           style={({ pressed }) => [
             s.quickHubBtn,
-            { backgroundColor: "#F59E0B14", borderColor: "#F59E0B44", opacity: pressed ? 0.8 : 1 },
+            { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}44`, opacity: pressed ? 0.8 : 1 },
           ]}
         >
-          <MaterialCommunityIcons name="shield-crown-outline" size={14} color="#D97706" />
-          <Text style={[s.quickHubBtnText, { color: "#D97706" }]}>My Clubs</Text>
+          <MaterialCommunityIcons name="account-edit-outline" size={14} color={colors.primary} />
+          <Text style={[s.quickHubBtnText, { color: colors.primary }]}>Edit Profile</Text>
         </Pressable>
 
         <Pressable
           accessibilityRole="button"
           onPress={() => {
             triggerHaptic();
-            router.push("/room/manage" as any);
-          }}
-          style={({ pressed }) => [
-            s.quickHubBtn,
-            { backgroundColor: "#6366F114", borderColor: "#6366F144", opacity: pressed ? 0.8 : 1 },
-          ]}
-        >
-          <MaterialCommunityIcons name="door-open" size={14} color="#4F46E5" />
-          <Text style={[s.quickHubBtnText, { color: "#4F46E5" }]}>Room Controls</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            triggerHaptic();
-            router.push("/posts" as any);
+            router.push("/saved" as any);
           }}
           style={({ pressed }) => [
             s.quickHubBtn,
             { backgroundColor: "#10B98114", borderColor: "#10B98144", opacity: pressed ? 0.8 : 1 },
           ]}
         >
-          <MaterialCommunityIcons name="post-outline" size={14} color="#059669" />
-          <Text style={[s.quickHubBtnText, { color: "#059669" }]}>My Posts</Text>
+          <MaterialCommunityIcons name="bookmark-outline" size={14} color="#059669" />
+          <Text style={[s.quickHubBtnText, { color: "#059669" }]}>Saved Items</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            triggerHaptic();
+            router.push("/settings" as any);
+          }}
+          style={({ pressed }) => [
+            s.quickHubBtn,
+            { backgroundColor: `${colors.muted}14`, borderColor: `${colors.muted}44`, opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <MaterialCommunityIcons name="cog-outline" size={14} color={colors.muted} />
+          <Text style={[s.quickHubBtnText, { color: colors.muted }]}>Settings</Text>
         </Pressable>
       </View>
     </View>
@@ -742,7 +736,7 @@ export default function ToolsScreen() {
     return width;
   }, [width]);
 
-  const columns = effectiveWidth < CARD_COLUMNS_BREAKPOINT ? 1 : effectiveWidth >= 700 ? 3 : 2;
+  const columns = effectiveWidth < CARD_COLUMNS_BREAKPOINT ? 1 : effectiveWidth >= 1050 ? 4 : effectiveWidth >= 700 ? 3 : 2;
   const cardWidth = useMemo(
     () => Math.floor((effectiveWidth - H_PADDING * 2 - CARD_GAP * (columns - 1)) / columns),
     [effectiveWidth, columns],

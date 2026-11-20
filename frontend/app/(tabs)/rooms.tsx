@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -150,11 +151,11 @@ export default function RoomsScreen() {
       header={
         <AppHeader
           searchPlaceholder={t("rooms.searchPlaceholder")}
-          actionIcon="plus"
-          actionLabel={t("rooms.create")}
+          actionIcon="tune-variant"
+          actionLabel={t("rooms.manageControls", "Room Controls")}
           onAction={() => {
             triggerHaptic();
-            router.push("/room/create" as any);
+            router.push("/room/manage" as any);
           }}
         />
       }
@@ -437,6 +438,35 @@ export default function RoomsScreen() {
             </Pressable>
           )}
         </Row>
+      )}
+
+      {/* Room Controls Shortcut Banner for My Rooms view */}
+      {filter === "mine" && (
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            router.push("/room/manage" as any);
+          }}
+          style={({ pressed }) => [
+            s.manageControlsBanner,
+            { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}40`, opacity: pressed ? 0.88 : 1 },
+          ]}
+        >
+          <Row style={{ alignItems: "center", gap: 10, flex: 1 }}>
+            <View style={[s.manageControlsIcon, { backgroundColor: colors.primary }]}>
+              <MaterialCommunityIcons name="cog-outline" size={18} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.manageControlsTitle, { color: colors.text }]}>
+                {t("rooms.openControlsTitle", "Room Controls & Invitations")}
+              </Text>
+              <Text style={[s.manageControlsSub, { color: colors.muted }]}>
+                {t("rooms.openControlsSub", "Manage hosted rooms, invitations, permissions & module access")}
+              </Text>
+            </View>
+          </Row>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={colors.primary} />
+        </Pressable>
       )}
 
       {/* Loading Skeletons */}
@@ -785,9 +815,41 @@ const s = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: "800",
   },
+  manageControlsBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  manageControlsIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  manageControlsTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  manageControlsSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
   roomList: {
-    // @ts-ignore â€“ gap not in RN 0.69 types
-    gap: 8,
-    marginTop: 4,
+    gap: 12,
+    marginTop: 6,
+    ...(Platform.OS === "web"
+      ? {
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+          gap: 16,
+        }
+      : {}),
   },
 } as any);

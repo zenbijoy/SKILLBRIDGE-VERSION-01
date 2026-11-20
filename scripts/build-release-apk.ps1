@@ -48,6 +48,9 @@ Write-Banner "SkillBridge - Production Release APK Builder"
 
 # --- 1. Java JDK + Android SDK ------------------------------------------------
 $jbrCandidates = @(
+    "D:\jdk-21",
+    $env:JAVA_HOME,
+    "C:\Program Files\Java\jdk-21",
     "C:\Program Files\Android\Android Studio\jbr",
     "C:\Program Files\Android\Android Studio\jre"
 )
@@ -305,11 +308,15 @@ if (-not (Test-Path $releaseDir)) { New-Item -ItemType Directory -Path $releaseD
 $cleanName = "SkillBridge-v$pkgVersion-$Arch-release.apk"
 $exported = Join-Path $releaseDir $cleanName
 Copy-Item -Path $apk.FullName -Destination $exported -Force
+Copy-Item -Path $apk.FullName -Destination (Join-Path $releaseDir "SkillBridge.apk") -Force
+Copy-Item -Path $apk.FullName -Destination (Join-Path $releaseDir "latest.apk") -Force
+Copy-Item -Path $apk.FullName -Destination (Join-Path $releaseDir "skillbridge-app.apk") -Force
 Copy-Item -Path $apk.FullName -Destination (Join-Path $projectRoot "skillbridge-app.apk") -Force
 Copy-Item -Path $apk.FullName -Destination (Join-Path $projectRoot "SkillBridge.apk") -Force
 
 Write-Host ""
 Write-Host "  Shareable copy : $exported" -ForegroundColor Cyan
+Write-Host "  Release mirror : $(Join-Path $releaseDir 'SkillBridge.apk')" -ForegroundColor Cyan
 Write-Host "  Root copy      : $(Join-Path $projectRoot 'skillbridge-app.apk')" -ForegroundColor Cyan
 Write-Host "  Root copy      : $(Join-Path $projectRoot 'SkillBridge.apk')" -ForegroundColor Cyan
 Write-Host "  Signature      : production keystore (alias '$storeAlias')" -ForegroundColor Cyan

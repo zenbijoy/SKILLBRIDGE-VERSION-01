@@ -241,7 +241,7 @@ export function WebHeader() {
           />
         </Pressable>
 
-        {/* Brand Logo */}
+        {/* Brand Logo with 3D Cyber Yellow Badge */}
         <Pressable
           onPress={() => {
             triggerHaptic();
@@ -252,13 +252,33 @@ export function WebHeader() {
             { opacity: pressed ? 0.8 : 1 },
           ]}
         >
-          <View style={[styles.brandLogoIcon, { backgroundColor: colors.primary }]}>
-            <MaterialCommunityIcons name="school" size={20} color="#FFFFFF" />
-          </View>
-          <Text style={[styles.brandTitle, { color: colors.text }]}>SkillBridge</Text>
+          <div
+            className="animate-float-1"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 11,
+              background: "linear-gradient(135deg, #FEF08A 0%, #FACC15 50%, #EAB308 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 4px 14px rgba(234, 179, 8, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
+              border: "1px solid rgba(254, 240, 138, 0.8)",
+            }}
+          >
+            <MaterialCommunityIcons name="school" size={21} color="#0F1015" />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", marginLeft: 4 }}>
+            <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: -0.6, color: colors.text, lineHeight: 1.1 }}>
+              Skill<span style={{ color: "#EAB308" }}>Bridge</span>
+            </span>
+            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.8, color: colors.muted, textTransform: "uppercase" }}>
+              Campus Mesh
+            </span>
+          </div>
         </Pressable>
 
-        {/* Global Search Bar */}
+        {/* Global Search Bar with 3D Depth */}
         <Pressable
           onPress={() => {
             triggerHaptic();
@@ -267,25 +287,26 @@ export function WebHeader() {
           style={({ pressed }) => [
             styles.searchBar,
             {
-              backgroundColor: isDark ? colors.surface2 : "#F1F5F9",
-              borderColor: colors.border,
+              backgroundColor: isDark ? colors.surface2 : "#F8FAFC",
+              borderColor: isDark ? "rgba(250, 204, 21, 0.2)" : "rgba(234, 179, 8, 0.25)",
               opacity: pressed ? 0.85 : 1,
             },
           ]}
         >
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.muted} />
+          <MaterialCommunityIcons name="magnify" size={20} color={isDark ? "#FACC15" : "#CA8A04"} />
           <Text style={[styles.searchText, { color: colors.muted }]}>
             {t("common.searchEverything", "Search skills, mentors, rooms...")}
           </Text>
-          <View style={[styles.kbdBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.kbdText, { color: colors.muted }]}>Ctrl K</Text>
+          <View style={[styles.kbdBadge, { backgroundColor: isDark ? colors.surface : "#FFFFFF", borderColor: colors.border }]}>
+            <Text style={[styles.kbdText, { color: isDark ? "#FACC15" : "#B45309" }]}>Ctrl K</Text>
           </View>
         </Pressable>
       </div>
 
-      {/* 2. Center Section: Primary Navigation Hub */}
+      {/* 2. Center Section: Primary Navigation Hub with Cyber Yellow Active Indicators */}
       <nav style={{ display: "flex", alignItems: "center", height: "100%", gap: 4 }}>
         {NAV_TABS.map((tab) => {
+          const tabActiveColor = isDark ? "#FACC15" : "#CA8A04";
           return (
             <Pressable
               key={tab.key}
@@ -296,7 +317,6 @@ export function WebHeader() {
               style={({ pressed }) => [
                 styles.navTab,
                 {
-                  borderBottomColor: tab.active ? colors.primary : "transparent",
                   opacity: pressed ? 0.75 : 1,
                 },
               ]}
@@ -305,7 +325,7 @@ export function WebHeader() {
                 <MaterialCommunityIcons
                   name={(tab.active ? tab.iconActive : tab.iconInactive) as any}
                   size={24}
-                  color={tab.active ? colors.primary : colors.muted}
+                  color={tab.active ? tabActiveColor : colors.muted}
                 />
                 {tab.badge === "LIVE" ? (
                   <View style={[styles.liveBadge, { backgroundColor: "#10B981" }]}>
@@ -321,14 +341,27 @@ export function WebHeader() {
                 style={[
                   styles.navTabLabel,
                   {
-                    color: tab.active ? colors.primary : colors.muted,
-                    fontWeight: tab.active ? "700" : "500",
+                    color: tab.active ? tabActiveColor : colors.muted,
+                    fontWeight: tab.active ? "800" : "500",
                   },
                 ]}
               >
                 {tab.label}
               </Text>
-              {tab.active ? <View style={[styles.activeUnderline, { backgroundColor: colors.primary }]} /> : null}
+              {tab.active ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: "15%",
+                    right: "15%",
+                    height: 3,
+                    borderRadius: "3px 3px 0 0",
+                    background: "linear-gradient(90deg, #FACC15, #EAB308)",
+                    boxShadow: "0 0 10px rgba(250, 204, 21, 0.6)",
+                  }}
+                />
+              ) : null}
             </Pressable>
           );
         })}

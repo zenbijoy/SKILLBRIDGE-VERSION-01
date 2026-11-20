@@ -12,11 +12,11 @@ interface PostContentProps {
   onMentionPress?: (username: string) => void;
 }
 
-const TRUNCATE_CHAR_LIMIT = 180;
-const TRUNCATE_LINE_LIMIT = 3;
+const TRUNCATE_CHAR_LIMIT = Platform.OS === "web" ? 3500 : 500;
+const TRUNCATE_LINE_LIMIT = Platform.OS === "web" ? 40 : 8;
 
 export function PostContent({ post, onHashtagPress, onMentionPress }: PostContentProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const appearance = resolvePostAppearance(post.appearance);
@@ -422,9 +422,28 @@ export function PostContent({ post, onHashtagPress, onMentionPress }: PostConten
   const renderedBody = (
     <>
       {renderFormattedLines(displayedText)}
+      {showMoreButton && (
+        <Pressable
+          onPress={() => setIsExpanded(true)}
+          style={[styles.expandPill, { backgroundColor: colors.primarySoft, borderColor: `${colors.primary}33` }]}
+          accessibilityRole="button"
+          accessibilityLabel="Read full post"
+        >
+          <Text style={[styles.expandPillText, { color: colors.primary }]}>
+            Read full post / সম্পূর্ণ পোস্টটি পড়ুন
+          </Text>
+        </Pressable>
+      )}
       {isLong && isExpanded && (
-        <Pressable onPress={() => setIsExpanded(false)} style={styles.lessBtnWrap}>
-          <Text style={[styles.lessBtn, { color: mutedColor }]}>less</Text>
+        <Pressable
+          onPress={() => setIsExpanded(false)}
+          style={[styles.expandPill, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#F1F5F9", borderColor: colors.border }]}
+          accessibilityRole="button"
+          accessibilityLabel="Show less"
+        >
+          <Text style={[styles.expandPillText, { color: mutedColor }]}>
+            Show less / সংক্ষেপ করুন
+          </Text>
         </Pressable>
       )}
     </>
@@ -602,5 +621,18 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     marginVertical: 8,
+  },
+  expandPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  expandPillText: {
+    fontSize: 12.5,
+    fontWeight: "700",
   },
 });

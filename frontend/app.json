@@ -3,14 +3,14 @@
     "name": "SkillBridge",
     "slug": "skillbridge",
     "scheme": "skillbridge",
-    "version": "2.0.10",
+    "version": "2.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.skillbridge.app",
-      "buildNumber": "8",
+      "buildNumber": "12",
       "infoPlist": {
         "NSCameraUsageDescription": "SkillBridge requires camera access so you can participate in live peer learning rooms and video classes.",
         "NSMicrophoneUsageDescription": "SkillBridge requires microphone access to let you speak in live audio and video learning sessions."
@@ -19,7 +19,7 @@
     "android": {
       "package": "com.skillbridge.app",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 11,
+      "versionCode": 12,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF",
@@ -34,7 +34,8 @@
         "BLUETOOTH_CONNECT",
         "BLUETOOTH_SCAN",
         "ACCESS_NETWORK_STATE",
-        "INTERNET"
+        "INTERNET",
+        "REQUEST_INSTALL_PACKAGES"
       ]
     },
     "web": {

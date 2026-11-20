@@ -171,13 +171,33 @@ export default function ClubsScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.createClubTopBtn, { backgroundColor: colors.primary }]}
-            onPress={() => setShowCreateModal(true)}
-          >
-            <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.createClubTopBtnText}>Create Club</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <TouchableOpacity
+              style={[
+                styles.manageClubTopBtn,
+                {
+                  backgroundColor: `${colors.warning}18`,
+                  borderColor: `${colors.warning}55`,
+                  borderWidth: 1,
+                },
+              ]}
+              onPress={() => {
+                triggerHaptic();
+                router.push("/club/manage" as any);
+              }}
+            >
+              <Ionicons name="shield-checkmark-outline" size={16} color={colors.warning} />
+              <Text style={[styles.manageClubTopBtnText, { color: colors.warning }]}>Command</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.createClubTopBtn, { backgroundColor: colors.primary }]}
+              onPress={() => setShowCreateModal(true)}
+            >
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={styles.createClubTopBtnText}>Create</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Search Bar */}
@@ -444,6 +464,36 @@ export default function ClubsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Club Command Center Shortcut for My Clubs */}
+        {activeTab === "my_clubs" && (
+          <TouchableOpacity
+            style={[
+              styles.myClubsCommandCard,
+              {
+                backgroundColor: `${colors.warning}14`,
+                borderColor: `${colors.warning}44`,
+              },
+            ]}
+            onPress={() => {
+              triggerHaptic();
+              router.push("/club/manage" as any);
+            }}
+          >
+            <View style={[styles.myClubsCommandIcon, { backgroundColor: colors.warning }]}>
+              <Ionicons name="shield-half" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Text style={[styles.myClubsCommandTitle, { color: colors.text }]}>
+                Club Command & Management
+              </Text>
+              <Text style={[styles.myClubsCommandSub, { color: colors.textSecondary }]}>
+                Manage members, roles, announcements & club configuration
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.warning} />
+          </TouchableOpacity>
+        )}
+
         {/* Main Clubs List */}
         {clubsQuery.isLoading ? (
           <View style={styles.centerLoading}>
@@ -551,6 +601,18 @@ const styles = StyleSheet.create({
   pageSubtitle: {
     fontSize: 12,
     marginTop: 2,
+  },
+  manageClubTopBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  manageClubTopBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
   createClubTopBtn: {
     flexDirection: "row",
@@ -676,6 +738,32 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "700",
+  },
+  myClubsCommandCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  myClubsCommandIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  myClubsCommandTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  myClubsCommandSub: {
+    fontSize: 11,
+    marginTop: 1,
   },
   listContent: {
     paddingHorizontal: 16,

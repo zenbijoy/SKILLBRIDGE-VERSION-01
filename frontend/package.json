@@ -1,6 +1,6 @@
 {
   "name": "skillbridge-mobile",
-  "version": "2.0.10",
+  "version": "2.1.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -37,10 +37,12 @@
     "expo-dev-client": "~57.0.16",
     "expo-device": "~57.0.1",
     "expo-document-picker": "~57.0.3",
+    "expo-file-system": "~57.0.6",
     "expo-font": "~57.0.1",
     "expo-haptics": "~57.0.1",
     "expo-image-manipulator": "~57.0.20",
     "expo-image-picker": "~57.0.12",
+    "expo-intent-launcher": "~57.0.1",
     "expo-linear-gradient": "~57.0.1",
     "expo-linking": "~57.0.7",
     "expo-notifications": "~57.0.13",

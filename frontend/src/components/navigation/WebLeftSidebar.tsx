@@ -241,6 +241,31 @@ export function WebLeftSidebar() {
         <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
       </Pressable>
 
+      {/* 3D Cyber Yellow Launch Button */}
+      <div style={{ padding: "0 14px 14px 14px" }}>
+        <button
+          className="web-btn-yellow-3d"
+          onClick={() => {
+            triggerHaptic();
+            router.push("/room/create" as any);
+          }}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            padding: "10px 14px",
+            fontSize: 13,
+            fontWeight: 800,
+            border: "none",
+          }}
+        >
+          <MaterialCommunityIcons name="door-open" size={18} color="#0F1015" />
+          <span>Host Study Room</span>
+        </button>
+      </div>
+
       {/* 2. Navigation Sections */}
       {NAV_SECTIONS.map((section) => (
         <View key={section.title} style={styles.sectionWrap}>
@@ -260,11 +285,13 @@ export function WebLeftSidebar() {
                     {
                       backgroundColor: isActive
                         ? isDark
-                          ? "rgba(37, 99, 235, 0.16)"
-                          : "rgba(37, 99, 235, 0.08)"
+                          ? "rgba(234, 179, 8, 0.16)"
+                          : "#FEF9C3"
                         : pressed
                         ? colors.surface2
                         : "transparent",
+                      borderLeftWidth: isActive ? 3 : 0,
+                      borderLeftColor: isActive ? "#FACC15" : "transparent",
                     },
                   ]}
                 >
@@ -272,22 +299,24 @@ export function WebLeftSidebar() {
                     style={[
                       styles.itemIconBox,
                       {
-                        backgroundColor: isActive ? `${item.color}22` : `${item.color}12`,
+                        backgroundColor: isActive
+                          ? isDark ? "rgba(250, 204, 21, 0.25)" : "rgba(234, 179, 8, 0.2)"
+                          : `${item.color}12`,
                       },
                     ]}
                   >
                     <MaterialCommunityIcons
                       name={item.icon as any}
                       size={20}
-                      color={isActive ? colors.primary : item.color}
+                      color={isActive ? (isDark ? "#FACC15" : "#CA8A04") : item.color}
                     />
                   </View>
                   <Text
                     style={[
                       styles.itemLabel,
                       {
-                        color: isActive ? colors.primary : colors.text,
-                        fontWeight: isActive ? "700" : "500",
+                        color: isActive ? (isDark ? "#FACC15" : "#92400E") : colors.text,
+                        fontWeight: isActive ? "800" : "500",
                       },
                     ]}
                     numberOfLines={1}
@@ -295,7 +324,7 @@ export function WebLeftSidebar() {
                     {item.label}
                   </Text>
                   {isActive ? (
-                    <View style={[styles.activePill, { backgroundColor: colors.primary }]} />
+                    <View style={[styles.activePill, { backgroundColor: "#FACC15" }]} />
                   ) : null}
                 </Pressable>
               );

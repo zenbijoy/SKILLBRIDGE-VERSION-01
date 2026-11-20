@@ -159,6 +159,30 @@ export function PostCard({
         onMentionPress={onMentionPress}
       />
 
+      {/* 2.5 Hashtags Chips */}
+      {post.hashtags && post.hashtags.length > 0 && (
+        <View style={styles.hashtagsRow}>
+          {post.hashtags.map((tag) => (
+            <Pressable
+              key={tag}
+              onPress={() => onHashtagPress?.(tag)}
+              style={({ pressed }) => [
+                styles.hashtagChip,
+                {
+                  backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#F1F5F9",
+                  borderColor: colors.border,
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.hashtagChipText, { color: colors.primary }]}>
+                {tag.startsWith("#") ? tag : `#${tag}`}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
       {/* 3. Specialized Type Renderers */}
       {post.poll && onVotePoll && (
         <PollCard
@@ -316,17 +340,34 @@ export function PostCard({
 
 const styles = StyleSheet.create({
   card: {
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 12,
-    marginBottom: 12,
-    borderRadius: 16,
+    paddingHorizontal: Platform.OS === "web" ? 22 : 14,
+    paddingTop: Platform.OS === "web" ? 18 : 14,
+    paddingBottom: Platform.OS === "web" ? 16 : 12,
+    marginBottom: Platform.OS === "web" ? 16 : 12,
+    borderRadius: Platform.OS === "web" ? 18 : 16,
     borderWidth: 1,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 5,
+    shadowRadius: 8,
     elevation: 2,
+  },
+  hashtagsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  hashtagChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  hashtagChipText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   quickCommentRow: {
     alignItems: "center",

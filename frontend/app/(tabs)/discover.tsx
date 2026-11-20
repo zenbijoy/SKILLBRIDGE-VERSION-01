@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -1241,8 +1242,14 @@ const s = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    // @ts-ignore – gap not in RN 0.69 types
-    gap: 8,
+    gap: 12,
+    ...(Platform.OS === "web"
+      ? {
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+          gap: 16,
+        }
+      : {}),
   },
   exploreSection: {
     marginTop: 24,

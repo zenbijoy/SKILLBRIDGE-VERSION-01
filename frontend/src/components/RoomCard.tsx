@@ -1,5 +1,5 @@
 import React from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -37,6 +37,7 @@ export function RoomCard({ room }: { room: Room }) {
       })}
     >
       <View
+        className={Platform.OS === "web" ? "web-card-3d" : undefined}
         style={[
           s.cardWrap,
           {
@@ -78,6 +79,13 @@ export function RoomCard({ room }: { room: Room }) {
                     resizeMode="contain"
                   />
                   <Text style={s.liveBadgeText}>LIVE</Text>
+                  {Platform.OS === "web" ? (
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 10, marginLeft: 2 }}>
+                      <div className="eq-bar-1" style={{ width: 2, backgroundColor: "#FFFFFF", borderRadius: 1 }} />
+                      <div className="eq-bar-2" style={{ width: 2, backgroundColor: "#FFFFFF", borderRadius: 1 }} />
+                      <div className="eq-bar-3" style={{ width: 2, backgroundColor: "#FFFFFF", borderRadius: 1 }} />
+                    </div>
+                  ) : null}
                 </View>
               ) : (
                 <View style={[s.statusBadge, { backgroundColor: room.status === "scheduled" ? "#F59E0B" : "rgba(15,23,42,0.7)" }]}>
@@ -171,6 +179,7 @@ export function RoomCard({ room }: { room: Room }) {
 
             {/* Right: Sleek Action CTA */}
             <View
+              className={!isFull && !isLive && Platform.OS === "web" ? "web-btn-yellow-3d" : undefined}
               style={[
                 s.actionBtn,
                 {
@@ -178,6 +187,8 @@ export function RoomCard({ room }: { room: Room }) {
                     ? colors.danger
                     : isFull
                     ? isDark ? "#23283E" : "#E5E7EB"
+                    : Platform.OS === "web"
+                    ? "#FACC15"
                     : colors.primary,
                   shadowColor: isLive ? colors.danger : colors.primary,
                   shadowOffset: { width: 0, height: 2 },
@@ -191,7 +202,8 @@ export function RoomCard({ room }: { room: Room }) {
                 style={[
                   s.actionBtnText,
                   {
-                    color: isFull && !isLive ? colors.muted : "#FFFFFF",
+                    color: isFull && !isLive ? colors.muted : (!isLive && Platform.OS === "web" ? "#0F1015" : "#FFFFFF"),
+                    fontWeight: "800",
                   },
                 ]}
               >
@@ -201,7 +213,7 @@ export function RoomCard({ room }: { room: Room }) {
                 <MaterialCommunityIcons
                   name="chevron-right"
                   size={16}
-                  color="#FFFFFF"
+                  color={!isLive && Platform.OS === "web" ? "#0F1015" : "#FFFFFF"}
                 />
               )}
             </View>

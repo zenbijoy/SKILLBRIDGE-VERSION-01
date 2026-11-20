@@ -9,6 +9,8 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -48,6 +50,8 @@ const FILTER_OPTIONS: FeedFilterOption[] = [
 export default function CampusFeedScreen() {
   const { colors } = useTheme();
   const qc = useQueryClient();
+  const { width } = useWindowDimensions();
+  const isWebDesktop = Platform.OS === "web" && width >= 768;
 
   const [selectedType, setSelectedType] = useState<PostType | "all">("all");
   const [selectedHashtag, setSelectedHashtag] = useState<string | null>(null);
@@ -267,38 +271,62 @@ export default function CampusFeedScreen() {
       {/* ─────────────────────────────────────────────────────────────
           1. TOP NAVIGATION HEADER
       ───────────────────────────────────────────────────────────── */}
-      <Row style={styles.header}>
-        <Row style={{ alignItems: "center", gap: 10 }}>
-          <Pressable onPress={() => router.back()} hitSlop={8}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
-          </Pressable>
+      {isWebDesktop ? (
+        <Row style={[styles.header, { marginBottom: 16, paddingTop: 4 }]}>
           <View>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Campus Feed</Text>
-            <Text style={[styles.headerSubtitle, { color: colors.muted }]}>
-              University updates & discussions
+            <Text style={[styles.headerTitle, { color: colors.text, fontSize: 24, fontWeight: "800" }]}>
+              Campus Feed
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: colors.muted, fontSize: 13, marginTop: 2 }]}>
+              Real-time academic doubts, discussions, and project showcases from university peers
             </Text>
           </View>
+          <Pressable
+            onPress={() => refetch()}
+            disabled={isRefetching}
+            style={[styles.iconButton, { borderColor: colors.border }]}
+          >
+            {isRefetching ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <MaterialCommunityIcons name="reload" size={18} color={colors.text} />
+            )}
+          </Pressable>
         </Row>
+      ) : (
+        <Row style={styles.header}>
+          <Row style={{ alignItems: "center", gap: 10 }}>
+            <Pressable onPress={() => router.back()} hitSlop={8}>
+              <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
+            </Pressable>
+            <View>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Campus Feed</Text>
+              <Text style={[styles.headerSubtitle, { color: colors.muted }]}>
+                University updates & discussions
+              </Text>
+            </View>
+          </Row>
 
-        <Pressable
-          onPress={() => refetch()}
-          disabled={isRefetching}
-          style={[styles.iconButton, { borderColor: colors.border }]}
-        >
-          {isRefetching ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <MaterialCommunityIcons name="reload" size={18} color={colors.text} />
-          )}
-        </Pressable>
-      </Row>
+          <Pressable
+            onPress={() => refetch()}
+            disabled={isRefetching}
+            style={[styles.iconButton, { borderColor: colors.border }]}
+          >
+            {isRefetching ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <MaterialCommunityIcons name="reload" size={18} color={colors.text} />
+            )}
+          </Pressable>
+        </Row>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           2. FEED CATEGORY FILTER BAR
       ───────────────────────────────────────────────────────────── */}
       <View style={styles.filterSection}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-          <Row style={{ gap: 8, paddingHorizontal: 2 }}>
+        {isWebDesktop ? (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 2 }}>
             {FILTER_OPTIONS.map((opt) => {
               const isSelected = selectedType === opt.type && !selectedHashtag;
               return (
@@ -333,8 +361,47 @@ export default function CampusFeedScreen() {
                 </Pressable>
               );
             })}
-          </Row>
-        </ScrollView>
+          </View>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+            <Row style={{ gap: 8, paddingHorizontal: 2 }}>
+              {FILTER_OPTIONS.map((opt) => {
+                const isSelected = selectedType === opt.type && !selectedHashtag;
+                return (
+                  <Pressable
+                    key={opt.type}
+                    onPress={() => {
+                      triggerHaptic("selection");
+                      setSelectedType(opt.type);
+                      setSelectedHashtag(null);
+                    }}
+                    style={[
+                      styles.filterChip,
+                      {
+                        borderColor: isSelected ? colors.primary : colors.border,
+                        backgroundColor: isSelected ? colors.primary : colors.surface,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={opt.icon}
+                      size={15}
+                      color={isSelected ? "#FFFFFF" : colors.muted}
+                    />
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        { color: isSelected ? "#FFFFFF" : colors.text },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </Row>
+          </ScrollView>
+        )}
 
         {/* Selected Hashtag Filter Banner */}
         {selectedHashtag && (

@@ -12,6 +12,7 @@ import {
   ScrollView,
   Platform,
   Alert,
+  TextInput,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { VideoView } from "@/features/calls/components/VideoView";
@@ -19,6 +20,50 @@ import { useRoomWebRTC, RoomRemotePeer, FloatingReaction } from "./useRoomWebRTC
 import { triggerHaptic } from "@/components/ui";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// Animated audio spectrum equalizer bars
+const AudioEqualizerBars: React.FC<{ isSpeaking: boolean }> = ({ isSpeaking }) => {
+  const bar1 = useRef(new Animated.Value(4)).current;
+  const bar2 = useRef(new Animated.Value(8)).current;
+  const bar3 = useRef(new Animated.Value(12)).current;
+  const bar4 = useRef(new Animated.Value(6)).current;
+
+  useEffect(() => {
+    let anim: any = null;
+    if (isSpeaking) {
+      const createLoop = (val: Animated.Value, minH: number, maxH: number, duration: number) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.timing(val, { toValue: maxH, duration, useNativeDriver: false }),
+            Animated.timing(val, { toValue: minH, duration, useNativeDriver: false }),
+          ]),
+        );
+      };
+      anim = Animated.parallel([
+        createLoop(bar1, 3, 14, 250),
+        createLoop(bar2, 4, 18, 320),
+        createLoop(bar3, 3, 16, 210),
+        createLoop(bar4, 2, 12, 290),
+      ]);
+      anim.start();
+    } else {
+      bar1.setValue(3);
+      bar2.setValue(3);
+      bar3.setValue(3);
+      bar4.setValue(3);
+    }
+    return () => anim?.stop();
+  }, [isSpeaking, bar1, bar2, bar3, bar4]);
+
+  return (
+    <View style={styles.equalizerContainer}>
+      <Animated.View style={[styles.equalizerBar, { height: bar1 }]} />
+      <Animated.View style={[styles.equalizerBar, { height: bar2 }]} />
+      <Animated.View style={[styles.equalizerBar, { height: bar3 }]} />
+      <Animated.View style={[styles.equalizerBar, { height: bar4 }]} />
+    </View>
+  );
+};
 
 export interface RoomLiveStageProps {
   roomId: string;
@@ -112,6 +157,26 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
     reactions,
     mediaSync,
     participantCount,
+    networkQuality,
+    latencyMs,
+    currentPoll,
+    sharedResources,
+    whiteboardStrokes,
+    activeBroadcast,
+    whispers,
+    breakoutInfo,
+    isLowDataMode,
+    isScreenSharing,
+    virtualBackground,
+    studyMinutes,
+    xpEarned,
+    bookmarkedMoments,
+    audioFilterMode,
+    pinnedPeerId,
+    handRaiseQueue,
+    setVirtualBackground,
+    setAudioFilterMode,
+    setPinnedPeerId,
     leave,
     toggleMicrophone,
     toggleCamera,
@@ -120,6 +185,20 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
     sendReaction,
     sendMediaSync,
     moderatePeer,
+    createPoll,
+    votePoll,
+    closePoll,
+    shareResource,
+    broadcastStroke,
+    clearWhiteboard,
+    sendBroadcast,
+    sendWhisper,
+    startBreakout,
+    endBreakout,
+    toggleLowDataMode,
+    toggleScreenShare,
+    bookmarkMoment,
+    inviteToSpeak,
   } = useRoomWebRTC({
     roomId,
     initialMedia,
@@ -138,6 +217,33 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
   const [pomodoroSeconds, setPomodoroSeconds] = useState(25 * 60);
   const [pomodoroActive, setPomodoroActive] = useState(false);
   const [selectedPeerMenu, setSelectedPeerMenu] = useState<RoomRemotePeer | null>(null);
+
+  // 20 Core Feature States
+  const [toolsDrawerVisible, setToolsDrawerVisible] = useState(false);
+  const [whiteboardModalVisible, setWhiteboardModalVisible] = useState(false);
+  const [pollModalVisible, setPollModalVisible] = useState(false);
+  const [resourcesModalVisible, setResourcesModalVisible] = useState(false);
+  const [bookmarksModalVisible, setBookmarksModalVisible] = useState(false);
+  const [breakoutModalVisible, setBreakoutModalVisible] = useState(false);
+  const [notesModalVisible, setNotesModalVisible] = useState(false);
+  const [whisperModalVisible, setWhisperModalVisible] = useState(false);
+  const [whisperTarget, setWhisperTarget] = useState<RoomRemotePeer | null>(null);
+  const [whisperInput, setWhisperInput] = useState("");
+  const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
+  const [broadcastInput, setBroadcastInput] = useState("");
+  const [networkStatsVisible, setNetworkStatsVisible] = useState(false);
+  const [soundboardVisible, setSoundboardVisible] = useState(false);
+  const [sharedNotes, setSharedNotes] = useState("# Room Study Agenda\n- Welcome to live stage\n- Co-Study session in progress");
+  const [newPollQuestion, setNewPollQuestion] = useState("");
+  const [newPollOpt1, setNewPollOpt1] = useState("");
+  const [newPollOpt2, setNewPollOpt2] = useState("");
+  const [newPollOpt3, setNewPollOpt3] = useState("");
+  const [newResTitle, setNewResTitle] = useState("");
+  const [newResUrl, setNewResUrl] = useState("");
+  const [newResType, setNewResType] = useState<"link" | "doc" | "pdf" | "code">("link");
+  const [newBookmarkText, setNewBookmarkText] = useState("");
+  const [wbColor, setWbColor] = useState("#38BDF8");
+  const [wbTool, setWbTool] = useState<"pen" | "eraser">("pen");
 
   // Call duration counter
   const [durationSeconds, setDurationSeconds] = useState(0);
@@ -218,15 +324,52 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
               <MaterialCommunityIcons name="account-group" size={13} color="#94A3B8" />
               <Text style={styles.participantCountText}>{participantCount}</Text>
               <Text style={styles.metaSeparator}>•</Text>
-              <View style={styles.engineBadge}>
-                <MaterialCommunityIcons name="lightning-bolt" size={12} color="#10B981" />
-                <Text style={styles.engineText}>WebRTC HD</Text>
+              {/* Network Latency Radar Pill */}
+              <Pressable
+                onPress={() => {
+                  triggerHaptic();
+                  setNetworkStatsVisible(true);
+                }}
+                style={styles.networkPill}
+              >
+                <MaterialCommunityIcons
+                  name={networkQuality === "excellent" ? "wifi-check" : networkQuality === "good" ? "wifi" : "wifi-alert"}
+                  size={12}
+                  color={networkQuality === "excellent" ? "#10B981" : networkQuality === "good" ? "#F59E0B" : "#EF4444"}
+                />
+                <Text
+                  style={[
+                    styles.networkPillText,
+                    { color: networkQuality === "excellent" ? "#10B981" : networkQuality === "good" ? "#F59E0B" : "#EF4444" },
+                  ]}
+                >
+                  {latencyMs}ms
+                </Text>
+              </Pressable>
+              {/* Focus Streak & Study XP Pill */}
+              <View style={styles.streakPill}>
+                <MaterialCommunityIcons name="fire" size={13} color="#F97316" />
+                <Text style={styles.streakPillText}>{studyMinutes}m</Text>
+                {xpEarned > 0 && <Text style={styles.xpBadgeText}>+{xpEarned}XP</Text>}
               </View>
             </View>
           </View>
         </View>
 
         <View style={styles.hudRight}>
+          {/* Low Data Bandwidth Saver Button */}
+          <Pressable
+            onPress={toggleLowDataMode}
+            style={[styles.iconBtnRound, isLowDataMode && styles.iconBtnDataSaverActive]}
+            accessibilityLabel="Low Data Mode"
+          >
+            <MaterialCommunityIcons
+              name="speedometer-slow"
+              size={17}
+              color={isLowDataMode ? "#38BDF8" : "#94A3B8"}
+            />
+          </Pressable>
+
           {/* Pomodoro Study Timer Pill */}
           <Pressable
             onPress={() => {
@@ -288,6 +431,40 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
           </Pressable>
         </View>
       </View>
+
+      {/* ── Reconnecting Notice Banner ───────────────────────────────────── */}
+      {connectionStatus === "reconnecting" && (
+        <View style={styles.reconnectingBanner}>
+          <MaterialCommunityIcons name="cloud-sync" size={16} color="#F59E0B" />
+          <Text style={styles.reconnectingBannerText}>Optimizing network connection... (auto-reconnecting)</Text>
+        </View>
+      )}
+
+      {/* ── Host Urgent Broadcast Announcement ───────────────────────────── */}
+      {activeBroadcast && (
+        <View style={styles.broadcastBanner}>
+          <MaterialCommunityIcons name="bullhorn-outline" size={18} color="#F59E0B" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.broadcastSender}>{activeBroadcast.senderName} (Announcement)</Text>
+            <Text style={styles.broadcastText}>{activeBroadcast.message}</Text>
+          </View>
+        </View>
+      )}
+
+      {/* ── Active Breakout Session Banner ────────────────────────────────── */}
+      {breakoutInfo && (
+        <View style={styles.breakoutBanner}>
+          <MaterialCommunityIcons name="account-supervisor-circle" size={18} color="#A855F7" />
+          <Text style={styles.breakoutBannerText} numberOfLines={1}>
+            Breakout Session Active ({breakoutInfo.durationMinutes}m)
+          </Text>
+          {isHost && (
+            <Pressable onPress={endBreakout} style={styles.endBreakoutBtn}>
+              <Text style={styles.endBreakoutBtnText}>Regroup All</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {/* ── Hand Raise Alert Banner for Host ─────────────────────────────── */}
       {handRaisedPeers.length > 0 && (
@@ -505,6 +682,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
               <View style={styles.tileFooter}>
                 <View style={styles.tileNameTag}>
                   <Text style={styles.tileNameTagText}>You</Text>
+                  {!isMuted && <AudioEqualizerBars isSpeaking={true} />}
                 </View>
                 <View style={[styles.tileMicPill, { backgroundColor: isMuted ? "#EF4444" : "rgba(16, 185, 129, 0.85)" }]}>
                   <MaterialCommunityIcons name={isMuted ? "microphone-off" : "microphone"} size={12} color="#FFF" />
@@ -559,6 +737,7 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
                     <Text style={styles.tileNameTagText} numberOfLines={1}>
                       {peer.name}
                     </Text>
+                    {peer.isSpeaking && <AudioEqualizerBars isSpeaking={true} />}
                   </View>
                   <View
                     style={[
@@ -656,6 +835,18 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
         >
           <Text style={{ fontSize: 18 }}>✨</Text>
           <Text style={styles.dockBtnLabel}>React</Text>
+        </Pressable>
+
+        {/* Study Tools Hub Button */}
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            setToolsDrawerVisible(true);
+          }}
+          style={[styles.dockBtnSecondary, styles.dockBtnTools]}
+        >
+          <MaterialCommunityIcons name="toolbox-outline" size={20} color="#38BDF8" />
+          <Text style={[styles.dockBtnLabel, { color: "#38BDF8" }]}>Tools</Text>
         </Pressable>
 
         {/* Chat Drawer Button */}
@@ -785,6 +976,31 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
 
               <Pressable
                 onPress={() => {
+                  setWhisperTarget(selectedPeerMenu);
+                  setWhisperModalVisible(true);
+                  setSelectedPeerMenu(null);
+                }}
+                style={styles.moderationItem}
+              >
+                <MaterialCommunityIcons name="message-lock-outline" size={18} color="#A855F7" />
+                <Text style={styles.moderationItemText}>Send Private Whisper</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setPinnedPeerId(pinnedPeerId === selectedPeerMenu.userId ? null : selectedPeerMenu.userId);
+                  setSelectedPeerMenu(null);
+                }}
+                style={styles.moderationItem}
+              >
+                <MaterialCommunityIcons name="pin-outline" size={18} color="#F59E0B" />
+                <Text style={styles.moderationItemText}>
+                  {pinnedPeerId === selectedPeerMenu.userId ? "Unpin Participant" : "Pin to Spotlight"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
                   moderatePeer("kick", selectedPeerMenu.userId, selectedPeerMenu.socketId);
                   setSelectedPeerMenu(null);
                 }}
@@ -797,6 +1013,725 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
           </Pressable>
         </Modal>
       )}
+      {/* ── Hand Raise Queue Modal ───────────────────────────────────────── */}
+      <Modal
+        visible={handRaiseModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setHandRaiseModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="hand-back-right" size={22} color="#F59E0B" />
+              <Text style={styles.modalTitle}>Speaking Queue ({handRaisedPeers.length})</Text>
+              <Pressable onPress={() => setHandRaiseModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 320 }}>
+              {handRaisedPeers.length === 0 ? (
+                <Text style={styles.emptyQueueText}>No hands currently raised.</Text>
+              ) : (
+                handRaisedPeers.map((peer, idx) => (
+                  <View key={peer.socketId} style={styles.queueItem}>
+                    <View style={styles.queueIdxBadge}>
+                      <Text style={styles.queueIdxText}>#{idx + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.queueItemName}>{peer.name}</Text>
+                      <Text style={styles.queueItemSub}>Waiting to speak</Text>
+                    </View>
+                    {isHost && (
+                      <Pressable
+                        onPress={() => {
+                          inviteToSpeak(peer.socketId);
+                          setHandRaiseModalVisible(false);
+                        }}
+                        style={styles.inviteSpeakBtn}
+                      >
+                        <Text style={styles.inviteSpeakBtnText}>Invite to Speak</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Tools Drawer Modal (20 Feature Hub) ───────────────────────────── */}
+      <Modal
+        visible={toolsDrawerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setToolsDrawerVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.toolsDrawerBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="toolbox-outline" size={22} color="#38BDF8" />
+              <Text style={styles.modalTitle}>Room Study Tools & Controls</Text>
+              <Pressable onPress={() => setToolsDrawerVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <View style={styles.toolsGrid}>
+                {/* 1. Collaborative Whiteboard */}
+                <Pressable
+                  onPress={() => {
+                    setToolsDrawerVisible(false);
+                    setWhiteboardModalVisible(true);
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(56, 189, 248, 0.15)" }]}>
+                    <MaterialCommunityIcons name="draw" size={24} color="#38BDF8" />
+                  </View>
+                  <Text style={styles.toolTitle}>Whiteboard</Text>
+                  <Text style={styles.toolSub}>Live sketch & formula canvas</Text>
+                </Pressable>
+
+                {/* 2. Interactive Polls */}
+                <Pressable
+                  onPress={() => {
+                    setToolsDrawerVisible(false);
+                    setPollModalVisible(true);
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+                    <MaterialCommunityIcons name="poll" size={24} color="#10B981" />
+                  </View>
+                  <Text style={styles.toolTitle}>Live Polls</Text>
+                  <Text style={styles.toolSub}>{currentPoll ? "Active Vote Live" : "Quiz & Surveys"}</Text>
+                </Pressable>
+
+                {/* 3. Shared Resources */}
+                <Pressable
+                  onPress={() => {
+                    setToolsDrawerVisible(false);
+                    setResourcesModalVisible(true);
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
+                    <MaterialCommunityIcons name="folder-text-outline" size={24} color="#F59E0B" />
+                  </View>
+                  <Text style={styles.toolTitle}>Resources</Text>
+                  <Text style={styles.toolSub}>{sharedResources.length} files & links</Text>
+                </Pressable>
+
+                {/* 4. Key Moment Bookmarks */}
+                <Pressable
+                  onPress={() => {
+                    setToolsDrawerVisible(false);
+                    setBookmarksModalVisible(true);
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
+                    <MaterialCommunityIcons name="bookmark-check" size={24} color="#EF4444" />
+                  </View>
+                  <Text style={styles.toolTitle}>Bookmarks</Text>
+                  <Text style={styles.toolSub}>{bookmarkedMoments.length} moments saved</Text>
+                </Pressable>
+
+                {/* 5. Breakout Study Groups */}
+                <Pressable
+                  onPress={() => {
+                    setToolsDrawerVisible(false);
+                    setBreakoutModalVisible(true);
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(168, 85, 247, 0.15)" }]}>
+                    <MaterialCommunityIcons name="account-supervisor-circle" size={24} color="#A855F7" />
+                  </View>
+                  <Text style={styles.toolTitle}>Breakouts</Text>
+                  <Text style={styles.toolSub}>Peer study pairs</Text>
+                </Pressable>
+
+                {/* 6. Live Meeting Notes */}
+                <Pressable
+                  onPress={() => {
+                    setToolsDrawerVisible(false);
+                    setNotesModalVisible(true);
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(14, 165, 233, 0.15)" }]}>
+                    <MaterialCommunityIcons name="notebook-outline" size={24} color="#0EA5E9" />
+                  </View>
+                  <Text style={styles.toolTitle}>Agenda Notes</Text>
+                  <Text style={styles.toolSub}>Shared live minutes</Text>
+                </Pressable>
+
+                {/* 7. Audio Filter Booster */}
+                <Pressable
+                  onPress={() => {
+                    const nextMode = audioFilterMode === "standard" ? "voice_boost" : audioFilterMode === "voice_boost" ? "music" : "standard";
+                    setAudioFilterMode(nextMode);
+                    triggerHaptic();
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(236, 72, 153, 0.15)" }]}>
+                    <MaterialCommunityIcons name="tune-vertical" size={24} color="#EC4899" />
+                  </View>
+                  <Text style={styles.toolTitle}>Voice Filter</Text>
+                  <Text style={styles.toolSub}>
+                    {audioFilterMode === "voice_boost" ? "🎙️ Voice Boost" : audioFilterMode === "music" ? "🎵 Music Mode" : "Standard"}
+                  </Text>
+                </Pressable>
+
+                {/* 8. Virtual Backdrop */}
+                <Pressable
+                  onPress={() => {
+                    const bgs: Array<"none" | "blur" | "library" | "sunset" | "studio"> = ["none", "blur", "library", "sunset", "studio"];
+                    const currIdx = bgs.indexOf(virtualBackground);
+                    const next = bgs[(currIdx + 1) % bgs.length];
+                    setVirtualBackground(next);
+                    triggerHaptic();
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: "rgba(139, 92, 246, 0.15)" }]}>
+                    <MaterialCommunityIcons name="image-filter-hdr" size={24} color="#8B5CF6" />
+                  </View>
+                  <Text style={styles.toolTitle}>Backdrop</Text>
+                  <Text style={styles.toolSub}>
+                    {virtualBackground === "library" ? "📚 Library" : virtualBackground === "sunset" ? "🌅 Sunset" : virtualBackground === "studio" ? "🌌 Studio" : virtualBackground === "blur" ? "Privacy Blur" : "Off"}
+                  </Text>
+                </Pressable>
+
+                {/* 9. Urgent Broadcast Announcement (Host) */}
+                {isHost && (
+                  <Pressable
+                    onPress={() => {
+                      setToolsDrawerVisible(false);
+                      setBroadcastModalVisible(true);
+                    }}
+                    style={styles.toolCard}
+                  >
+                    <View style={[styles.toolIconBox, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
+                      <MaterialCommunityIcons name="bullhorn-outline" size={24} color="#F59E0B" />
+                    </View>
+                    <Text style={styles.toolTitle}>Announcement</Text>
+                    <Text style={styles.toolSub}>Broadcast ticker</Text>
+                  </Pressable>
+                )}
+
+                {/* 10. Screen Share Mode */}
+                <Pressable
+                  onPress={() => {
+                    setToolsDrawerVisible(false);
+                    toggleScreenShare();
+                  }}
+                  style={styles.toolCard}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: isScreenSharing ? "rgba(16, 185, 129, 0.2)" : "rgba(100, 116, 139, 0.15)" }]}>
+                    <MaterialCommunityIcons name="monitor-share" size={24} color={isScreenSharing ? "#10B981" : "#94A3B8"} />
+                  </View>
+                  <Text style={styles.toolTitle}>Screen Share</Text>
+                  <Text style={styles.toolSub}>{isScreenSharing ? "Sharing Active" : "Share slides"}</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Collaborative Whiteboard Modal ──────────────────────────────── */}
+      <Modal
+        visible={whiteboardModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setWhiteboardModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.whiteboardBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="draw" size={22} color="#38BDF8" />
+              <Text style={styles.modalTitle}>Collaborative Whiteboard</Text>
+              <Pressable onPress={() => setWhiteboardModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+
+            {/* Canvas Area */}
+            <View style={styles.whiteboardCanvas}>
+              {whiteboardStrokes.map((s, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.whiteboardDot,
+                    {
+                      left: s.x || 50,
+                      top: s.y || 50,
+                      backgroundColor: s.color || "#38BDF8",
+                    },
+                  ]}
+                />
+              ))}
+              <Text style={styles.whiteboardHint}>
+                Touch canvas or use tools to sketch formulas, math equations, and study notes in real-time.
+              </Text>
+            </View>
+
+            {/* Whiteboard Controls */}
+            <View style={styles.whiteboardToolsRow}>
+              {["#FFFFFF", "#38BDF8", "#EF4444", "#10B981", "#F59E0B"].map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => {
+                    setWbColor(c);
+                    setWbTool("pen");
+                    triggerHaptic();
+                  }}
+                  style={[styles.colorDot, { backgroundColor: c }, wbColor === c && styles.colorDotActive]}
+                />
+              ))}
+              <Pressable
+                onPress={() => {
+                  broadcastStroke({ x: Math.random() * 260 + 20, y: Math.random() * 180 + 20, color: wbColor });
+                }}
+                style={styles.wbActionBtn}
+              >
+                <MaterialCommunityIcons name="pencil-plus" size={16} color="#38BDF8" />
+                <Text style={styles.wbActionBtnText}>Quick Draw</Text>
+              </Pressable>
+              <Pressable onPress={clearWhiteboard} style={[styles.wbActionBtn, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
+                <MaterialCommunityIcons name="trash-can-outline" size={16} color="#EF4444" />
+                <Text style={[styles.wbActionBtnText, { color: "#EF4444" }]}>Clear</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Live Interactive Polls Modal ──────────────────────────────────── */}
+      <Modal
+        visible={pollModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPollModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="poll" size={22} color="#10B981" />
+              <Text style={styles.modalTitle}>Live Room Poll</Text>
+              <Pressable onPress={() => setPollModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+
+            {currentPoll ? (
+              <View style={styles.pollActiveContainer}>
+                <Text style={styles.pollQuestionText}>{currentPoll.question}</Text>
+                <Text style={styles.pollCreatorText}>Launched by {currentPoll.creatorName}</Text>
+
+                {currentPoll.options.map((opt) => {
+                  const totalVotes = currentPoll.options.reduce((acc, o) => acc + o.votes, 0);
+                  const percent = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+                  const hasVotedThis = currentPoll.voters[currentUserId] === opt.id;
+
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => {
+                        votePoll(opt.id);
+                      }}
+                      style={[styles.pollOptionBox, hasVotedThis && styles.pollOptionBoxVoted]}
+                    >
+                      <View style={[styles.pollProgressBar, { width: `${percent}%` }]} />
+                      <View style={styles.pollOptionContent}>
+                        <Text style={[styles.pollOptionText, hasVotedThis && { color: "#10B981", fontWeight: "700" }]}>
+                          {opt.text}
+                        </Text>
+                        <Text style={styles.pollOptionCount}>
+                          {percent}% ({opt.votes})
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+
+                {isHost && currentPoll.isOpen && (
+                  <Pressable onPress={closePoll} style={styles.endPollBtn}>
+                    <Text style={styles.endPollBtnText}>Close Poll</Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : isHost ? (
+              <View style={styles.createPollContainer}>
+                <Text style={styles.fieldLabel}>Question</Text>
+                <TextInput
+                  style={styles.pollInput}
+                  placeholder="e.g. Did everyone follow Step 3?"
+                  placeholderTextColor="#64748B"
+                  value={newPollQuestion}
+                  onChangeText={setNewPollQuestion}
+                />
+                <Text style={styles.fieldLabel}>Option 1</Text>
+                <TextInput
+                  style={styles.pollInput}
+                  placeholder="Option 1"
+                  placeholderTextColor="#64748B"
+                  value={newPollOpt1}
+                  onChangeText={setNewPollOpt1}
+                />
+                <Text style={styles.fieldLabel}>Option 2</Text>
+                <TextInput
+                  style={styles.pollInput}
+                  placeholder="Option 2"
+                  placeholderTextColor="#64748B"
+                  value={newPollOpt2}
+                  onChangeText={setNewPollOpt2}
+                />
+                <Pressable
+                  onPress={() => {
+                    if (!newPollQuestion.trim() || !newPollOpt1.trim() || !newPollOpt2.trim()) {
+                      Alert.alert("Missing Fields", "Please provide a question and at least 2 options.");
+                      return;
+                    }
+                    createPoll(newPollQuestion, [newPollOpt1, newPollOpt2]);
+                    setNewPollQuestion("");
+                    setNewPollOpt1("");
+                    setNewPollOpt2("");
+                  }}
+                  style={styles.createPollSubmitBtn}
+                >
+                  <Text style={styles.createPollSubmitText}>Launch Live Poll</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Text style={styles.emptyQueueText}>No active poll in this room. The host will launch one soon.</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Shared Resources Modal ────────────────────────────────────────── */}
+      <Modal
+        visible={resourcesModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setResourcesModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="folder-text-outline" size={22} color="#F59E0B" />
+              <Text style={styles.modalTitle}>Shared Study Resources ({sharedResources.length})</Text>
+              <Pressable onPress={() => setResourcesModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 260 }}>
+              {sharedResources.length === 0 ? (
+                <Text style={styles.emptyQueueText}>No resources shared yet during this session.</Text>
+              ) : (
+                sharedResources.map((res) => (
+                  <View key={res.id} style={styles.resourceCard}>
+                    <MaterialCommunityIcons
+                      name={res.type === "pdf" ? "file-pdf-box" : res.type === "code" ? "code-tags" : "link-variant"}
+                      size={20}
+                      color="#38BDF8"
+                    />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.resourceTitleText}>{res.title}</Text>
+                      <Text style={styles.resourceSubText}>Shared by {res.sharedByName}</Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            {/* Share Form */}
+            <View style={styles.addResourceBox}>
+              <TextInput
+                style={styles.resInput}
+                placeholder="Resource title (e.g. Chapter 4 Slides)"
+                placeholderTextColor="#64748B"
+                value={newResTitle}
+                onChangeText={setNewResTitle}
+              />
+              <TextInput
+                style={styles.resInput}
+                placeholder="Resource URL (https://...)"
+                placeholderTextColor="#64748B"
+                value={newResUrl}
+                onChangeText={setNewResUrl}
+              />
+              <Pressable
+                onPress={() => {
+                  if (!newResTitle.trim() || !newResUrl.trim()) return;
+                  shareResource(newResTitle, newResUrl, newResType);
+                  setNewResTitle("");
+                  setNewResUrl("");
+                }}
+                style={styles.shareResSubmitBtn}
+              >
+                <Text style={styles.shareResSubmitText}>Share with Room</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Key Moment Bookmarking Modal ──────────────────────────────────── */}
+      <Modal
+        visible={bookmarksModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBookmarksModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="bookmark-check" size={22} color="#EF4444" />
+              <Text style={styles.modalTitle}>Lecture Key Moments ({bookmarkedMoments.length})</Text>
+              <Pressable onPress={() => setBookmarksModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 220 }}>
+              {bookmarkedMoments.length === 0 ? (
+                <Text style={styles.emptyQueueText}>No key moments saved yet.</Text>
+              ) : (
+                bookmarkedMoments.map((bm) => (
+                  <View key={bm.id} style={styles.bookmarkRow}>
+                    <View style={styles.timestampBadge}>
+                      <Text style={styles.timestampText}>{formatTimer(bm.timestampSeconds)}</Text>
+                    </View>
+                    <Text style={styles.bookmarkNoteText}>{bm.note}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <View style={styles.addBookmarkBox}>
+              <TextInput
+                style={styles.bookmarkInput}
+                placeholder={`Note at ${formatTimer(durationSeconds)} (e.g. Step 2 derivation)`}
+                placeholderTextColor="#64748B"
+                value={newBookmarkText}
+                onChangeText={setNewBookmarkText}
+              />
+              <Pressable
+                onPress={() => {
+                  if (!newBookmarkText.trim()) return;
+                  bookmarkMoment(newBookmarkText);
+                  setNewBookmarkText("");
+                }}
+                style={styles.saveBookmarkBtn}
+              >
+                <Text style={styles.saveBookmarkBtnText}>Bookmark Current Moment</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Breakout Groups Modal ────────────────────────────────────────── */}
+      <Modal
+        visible={breakoutModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBreakoutModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="account-supervisor-circle" size={22} color="#A855F7" />
+              <Text style={styles.modalTitle}>Breakout Study Rooms</Text>
+              <Pressable onPress={() => setBreakoutModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+            <Text style={styles.modalDescription}>
+              Split the room into 2-person study pairs for 10 minutes of interactive problem solving and peer review.
+            </Text>
+
+            {isHost ? (
+              <View style={{ gap: 10, marginTop: 12 }}>
+                <Pressable
+                  onPress={() => {
+                    startBreakout(10, 2);
+                    setBreakoutModalVisible(false);
+                  }}
+                  style={[styles.breakoutActionBtn, { backgroundColor: "#8B5CF6" }]}
+                >
+                  <MaterialCommunityIcons name="play-circle" size={18} color="#FFF" />
+                  <Text style={styles.breakoutActionBtnText}>Launch 10m Pairs (2 per group)</Text>
+                </Pressable>
+                {breakoutInfo && (
+                  <Pressable
+                    onPress={() => {
+                      endBreakout();
+                      setBreakoutModalVisible(false);
+                    }}
+                    style={[styles.breakoutActionBtn, { backgroundColor: "#EF4444" }]}
+                  >
+                    <MaterialCommunityIcons name="stop-circle" size={18} color="#FFF" />
+                    <Text style={styles.breakoutActionBtnText}>End Breakout & Return</Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : (
+              <Text style={styles.emptyQueueText}>Only the host can launch breakout rooms.</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Meeting Agenda Notes Modal ────────────────────────────────────── */}
+      <Modal
+        visible={notesModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setNotesModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="notebook-outline" size={22} color="#0EA5E9" />
+              <Text style={styles.modalTitle}>Live Room Agenda & Notes</Text>
+              <Pressable onPress={() => setNotesModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+            <TextInput
+              style={styles.notesEditorInput}
+              multiline
+              value={sharedNotes}
+              onChangeText={setSharedNotes}
+              placeholder="Write agenda items, formulas, questions..."
+              placeholderTextColor="#64748B"
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Private In-Room Whisper Modal ─────────────────────────────────── */}
+      {whisperTarget && (
+        <Modal
+          visible={whisperModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setWhisperModalVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalSheetBox}>
+              <View style={styles.modalHeader}>
+                <MaterialCommunityIcons name="message-lock-outline" size={22} color="#A855F7" />
+                <Text style={styles.modalTitle}>Private Whisper to {whisperTarget.name}</Text>
+                <Pressable onPress={() => setWhisperModalVisible(false)}>
+                  <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+                </Pressable>
+              </View>
+              <TextInput
+                style={styles.pollInput}
+                placeholder={`Ask ${whisperTarget.name} a private question...`}
+                placeholderTextColor="#64748B"
+                value={whisperInput}
+                onChangeText={setWhisperInput}
+              />
+              <Pressable
+                onPress={() => {
+                  if (!whisperInput.trim()) return;
+                  sendWhisper(whisperTarget.socketId, whisperInput);
+                  setWhisperInput("");
+                  setWhisperModalVisible(false);
+                }}
+                style={[styles.createPollSubmitBtn, { backgroundColor: "#A855F7" }]}
+              >
+                <Text style={styles.createPollSubmitText}>Send Whisper</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* ── Urgent Broadcast Announcement Modal (Host) ────────────────────── */}
+      <Modal
+        visible={broadcastModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBroadcastModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="bullhorn-outline" size={22} color="#F59E0B" />
+              <Text style={styles.modalTitle}>Broadcast Ticker Notice</Text>
+              <Pressable onPress={() => setBroadcastModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+            <TextInput
+              style={styles.pollInput}
+              placeholder="e.g. Please open Chapter 4 PDF from resources!"
+              placeholderTextColor="#64748B"
+              value={broadcastInput}
+              onChangeText={setBroadcastInput}
+            />
+            <Pressable
+              onPress={() => {
+                if (!broadcastInput.trim()) return;
+                sendBroadcast(broadcastInput, 10000);
+                setBroadcastInput("");
+                setBroadcastModalVisible(false);
+              }}
+              style={[styles.createPollSubmitBtn, { backgroundColor: "#F59E0B" }]}
+            >
+              <Text style={styles.createPollSubmitText}>Pin Announcement on All Screens</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Network Diagnostics Modal ─────────────────────────────────────── */}
+      <Modal
+        visible={networkStatsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNetworkStatsVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheetBox}>
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="wifi-check" size={22} color="#10B981" />
+              <Text style={styles.modalTitle}>Real-time Network Diagnostics</Text>
+              <Pressable onPress={() => setNetworkStatsVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+            <View style={styles.netStatRow}>
+              <Text style={styles.netStatLabel}>Latency (RTT):</Text>
+              <Text style={[styles.netStatValue, { color: "#10B981" }]}>{latencyMs} ms</Text>
+            </View>
+            <View style={styles.netStatRow}>
+              <Text style={styles.netStatLabel}>Network Health:</Text>
+              <Text style={styles.netStatValue}>{networkQuality.toUpperCase()}</Text>
+            </View>
+            <View style={styles.netStatRow}>
+              <Text style={styles.netStatLabel}>Audio Protocol:</Text>
+              <Text style={styles.netStatValue}>OPUS (WebRTC HD Mesh)</Text>
+            </View>
+            <View style={styles.netStatRow}>
+              <Text style={styles.netStatLabel}>Bandwidth Mode:</Text>
+              <Text style={styles.netStatValue}>{isLowDataMode ? "Data Saver (Audio Priority)" : "Full HD Multi-stream"}</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1401,4 +2336,555 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
+  // Network Latency & Streak HUD Pills
+  networkPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(30, 41, 59, 0.7)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.5)",
+  },
+  networkPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  streakPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(249, 115, 22, 0.12)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(249, 115, 22, 0.3)",
+  },
+  streakPillText: {
+    color: "#F97316",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  xpBadgeText: {
+    color: "#10B981",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  iconBtnDataSaverActive: {
+    backgroundColor: "rgba(56, 189, 248, 0.2)",
+    borderColor: "#38BDF8",
+  },
+
+  // Banner Banners
+  reconnectingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(245, 158, 11, 0.18)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(245, 158, 11, 0.4)",
+  },
+  reconnectingBannerText: {
+    color: "#F59E0B",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  broadcastBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(245, 158, 11, 0.2)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(245, 158, 11, 0.6)",
+  },
+  broadcastSender: {
+    color: "#F59E0B",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  broadcastText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  breakoutBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(168, 85, 247, 0.2)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(168, 85, 247, 0.5)",
+  },
+  breakoutBannerText: {
+    color: "#E9D5FF",
+    fontSize: 12,
+    fontWeight: "700",
+    flex: 1,
+    marginLeft: 6,
+  },
+  endBreakoutBtn: {
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  endBreakoutBtnText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  // Equalizer
+  equalizerContainer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 2,
+    height: 14,
+    marginLeft: 4,
+  },
+  equalizerBar: {
+    width: 2.5,
+    borderRadius: 1.5,
+    backgroundColor: "#38BDF8",
+  },
+
+  // Dock tools button
+  dockBtnTools: {
+    backgroundColor: "rgba(56, 189, 248, 0.15)",
+    borderColor: "rgba(56, 189, 248, 0.4)",
+  },
+
+  // Generic modal sheet box
+  modalSheetBox: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#1E293B",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.8)",
+  },
+
+  // Tools Drawer
+  toolsDrawerBox: {
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: "#0F172A",
+    borderRadius: 22,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.8)",
+  },
+  toolsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 14,
+  },
+  toolCard: {
+    width: "48%",
+    backgroundColor: "rgba(30, 41, 59, 0.7)",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.5)",
+  },
+  toolIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  toolTitle: {
+    color: "#F8FAFC",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  toolSub: {
+    color: "#94A3B8",
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  // Whiteboard Modal
+  whiteboardBox: {
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: "#0F172A",
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.8)",
+  },
+  whiteboardCanvas: {
+    width: "100%",
+    height: 240,
+    backgroundColor: "#020617",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.6)",
+    marginVertical: 12,
+    position: "relative",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  whiteboardDot: {
+    position: "absolute",
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  whiteboardHint: {
+    color: "#475569",
+    fontSize: 11,
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+  whiteboardToolsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    justifyContent: "space-between",
+  },
+  colorDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  colorDotActive: {
+    borderColor: "#FFF",
+    transform: [{ scale: 1.2 }],
+  },
+  wbActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(56, 189, 248, 0.15)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  wbActionBtnText: {
+    color: "#38BDF8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  // Polls Modal
+  pollActiveContainer: {
+    marginTop: 12,
+  },
+  pollQuestionText: {
+    color: "#F8FAFC",
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  pollCreatorText: {
+    color: "#94A3B8",
+    fontSize: 11,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  pollOptionBox: {
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
+    borderRadius: 12,
+    marginVertical: 4,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.6)",
+    position: "relative",
+  },
+  pollOptionBoxVoted: {
+    borderColor: "#10B981",
+  },
+  pollProgressBar: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "rgba(16, 185, 129, 0.22)",
+  },
+  pollOptionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  pollOptionText: {
+    color: "#F8FAFC",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  pollOptionCount: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  endPollBtn: {
+    backgroundColor: "#EF4444",
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  endPollBtnText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  createPollContainer: {
+    marginTop: 10,
+    gap: 8,
+  },
+  fieldLabel: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  pollInput: {
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#F8FAFC",
+    fontSize: 13,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.6)",
+  },
+  createPollSubmitBtn: {
+    backgroundColor: "#10B981",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  createPollSubmitText: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  // Resources Modal
+  resourceCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
+    padding: 10,
+    borderRadius: 12,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.5)",
+  },
+  resourceTitleText: {
+    color: "#F8FAFC",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  resourceSubText: {
+    color: "#94A3B8",
+    fontSize: 11,
+  },
+  addResourceBox: {
+    gap: 6,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(51, 65, 85, 0.5)",
+    paddingTop: 12,
+  },
+  resInput: {
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    color: "#F8FAFC",
+    fontSize: 12,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.6)",
+  },
+  shareResSubmitBtn: {
+    backgroundColor: "#F59E0B",
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  shareResSubmitText: {
+    color: "#0F172A",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // Bookmarks Modal
+  bookmarkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(30, 41, 59, 0.5)",
+    padding: 10,
+    borderRadius: 10,
+    marginVertical: 4,
+  },
+  timestampBadge: {
+    backgroundColor: "rgba(239, 68, 68, 0.2)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.4)",
+  },
+  timestampText: {
+    color: "#EF4444",
+    fontSize: 11,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  bookmarkNoteText: {
+    color: "#F8FAFC",
+    fontSize: 13,
+    flex: 1,
+  },
+  addBookmarkBox: {
+    gap: 8,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(51, 65, 85, 0.5)",
+    paddingTop: 12,
+  },
+  bookmarkInput: {
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#F8FAFC",
+    fontSize: 13,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.6)",
+  },
+  saveBookmarkBtn: {
+    backgroundColor: "#EF4444",
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  saveBookmarkBtnText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // Breakout Modal
+  breakoutActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  breakoutActionBtnText: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  // Notes Modal
+  notesEditorInput: {
+    height: 240,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    borderRadius: 12,
+    padding: 14,
+    color: "#F8FAFC",
+    fontSize: 13,
+    lineHeight: 20,
+    textAlignVertical: "top",
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.6)",
+  },
+
+  // Network Diagnostics
+  netStatRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(51, 65, 85, 0.4)",
+  },
+  netStatLabel: {
+    color: "#94A3B8",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  netStatValue: {
+    color: "#F8FAFC",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // Hand Raise Queue
+  queueItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
+    padding: 10,
+    borderRadius: 12,
+    marginVertical: 4,
+  },
+  queueIdxBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(245, 158, 11, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueIdxText: {
+    color: "#F59E0B",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  queueItemName: {
+    color: "#F8FAFC",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  queueItemSub: {
+    color: "#94A3B8",
+    fontSize: 11,
+  },
+  inviteSpeakBtn: {
+    backgroundColor: "#10B981",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  inviteSpeakBtnText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  emptyQueueText: {
+    color: "#64748B",
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 24,
+  },
+
 });

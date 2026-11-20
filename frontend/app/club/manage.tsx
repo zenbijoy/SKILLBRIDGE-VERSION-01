@@ -244,16 +244,29 @@ export default function ClubManageScreen() {
             </View>
           </Row>
 
-          <Pressable
-            onPress={() => {
-              triggerHaptic();
-              setShowCreateModal(true);
-            }}
-            style={[styles.createBtn, { backgroundColor: colors.primary }]}
-          >
-            <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF" />
-            <Text style={styles.createBtnText}>New Club</Text>
-          </Pressable>
+          <Row style={{ alignItems: "center", gap: 8 }}>
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                router.push("/clubs" as any);
+              }}
+              style={[styles.browseBtn, { borderColor: colors.border }]}
+            >
+              <MaterialCommunityIcons name="compass-outline" size={16} color={colors.text} />
+              <Text style={[styles.browseBtnText, { color: colors.text }]}>Browse</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                setShowCreateModal(true);
+              }}
+              style={[styles.createBtn, { backgroundColor: colors.primary }]}
+            >
+              <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF" />
+              <Text style={styles.createBtnText}>New Club</Text>
+            </Pressable>
+          </Row>
         </Row>
 
         {/* Tab Switcher: Created (Lead) vs Joined */}
@@ -951,6 +964,19 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     padding: 4,
+  },
+  browseBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  browseBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   createBtn: {
     flexDirection: "row",

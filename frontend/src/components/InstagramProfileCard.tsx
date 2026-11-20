@@ -1,5 +1,5 @@
 import React from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View, Platform } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Profile } from "@/types";
@@ -137,7 +137,9 @@ export function InstagramProfileCard({
           backgroundColor: colors.surface,
           borderColor: colors.border,
           opacity: pressed ? 0.9 : 1,
-          width: isCompact ? 150 : 168,
+          width: Platform.OS === "web" ? "100%" : isCompact ? 150 : 168,
+          maxWidth: Platform.OS === "web" ? 320 : undefined,
+          marginRight: Platform.OS === "web" ? 0 : 10,
         },
       ]}
     >

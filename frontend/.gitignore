@@ -9,6 +9,7 @@ node_modules/
 # Android machine-specific files
 android/local.properties
 android/.gradle/
+android/.kotlin/
 android/build/
 android/app/build/
 

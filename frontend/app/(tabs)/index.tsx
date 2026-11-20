@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Pressable, StyleSheet, Text, View, Platform, useWindowDimensions } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
@@ -21,6 +21,7 @@ import {
 } from "@/components/home/CampusWidgets";
 import { PersonalizedHomeFeed } from "@/components/home/PersonalizedHomeFeed";
 import { PostComposerModal, type AudienceType } from "@/components/home/PostComposerModal";
+import { WebHomeBentoGrid } from "@/components/home/WebHomeBentoGrid";
 import { useAppStore } from "@/state/useAppStore";
 import { usePreferencesStore } from "@/state/usePreferencesStore";
 import { radius, useTheme } from "@/theme";
@@ -33,6 +34,8 @@ export default function HomeScreen() {
   const { t, language } = useI18n();
   const qc = useQueryClient();
   const { mode, cachedProfile, setCachedProfile } = useAppStore();
+  const { width } = useWindowDimensions();
+  const isDesktopWeb = Platform.OS === "web" && width >= 768;
   const showHomeFeed = usePreferencesStore((state) => state.showHomeFeed);
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
   const [composerVisible, setComposerVisible] = useState(false);
@@ -128,22 +131,37 @@ export default function HomeScreen() {
         refreshing={dashboard.isRefetching || me.isRefetching || upcomingQuery.isRefetching}
       >
 
-      {dashboard.isError ? (
-        <Card tone="accent" style={{ marginBottom: 8, padding: 10 }}>
-          <Row style={{ alignItems: "center", gap: 8 }}>
-            <MaterialCommunityIcons name="cloud-sync-outline" size={18} color={colors.primary} />
-            <Text style={{ color: colors.text, fontSize: 12, flex: 1 }}>
-              Connecting to SkillBridge Cloud… Showing cached offline dashboard.
-            </Text>
-          </Row>
-        </Card>
-      ) : null}
+        {dashboard.isError ? (
+          <Card tone="accent" style={{ marginBottom: 8, padding: 10 }}>
+            <Row style={{ alignItems: "center", gap: 8 }}>
+              <MaterialCommunityIcons name="cloud-sync-outline" size={18} color={colors.primary} />
+              <Text style={{ color: colors.text, fontSize: 12, flex: 1 }}>
+                Connecting to SkillBridge Cloud… Showing cached offline dashboard.
+              </Text>
+            </Row>
+          </Card>
+        ) : null}
 
-      {dashboard.isLoading && !d ? (
-        <Card><Skeleton width="40%" /><Skeleton height={120} /></Card>
-      ) : visibleWidgets.length === 0 && !dashboard.isLoading ? (
-        <Muted>{t("home.noWidgets")}</Muted>
-      ) : visibleWidgets.map((widget, idx) => {
+        {isDesktopWeb ? (
+          <WebHomeBentoGrid
+            dashboard={d}
+            me={me.data?.profile}
+            cachedProfile={cachedProfile}
+            upcomingSummary={upcomingQuery.data}
+            upcomingLoading={upcomingQuery.isLoading}
+            mode={mode}
+            onOpenComposer={handleOpenComposer}
+            activeAnnouncements={activeAnnouncements}
+            dismissAnnouncement={dismissAnnouncement}
+            showHomeFeed={showHomeFeed}
+          />
+        ) : (
+          <>
+            {dashboard.isLoading && !d ? (
+              <Card><Skeleton width="40%" /><Skeleton height={120} /></Card>
+            ) : visibleWidgets.length === 0 && !dashboard.isLoading ? (
+              <Muted>{t("home.noWidgets")}</Muted>
+            ) : visibleWidgets.map((widget, idx) => {
         const renderWidget = () => {
         switch (widget.widget_key) {
           case "announcements":
@@ -453,10 +471,12 @@ export default function HomeScreen() {
           </Pressable>
         </Card>
       )}
+      </>
+      )}
     </Screen>
 
-    {/* Fixed Floating Action Button (+) for Instant Post Creation */}
-    {showHomeFeed ? (
+    {/* Fixed Floating Action Button (+) for Instant Post Creation (Mobile only) */}
+    {showHomeFeed && Platform.OS !== "web" ? (
       <Animated.View
         entering={FadeInUp.springify().damping(12)}
         style={[

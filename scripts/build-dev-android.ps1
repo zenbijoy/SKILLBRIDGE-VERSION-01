@@ -1,97 +1,177 @@
 # ==============================================================================
-# SkillBridge - Build Native Development Client for Physical Android Device
+# SkillBridge - Build Native Development Client Debug APK (Fast Refresh / Hot Reload)
 # ==============================================================================
 # Workflow:
-#   1. Validates Java JDK and Android SDK
-#   2. Locates connected physical device (rejects emulators)
-#   3. Uses virtual drive mapping (S:) to bypass Windows 260-char MAX_PATH limit in Ninja/CMake
-#   4. Runs `npx expo run:android --device` to build and install the debug APK
+#   1. Validates OpenJDK (Java 21 LTS) and Android SDK
+#   2. Builds Dev Client Debug APK via Gradle (:app:assembleDebug)
+#   3. Copies APK to debug-apk\SkillBridge-DevClient-debug.apk and root
+#   4. Detects connected physical Android device / emulator and installs cleanly
+#   5. Configures ADB reverse forwarding for port 8081 (Metro) and backend ports
 # ==============================================================================
 
 [CmdletBinding()]
-param()
+param(
+    [ValidateSet("arm64-v8a", "armeabi-v7a", "universal")]
+    [string]$Arch = "arm64-v8a",
+    [switch]$NoInstall
+)
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
-Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "  SkillBridge - Native Dev Client Build Script     " -ForegroundColor Cyan
-Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host ""
+function Write-Banner([string]$text, [string]$color = "Cyan") {
+    Write-Host "===================================================" -ForegroundColor $color
+    Write-Host "  $text" -ForegroundColor $color
+    Write-Host "===================================================" -ForegroundColor $color
+}
 
-# 1. Locate Java and Android SDK
-if (-not $env:JAVA_HOME) {
-    $jbrPath = "C:\Program Files\Android\Android Studio\jbr"
-    if (Test-Path $jbrPath) {
-        $env:JAVA_HOME = $jbrPath
-        $env:Path = "$jbrPath\bin;" + $env:Path
-        Write-Host "[+] JAVA_HOME set to: $jbrPath" -ForegroundColor Green
-    }
+Write-Banner "SkillBridge - Native Dev Client Debug APK Builder"
+
+$projectRoot  = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$frontendDir  = Join-Path $projectRoot "frontend"
+$androidDir   = Join-Path $frontendDir "android"
+$debugDir     = Join-Path $projectRoot "debug-apk"
+
+# --- 1. Locate Java JDK and Android SDK ----------------------------------------
+$jdkCandidates = @(
+    "D:\jdk-21",
+    $env:JAVA_HOME,
+    "C:\Program Files\Java\jdk-21",
+    "C:\Program Files\Java\jdk-25",
+    "C:\Program Files\Android\Android Studio\jbr"
+) | Where-Object { $_ -and (Test-Path (Join-Path $_ "bin\java.exe")) }
+
+if ($jdkCandidates.Count -gt 0) {
+    $env:JAVA_HOME = $jdkCandidates[0]
+    $env:Path = "$($env:JAVA_HOME)\bin;" + $env:Path
+    Write-Host "[+] JAVA_HOME: $env:JAVA_HOME" -ForegroundColor Green
+} else {
+    Write-Host "[-] Valid JDK not found. Please ensure Java 21 LTS is installed." -ForegroundColor Red
+    exit 1
 }
 
 if (-not $env:ANDROID_HOME) {
     $androidSdk = Join-Path $env:LOCALAPPDATA "Android\Sdk"
-    if (Test-Path $androidSdk) {
-        $env:ANDROID_HOME = $androidSdk
-        $env:Path = "$androidSdk\platform-tools;" + $env:Path
-        Write-Host "[+] ANDROID_HOME set to: $androidSdk" -ForegroundColor Green
-    }
+    if (Test-Path $androidSdk) { $env:ANDROID_HOME = $androidSdk }
+}
+if (-not $env:ANDROID_HOME) {
+    Write-Host "[-] ANDROID_HOME not found. Install the Android SDK." -ForegroundColor Red
+    exit 1
+}
+$env:Path = "$env:ANDROID_HOME\platform-tools;$env:Path"
+Write-Host "[+] ANDROID_HOME: $env:ANDROID_HOME" -ForegroundColor Green
+
+# --- 2. Architecture selection ------------------------------------------------
+switch ($Arch) {
+    "arm64-v8a" { $archList = "arm64-v8a" }
+    "armeabi-v7a" { $archList = "armeabi-v7a" }
+    "universal" { $archList = "armeabi-v7a,arm64-v8a,x86,x86_64" }
+}
+Write-Host "[*] Architecture: $Arch ($archList)" -ForegroundColor Green
+
+# Set memory & build limits to prevent OOM
+$env:CMAKE_BUILD_PARALLEL_LEVEL = "2"
+$env:NODE_OPTIONS = "--max-old-space-size=3072"
+if (Test-Path "D:\Temp") {
+    $env:TEMP = "D:\Temp"
+    $env:TMP = "D:\Temp"
 }
 
-# 2. Locate ADB and find physical device
-$adbCmd = "adb"
-if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
-    $platformTools = Join-Path $env:LOCALAPPDATA "Android\Sdk\platform-tools"
-    $candidate = Join-Path $platformTools "adb.exe"
-    if (Test-Path $candidate) {
-        $env:Path = "$platformTools;" + $env:Path
-        $adbCmd = $candidate
-    }
+# --- 3. Build Debug APK with Gradle -------------------------------------------
+Write-Host ""
+Write-Banner "Building Dev Client Debug APK (Hot Reload / Fast Refresh Enabled)" "Yellow"
+Write-Host "    gradlew assembleDebug -PreactNativeArchitectures=$archList" -ForegroundColor DarkGray
+Write-Host ""
+
+$buildStart = Get-Date
+$buildExit = 1
+
+Push-Location $androidDir
+try {
+    & .\gradlew.bat assembleDebug "-PreactNativeArchitectures=$archList"
+    $buildExit = $LASTEXITCODE
+}
+finally {
+    Pop-Location
 }
 
-$deviceLines = & $adbCmd devices -l | Where-Object { $_ -match "\bdevice\b" -and $_ -notmatch "List of devices" }
-$physicalDevices = @()
-foreach ($line in $deviceLines) {
-    $parts = -split $line
-    $serial = $parts[0]
-    if ($serial -notlike "emulator-*") {
-        $physicalDevices += $serial
-    }
+if ($buildExit -ne 0) {
+    Write-Host "[-] Gradle build failed with exit code $buildExit." -ForegroundColor Red
+    exit $buildExit
 }
 
-if ($physicalDevices.Count -eq 0) {
-    Write-Host "[-] No physical Android device connected. Please connect your phone via USB." -ForegroundColor Red
+$duration = (Get-Date) - $buildStart
+Write-Host "[+] Build completed in $([math]::Round($duration.TotalMinutes, 1)) minutes" -ForegroundColor Green
+
+# --- 4. Stage Output APK ------------------------------------------------------
+$apkSrc = Join-Path $androidDir "app\build\outputs\apk\debug\app-debug.apk"
+if (-not (Test-Path $apkSrc)) {
+    Write-Host "[-] Debug APK not found at: $apkSrc" -ForegroundColor Red
     exit 1
 }
 
-$targetSerial = $physicalDevices[0]
-$model = (& $adbCmd -s $targetSerial shell getprop ro.product.model).Trim()
-Write-Host "[+] Target physical device: $model ($targetSerial)" -ForegroundColor Green
+if (-not (Test-Path $debugDir)) { New-Item -ItemType Directory -Path $debugDir | Out-Null }
+$destApk = Join-Path $debugDir "SkillBridge-DevClient-debug.apk"
+Copy-Item -Path $apkSrc -Destination $destApk -Force
+Copy-Item -Path $apkSrc -Destination (Join-Path $projectRoot "skillbridge-dev-client.apk") -Force
 
-# 3. Setup build directory directly in frontend (preserves single C: drive root for React Native Codegen)
-$frontendDir = (Resolve-Path (Join-Path $PSScriptRoot "..\frontend")).Path
-$buildDir = $frontendDir
+$apkSizeMB = [math]::Round(((Get-Item $destApk).Length / 1MB), 1)
+Write-Host ""
+Write-Host "[+] Dev Client APK ready ($apkSizeMB MB):" -ForegroundColor Green
+Write-Host "    $destApk" -ForegroundColor Cyan
+Write-Host "    $(Join-Path $projectRoot "skillbridge-dev-client.apk")" -ForegroundColor Cyan
 
-# Ensure any existing S: mapping is unmapped to prevent path root collisions
-try {
-    if (Get-PSDrive S -ErrorAction SilentlyContinue) {
-        subst S: /D 2>$null | Out-Null
+# --- 5. Optional Device Installation via ADB ----------------------------------
+if ($NoInstall) {
+    Write-Host ""
+    Write-Host "[*] Skipping installation as requested (-NoInstall)." -ForegroundColor Yellow
+    exit 0
+}
+
+$adbCmd = "adb"
+$deviceLines = @(& $adbCmd devices -l | Where-Object { $_ -match "\bdevice\b" -and $_ -notmatch "List of devices" })
+if ($deviceLines.Count -gt 0) {
+    $firstLine = [string]$deviceLines[0]
+    $targetSerial = (-split $firstLine.Trim())[0]
+    $model = (& $adbCmd -s $targetSerial shell getprop ro.product.model 2>$null)
+    if ($model) { $model = $model.Trim() } else { $model = "Device" }
+
+    Write-Host ""
+    Write-Host "[*] Found connected device: $model ($targetSerial)" -ForegroundColor Yellow
+    Write-Host "[*] Installing Dev Client APK onto phone..." -ForegroundColor Cyan
+
+    $installOut = (& $adbCmd -s $targetSerial install -r -d $destApk 2>&1 | Out-String)
+    if ($installOut -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+        Write-Host "[!] Signature mismatch detected (previous release build was installed)." -ForegroundColor Yellow
+        Write-Host "[*] Uninstalling old version and installing Dev Client..." -ForegroundColor Yellow
+        & $adbCmd -s $targetSerial uninstall com.skillbridge.app | Out-Null
+        $installOut = (& $adbCmd -s $targetSerial install $destApk 2>&1 | Out-String)
     }
-} catch {}
 
-Set-Location $buildDir
+    if ($installOut -match "Success") {
+        Write-Host "[+] SkillBridge Dev Client installed successfully on $model!" -ForegroundColor Green
 
-# Clean old .cxx cache if path changed
-$cxxDir = Join-Path $frontendDir "android\app\.cxx"
-if (Test-Path $cxxDir) {
-    Write-Host "[*] Refreshing CMake build cache in .cxx..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $cxxDir -ErrorAction SilentlyContinue
+        # Reverse Metro and backend ports
+        & $adbCmd -s $targetSerial reverse tcp:8081 tcp:8081 2>$null | Out-Null
+        & $adbCmd -s $targetSerial reverse tcp:4000 tcp:4000 2>$null | Out-Null
+        & $adbCmd -s $targetSerial reverse tcp:5000 tcp:5000 2>$null | Out-Null
+        & $adbCmd -s $targetSerial reverse tcp:3000 tcp:3000 2>$null | Out-Null
+        Write-Host "[+] ADB reverse port 8081 configured over USB." -ForegroundColor Green
+    } else {
+        Write-Host "[-] Installation reported: $installOut" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host ""
+    Write-Host "[!] No active Android device detected for auto-install." -ForegroundColor Yellow
+    Write-Host "    Connect phone via USB and run 'BUILD_DEV_ANDROID.cmd' or install manually." -ForegroundColor DarkGray
 }
 
 Write-Host ""
-Write-Host "[*] Initiating native build for $model..." -ForegroundColor Yellow
-Write-Host "    Working directory: $buildDir" -ForegroundColor DarkGray
-Write-Host "    Command: npx expo run:android --device $model --no-bundler" -ForegroundColor DarkGray
-Write-Host ""
-
-& npx expo run:android --device $model --no-bundler
-
+Write-Host "===================================================" -ForegroundColor Green
+Write-Host "  HOW TO RUN WITH HOT RELOAD / FAST REFRESH:       " -ForegroundColor Green
+Write-Host "===================================================" -ForegroundColor Green
+Write-Host "  1. Run: npm run dev" -ForegroundColor Cyan
+Write-Host "     (or: powershell -File ./scripts/start-usb-dev.ps1)" -ForegroundColor DarkGray
+Write-Host "  2. Open SkillBridge on your phone." -ForegroundColor Cyan
+Write-Host "  3. Fast Refresh / Hot Reload will update live as " -ForegroundColor Cyan
+Write-Host "     you edit code!" -ForegroundColor Cyan
+Write-Host "===================================================" -ForegroundColor Green

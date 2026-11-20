@@ -588,46 +588,83 @@
   <section id="download" class="py-20 bg-[#0F1015] text-white">
     <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
       
+      <!-- Main Download Card -->
       <div class="rounded-[36px] p-8 sm:p-12 bg-[#151720] border-2 border-amber-400/30 relative overflow-hidden shadow-2xl">
         
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+        <!-- Background Ambient Glow -->
+        <div class="absolute -top-24 -right-24 w-96 h-96 bg-amber-400/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
           
           <!-- Download CTA Info (7 cols) -->
-          <div class="md:col-span-7 space-y-5 text-center md:text-left">
-            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-black tracking-widest uppercase">
-              <i data-lucide="download" class="w-3.5 h-3.5"></i>
-              <span>OFFICIAL ANDROID RELEASE</span>
+          <div class="lg:col-span-7 space-y-6 text-center lg:text-left">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-black tracking-widest uppercase">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>LATEST APP UPDATE • <span class="app-version-label">v2.1.0</span> (NOVEMBER 2026)</span>
             </div>
 
             <h2 class="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white leading-tight">
-              INSTALL SKILLBRIDGE TODAY
+              GET THE LATEST SKILLBRIDGE APP
             </h2>
 
-            <p class="text-sm font-medium text-zinc-400 max-w-md mx-auto md:mx-0">
-              Direct download from high-speed VPS. Automatic in-app update notifications enabled.
+            <p class="text-sm font-medium text-zinc-400 max-w-xl mx-auto lg:mx-0">
+              Download the newest release directly from our high-speed VPS. Packed with Live WebRTC Study Rooms, Academic Vault, AI Routine Sync, and seamless In-App 1-Tap Updates.
             </p>
 
-            <!-- Big Yellow Download Button -->
-            <div class="pt-2">
-              <a href="/download/SkillBridge.apk" class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-black text-black bg-[#FACC15] hover:bg-[#EAB308] shadow-lg hover:scale-105 active:scale-95 transition-all">
+            <!-- What's New Feature Pills -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-left">
+              <div class="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-zinc-300">
+                <i data-lucide="video" class="w-4 h-4 text-amber-400 shrink-0"></i>
+                <span><strong>Live Rooms:</strong> HD Audio/Video & Stage</span>
+              </div>
+              <div class="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-zinc-300">
+                <i data-lucide="book-open" class="w-4 h-4 text-amber-400 shrink-0"></i>
+                <span><strong>Study Vault:</strong> Offline Question Bank</span>
+              </div>
+              <div class="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-zinc-300">
+                <i data-lucide="calendar" class="w-4 h-4 text-amber-400 shrink-0"></i>
+                <span><strong>Routine AI:</strong> Instant Schedule Sync</span>
+              </div>
+              <div class="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-zinc-300">
+                <i data-lucide="refresh-cw" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                <span><strong>In-App Updater:</strong> 1-Tap Auto Updates</span>
+              </div>
+            </div>
+
+            <!-- Download Buttons Stack -->
+            <div class="pt-2 flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
+              <!-- Primary: Official Release APK -->
+              <a href="/download/SkillBridge.apk" class="inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-base font-black text-black bg-[#FACC15] hover:bg-[#EAB308] shadow-xl hover:scale-105 active:scale-95 transition-all">
                 <i data-lucide="download" class="w-5 h-5 stroke-[3]"></i>
-                <span>DOWNLOAD APK <span class="text-xs font-bold text-black/70 ml-1">(v2.1.0 • 62 MB)</span></span>
+                <div class="text-left">
+                  <div class="leading-none">DOWNLOAD OFFICIAL APK</div>
+                  <div class="text-[10px] font-bold text-black/75 tracking-normal mt-0.5"><span class="app-version-label">v2.1.0</span> • <span class="app-size-label">62 MB</span> • Recommended</div>
+                </div>
+              </a>
+
+              <!-- Secondary: Dev Client APK -->
+              <a href="/download/SkillBridge-DevClient-debug.apk" class="inline-flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl text-xs font-black uppercase text-amber-300 bg-white/10 hover:bg-white/15 border border-amber-300/30 hover:scale-105 active:scale-95 transition-all">
+                <i data-lucide="code-2" class="w-4 h-4"></i>
+                <div class="text-left">
+                  <div class="leading-none">DEV CLIENT APK</div>
+                  <div class="text-[9px] font-semibold text-zinc-400 tracking-normal mt-0.5">Hot Reload • Testers</div>
+                </div>
               </a>
             </div>
 
             <!-- Verification Metadata -->
-            <div class="pt-3 flex flex-wrap items-center justify-center md:justify-start gap-4 text-xs font-semibold text-zinc-400">
-              <span class="flex items-center gap-1.5"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Android 8.0+</span>
-              <span class="flex items-center gap-1.5"><i data-lucide="shield-check" class="w-4 h-4 text-amber-400"></i> 100% Virus Free</span>
-              <span class="flex items-center gap-1.5"><i data-lucide="refresh-cw" class="w-4 h-4 text-amber-400"></i> Auto-Updates</span>
+            <div class="pt-1 flex flex-wrap items-center justify-center lg:justify-start gap-4 text-xs font-semibold text-zinc-400">
+              <span class="flex items-center gap-1.5"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Android 8.0+ (arm64-v8a)</span>
+              <span class="flex items-center gap-1.5"><i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i> 100% Virus Free</span>
+              <span class="flex items-center gap-1.5"><i data-lucide="zap" class="w-4 h-4 text-amber-400"></i> High-Speed VPS Mirror</span>
             </div>
           </div>
 
           <!-- QR Code Box (5 cols) -->
-          <div class="md:col-span-5 flex flex-col items-center justify-center p-6 rounded-2xl bg-black border border-white/10 text-center">
+          <div class="lg:col-span-5 flex flex-col items-center justify-center p-6 sm:p-8 rounded-3xl bg-black/60 border border-white/10 text-center shadow-xl">
             <span class="text-xs font-black uppercase tracking-wider text-amber-300 mb-3 flex items-center gap-1.5">
               <i data-lucide="camera" class="w-4 h-4"></i>
-              <span>SCAN WITH PHONE CAMERA</span>
+              <span>SCAN WITH PHONE TO INSTALL</span>
             </span>
 
             <div class="p-3 bg-white rounded-2xl shadow-xl hover:scale-105 transition-transform duration-200">
@@ -635,7 +672,16 @@
             </div>
 
             <div class="text-[11px] font-bold text-zinc-400 mt-3">
-              Direct Link: <span class="text-amber-300">skillbridgeapk.duckdns.org</span>
+              Direct Link: <span class="text-amber-300">skillbridgeapk.duckdns.org/download/SkillBridge.apk</span>
+            </div>
+
+            <!-- Quick update tip -->
+            <div class="mt-4 p-3 rounded-xl bg-amber-400/5 border border-amber-400/20 text-[11px] text-zinc-300 text-left space-y-1">
+              <div class="font-bold text-amber-300 flex items-center gap-1">
+                <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                <span>Updating existing app?</span>
+              </div>
+              <div>Simply download and tap <strong>Update</strong>. Your existing notes, account and chat history stay 100% intact!</div>
             </div>
           </div>
 
@@ -773,6 +819,24 @@
         img.style.opacity = '1';
       }, 120);
     }
+
+    // Dynamic Live Version Ping
+    async function loadLiveVersion() {
+      try {
+        const res = await fetch('/api/v1/app/version');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.version) {
+          document.querySelectorAll('.app-version-label').forEach(el => el.innerText = 'v' + data.version);
+        }
+        if (data.apk && data.apk.file_size_formatted) {
+          document.querySelectorAll('.app-size-label').forEach(el => el.innerText = data.apk.file_size_formatted);
+        }
+      } catch (err) {
+        console.debug('Static version fallback', err);
+      }
+    }
+    loadLiveVersion();
   </script>
 
 </body>

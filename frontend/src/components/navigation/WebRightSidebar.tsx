@@ -51,7 +51,7 @@ const TRENDING_TOPICS = [
 ];
 
 export function WebRightSidebar() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const qc = useQueryClient();
   const [connectingIds, setConnectingIds] = useState<string[]>([]);
 
@@ -131,6 +131,11 @@ export function WebRightSidebar() {
           <View style={styles.liveTitleRow}>
             <View style={styles.pulsingDot} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>LIVE STUDY ROOMS</Text>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 12, marginLeft: 6 }}>
+              <div className="eq-bar-1" style={{ width: 2, backgroundColor: "#EF4444", borderRadius: 1 }} />
+              <div className="eq-bar-2" style={{ width: 2, backgroundColor: "#EF4444", borderRadius: 1 }} />
+              <div className="eq-bar-3" style={{ width: 2, backgroundColor: "#EF4444", borderRadius: 1 }} />
+            </div>
           </View>
           <Pressable onPress={() => router.push("/(tabs)/rooms" as any)}>
             <Text style={[styles.seeAllText, { color: colors.primary }]}>Explore</Text>
@@ -180,9 +185,16 @@ export function WebRightSidebar() {
                     </Text>
                   </View>
                 </View>
-                <View style={[styles.joinPill, { backgroundColor: colors.primary }]}>
-                  <Text style={styles.joinPillText}>Join</Text>
-                </View>
+                <button
+                  className="web-btn-yellow-3d"
+                  style={{
+                    padding: "4px 12px",
+                    fontSize: 11,
+                    border: "none",
+                  }}
+                >
+                  Join
+                </button>
               </Pressable>
             ))}
           </View>
@@ -283,11 +295,11 @@ export function WebRightSidebar() {
                       connectMutation.mutate(peer.id);
                     }}
                     disabled={isConnecting}
+                    className={!isConnecting ? "badge-3d-yellow" : undefined}
                     style={({ pressed }) => [
                       styles.connectBtn,
                       {
-                        backgroundColor: colors.surface2,
-                        borderColor: colors.border,
+                        backgroundColor: isConnecting ? colors.surface2 : undefined,
                         opacity: pressed || isConnecting ? 0.7 : 1,
                       },
                     ]}
@@ -296,8 +308,8 @@ export function WebRightSidebar() {
                       <ActivityIndicator size="small" color={colors.primary} />
                     ) : (
                       <>
-                        <MaterialCommunityIcons name="account-plus" size={14} color={colors.primary} />
-                        <Text style={[styles.connectBtnText, { color: colors.primary }]}>Connect</Text>
+                        <MaterialCommunityIcons name="account-plus" size={14} color="#B45309" />
+                        <Text style={[styles.connectBtnText, { color: "#B45309", fontWeight: "800" }]}>Connect</Text>
                       </>
                     )}
                   </Pressable>
@@ -378,15 +390,15 @@ export function WebRightSidebar() {
                 triggerHaptic();
                 router.push(`/feed` as any);
               }}
+              className="badge-3d-yellow"
               style={({ pressed }) => [
                 styles.trendPill,
                 {
-                  backgroundColor: pressed ? colors.surface2 : colors.surface,
-                  borderColor: colors.border,
+                  opacity: pressed ? 0.8 : 1,
                 },
               ]}
             >
-              <Text style={[styles.trendTag, { color: colors.primary }]}>{topic.tag}</Text>
+              <Text style={[styles.trendTag, { color: isDark ? "#FACC15" : "#B45309", fontWeight: "800" }]}>{topic.tag}</Text>
               <Text style={[styles.trendCount, { color: colors.muted }]}>{topic.posts}</Text>
             </Pressable>
           ))}

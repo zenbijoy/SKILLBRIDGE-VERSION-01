@@ -93,7 +93,7 @@ export function WebStoriesCarousel() {
               height: 58,
               borderRadius: "50%",
               padding: 2,
-              border: `2px dashed ${colors.primary}`,
+              border: isDark ? "2px dashed #FACC15" : "2px dashed #EAB308",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -103,13 +103,27 @@ export function WebStoriesCarousel() {
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.storyAvatar} />
             ) : (
-              <View style={[styles.avatarFallback, { backgroundColor: colors.primarySoft }]}>
-                <Text style={[styles.avatarInitial, { color: colors.primary }]}>{initial}</Text>
+              <View style={[styles.avatarFallback, { backgroundColor: isDark ? "rgba(250, 204, 21, 0.2)" : "#FEF9C3" }]}>
+                <Text style={[styles.avatarInitial, { color: isDark ? "#FACC15" : "#B45309" }]}>{initial}</Text>
               </View>
             )}
-            <View style={[styles.plusBadge, { backgroundColor: colors.primary }]}>
-              <MaterialCommunityIcons name="plus" size={14} color="#FFFFFF" />
-            </View>
+            <div
+              style={{
+                position: "absolute",
+                bottom: -2,
+                right: -2,
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #FACC15 0%, #EAB308 100%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 2px 6px rgba(234, 179, 8, 0.4)",
+              }}
+            >
+              <MaterialCommunityIcons name="plus" size={14} color="#0F1015" />
+            </div>
           </div>
           <Text style={[styles.storyLabel, { color: colors.text }]} numberOfLines={1}>
             Host Room

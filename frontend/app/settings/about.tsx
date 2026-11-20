@@ -1,12 +1,40 @@
+import React, { useEffect, useState } from "react";
 import Constants from "expo-constants";
-import { Image, Linking, StyleSheet, Text, View, Alert } from "react-native";
+import { Image, Linking, StyleSheet, Text, View, Alert, ActivityIndicator } from "react-native";
 import { Button, Card, H1, H2, Muted, Row, Screen, triggerHaptic } from "@/components/ui";
+import { UpdateInfoCard, type VersionResponse } from "@/components/AppUpdateChecker";
 import { useI18n } from "@/i18n";
 import { useTheme } from "@/theme";
 
 export default function AboutSettings() {
   const { t } = useI18n();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const [versionInfo, setVersionInfo] = useState<VersionResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [checked, setChecked] = useState(false);
+
+  const localVersion = Constants.expoConfig?.version ?? "2.0.10";
+
+  const fetchUpdateInfo = async () => {
+    setLoading(true);
+    triggerHaptic();
+    try {
+      const res = await fetch("https://ruetskillbridge.duckdns.org/api/v1/app/version");
+      if (res.ok) {
+        const data: VersionResponse = await res.json();
+        setVersionInfo(data);
+      }
+    } catch {
+      // Offline fallback
+    } finally {
+      setLoading(false);
+      setChecked(true);
+    }
+  };
+
+  useEffect(() => {
+    fetchUpdateInfo();
+  }, []);
 
   const openUrl = (url: string) => {
     triggerHaptic();
@@ -29,9 +57,36 @@ export default function AboutSettings() {
         </Text>
       </View>
 
+      {/* Wonderful Update Info & Download Card */}
+      {versionInfo && (
+        <View style={styles.updateCardSection}>
+          <UpdateInfoCard
+            versionInfo={versionInfo}
+            localVersion={localVersion}
+          />
+        </View>
+      )}
+
+      {!versionInfo && checked && (
+        <Card style={{ gap: 8 }}>
+          <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <View>
+              <H2>App Updates</H2>
+              <Muted>You are on v{localVersion} (Latest)</Muted>
+            </View>
+            <Button
+              title={loading ? "Checking..." : "Check Again"}
+              variant="secondary"
+              compact
+              onPress={fetchUpdateInfo}
+            />
+          </Row>
+        </Card>
+      )}
+
       <Card style={{ gap: 8 }}>
         <H2>SkillBridge Mobile</H2>
-        <Muted>Version {Constants.expoConfig?.version ?? "2.x"}</Muted>
+        <Muted>Installed Version: {localVersion}</Muted>
         <Muted>National-scale peer learning, mentoring, rooms, research collaboration, events and realtime communication.</Muted>
       </Card>
 
@@ -100,6 +155,9 @@ const styles = StyleSheet.create({
   brandSubtitle: {
     fontSize: 13,
     fontWeight: "600",
+  },
+  updateCardSection: {
+    marginBottom: 12,
   },
   linkText: {
     fontSize: 15,

@@ -5,8 +5,8 @@ import { admin } from "../lib/db.js";
 
 export const appVersionRouter = Router();
 
-const CURRENT_APP_VERSION = "2.0.10";
-const CURRENT_VERSION_CODE = 11;
+const CURRENT_APP_VERSION = "2.1.0";
+const CURRENT_VERSION_CODE = 12;
 const APK_FILE_SIZE_BYTES = 65107827;
 const APK_FILE_SIZE_FORMATTED = "62.1 MB";
 const APK_SHA256 = "A4584C450C3B1C0B0E9600EE26ED99176E1957E17C318E15593E5754FE48354C";
@@ -80,6 +80,13 @@ appVersionRouter.get("/version", async (_req, res) => {
         min_android_version: "Android 8.0+ (API 26+)",
         architectures: ["arm64-v8a", "armeabi-v7a", "x86_64"],
       },
+      dev_apk: {
+        filename: "SkillBridge-DevClient-debug.apk",
+        download_url: "https://skillbridgeapk.duckdns.org/download/SkillBridge-DevClient-debug.apk",
+        direct_apk_url: "https://skillbridgeapk.duckdns.org/download/SkillBridge-DevClient-debug.apk",
+        title: "Developer Client APK",
+        description: "Includes Hot Reload & Metro dev tools for campus developers and contributors",
+      },
       release_notes: [
         "Interactive Live Study Rooms with WebRTC and LiveKit Audio/Video",
         "Central Academic Study Vault with instant PDF search and category filters",
@@ -88,7 +95,7 @@ appVersionRouter.get("/version", async (_req, res) => {
         "Gamified Quizzes, streaks, and university leaderboards",
         "Automatic In-App Update detection and 1-tap download"
       ],
-      published_at: "2026-11-20T03:00:00Z",
+      published_at: "2026-11-20T11:00:00Z",
     });
   } catch (err: any) {
     res.status(500).json({

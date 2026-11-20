@@ -211,12 +211,12 @@ export function CampusFeatureDock() {
 
   const dockItems = [
     {
-      label: "Live Rooms",
-      tag: "LIVE",
-      tagColor: "#EF4444",
-      icon: "videocam",
-      color: "#3B82F6",
-      route: "/rooms",
+      label: "Campus Clubs",
+      tag: "HUBS",
+      tagColor: "#F59E0B",
+      icon: "people",
+      color: "#F59E0B",
+      route: "/clubs",
     },
     {
       label: "Notes Vault",

@@ -92,30 +92,37 @@ export function WebResponsiveShell({ children }: WebResponsiveShellProps) {
   const isDesktopOrTablet = width >= 768;
 
   // Decide center content width depending on page type
-  // Wide pages like rooms, discover, tools, calendar can breathe up to 1100px
-  // Reading/feed pages look best at 680px - 760px like Facebook
+  // Wide pages like rooms, discover, tools, calendar, dashboard can breathe up to 1280px
+  // Reading/feed pages look best at 880px - 940px for comfortable desktop typography
   const isWidePage =
     pathname.includes("rooms") ||
     pathname.includes("discover") ||
     pathname.includes("tools") ||
     pathname.includes("schedule") ||
     pathname.includes("calendar") ||
-    pathname.includes("vault");
+    pathname.includes("vault") ||
+    pathname.includes("leaderboard") ||
+    pathname.includes("clubs") ||
+    pathname.includes("quiz") ||
+    pathname === "/" ||
+    pathname === "/(tabs)" ||
+    pathname === "/(tabs)/index";
 
   const centerMaxWidth = showRightSidebar && isRightSidebarVisible
     ? isWidePage
-      ? 860
-      : 740
+      ? 1160
+      : 880
     : showLeftSidebar && isLeftSidebarVisible
     ? isWidePage
-      ? 960
-      : 760
+      ? 1260
+      : 920
     : isWidePage
-    ? 1100
-    : 840;
+    ? 1400
+    : 980;
 
   return (
     <div
+      className="web-mesh-canvas"
       style={{
         display: "flex",
         flexDirection: "column",
