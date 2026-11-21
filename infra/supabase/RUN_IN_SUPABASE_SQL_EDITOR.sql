@@ -3625,3 +3625,223 @@ $$;
 
 REVOKE ALL ON FUNCTION public.submit_booking_review_atomic(uuid, uuid, integer, text) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.submit_booking_review_atomic(uuid, uuid, integer, text) TO authenticated, service_role;
+-- ==============================================================================
+-- Migration 054: Automatic Room & Channel Conversation Membership Synchronization
+-- ==============================================================================
+
+BEGIN;
+
+-- 1. Trigger function: when a room member is added or role changed, sync to conversation_members
+CREATE OR REPLACE FUNCTION public.handle_room_member_sync_conversation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_room_conv_id uuid;
+    v_chan RECORD;
+BEGIN
+    -- Sync main room conversation
+    SELECT conversation_id INTO v_room_conv_id FROM public.rooms WHERE id = NEW.room_id;
+    IF v_room_conv_id IS NOT NULL THEN
+        INSERT INTO public.conversation_members (conversation_id, user_id, role)
+        VALUES (v_room_conv_id, NEW.user_id, COALESCE(NEW.role, 'member'))
+        ON CONFLICT (conversation_id, user_id) 
+        DO UPDATE SET role = EXCLUDED.role;
+    END IF;
+
+    -- Sync all non-private channels of this room
+    FOR v_chan IN 
+        SELECT conversation_id FROM public.room_channels 
+        WHERE room_id = NEW.room_id AND (is_private IS NOT TRUE) AND conversation_id IS NOT NULL
+    LOOP
+        INSERT INTO public.conversation_members (conversation_id, user_id, role)
+        VALUES (v_chan.conversation_id, NEW.user_id, COALESCE(NEW.role, 'member'))
+        ON CONFLICT (conversation_id, user_id) 
+        DO UPDATE SET role = EXCLUDED.role;
+    END LOOP;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_room_member_sync_conversation ON public.room_members;
+CREATE TRIGGER trg_room_member_sync_conversation
+AFTER INSERT OR UPDATE OF role ON public.room_members
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_room_member_sync_conversation();
+
+
+-- 2. Trigger function: when a new non-private channel is created or updated, sync all existing room members into it
+CREATE OR REPLACE FUNCTION public.handle_room_channel_sync_members()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_mem RECORD;
+BEGIN
+    IF NEW.conversation_id IS NOT NULL AND (NEW.is_private IS NOT TRUE) THEN
+        FOR v_mem IN 
+            SELECT user_id, role FROM public.room_members WHERE room_id = NEW.room_id
+        LOOP
+            INSERT INTO public.conversation_members (conversation_id, user_id, role)
+            VALUES (NEW.conversation_id, v_mem.user_id, COALESCE(v_mem.role, 'member'))
+            ON CONFLICT (conversation_id, user_id) 
+            DO UPDATE SET role = EXCLUDED.role;
+        END LOOP;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_room_channel_sync_members ON public.room_channels;
+CREATE TRIGGER trg_room_channel_sync_members
+AFTER INSERT OR UPDATE OF conversation_id, is_private ON public.room_channels
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_room_channel_sync_members();
+
+-- 3. Initial backfill: ensure all existing room members are enrolled in room and channel conversations
+DO $$
+DECLARE
+    r RECORD;
+    ch RECORD;
+    m RECORD;
+BEGIN
+    FOR r IN SELECT id, conversation_id FROM public.rooms WHERE conversation_id IS NOT NULL LOOP
+        FOR m IN SELECT user_id, role FROM public.room_members WHERE room_id = r.id LOOP
+            INSERT INTO public.conversation_members (conversation_id, user_id, role)
+            VALUES (r.conversation_id, m.user_id, COALESCE(m.role, 'member'))
+            ON CONFLICT (conversation_id, user_id) DO NOTHING;
+        END LOOP;
+    END LOOP;
+
+    FOR ch IN SELECT room_id, conversation_id FROM public.room_channels WHERE conversation_id IS NOT NULL AND (is_private IS NOT TRUE) LOOP
+        FOR m IN SELECT user_id, role FROM public.room_members WHERE room_id = ch.room_id LOOP
+            INSERT INTO public.conversation_members (conversation_id, user_id, role)
+            VALUES (ch.conversation_id, m.user_id, COALESCE(m.role, 'member'))
+            ON CONFLICT (conversation_id, user_id) DO NOTHING;
+        END LOOP;
+    END LOOP;
+END;
+$$;
+
+COMMIT;
+
+-- Migration 055: Add image_url support to room_questions
+-- Allows questions to include an optional image attachment stored in R2/Supabase storage
+
+ALTER TABLE public.room_questions
+  ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- Also add image support to answers for future use
+ALTER TABLE public.room_question_answers
+  ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- =============================================================================
+-- Migration 056: Club Creation Atomic RPC, Member Status & Room Auto-Sync
+-- Fixes "status" column on club_members, updates create_club_atomic,
+-- and ensures create_room_atomic conflict handling with conversation triggers.
+-- =============================================================================
+
+-- 1. Ensure status column on club_members
+ALTER TABLE public.club_members ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'approved';
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'club_members_status_check'
+  ) THEN
+    ALTER TABLE public.club_members ADD CONSTRAINT club_members_status_check CHECK (status IN ('pending', 'approved', 'rejected'));
+  END IF;
+END $$;
+
+-- 2. Update create_club_atomic to reliably initialize owner membership
+CREATE OR REPLACE FUNCTION public.create_club_atomic(
+    p_name text,
+    p_description text,
+    p_university text,
+    p_owner_id uuid
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $function$
+DECLARE
+    v_club_id uuid;
+BEGIN
+    INSERT INTO public.clubs(name, description, university, created_by)
+    VALUES(p_name, p_description, p_university, p_owner_id)
+    RETURNING id INTO v_club_id;
+
+    INSERT INTO public.club_members(club_id, user_id, role, title, status)
+    VALUES(v_club_id, p_owner_id, 'owner', 'Founder & Owner', 'approved');
+
+    RETURN v_club_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.create_club_atomic(text, text, text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_club_atomic(text, text, text, uuid) TO service_role;
+
+-- 3. Update create_room_atomic to handle conversation_members upsert without duplicate key crash
+CREATE OR REPLACE FUNCTION public.create_room_atomic(
+    p_title text,
+    p_description text,
+    p_topic text,
+    p_visibility text,
+    p_mode text,
+    p_capacity integer,
+    p_rules text,
+    p_tags text[],
+    p_campus_location text,
+    p_owner_id uuid
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $function$
+DECLARE
+  v_conversation_id uuid;
+  v_room_id uuid;
+BEGIN
+  IF p_visibility NOT IN ('public', 'private', 'invite_only') THEN
+    RAISE EXCEPTION 'Invalid room visibility';
+  END IF;
+  IF p_mode NOT IN ('online', 'offline', 'hybrid') THEN
+    RAISE EXCEPTION 'Invalid room mode';
+  END IF;
+  IF p_capacity < 2 OR p_capacity > 250 THEN
+    RAISE EXCEPTION 'Invalid room capacity';
+  END IF;
+
+  INSERT INTO public.conversations(kind, title, created_by)
+  VALUES ('room', p_title, p_owner_id)
+  RETURNING id INTO v_conversation_id;
+
+  INSERT INTO public.rooms(
+    title, description, topic, visibility, mode, capacity, rules, tags,
+    campus_location, owner_id, conversation_id, member_count
+  ) VALUES (
+    p_title, p_description, p_topic, p_visibility, p_mode, p_capacity,
+    coalesce(p_rules, ''), coalesce(p_tags, '{}'::text[]), p_campus_location,
+    p_owner_id, v_conversation_id, 1
+  )
+  RETURNING id INTO v_room_id;
+
+  INSERT INTO public.room_members(room_id, user_id, role)
+  VALUES (v_room_id, p_owner_id, 'owner')
+  ON CONFLICT (room_id, user_id) DO UPDATE SET role = EXCLUDED.role;
+
+  INSERT INTO public.conversation_members(conversation_id, user_id, role)
+  VALUES (v_conversation_id, p_owner_id, 'owner')
+  ON CONFLICT (conversation_id, user_id) DO UPDATE SET role = EXCLUDED.role;
+
+  RETURN v_room_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.create_room_atomic(text, text, text, text, text, integer, text, text[], text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_room_atomic(text, text, text, text, text, integer, text, text[], text, uuid) TO service_role;
+

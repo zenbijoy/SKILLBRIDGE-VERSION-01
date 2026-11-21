@@ -156,6 +156,35 @@ export function RoutineVerificationModal({
     }
   }, [isLargeScreen]);
 
+  // Filtered and grouped classes (declared before any early returns to satisfy React Hook rules)
+  const displayedEntries = useMemo(() => {
+    if (selectedDay === "All") return entries;
+    return entries.filter((e) => (e.day_of_week || e.day) === selectedDay);
+  }, [entries, selectedDay]);
+
+  const entriesByDay = useMemo(() => {
+    return DAYS_OF_WEEK.map((day) => ({
+      day,
+      items: entries
+        .map((entry, index) => ({ entry, index }))
+        .filter((item) => (item.entry.day_of_week || item.entry.day) === day)
+        .sort((a, b) => {
+          const tA = a.entry.start_time || a.entry.startTime || "00:00";
+          const tB = b.entry.start_time || b.entry.startTime || "00:00";
+          return tA.localeCompare(tB);
+        }),
+    })).filter((group) => (selectedDay === "All" ? group.items.length > 0 : group.day === selectedDay));
+  }, [entries, selectedDay]);
+
+  // Construct PDF/document URI for viewer
+  const fileDataUrl = useMemo(() => {
+    if (uploadedFile?.base64) {
+      const mime = uploadedFile.mimeType || "application/pdf";
+      return `data:${mime};base64,${uploadedFile.base64}`;
+    }
+    return uploadedFile?.uri || "";
+  }, [uploadedFile]);
+
   if (!routine) return null;
 
   const conflicts = routine.raw_metadata?.conflicts ?? extractionMeta?.conflicts ?? [];
@@ -411,35 +440,6 @@ export function RoutineVerificationModal({
       Alert.alert("Activation Error", error.message || "Failed to activate routine.");
     }
   };
-
-  // Filtered and grouped classes
-  const displayedEntries = useMemo(() => {
-    if (selectedDay === "All") return entries;
-    return entries.filter((e) => (e.day_of_week || e.day) === selectedDay);
-  }, [entries, selectedDay]);
-
-  const entriesByDay = useMemo(() => {
-    return DAYS_OF_WEEK.map((day) => ({
-      day,
-      items: entries
-        .map((entry, index) => ({ entry, index }))
-        .filter((item) => (item.entry.day_of_week || item.entry.day) === day)
-        .sort((a, b) => {
-          const tA = a.entry.start_time || a.entry.startTime || "00:00";
-          const tB = b.entry.start_time || b.entry.startTime || "00:00";
-          return tA.localeCompare(tB);
-        }),
-    })).filter((group) => (selectedDay === "All" ? group.items.length > 0 : group.day === selectedDay));
-  }, [entries, selectedDay]);
-
-  // Construct PDF/document URI for viewer
-  const fileDataUrl = useMemo(() => {
-    if (uploadedFile?.base64) {
-      const mime = uploadedFile.mimeType || "application/pdf";
-      return `data:${mime};base64,${uploadedFile.base64}`;
-    }
-    return uploadedFile?.uri || "";
-  }, [uploadedFile]);
 
   const isPdf =
     uploadedFile?.mimeType?.includes("pdf") ||

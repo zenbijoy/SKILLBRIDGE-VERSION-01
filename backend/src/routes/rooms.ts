@@ -983,8 +983,15 @@ rooms.patch(
       .select("owner_id")
       .eq("id", roomId)
       .single();
-    if (room?.owner_id !== req.userId)
-      return res.status(403).json({ error: "Only room owner can decide" });
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+    const canManage = room?.owner_id === req.userId || (member && ["owner", "admin", "teacher", "moderator"].includes(member.role));
+    if (!canManage)
+      return res.status(403).json({ error: "Only room owner or teachers can decide" });
     if (status === "accepted") {
       const { error } = await admin.rpc("accept_teaching_request", {
         p_room_id: roomId,
@@ -1037,7 +1044,14 @@ rooms.delete(
         .select("owner_id")
         .eq("id", roomId)
         .single();
-      if (room?.owner_id !== req.userId) {
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+      const canManage = room?.owner_id === req.userId || (member && ["owner", "admin", "teacher", "moderator"].includes(member.role));
+      if (!canManage) {
          return res.status(403).json({ error: "Not authorized to cancel this request" });
       }
     }
@@ -1139,8 +1153,15 @@ rooms.patch(
       .select("owner_id")
       .eq("id", roomId)
       .single();
-    if (room?.owner_id !== req.userId)
-      return res.status(403).json({ error: "Only room owner can decide" });
+    const { data: member } = await admin
+      .from("room_members")
+      .select("role")
+      .eq("room_id", roomId)
+      .eq("user_id", req.userId!)
+      .maybeSingle();
+    const canManage = room?.owner_id === req.userId || (member && ["owner", "admin", "teacher", "moderator"].includes(member.role));
+    if (!canManage)
+      return res.status(403).json({ error: "Only room owner or teachers can decide" });
     if (status === "accepted") {
       const { error } = await admin.rpc("accept_teaching_request", {
         p_room_id: roomId,
@@ -1177,7 +1198,14 @@ rooms.delete(
         .select("owner_id")
         .eq("id", roomId)
         .single();
-      if (room?.owner_id !== req.userId) {
+      const { data: member } = await admin
+        .from("room_members")
+        .select("role")
+        .eq("room_id", roomId)
+        .eq("user_id", req.userId!)
+        .maybeSingle();
+      const canManage = room?.owner_id === req.userId || (member && ["owner", "admin", "teacher", "moderator"].includes(member.role));
+      if (!canManage) {
         return res.status(403).json({ error: "Not authorized to cancel this request" });
       }
     }

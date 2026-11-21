@@ -603,7 +603,7 @@ export default function BroadcastScreen() {
             {
               backgroundColor: colors.surface,
               borderTopColor: colors.border,
-              bottom: Platform.OS === "ios" ? keyboardHeight : 0,
+              bottom: keyboardHeight,
             },
           ]}
         >

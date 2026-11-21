@@ -35,6 +35,7 @@ type RoomLearnViewProps = {
   onAcceptVolunteer?: (id: string) => void;
   onRejectVolunteer?: (id: string) => void;
   onVolunteer?: () => void;
+  onJoinStage?: (media: "audio" | "video") => void;
 };
 
 export function RoomLearnView({
@@ -47,6 +48,7 @@ export function RoomLearnView({
   onAcceptVolunteer,
   onRejectVolunteer,
   onVolunteer,
+  onJoinStage,
 }: RoomLearnViewProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -235,6 +237,10 @@ export function RoomLearnView({
     }
 
     const mediaParam = resolvedType === "voice" ? "audio" : "video";
+    if (onJoinStage) {
+      onJoinStage(mediaParam);
+      return;
+    }
     router.push(`/live/${room.id}?media=${mediaParam}&type=${resolvedType}` as any);
   };
 
@@ -776,8 +782,8 @@ export function RoomLearnView({
             onRequestPoll={handlePollFromRequest}
           />
 
-          {/* Teaching Volunteers (Owner View) */}
-          {isOwner && teachingRequests.length > 0 ? (
+          {/* Teaching Volunteers (Teacher & Owner View) */}
+          {(isOwner || isLeader) && teachingRequests.length > 0 ? (
             <View style={s.teachingRequestsSection}>
               <SectionHeader title={`Teaching Volunteers (${teachingRequests.length})`} />
               {teachingRequests.map((req) => (

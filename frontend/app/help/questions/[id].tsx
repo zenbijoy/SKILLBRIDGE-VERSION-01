@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   type ListRenderItemInfo,
   Platform,
@@ -19,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
+import { useKeyboardHeight } from "@/hooks/useKeyboardHeight";
 import { useSession } from "@/hooks/useSession";
 import {
   Button,
@@ -27,7 +29,6 @@ import {
   Muted,
   Pill,
   Row,
-  Screen,
   Skeleton,
   triggerHaptic,
 } from "@/components/ui";
@@ -82,6 +83,8 @@ export default function QuestionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
+  const flatListRef = useRef<FlatList<Answer>>(null);
   const { session } = useSession();
   const qc = useQueryClient();
 
@@ -139,6 +142,9 @@ export default function QuestionDetailScreen() {
       qc.invalidateQueries({ queryKey: ["help-questions"] });
       qc.invalidateQueries({ queryKey: ["profile"] });
       qc.invalidateQueries({ queryKey: ["leaderboard"] });
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 300);
       const pts = res?.reward?.points ?? DOUBT_REWARDS.ANSWER_DOUBT;
       Alert.alert(
         "Answer Published! 🌟",
@@ -172,7 +178,8 @@ export default function QuestionDetailScreen() {
   });
 
   const handleSendAnswer = () => {
-    if (!answerText.trim()) return;
+    if (!answerText.trim() || answerMutation.isPending) return;
+    Keyboard.dismiss();
     answerMutation.mutate(answerText.trim());
   };
 
@@ -390,14 +397,20 @@ export default function QuestionDetailScreen() {
     </View>
   ) : null;
 
+  const composerPaddingBottom = Platform.select({
+    ios: keyboardHeight > 0 ? 8 : Math.max(insets.bottom, 10),
+    android: keyboardHeight > 0 ? keyboardHeight + 8 : Math.max(insets.bottom, 10),
+    default: Math.max(insets.bottom, 10),
+  });
+
   return (
-    <Screen scroll={false} keyboardAvoiding={false} contentStyle={{ padding: 0, gap: 0 }}>
+    <View style={[s.screenContainer, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         {/* Nav bar */}
-        <Row style={[s.navBar, { paddingTop: insets.top + 8 }]}>
+        <Row style={[s.navBar, { paddingTop: Math.max(insets.top, 12) + 8 }]}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={s.backBtn}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
           </Pressable>
@@ -434,6 +447,7 @@ export default function QuestionDetailScreen() {
             />
           ) : (
             <FlatList
+              ref={flatListRef}
               data={question.answers}
               keyExtractor={(item) => item.id}
               renderItem={renderAnswer}
@@ -449,6 +463,7 @@ export default function QuestionDetailScreen() {
               contentContainerStyle={{ paddingBottom: 24 }}
               ListHeaderComponent={questionHeader}
               showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <Card style={[s.emptyAnswersCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -465,7 +480,16 @@ export default function QuestionDetailScreen() {
 
         {/* Answer composer with incentive banner */}
         {question && (
-          <View style={[s.composerContainer, { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 10) }]}>
+          <View
+            style={[
+              s.composerContainer,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.border,
+                paddingBottom: composerPaddingBottom,
+              },
+            ]}
+          >
             <Row style={[s.composerIncentive, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
               <MaterialCommunityIcons name="star-shooting" size={15} color={colors.primary} />
               <Text style={[s.composerIncentiveText, { color: colors.primary }]}>
@@ -480,6 +504,11 @@ export default function QuestionDetailScreen() {
                 onChangeText={setAnswerText}
                 multiline
                 maxLength={2000}
+                onFocus={() => {
+                  setTimeout(() => {
+                    flatListRef.current?.scrollToEnd({ animated: true });
+                  }, 150);
+                }}
                 style={[
                   s.composerInput,
                   { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
@@ -497,11 +526,14 @@ export default function QuestionDetailScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
-    </Screen>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
+  screenContainer: {
+    flex: 1,
+  },
   navBar: {
     alignItems: "center",
     justifyContent: "space-between",

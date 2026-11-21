@@ -70,6 +70,7 @@ export default function RoomDetailScreen() {
   const [studyPermissionsVisible, setStudyPermissionsVisible] = useState(false);
   const liveStore = useLiveSessionStore();
   const [hasJoinedStage, setHasJoinedStage] = useState(false);
+  const [isFullScreenLive, setIsFullScreenLive] = useState(true);
   const [stageInitialMedia, setStageInitialMedia] = useState<"audio" | "video">("audio");
   const [knockRequestsVisible, setKnockRequestsVisible] = useState(false);
   const [monitoringVisible, setMonitoringVisible] = useState(false);
@@ -85,6 +86,7 @@ export default function RoomDetailScreen() {
     setStageInitialMedia(media);
     setHasJoinedStage(true);
     setActiveTab("stage");
+    setIsFullScreenLive(true);
   };
 
   // Auto-open knock requests if navigated with openKnock query param (e.g. from notification)
@@ -428,51 +430,80 @@ export default function RoomDetailScreen() {
     );
   }
 
+  const isLiveActive = activeTab === "stage" && hasJoinedStage;
+
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]} edges={["top", "left", "right"]}>
-      {/* 1. ROOM OS COMPACT HEADER */}
-      <RoomOSHeader
-        room={room}
-        isMember={isMember}
-        memberRole={permissions.role}
-        isEducator={isEducator}
-        userAvatarUrl={userAvatarUrl}
-        userFullName={userFullName}
-        hasActiveLiveSession={hasLiveSession}
-        liveParticipantsCount={liveParticipantCount}
-        onJoin={() => joinMutation.mutate()}
-        onLeave={() => leaveMutation.mutate()}
-        onOpenMore={() => setActiveTab("more")}
-        onJoinLiveSession={() => handleJoinStage("video")}
-        onOpenVoice={() => handleJoinStage("audio")}
-        onSearch={() => setSearchModalVisible(true)}
-        onPostAnnouncement={() => {
-          setActiveTab("posts");
-          setComposerInitialType("announcement");
-          setExternalComposerOpen(true);
-        }}
-        onOpenAnalytics={() => setAnalyticsVisible(true)}
-        onAttendance={() => setActiveTab("learn")}
-        onToggleRolePreview={handleToggleRolePreview}
-        onOpenTeachers={() => setTeacherCallVisible(true)}
-        onAskQuestion={() => setActiveTab("learn")}
-      />
+    <SafeAreaView
+      style={[s.safe, { backgroundColor: colors.background }]}
+      edges={isLiveActive && isFullScreenLive ? [] : ["top", "left", "right"]}
+    >
+      {/* 0. FLOATING RECONNECT/EXPAND BAR WHEN LIVE SESSION IS MINIMIZED FROM FULL SCREEN */}
+      {isLiveActive && !isFullScreenLive && (
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            setActiveTab("stage");
+            setIsFullScreenLive(true);
+          }}
+          style={[s.liveFloatingBanner, { backgroundColor: colors.primary }]}
+        >
+          <Row style={{ alignItems: "center", justifyContent: "space-between", width: "100%", paddingHorizontal: 12 }}>
+            <Row style={{ alignItems: "center", gap: 8 }}>
+              <View style={s.livePulseDot} />
+              <Text style={s.liveFloatingBannerText}>Live Audio/Video Session in progress · Tap for Full Screen</Text>
+            </Row>
+            <MaterialCommunityIcons name="fullscreen" size={20} color="#FFFFFF" />
+          </Row>
+        </Pressable>
+      )}
 
-      {/* 2. ONE LIVE STRIP (Dynamic Audio/Video session visibility, Teacher controls & Help Request) */}
-      <RoomLiveStrip
-        roomId={room.id}
-        roomTitle={room.title}
-        isMember={isMember}
-        isOwner={permissions.isOwner}
-        isEducator={isEducator}
-        onOpenStudyPermissions={() => setStudyPermissionsVisible(true)}
-        onOpenScheduleStudy={() => setActiveTab("learn")}
-        onAskQuestion={() => setActiveTab("learn")}
-        onJoinStage={(media) => handleJoinStage(media)}
-      />
+      {/* 1. ROOM OS COMPACT HEADER (Auto-hidden when live session is Full Screen) */}
+      {!(isLiveActive && isFullScreenLive) && (
+        <RoomOSHeader
+          room={room}
+          isMember={isMember}
+          memberRole={permissions.role}
+          isEducator={isEducator}
+          userAvatarUrl={userAvatarUrl}
+          userFullName={userFullName}
+          hasActiveLiveSession={hasLiveSession}
+          liveParticipantsCount={liveParticipantCount}
+          onJoin={() => joinMutation.mutate()}
+          onLeave={() => leaveMutation.mutate()}
+          onOpenMore={() => setActiveTab("more")}
+          onJoinLiveSession={() => handleJoinStage("video")}
+          onOpenVoice={() => handleJoinStage("audio")}
+          onSearch={() => setSearchModalVisible(true)}
+          onPostAnnouncement={() => {
+            setActiveTab("posts");
+            setComposerInitialType("announcement");
+            setExternalComposerOpen(true);
+          }}
+          onOpenAnalytics={() => setAnalyticsVisible(true)}
+          onAttendance={() => setActiveTab("learn")}
+          onToggleRolePreview={handleToggleRolePreview}
+          onOpenTeachers={() => setTeacherCallVisible(true)}
+          onAskQuestion={() => setActiveTab("learn")}
+        />
+      )}
 
-      {/* Real-time Knock Waiting Banner for Room Admins & Educators */}
-      {isEducator && pendingKnockCount > 0 && (
+      {/* 2. ONE LIVE STRIP (Auto-hidden when live session is Full Screen) */}
+      {!(isLiveActive && isFullScreenLive) && (
+        <RoomLiveStrip
+          roomId={room.id}
+          roomTitle={room.title}
+          isMember={isMember}
+          isOwner={permissions.isOwner}
+          isEducator={isEducator}
+          onOpenStudyPermissions={() => setStudyPermissionsVisible(true)}
+          onOpenScheduleStudy={() => setActiveTab("learn")}
+          onAskQuestion={() => setActiveTab("learn")}
+          onJoinStage={(media) => handleJoinStage(media)}
+        />
+      )}
+
+      {/* Real-time Knock Waiting Banner for Room Admins & Educators (Auto-hidden in Full Screen) */}
+      {!(isLiveActive && isFullScreenLive) && isEducator && pendingKnockCount > 0 && (
         <Pressable
           onPress={() => {
             triggerHaptic();
@@ -504,19 +535,22 @@ export default function RoomDetailScreen() {
         </Pressable>
       )}
 
-      {/* 2. ROOM OS TAB BAR */}
-      <RoomOSTabs
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          if (tab === "stage" && !hasJoinedStage) {
-            setHasJoinedStage(true);
-          }
-          setActiveTab(tab);
-        }}
-        chatUnreadCount={unreadCount}
-        isEducator={isEducator}
-        hasLiveSession={hasLiveSession || hasJoinedStage}
-      />
+      {/* 2. ROOM OS TAB BAR (Auto-hidden when live session is Full Screen) */}
+      {!(isLiveActive && isFullScreenLive) && (
+        <RoomOSTabs
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            if (tab === "stage" && !hasJoinedStage) {
+              handleJoinStage("video");
+            } else {
+              setActiveTab(tab);
+            }
+          }}
+          chatUnreadCount={unreadCount}
+          isEducator={isEducator}
+          hasLiveSession={hasLiveSession || hasJoinedStage}
+        />
+      )}
 
       {/* 3. ACTIVE DESTINATION VIEW (With state preservation) */}
       <View style={s.contentArea}>
@@ -531,13 +565,19 @@ export default function RoomDetailScreen() {
               currentUserAvatar={userAvatarUrl}
               currentUserRole={permissions.role || "member"}
               isHost={isEducator}
+              isFullScreen={isFullScreenLive}
+              onToggleFullScreen={() => setIsFullScreenLive((prev) => !prev)}
               onLeave={() => {
                 setHasJoinedStage(false);
+                setIsFullScreenLive(false);
                 if (activeTab === "stage") {
                   setActiveTab("posts");
                 }
               }}
-              onOpenChat={() => setActiveTab("chat")}
+              onOpenChat={() => {
+                setIsFullScreenLive(false);
+                setActiveTab("chat");
+              }}
               unreadChatCount={unreadCount}
             />
           </View>
@@ -620,6 +660,7 @@ export default function RoomDetailScreen() {
             onAcceptVolunteer={(vId) => acceptVolunteer.mutate(vId)}
             onRejectVolunteer={(vId) => rejectVolunteer.mutate(vId)}
             onVolunteer={() => volunteerToTeach.mutate()}
+            onJoinStage={(media) => handleJoinStage(media)}
           />
         )}
 
@@ -657,7 +698,13 @@ export default function RoomDetailScreen() {
             onOpenKnockRequests={() => setKnockRequestsVisible(true)}
             onOpenMonitoringCenter={() => setMonitoringVisible(true)}
             onOpenStudyPermissions={() => setStudyPermissionsVisible(true)}
-            onTabChange={setActiveTab}
+            onTabChange={(targetTab) => {
+              if (targetTab === "stage") {
+                handleJoinStage("video");
+              } else {
+                setActiveTab(targetTab);
+              }
+            }}
             onRoomUpdated={(upd) =>
               qc.setQueryData(["room", room.id], (old: any) =>
                 old ? { ...old, room: { ...old.room, ...upd } } : old,
@@ -944,5 +991,30 @@ const s = StyleSheet.create({
     padding: 6,
     borderRadius: radius.pill,
     backgroundColor: "rgba(239, 68, 68, 0.15)",
+  },
+  liveFloatingBanner: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  livePulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+  },
+  liveFloatingBannerText: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontWeight: "700",
   },
 });

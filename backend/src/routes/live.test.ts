@@ -90,6 +90,22 @@ test("LiveKit Integration Tests", async (t) => {
     assert.strictEqual(res.body.code, "INVALID_SESSION_ID");
   });
 
+  await t.test("POST /live/token/:sessionId - generates token for curated showcase workshop", async () => {
+    mockAdmin.from = (table?: string) => {
+      if (table === "profiles") return createMockChain({ full_name: "Student Peer", username: "peer" });
+      return createMockChain();
+    };
+
+    const res = await request(app)
+      .post("/api/v1/live/token/10000000-0000-4000-8000-000000000001")
+      .set(authHeader);
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.canPublish, true);
+    assert.strictEqual(res.body.sessionId, "10000000-0000-4000-8000-000000000001");
+    assert.ok(res.body.token);
+  });
+
   await t.test("Host Controls - rejects unauthorized user", async () => {
     mockAdmin.from = (table?: string) => {
       if (table === "sessions") return createMockChain({ id: SESSION_ID, room_id: ROOM_ID, status: "live", teacher_id: "other-teacher" });

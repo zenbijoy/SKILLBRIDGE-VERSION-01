@@ -55,7 +55,7 @@ export default function EventsScreen() {
   const queryClient = useQueryClient();
   const keyboardHeight = useKeyboardHeight();
 
-  const [activeTab, setActiveTab] = useState<"all" | "workshop" | "seminar" | "club_meetup">("all");
+  const [activeTab, setActiveTab] = useState<string>("all");
   const [showOptimizer, setShowOptimizer] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const [enquiryModalVisible, setEnquiryModalVisible] = useState(false);
@@ -410,14 +410,21 @@ export default function EventsScreen() {
           </View>
         )}
 
-        {/* Filter Pills */}
-        <View style={styles.tabBar}>
+        {/* Filter Pills with Horizontal Scroll so no buttons get cut off */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabBarScrollContainer}
+          contentContainerStyle={styles.tabBar}
+        >
           {(
             [
-              { key: "all", label: "All Events" },
-              { key: "workshop", label: "Workshops" },
-              { key: "seminar", label: "Seminars" },
-              { key: "club_meetup", label: "Clubs" },
+              { key: "all", label: "All Events", icon: "view-grid-outline" },
+              { key: "workshop", label: "Workshops", icon: "laptop" },
+              { key: "seminar", label: "Seminars", icon: "presentation" },
+              { key: "club_meetup", label: "Clubs", icon: "account-group-outline" },
+              { key: "hackathon", label: "Hackathons", icon: "code-braces" },
+              { key: "meetup", label: "Meetups", icon: "coffee-outline" },
             ] as const
           ).map((t) => (
             <Pressable
@@ -429,10 +436,15 @@ export default function EventsScreen() {
               style={[
                 styles.tabPill,
                 activeTab === t.key
-                  ? { backgroundColor: colors.primary }
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
                   : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
               ]}
             >
+              <MaterialCommunityIcons
+                name={t.icon as any}
+                size={14}
+                color={activeTab === t.key ? "#fff" : colors.textSecondary}
+              />
               <Text
                 style={[
                   styles.tabText,
@@ -443,7 +455,7 @@ export default function EventsScreen() {
               </Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Events List */}
         {isLoading ? (
@@ -555,8 +567,8 @@ export default function EventsScreen() {
         animationType="fade"
         onRequestClose={() => setEnquiryModalVisible(false)}
       >
-        <View style={[styles.modalOverlay, { transform: [{ translateY: -keyboardHeight }] }]}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border, paddingBottom: keyboardHeight }]}>
+        <View style={[styles.modalOverlay, keyboardHeight > 0 && { transform: [{ translateY: -Math.min(keyboardHeight * 0.4, 110) }] }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.modalTitleRow}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Ask Event Managers</Text>
               <Pressable onPress={() => setEnquiryModalVisible(false)} hitSlop={8}>
@@ -643,8 +655,8 @@ export default function EventsScreen() {
         animationType="fade"
         onRequestClose={() => setReportModalVisible(false)}
       >
-        <View style={[styles.modalOverlay, { transform: [{ translateY: -keyboardHeight }] }]}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border, paddingBottom: keyboardHeight }]}>
+        <View style={[styles.modalOverlay, keyboardHeight > 0 && { transform: [{ translateY: -Math.min(keyboardHeight * 0.4, 110) }] }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.modalTitleRow}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.danger || "#EF4444"} />
@@ -870,14 +882,23 @@ const styles = StyleSheet.create({
   verdictText: { fontSize: 14, fontWeight: "800" },
   weatherSummary: { fontSize: 11, marginTop: 2 },
   recItem: { fontSize: 12, lineHeight: 17 },
+  tabBarScrollContainer: {
+    marginVertical: 6,
+    flexGrow: 0,
+  },
   tabBar: {
     flexDirection: "row",
     gap: 8,
-    marginVertical: 4,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    alignItems: "center",
   },
   tabPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: radius.pill,
   },
   tabText: { fontSize: 12.5, fontWeight: "700" },

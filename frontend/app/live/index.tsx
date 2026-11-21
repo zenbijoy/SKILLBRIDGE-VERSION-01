@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -91,6 +91,13 @@ const TOPIC_CATEGORIES = [
   { id: "ai", label: "AI & ML", icon: "robot-outline" },
   { id: "exam", label: "Exam Prep", icon: "book-open-page-variant-outline" },
   { id: "career", label: "Career & Prep", icon: "briefcase-outline" },
+];
+
+const SCHEDULE_PRESETS = [
+  { label: "Starts in 1 hour", offsetHours: 1 },
+  { label: "Tonight at 8:00 PM", offsetHours: 4 },
+  { label: "Tomorrow at 4:00 PM", offsetHours: 24 },
+  { label: "In 2 days", offsetHours: 48 },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,7 +197,17 @@ export default function LiveWorkshopsScreen() {
   const [hostCategory, setHostCategory] = useState("coding");
   const [hostMedia, setHostMedia] = useState<"video" | "audio">("video");
   const [hostStartNow, setHostStartNow] = useState(true);
+  const [hostSchedulePreset, setHostSchedulePreset] = useState(0);
   const [hostDuration, setHostDuration] = useState(60);
+
+  // High-contrast text on primary background
+  const isPrimaryBright =
+    colors.primary.toLowerCase().includes("fa") ||
+    colors.primary.toLowerCase().includes("ea") ||
+    colors.primary.toLowerCase().includes("ca") ||
+    colors.primary.toLowerCase().includes("fd") ||
+    colors.primary.toLowerCase().includes("fe");
+  const onPrimaryColor = isPrimaryBright ? "#0F172A" : "#FFFFFF";
 
   // Query Workshops
   const { data, isLoading, refetch, isRefetching } = useQuery<LiveWorkshopsResponse>({
@@ -218,7 +235,7 @@ export default function LiveWorkshopsScreen() {
     };
   }, [queryClient]);
 
-  // RSVP Mutation
+  // Optimistic RSVP Mutation
   const rsvpMutation = useMutation({
     mutationFn: async ({ sessionId, currentRsvp }: { sessionId: string; currentRsvp: boolean }) => {
       if (currentRsvp) {
@@ -226,12 +243,56 @@ export default function LiveWorkshopsScreen() {
       }
       return api(`/live/workshops/${sessionId}/rsvp`, { method: "POST" });
     },
-    onSuccess: () => {
+    onMutate: async ({ sessionId, currentRsvp }) => {
+      await queryClient.cancelQueries({ queryKey: ["live-workshops"] });
+      const previousData = queryClient.getQueryData<LiveWorkshopsResponse>([
+        "live-workshops",
+        searchQuery,
+        selectedTopic,
+      ]);
+
+      if (previousData) {
+        const updateList = (list: LiveWorkshopItem[]) =>
+          list.map((item) =>
+            item.sessionId === sessionId || item.id === sessionId
+              ? {
+                  ...item,
+                  user_rsvp: !currentRsvp,
+                  participant_count: Math.max(0, item.participant_count + (currentRsvp ? -1 : 1)),
+                }
+              : item
+          );
+
+        const targetItem =
+          previousData.upcoming.find((i) => i.sessionId === sessionId || i.id === sessionId) ||
+          previousData.liveNow.find((i) => i.sessionId === sessionId || i.id === sessionId);
+
+        let newMyWorkshops = [...previousData.myWorkshops];
+        if (!currentRsvp && targetItem) {
+          newMyWorkshops.push({ ...targetItem, user_rsvp: true, participant_count: targetItem.participant_count + 1 });
+        } else {
+          newMyWorkshops = newMyWorkshops.filter((i) => i.sessionId !== sessionId && i.id !== sessionId);
+        }
+
+        queryClient.setQueryData<LiveWorkshopsResponse>(["live-workshops", searchQuery, selectedTopic], {
+          ...previousData,
+          upcoming: updateList(previousData.upcoming),
+          liveNow: updateList(previousData.liveNow),
+          myWorkshops: newMyWorkshops,
+        });
+      }
+
+      return { previousData };
+    },
+    onError: (err: any, _vars, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(["live-workshops", searchQuery, selectedTopic], context.previousData);
+      }
+      Alert.alert("Notice", err?.message || "Could not update registration.");
+    },
+    onSettled: () => {
       triggerHaptic();
       queryClient.invalidateQueries({ queryKey: ["live-workshops"] });
-    },
-    onError: (err: any) => {
-      Alert.alert("Notice", err?.message || "Could not update registration.");
     },
   });
 
@@ -250,7 +311,7 @@ export default function LiveWorkshopsScreen() {
       if (res.isLive && res.redirectUrl) {
         router.push(res.redirectUrl as any);
       } else {
-        Alert.alert("Success", "Workshop scheduled successfully! Students can now RSVP.");
+        Alert.alert("Success", "Workshop scheduled successfully! Students can now RSVP in the schedule.");
       }
     },
     onError: (err: any) => {
@@ -265,8 +326,10 @@ export default function LiveWorkshopsScreen() {
   }, []);
 
   const handleQuickJoinSubmit = useCallback(() => {
-    const clean = joinCodeInput.trim();
+    let clean = joinCodeInput.trim();
     if (!clean) return;
+    clean = clean.replace(/^https?:\/\/[^/]+\/live\//, "");
+    clean = clean.replace(/^qa-stage-/, "");
     triggerHaptic();
     setJoinCodeModalVisible(false);
     setJoinCodeInput("");
@@ -275,7 +338,7 @@ export default function LiveWorkshopsScreen() {
 
   const handleShareWorkshop = useCallback(async (item: LiveWorkshopItem) => {
     triggerHaptic();
-    const shareMessage = `Join this campus workshop on SkillBridge: "${item.title}" with ${item.host.name}!\nSession ID: ${item.sessionId}`;
+    const shareMessage = `Join this campus workshop on SkillBridge: "${item.title}" with ${item.host.name}!\nSession ID: ${item.sessionId || item.id}`;
     if (Platform.OS === "web") {
       await Clipboard.setStringAsync(shareMessage);
       Alert.alert("Copied to Clipboard", "Workshop invitation details copied to clipboard!");
@@ -289,6 +352,7 @@ export default function LiveWorkshopsScreen() {
     }
   }, []);
 
+  // Filtered lists
   const stats = data?.stats || {
     activeBroadcastsCount: data?.liveNow.length || 0,
     totalLiveParticipants: 41,
@@ -296,17 +360,39 @@ export default function LiveWorkshopsScreen() {
     recordedCount: data?.recordings.length || 0,
   };
 
-  const liveList = data?.liveNow || [];
-  const upcomingList = data?.upcoming || [];
-  const recordingsList = data?.recordings || [];
-  const myWorkshopsList = data?.myWorkshops || [];
+  const rawLive = data?.liveNow || [];
+  const rawUpcoming = data?.upcoming || [];
+  const rawRecordings = data?.recordings || [];
+  const rawMyWorkshops = data?.myWorkshops || [];
+
+  // Client-side text search filtering
+  const filterByQuery = useCallback(
+    (list: LiveWorkshopItem[]) => {
+      if (!searchQuery.trim()) return list;
+      const q = searchQuery.toLowerCase().trim();
+      return list.filter(
+        (item) =>
+          item.title.toLowerCase().includes(q) ||
+          item.description.toLowerCase().includes(q) ||
+          item.host.name.toLowerCase().includes(q) ||
+          item.room_name.toLowerCase().includes(q) ||
+          item.tags?.some((t) => t.toLowerCase().includes(q))
+      );
+    },
+    [searchQuery]
+  );
+
+  const liveList = useMemo(() => filterByQuery(rawLive), [filterByQuery, rawLive]);
+  const upcomingList = useMemo(() => filterByQuery(rawUpcoming), [filterByQuery, rawUpcoming]);
+  const recordingsList = useMemo(() => filterByQuery(rawRecordings), [filterByQuery, rawRecordings]);
+  const myWorkshopsList = useMemo(() => filterByQuery(rawMyWorkshops), [filterByQuery, rawMyWorkshops]);
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
       {/* ───────────────────────────────────────────────────────────────── */}
       {/* Top Navigation Bar                                                */}
       {/* ───────────────────────────────────────────────────────────────── */}
-      <View style={[styles.headerRow, { borderBottomColor: colors.border }]}>
+      <View style={[styles.headerRow, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Back"
@@ -316,10 +402,10 @@ export default function LiveWorkshopsScreen() {
           }}
           style={({ pressed }) => [
             styles.backBtn,
-            { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
+            { backgroundColor: colors.surfaceElevated || colors.bg, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
           ]}
         >
-          <MaterialCommunityIcons name="arrow-left" size={22} color={colors.text} />
+          <MaterialCommunityIcons name="arrow-left" size={20} color={colors.text} />
         </Pressable>
 
         <View style={styles.headerTitleWrap}>
@@ -329,7 +415,7 @@ export default function LiveWorkshopsScreen() {
             </Text>
             <View style={styles.liveIndicatorBadge}>
               <View style={styles.liveTinyDot} />
-              <Text style={styles.liveIndicatorText}>HUB</Text>
+              <Text style={styles.liveIndicatorText}>LIVE HUB</Text>
             </View>
           </View>
           <Text numberOfLines={1} style={[styles.headerSubtitle, { color: colors.muted }]}>
@@ -347,10 +433,10 @@ export default function LiveWorkshopsScreen() {
             }}
             style={({ pressed }) => [
               styles.iconBtn,
-              { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
+              { backgroundColor: colors.surfaceElevated || colors.bg, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
             ]}
           >
-            <MaterialCommunityIcons name="dialpad" size={20} color={colors.primary} />
+            <MaterialCommunityIcons name="dialpad" size={19} color={colors.primary} />
           </Pressable>
 
           <Pressable
@@ -365,8 +451,8 @@ export default function LiveWorkshopsScreen() {
               { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
             ]}
           >
-            <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF" />
-            <Text style={styles.hostCtaText}>Host</Text>
+            <MaterialCommunityIcons name="plus" size={18} color={onPrimaryColor} />
+            <Text style={[styles.hostCtaText, { color: onPrimaryColor }]}>Host</Text>
           </Pressable>
         </View>
       </View>
@@ -377,29 +463,33 @@ export default function LiveWorkshopsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ───────────────────────────────────────────────────────────────── */}
-        {/* Hero Interactive Studio Banner                                   */}
+        {/* Redesigned Hero Interactive Studio Banner (Zero text overlap)    */}
         {/* ───────────────────────────────────────────────────────────────── */}
         <View style={styles.heroCard}>
+          {/* Ambient Dark Wallpaper Backdrop */}
           <Image
-            source={require("../../assets/nextgen-v2/hero-banners/live-class.png")}
-            style={styles.heroImage}
+            source={require("../../assets/nextgen-v2/backgrounds/midnight-blue.png")}
+            style={styles.heroBackgroundImage}
             resizeMode="cover"
           />
+          {/* Cyber Studio Gradient Overlay */}
           <LinearGradient
-            colors={["rgba(15, 23, 42, 0.4)", "rgba(15, 23, 42, 0.95)"]}
+            colors={["rgba(15, 23, 42, 0.75)", "rgba(11, 15, 25, 0.96)"]}
             style={styles.heroOverlay}
           >
+            {/* Top Badges */}
             <View style={styles.heroTopBadges}>
-              <View style={styles.heroTag}>
-                <MaterialCommunityIcons name="broadcast" size={14} color="#EF4444" />
-                <Text style={styles.heroTagText}>CAMPUS BROADCAST STAGE</Text>
+              <View style={styles.heroTagBroadcast}>
+                <MaterialCommunityIcons name="broadcast" size={13} color="#EF4444" />
+                <Text style={styles.heroTagBroadcastText}>CAMPUS BROADCAST STAGE</Text>
               </View>
-              <View style={[styles.heroTag, { backgroundColor: "rgba(56, 189, 248, 0.25)" }]}>
-                <MaterialCommunityIcons name="shield-check" size={14} color="#38BDF8" />
-                <Text style={[styles.heroTagText, { color: "#38BDF8" }]}>PEER CERTIFIED</Text>
+              <View style={styles.heroTagCertified}>
+                <MaterialCommunityIcons name="shield-check" size={13} color="#38BDF8" />
+                <Text style={styles.heroTagCertifiedText}>PEER CERTIFIED</Text>
               </View>
             </View>
 
+            {/* Clear, bold Hero Typography */}
             <Text style={styles.heroTitle}>Master Real Skills with Campus Peers</Text>
             <Text style={styles.heroBody}>
               Join interactive hands-on coding sessions, ask questions on live audio stages, or broadcast your own workshop to the university community.
@@ -436,7 +526,7 @@ export default function LiveWorkshopsScreen() {
               </View>
             </View>
 
-            {/* Quick Hero Launch Buttons */}
+            {/* Hero Quick Actions */}
             <View style={styles.heroActionButtons}>
               <Pressable
                 onPress={() => {
@@ -446,7 +536,7 @@ export default function LiveWorkshopsScreen() {
                 }}
                 style={({ pressed }) => [styles.heroBtnPrimary, { opacity: pressed ? 0.88 : 1 }]}
               >
-                <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FFFFFF" />
+                <MaterialCommunityIcons name="lightning-bolt" size={17} color="#FFFFFF" />
                 <Text style={styles.heroBtnPrimaryText}>Go Live Now</Text>
               </Pressable>
 
@@ -458,7 +548,7 @@ export default function LiveWorkshopsScreen() {
                 }}
                 style={({ pressed }) => [styles.heroBtnSecondary, { opacity: pressed ? 0.88 : 1 }]}
               >
-                <MaterialCommunityIcons name="calendar-plus" size={18} color="#38BDF8" />
+                <MaterialCommunityIcons name="calendar-plus" size={17} color="#38BDF8" />
                 <Text style={styles.heroBtnSecondaryText}>Schedule Class</Text>
               </Pressable>
             </View>
@@ -486,9 +576,14 @@ export default function LiveWorkshopsScreen() {
         </View>
 
         {/* ───────────────────────────────────────────────────────────────── */}
-        {/* Status / Section Tabs Ribbon                                      */}
+        {/* Primary Section Tabs Ribbon (Clean Segmented Bar)                 */}
         {/* ───────────────────────────────────────────────────────────────── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsRow}
+        >
+          {/* Tab 1: All Workshops */}
           <Pressable
             onPress={() => {
               triggerHaptic();
@@ -497,25 +592,26 @@ export default function LiveWorkshopsScreen() {
             style={[
               styles.tabPill,
               activeTab === "all"
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
             <MaterialCommunityIcons
               name="creation-outline"
               size={15}
-              color={activeTab === "all" ? "#FFFFFF" : colors.muted}
+              color={activeTab === "all" ? onPrimaryColor : colors.muted}
             />
             <Text
               style={[
                 styles.tabPillText,
-                { color: activeTab === "all" ? "#FFFFFF" : colors.text },
+                { color: activeTab === "all" ? onPrimaryColor : colors.text },
               ]}
             >
               All Workshops
             </Text>
           </Pressable>
 
+          {/* Tab 2: Live Now */}
           <Pressable
             onPress={() => {
               triggerHaptic();
@@ -524,8 +620,8 @@ export default function LiveWorkshopsScreen() {
             style={[
               styles.tabPill,
               activeTab === "live"
-                ? { backgroundColor: "#EF4444" }
-                : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                ? { backgroundColor: "#EF4444", borderColor: "#EF4444" }
+                : { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
             <View style={[styles.tinyLiveDot, { backgroundColor: activeTab === "live" ? "#FFFFFF" : "#EF4444" }]} />
@@ -539,6 +635,7 @@ export default function LiveWorkshopsScreen() {
             </Text>
           </Pressable>
 
+          {/* Tab 3: Upcoming */}
           <Pressable
             onPress={() => {
               triggerHaptic();
@@ -547,25 +644,26 @@ export default function LiveWorkshopsScreen() {
             style={[
               styles.tabPill,
               activeTab === "upcoming"
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
             <MaterialCommunityIcons
               name="calendar-clock"
               size={15}
-              color={activeTab === "upcoming" ? "#FFFFFF" : colors.muted}
+              color={activeTab === "upcoming" ? onPrimaryColor : colors.muted}
             />
             <Text
               style={[
                 styles.tabPillText,
-                { color: activeTab === "upcoming" ? "#FFFFFF" : colors.text },
+                { color: activeTab === "upcoming" ? onPrimaryColor : colors.text },
               ]}
             >
               Upcoming ({upcomingList.length})
             </Text>
           </Pressable>
 
+          {/* Tab 4: Recorded Vault */}
           <Pressable
             onPress={() => {
               triggerHaptic();
@@ -574,25 +672,26 @@ export default function LiveWorkshopsScreen() {
             style={[
               styles.tabPill,
               activeTab === "recordings"
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
             <MaterialCommunityIcons
               name="play-box-multiple"
               size={15}
-              color={activeTab === "recordings" ? "#FFFFFF" : colors.muted}
+              color={activeTab === "recordings" ? onPrimaryColor : colors.muted}
             />
             <Text
               style={[
                 styles.tabPillText,
-                { color: activeTab === "recordings" ? "#FFFFFF" : colors.text },
+                { color: activeTab === "recordings" ? onPrimaryColor : colors.text },
               ]}
             >
               Replays & Vault ({recordingsList.length})
             </Text>
           </Pressable>
 
+          {/* Tab 5: My Registered */}
           <Pressable
             onPress={() => {
               triggerHaptic();
@@ -601,19 +700,19 @@ export default function LiveWorkshopsScreen() {
             style={[
               styles.tabPill,
               activeTab === "my_workshops"
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
             <MaterialCommunityIcons
               name="bookmark-check"
               size={15}
-              color={activeTab === "my_workshops" ? "#FFFFFF" : colors.muted}
+              color={activeTab === "my_workshops" ? onPrimaryColor : colors.muted}
             />
             <Text
               style={[
                 styles.tabPillText,
-                { color: activeTab === "my_workshops" ? "#FFFFFF" : colors.text },
+                { color: activeTab === "my_workshops" ? onPrimaryColor : colors.text },
               ]}
             >
               My Registered ({myWorkshopsList.length})
@@ -622,9 +721,13 @@ export default function LiveWorkshopsScreen() {
         </ScrollView>
 
         {/* ───────────────────────────────────────────────────────────────── */}
-        {/* Topic Filter Chips                                                */}
+        {/* Topic Filter Chips (Subtle Secondary Filter)                      */}
         {/* ───────────────────────────────────────────────────────────────── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicChipsRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.topicChipsRow}
+        >
           {TOPIC_CATEGORIES.map((cat) => {
             const isSelected = selectedTopic === cat.id;
             return (
@@ -637,19 +740,22 @@ export default function LiveWorkshopsScreen() {
                 style={[
                   styles.topicChip,
                   isSelected
-                    ? { backgroundColor: `${colors.primary}22`, borderColor: colors.primary }
-                    : { backgroundColor: colors.surface, borderColor: colors.border },
+                    ? { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }
+                    : { backgroundColor: colors.surfaceElevated || colors.surface, borderColor: colors.border },
                 ]}
               >
                 <MaterialCommunityIcons
                   name={cat.icon as any}
-                  size={14}
+                  size={13}
                   color={isSelected ? colors.primary : colors.muted}
                 />
                 <Text
                   style={[
                     styles.topicChipText,
-                    { color: isSelected ? colors.primary : colors.muted, fontWeight: isSelected ? "700" : "500" },
+                    {
+                      color: isSelected ? colors.primary : colors.muted,
+                      fontWeight: isSelected ? "700" : "500",
+                    },
                   ]}
                 >
                   {cat.label}
@@ -713,8 +819,8 @@ export default function LiveWorkshopsScreen() {
                   }}
                   style={[styles.emptyActionBtn, { backgroundColor: colors.primary }]}
                 >
-                  <MaterialCommunityIcons name="broadcast" size={18} color="#FFFFFF" />
-                  <Text style={styles.emptyActionText}>Start Streaming Now</Text>
+                  <MaterialCommunityIcons name="broadcast" size={17} color={onPrimaryColor} />
+                  <Text style={[styles.emptyActionText, { color: onPrimaryColor }]}>Start Streaming Now</Text>
                 </Pressable>
               </View>
             ) : (
@@ -734,7 +840,7 @@ export default function LiveWorkshopsScreen() {
                         color={colors.primary}
                       />
                       <Text style={[styles.mediaPillText, { color: colors.primary }]}>
-                        {item.media === "video" ? "HD Video" : "Audio Stage"}
+                        {item.media === "video" ? "HD Video & Code" : "Audio Stage"}
                       </Text>
                     </View>
                   </View>
@@ -771,7 +877,7 @@ export default function LiveWorkshopsScreen() {
                   {item.tags && item.tags.length > 0 && (
                     <View style={styles.tagsRow}>
                       {item.tags.map((tag, idx) => (
-                        <View key={idx} style={[styles.tagBadge, { backgroundColor: `${colors.primary}12` }]}>
+                        <View key={idx} style={[styles.tagBadge, { backgroundColor: `${colors.primary}15` }]}>
                           <Text style={[styles.tagBadgeText, { color: colors.primary }]}>{tag}</Text>
                         </View>
                       ))}
@@ -782,7 +888,7 @@ export default function LiveWorkshopsScreen() {
                   <View style={styles.cardActionsRow}>
                     <Pressable
                       onPress={() => handleShareWorkshop(item)}
-                      style={[styles.shareIconBtn, { borderColor: colors.border }]}
+                      style={[styles.shareIconBtn, { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface }]}
                       hitSlop={6}
                     >
                       <MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.text} />
@@ -894,7 +1000,7 @@ export default function LiveWorkshopsScreen() {
                   {item.tags && item.tags.length > 0 && (
                     <View style={styles.tagsRow}>
                       {item.tags.map((tag, idx) => (
-                        <View key={idx} style={[styles.tagBadge, { backgroundColor: `${colors.primary}12` }]}>
+                        <View key={idx} style={[styles.tagBadge, { backgroundColor: `${colors.primary}15` }]}>
                           <Text style={[styles.tagBadgeText, { color: colors.primary }]}>{tag}</Text>
                         </View>
                       ))}
@@ -905,7 +1011,7 @@ export default function LiveWorkshopsScreen() {
                   <View style={styles.cardActionsRow}>
                     <Pressable
                       onPress={() => handleShareWorkshop(item)}
-                      style={[styles.shareIconBtn, { borderColor: colors.border }]}
+                      style={[styles.shareIconBtn, { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface }]}
                       hitSlop={6}
                     >
                       <MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.text} />
@@ -930,9 +1036,14 @@ export default function LiveWorkshopsScreen() {
                       <MaterialCommunityIcons
                         name={item.user_rsvp ? "check-circle" : "bell-ring-outline"}
                         size={17}
-                        color="#FFFFFF"
+                        color={item.user_rsvp ? "#FFFFFF" : onPrimaryColor}
                       />
-                      <Text style={styles.rsvpBtnText}>
+                      <Text
+                        style={[
+                          styles.rsvpBtnText,
+                          { color: item.user_rsvp ? "#FFFFFF" : onPrimaryColor },
+                        ]}
+                      >
                         {item.user_rsvp
                           ? t("liveWorkshops.registered", "Registered ✓")
                           : t("liveWorkshops.rsvp", "RSVP Free")}
@@ -1021,7 +1132,7 @@ export default function LiveWorkshopsScreen() {
                   <View style={styles.cardActionsRow}>
                     <Pressable
                       onPress={() => handleShareWorkshop(item)}
-                      style={[styles.shareIconBtn, { borderColor: colors.border }]}
+                      style={[styles.shareIconBtn, { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface }]}
                       hitSlop={6}
                     >
                       <MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.text} />
@@ -1083,7 +1194,7 @@ export default function LiveWorkshopsScreen() {
                 onChangeText={setHostTitle}
                 placeholder="e.g. Full-Stack WebSockets & Real-time Architecture"
                 placeholderTextColor={colors.muted}
-                style={[styles.formInput, { color: colors.text, borderColor: colors.border }]}
+                style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface }]}
               />
 
               {/* Description */}
@@ -1095,12 +1206,16 @@ export default function LiveWorkshopsScreen() {
                 placeholderTextColor={colors.muted}
                 multiline
                 numberOfLines={3}
-                style={[styles.formTextarea, { color: colors.text, borderColor: colors.border }]}
+                style={[styles.formTextarea, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface }]}
               />
 
               {/* Category & Topic Selector */}
               <Text style={[styles.formLabel, { color: colors.text }]}>Category & Field</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 6 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingBottom: 6 }}
+              >
                 {TOPIC_CATEGORIES.filter((c) => c.id !== "all").map((cat) => (
                   <Pressable
                     key={cat.id}
@@ -1112,8 +1227,8 @@ export default function LiveWorkshopsScreen() {
                     style={[
                       styles.topicChip,
                       hostCategory === cat.id
-                        ? { backgroundColor: `${colors.primary}22`, borderColor: colors.primary }
-                        : { backgroundColor: colors.surface, borderColor: colors.border },
+                        ? { backgroundColor: `${colors.primary}25`, borderColor: colors.primary }
+                        : { backgroundColor: colors.surfaceElevated || colors.surface, borderColor: colors.border },
                     ]}
                   >
                     <MaterialCommunityIcons
@@ -1142,7 +1257,7 @@ export default function LiveWorkshopsScreen() {
                     styles.mediaOptionBtn,
                     hostMedia === "video"
                       ? { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }
-                      : { borderColor: colors.border },
+                      : { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface },
                   ]}
                 >
                   <MaterialCommunityIcons
@@ -1166,7 +1281,7 @@ export default function LiveWorkshopsScreen() {
                     styles.mediaOptionBtn,
                     hostMedia === "audio"
                       ? { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }
-                      : { borderColor: colors.border },
+                      : { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface },
                   ]}
                 >
                   <MaterialCommunityIcons
@@ -1194,7 +1309,7 @@ export default function LiveWorkshopsScreen() {
                     styles.mediaOptionBtn,
                     hostStartNow
                       ? { backgroundColor: "rgba(239, 68, 68, 0.15)", borderColor: "#EF4444" }
-                      : { borderColor: colors.border },
+                      : { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface },
                   ]}
                 >
                   <MaterialCommunityIcons
@@ -1218,7 +1333,7 @@ export default function LiveWorkshopsScreen() {
                     styles.mediaOptionBtn,
                     !hostStartNow
                       ? { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }
-                      : { borderColor: colors.border },
+                      : { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface },
                   ]}
                 >
                   <MaterialCommunityIcons
@@ -1237,6 +1352,36 @@ export default function LiveWorkshopsScreen() {
                 </Pressable>
               </View>
 
+              {/* If scheduling for later, show schedule time preset selector */}
+              {!hostStartNow && (
+                <>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Select Start Time</Text>
+                  <View style={styles.durationRow}>
+                    {SCHEDULE_PRESETS.map((preset, idx) => (
+                      <Pressable
+                        key={idx}
+                        onPress={() => setHostSchedulePreset(idx)}
+                        style={[
+                          styles.durationChip,
+                          hostSchedulePreset === idx
+                            ? { backgroundColor: colors.primary }
+                            : { backgroundColor: colors.surfaceElevated || colors.surface, borderColor: colors.border, borderWidth: 1 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.durationChipText,
+                            { color: hostSchedulePreset === idx ? onPrimaryColor : colors.text, fontSize: 11 },
+                          ]}
+                        >
+                          {preset.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
+
               {/* Duration */}
               <Text style={[styles.formLabel, { color: colors.text }]}>Estimated Duration (minutes)</Text>
               <View style={styles.durationRow}>
@@ -1248,13 +1393,13 @@ export default function LiveWorkshopsScreen() {
                       styles.durationChip,
                       hostDuration === dur
                         ? { backgroundColor: colors.primary }
-                        : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                        : { backgroundColor: colors.surfaceElevated || colors.surface, borderColor: colors.border, borderWidth: 1 },
                     ]}
                   >
                     <Text
                       style={[
                         styles.durationChipText,
-                        { color: hostDuration === dur ? "#FFFFFF" : colors.text },
+                        { color: hostDuration === dur ? onPrimaryColor : colors.text },
                       ]}
                     >
                       {dur}m
@@ -1268,6 +1413,10 @@ export default function LiveWorkshopsScreen() {
               <Pressable
                 disabled={hostMutation.isPending || !hostTitle.trim()}
                 onPress={() => {
+                  const startsAt = hostStartNow
+                    ? new Date().toISOString()
+                    : new Date(Date.now() + SCHEDULE_PRESETS[hostSchedulePreset].offsetHours * 3600000).toISOString();
+
                   hostMutation.mutate({
                     title: hostTitle.trim(),
                     description: hostDescription.trim(),
@@ -1275,6 +1424,7 @@ export default function LiveWorkshopsScreen() {
                     category: hostCategory,
                     media: hostMedia,
                     startNow: hostStartNow,
+                    startsAt,
                     durationMinutes: hostDuration,
                   });
                 }}
@@ -1293,9 +1443,14 @@ export default function LiveWorkshopsScreen() {
                     <MaterialCommunityIcons
                       name={hostStartNow ? "broadcast" : "calendar-check"}
                       size={20}
-                      color="#FFFFFF"
+                      color={hostStartNow ? "#FFFFFF" : onPrimaryColor}
                     />
-                    <Text style={styles.submitHostBtnText}>
+                    <Text
+                      style={[
+                        styles.submitHostBtnText,
+                        { color: hostStartNow ? "#FFFFFF" : onPrimaryColor },
+                      ]}
+                    >
                       {hostStartNow ? "Launch Live Broadcast" : "Schedule Workshop"}
                     </Text>
                   </>
@@ -1323,7 +1478,7 @@ export default function LiveWorkshopsScreen() {
                   {t("liveWorkshops.quickJoin", "Join with Code")}
                 </Text>
                 <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
-                  Enter the session ID, room code, or direct invite link
+                  Enter session ID, room code, or direct invite link
                 </Text>
               </View>
               <Pressable onPress={() => setJoinCodeModalVisible(false)} hitSlop={8}>
@@ -1332,7 +1487,7 @@ export default function LiveWorkshopsScreen() {
             </View>
 
             <View style={styles.codeModalBody}>
-              <View style={[styles.codeInputWrap, { borderColor: colors.border }]}>
+              <View style={[styles.codeInputWrap, { borderColor: colors.border, backgroundColor: colors.surfaceElevated || colors.surface }]}>
                 <MaterialCommunityIcons name="key-variant" size={20} color={colors.primary} />
                 <TextInput
                   value={joinCodeInput}
@@ -1362,8 +1517,8 @@ export default function LiveWorkshopsScreen() {
                   { backgroundColor: colors.primary, opacity: pressed || !joinCodeInput.trim() ? 0.8 : 1 },
                 ]}
               >
-                <MaterialCommunityIcons name="arrow-right-circle" size={20} color="#FFFFFF" />
-                <Text style={styles.submitHostBtnText}>Connect to Broadcast</Text>
+                <MaterialCommunityIcons name="arrow-right-circle" size={20} color={onPrimaryColor} />
+                <Text style={[styles.submitHostBtnText, { color: onPrimaryColor }]}>Connect to Broadcast</Text>
               </Pressable>
             </View>
           </View>
@@ -1409,7 +1564,7 @@ export default function LiveWorkshopsScreen() {
                 {replayModalItem?.description}
               </Text>
 
-              <View style={[styles.resourceBox, { backgroundColor: `${colors.primary}10`, borderColor: colors.primary }]}>
+              <View style={[styles.resourceBox, { backgroundColor: `${colors.primary}12`, borderColor: colors.primary }]}>
                 <MaterialCommunityIcons name="file-document-outline" size={20} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.resourceTitle, { color: colors.text }]}>
@@ -1426,7 +1581,7 @@ export default function LiveWorkshopsScreen() {
                   }}
                   style={[styles.downloadBtn, { backgroundColor: colors.primary }]}
                 >
-                  <MaterialCommunityIcons name="download" size={16} color="#FFFFFF" />
+                  <MaterialCommunityIcons name="download" size={16} color={onPrimaryColor} />
                 </Pressable>
               </View>
             </ScrollView>
@@ -1448,7 +1603,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
   },
   backBtn: {
@@ -1457,7 +1612,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
+    borderWidth: 1,
   },
   headerTitleWrap: {
     flex: 1,
@@ -1468,7 +1624,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "800",
     letterSpacing: -0.3,
   },
@@ -1477,8 +1633,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     backgroundColor: "rgba(239, 68, 68, 0.15)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
     borderRadius: radius.pill,
   },
   liveTinyDot: {
@@ -1491,10 +1647,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     color: "#EF4444",
+    letterSpacing: 0.3,
   },
   headerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 11,
+    marginTop: 1,
   },
   headerActions: {
     flexDirection: "row",
@@ -1507,80 +1664,114 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
   },
   hostCtaBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: radius.pill,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   hostCtaText: {
-    color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   scrollContent: {
     padding: spacing.md,
   },
+  // Redesigned Hero Banner
   heroCard: {
-    height: 240,
-    borderRadius: radius.lg,
+    minHeight: 250,
+    borderRadius: 20,
     overflow: "hidden",
     position: "relative",
     marginBottom: spacing.md,
+    backgroundColor: "#0B0F19",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  heroImage: {
+  heroBackgroundImage: {
+    ...StyleSheet.absoluteFill,
     width: "100%",
     height: "100%",
+    opacity: 0.35,
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFill,
-    padding: spacing.md,
-    justifyContent: "flex-end",
+    flex: 1,
+    padding: 16,
+    justifyContent: "space-between",
   },
   heroTopBadges: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  heroTag: {
+  heroTagBroadcast: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(239, 68, 68, 0.25)",
+    backgroundColor: "rgba(239, 68, 68, 0.2)",
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 3.5,
     borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.4)",
   },
-  heroTagText: {
-    fontSize: 10,
+  heroTagBroadcastText: {
+    fontSize: 9.5,
     fontWeight: "800",
-    color: "#EF4444",
+    color: "#F87171",
+    letterSpacing: 0.4,
+  },
+  heroTagCertified: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(56, 189, 248, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.4)",
+  },
+  heroTagCertifiedText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    color: "#38BDF8",
+    letterSpacing: 0.4,
   },
   heroTitle: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: "800",
     color: "#FFFFFF",
-    marginBottom: 4,
-    letterSpacing: -0.3,
+    marginBottom: 5,
+    letterSpacing: -0.4,
+    lineHeight: 27,
   },
   heroBody: {
-    fontSize: 12,
+    fontSize: 12.5,
     color: "#CBD5E1",
-    lineHeight: 16,
-    marginBottom: 10,
+    lineHeight: 17,
+    marginBottom: 12,
   },
   heroStatsRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    borderRadius: radius.md,
-    paddingVertical: 6,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   heroStatItem: {
     flex: 1,
@@ -1589,7 +1780,7 @@ const styles = StyleSheet.create({
   heroStatValueRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
   },
   miniDot: {
     width: 6,
@@ -1604,16 +1795,17 @@ const styles = StyleSheet.create({
   heroStatLabel: {
     color: "#94A3B8",
     fontSize: 10,
-    marginTop: 1,
+    marginTop: 2,
+    fontWeight: "500",
   },
   heroStatDivider: {
     width: 1,
-    height: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    height: 22,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
   },
   heroActionButtons: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
   },
   heroBtnPrimary: {
     flex: 1,
@@ -1622,13 +1814,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     backgroundColor: "#EF4444",
-    paddingVertical: 9,
-    borderRadius: radius.md,
+    paddingVertical: 10,
+    borderRadius: 10,
+    elevation: 3,
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
   },
   heroBtnPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   heroBtnSecondary: {
     flex: 1,
@@ -1636,17 +1833,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderWidth: 1,
-    borderColor: "rgba(56, 189, 248, 0.4)",
-    paddingVertical: 9,
-    borderRadius: radius.md,
+    borderColor: "rgba(56, 189, 248, 0.5)",
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   heroBtnSecondaryText: {
-    color: "#FFFFFF",
+    color: "#F8FAFC",
     fontSize: 13,
     fontWeight: "700",
   },
+  // Search Bar
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1654,18 +1852,19 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: radius.md,
     borderWidth: 1,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13.5,
     paddingVertical: 0,
   },
+  // Unified Tabs
   tabsRow: {
     flexDirection: "row",
     gap: 8,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   tabPill: {
     flexDirection: "row",
@@ -1674,6 +1873,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: radius.pill,
+    borderWidth: 1,
   },
   tinyLiveDot: {
     width: 7,
@@ -1681,26 +1881,27 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
   tabPillText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "700",
   },
+  // Topic Chips
   topicChipsRow: {
     flexDirection: "row",
     gap: 6,
-    paddingVertical: 6,
+    paddingVertical: 4,
     marginBottom: spacing.sm,
   },
   topicChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: radius.pill,
     borderWidth: 1,
   },
   topicChipText: {
-    fontSize: 12,
+    fontSize: 11.5,
   },
   loadingBox: {
     alignItems: "center",
@@ -1710,11 +1911,12 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 13,
   },
+  // Sections
   sectionWrap: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   sectionHeaderRow: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   sectionTitleWithBadge: {
     flexDirection: "row",
@@ -1728,7 +1930,7 @@ const styles = StyleSheet.create({
   },
   counterBadge: {
     backgroundColor: "rgba(56, 189, 248, 0.15)",
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 1,
     borderRadius: radius.pill,
   },
@@ -1738,7 +1940,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   sectionSubtitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     marginTop: 2,
   },
   emptyBox: {
@@ -1773,15 +1975,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   emptyActionText: {
-    color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
   },
+  // Live Card
   liveCard: {
     borderRadius: radius.lg,
     borderWidth: 1,
     padding: spacing.md,
     marginBottom: 12,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   liveCardHeader: {
     flexDirection: "row",
@@ -1826,11 +2033,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     letterSpacing: -0.2,
-    marginBottom: 4,
+    marginBottom: 5,
+    lineHeight: 22,
   },
   liveCardDescription: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
     marginBottom: 10,
   },
   hostRow: {
@@ -1913,6 +2121,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
   },
+  // Upcoming Card
   upcomingCard: {
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -1949,10 +2158,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     marginBottom: 4,
+    lineHeight: 22,
   },
   upcomingDescription: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
     marginBottom: 10,
   },
   rsvpBtn: {
@@ -1965,10 +2175,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   rsvpBtnText: {
-    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
   },
+  // Recording Card
   recordingCard: {
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -2002,10 +2212,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     marginBottom: 4,
+    lineHeight: 22,
   },
   recordingDescription: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
     marginBottom: 10,
   },
   watchReplayBtn: {
@@ -2022,9 +2233,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
+  // Modals
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
     justifyContent: "flex-end",
   },
   modalContent: {
@@ -2124,7 +2336,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   submitHostBtnText: {
-    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
   },
@@ -2175,8 +2386,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   replayDescription: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
     marginBottom: 12,
   },
   resourceBox: {

@@ -79,6 +79,66 @@ export function RoomTeacherHub({
   });
   const helpRequests = helpData?.requests ?? [];
 
+  // QUERY TEACHING VOLUNTEERS ("TO BE A TEACHER" REQUESTS)
+  const { data: teachData, isLoading: teachLoading } = useQuery<{ requests?: any[] }>({
+    queryKey: ["room-teach-requests", room.id],
+    queryFn: () => api<{ requests: any[] }>(`/rooms/${room.id}/teach-requests`),
+    refetchInterval: 12_000,
+  });
+  const teachRequests = (teachData?.requests ?? []).filter((r: any) => r.status === "pending");
+
+  const acceptVolunteerMutation = useMutation({
+    mutationFn: (requestId: string) =>
+      api(`/rooms/${room.id}/teach-requests/${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "accepted" }),
+      }),
+    onSuccess: () => {
+      triggerHaptic();
+      qc.invalidateQueries({ queryKey: ["room-teach-requests", room.id] });
+      qc.invalidateQueries({ queryKey: ["room", room.id] });
+      qc.invalidateQueries({ queryKey: ["room-teachers", room.id] });
+      Alert.alert("Teacher Approved! 🎓", "User has been approved as teacher in this room.");
+    },
+    onError: (err: Error) => Alert.alert("Approval failed", err.message),
+  });
+
+  const declineVolunteerMutation = useMutation({
+    mutationFn: (requestId: string) =>
+      api(`/rooms/${room.id}/teach-requests/${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "rejected" }),
+      }),
+    onSuccess: () => {
+      triggerHaptic();
+      qc.invalidateQueries({ queryKey: ["room-teach-requests", room.id] });
+      Alert.alert("Declined", "Teaching request declined.");
+    },
+    onError: (err: Error) => Alert.alert("Could not decline", err.message),
+  });
+
+  // QUERY PEER SESSION REQUESTS (STUDENTS ASKING FOR CLASSES)
+  const { data: sessionReqData, isLoading: sessionReqLoading } = useQuery<{ requests?: any[] }>({
+    queryKey: ["room-session-requests", room.id],
+    queryFn: () => api<{ requests: any[] }>(`/rooms/${room.id}/session-requests`),
+    refetchInterval: 12_000,
+  });
+  const peerSessionRequests = (sessionReqData?.requests ?? []).filter((r: any) => r.status === "pending");
+
+  const declineSessionReqMutation = useMutation({
+    mutationFn: (requestId: string) =>
+      api(`/rooms/${room.id}/session-requests/${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "rejected" }),
+      }),
+    onSuccess: () => {
+      triggerHaptic();
+      qc.invalidateQueries({ queryKey: ["room-session-requests", room.id] });
+      Alert.alert("Declined", "Session request marked as declined.");
+    },
+    onError: (err: Error) => Alert.alert("Failed", err.message),
+  });
+
   // Update help request mutation
   const updateHelpMutation = useMutation({
     mutationFn: ({ requestId, status }: { requestId: string; status: "accepted" | "resolved" | "dismissed" }) =>
@@ -448,6 +508,18 @@ export function RoomTeacherHub({
                 ) : null}
 
                 <Row style={{ gap: 8, marginTop: 4, justifyContent: "flex-end" }}>
+                  {req.status === "accepted" && (
+                    <Pressable
+                      onPress={() => {
+                        triggerHaptic();
+                        onTabChange?.("stage");
+                      }}
+                      style={[s.helpActionBtn, { backgroundColor: "#8B5CF6" }]}
+                    >
+                      <MaterialCommunityIcons name="video" size={14} color="#FFFFFF" />
+                      <Text style={s.helpActionText}>Start Live Stage</Text>
+                    </Pressable>
+                  )}
                   <Pressable
                     onPress={() => updateHelpMutation.mutate({ requestId: req.id, status: "accepted" })}
                     disabled={updateHelpMutation.isPending}
@@ -470,6 +542,198 @@ export function RoomTeacherHub({
                     style={[s.helpActionBtn, { backgroundColor: colors.surface }]}
                   >
                     <Text style={[s.helpActionText, { color: colors.muted }]}>Dismiss</Text>
+                  </Pressable>
+                </Row>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* TEACHING VOLUNTEERS ("TO BE A TEACHER" REQUESTS) */}
+      <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <Row style={{ alignItems: "center", gap: 8 }}>
+            <MaterialCommunityIcons name="account-school" size={20} color="#8B5CF6" />
+            <Text style={[s.switchTitle, { color: colors.text }]}>
+              Teaching Volunteers ("To Be a Teacher") ({teachRequests.length})
+            </Text>
+          </Row>
+          {teachRequests.length > 0 && (
+            <View style={[s.counterBadge, { backgroundColor: "#8B5CF622" }]}>
+              <Text style={{ fontSize: 11, fontWeight: "900", color: "#8B5CF6" }}>
+                {teachRequests.length} Pending
+              </Text>
+            </View>
+          )}
+        </Row>
+
+        {teachLoading ? (
+          <ActivityIndicator size="small" color="#8B5CF6" style={{ marginVertical: 10 }} />
+        ) : teachRequests.length === 0 ? (
+          <View style={s.emptyBox}>
+            <MaterialCommunityIcons name="account-check-outline" size={32} color={colors.muted} />
+            <Text style={[s.emptySub, { color: colors.muted }]}>
+              No pending teacher volunteer requests.
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 8 }}>
+            {teachRequests.map((req: any) => (
+              <View
+                key={req.id}
+                style={[
+                  s.helpRequestCard,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.divider,
+                  },
+                ]}
+              >
+                <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <Row style={{ alignItems: "center", gap: 8, flex: 1 }}>
+                    <View style={[s.studentAvatar, { backgroundColor: "#8B5CF622" }]}>
+                      <Text style={{ fontSize: 12, fontWeight: "800", color: "#8B5CF6" }}>
+                        {(req.volunteer?.full_name || req.volunteer?.username || "T")[0].toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.studentName, { color: colors.text }]} numberOfLines={1}>
+                        {req.volunteer?.full_name || `@${req.volunteer?.username}`}
+                      </Text>
+                      <Text style={[s.helpTopic, { color: colors.muted }]} numberOfLines={1}>
+                        @{req.volunteer?.username} · Reputation: {req.volunteer?.reputation ?? 0}
+                      </Text>
+                    </View>
+                  </Row>
+                </Row>
+
+                {req.note ? (
+                  <Text style={[s.helpDetails, { color: colors.textSecondary, marginTop: 4 }]}>
+                    "{req.note}"
+                  </Text>
+                ) : null}
+
+                <Row style={{ gap: 8, marginTop: 6, justifyContent: "flex-end" }}>
+                  <Pressable
+                    onPress={() => acceptVolunteerMutation.mutate(req.id)}
+                    disabled={acceptVolunteerMutation.isPending}
+                    style={[s.helpActionBtn, { backgroundColor: "#8B5CF6" }]}
+                  >
+                    <MaterialCommunityIcons name="check-decagram" size={14} color="#FFFFFF" />
+                    <Text style={s.helpActionText}>Approve as Teacher</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => declineVolunteerMutation.mutate(req.id)}
+                    disabled={declineVolunteerMutation.isPending}
+                    style={[s.helpActionBtn, { backgroundColor: colors.surface }]}
+                  >
+                    <Text style={[s.helpActionText, { color: colors.muted }]}>Decline</Text>
+                  </Pressable>
+                </Row>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* PEER SESSION REQUESTS */}
+      <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <Row style={{ alignItems: "center", gap: 8 }}>
+            <MaterialCommunityIcons name="account-question-outline" size={20} color="#F59E0B" />
+            <Text style={[s.switchTitle, { color: colors.text }]}>
+              Peer Session Requests ({peerSessionRequests.length})
+            </Text>
+          </Row>
+          {peerSessionRequests.length > 0 && (
+            <View style={[s.counterBadge, { backgroundColor: "#F59E0B22" }]}>
+              <Text style={{ fontSize: 11, fontWeight: "900", color: "#F59E0B" }}>
+                {peerSessionRequests.length} Pending
+              </Text>
+            </View>
+          )}
+        </Row>
+
+        {sessionReqLoading ? (
+          <ActivityIndicator size="small" color="#F59E0B" style={{ marginVertical: 10 }} />
+        ) : peerSessionRequests.length === 0 ? (
+          <View style={s.emptyBox}>
+            <MaterialCommunityIcons name="calendar-check-outline" size={32} color={colors.muted} />
+            <Text style={[s.emptySub, { color: colors.muted }]}>
+              No pending peer session requests.
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 8 }}>
+            {peerSessionRequests.map((req: any) => (
+              <View
+                key={req.id}
+                style={[
+                  s.helpRequestCard,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.divider,
+                  },
+                ]}
+              >
+                <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <Row style={{ alignItems: "center", gap: 8, flex: 1 }}>
+                    <View style={[s.studentAvatar, { backgroundColor: "#F59E0B22" }]}>
+                      <Text style={{ fontSize: 12, fontWeight: "800", color: "#F59E0B" }}>
+                        {(req.user?.full_name || req.user?.username || "P")[0].toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.studentName, { color: colors.text }]} numberOfLines={1}>
+                        {req.user?.full_name || `@${req.user?.username}`}
+                      </Text>
+                      <Text style={[s.helpTopic, { color: colors.primary }]} numberOfLines={1}>
+                        {req.title}
+                      </Text>
+                    </View>
+                  </Row>
+
+                  <View style={[s.pillBadge, { backgroundColor: "#3B82F622" }]}>
+                    <Text style={{ fontSize: 10, fontWeight: "800", color: "#3B82F6" }}>
+                      {req.session_type === "voice" ? "🎙️ Voice" : req.session_type === "offline" ? "📍 Offline" : "📹 Video"}
+                    </Text>
+                  </View>
+                </Row>
+
+                {req.description ? (
+                  <Text style={[s.helpDetails, { color: colors.muted }]} numberOfLines={2}>
+                    {req.description}
+                  </Text>
+                ) : null}
+
+                {req.preferred_time_note ? (
+                  <Text style={[s.helpDetails, { color: colors.textSecondary, fontStyle: "italic" }]}>
+                    🕒 {req.preferred_time_note}
+                  </Text>
+                ) : null}
+
+                <Row style={{ gap: 8, marginTop: 4, justifyContent: "flex-end" }}>
+                  <Pressable
+                    onPress={() => {
+                      triggerHaptic();
+                      setClassTitle(req.title);
+                      setClassDesc(req.description || "");
+                      if (req.session_type === "voice") setClassMode("online");
+                      else if (req.session_type === "offline") setClassMode("offline");
+                      setScheduleModalOpen(true);
+                    }}
+                    style={[s.helpActionBtn, { backgroundColor: "#F59E0B" }]}
+                  >
+                    <MaterialCommunityIcons name="calendar-plus" size={14} color="#FFFFFF" />
+                    <Text style={s.helpActionText}>Schedule Session</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => declineSessionReqMutation.mutate(req.id)}
+                    disabled={declineSessionReqMutation.isPending}
+                    style={[s.helpActionBtn, { backgroundColor: colors.surface }]}
+                  >
+                    <Text style={[s.helpActionText, { color: colors.muted }]}>Decline</Text>
                   </Pressable>
                 </Row>
               </View>

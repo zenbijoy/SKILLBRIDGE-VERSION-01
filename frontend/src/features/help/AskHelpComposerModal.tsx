@@ -230,7 +230,12 @@ export function AskHelpComposerModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={s.overlay}>
+      <View
+        style={[
+          s.overlay,
+          Platform.OS === "android" && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
+        ]}
+      >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={s.keyboardView}

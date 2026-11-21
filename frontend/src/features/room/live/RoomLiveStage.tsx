@@ -81,6 +81,8 @@ export interface RoomLiveStageProps {
   onOpenChat?: () => void;
   unreadChatCount?: number;
   enginePreference?: "webrtc" | "livekit";
+  isFullScreen?: boolean;
+  onToggleFullScreen?: () => void;
 }
 
 // Floating emoji particle component
@@ -146,7 +148,10 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
   onLeave,
   onOpenChat,
   unreadChatCount = 0,
+  isFullScreen = true,
+  onToggleFullScreen,
 }) => {
+  const [distractionFree, setDistractionFree] = useState(false);
   const {
     connectionStatus,
     error,
@@ -511,6 +516,46 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
               name="clipboard-check-outline"
               size={18}
               color="#10B981"
+            />
+          </Pressable>
+
+          {/* Full Screen / Windowed Toggle */}
+          {onToggleFullScreen && (
+            <Pressable
+              onPress={() => {
+                triggerHaptic();
+                onToggleFullScreen();
+              }}
+              style={[
+                styles.iconBtnRound,
+                isFullScreen && { backgroundColor: "rgba(56, 189, 248, 0.25)" },
+              ]}
+              accessibilityLabel={isFullScreen ? "Exit Fullscreen" : "Fullscreen"}
+            >
+              <MaterialCommunityIcons
+                name={isFullScreen ? "fullscreen-exit" : "fullscreen"}
+                size={18}
+                color={isFullScreen ? "#38BDF8" : "#F8FAFC"}
+              />
+            </Pressable>
+          )}
+
+          {/* Distraction Free Toggle (Hide Overlays / Controls) */}
+          <Pressable
+            onPress={() => {
+              triggerHaptic();
+              setDistractionFree((prev) => !prev);
+            }}
+            style={[
+              styles.iconBtnRound,
+              distractionFree && { backgroundColor: "rgba(168, 85, 247, 0.25)" },
+            ]}
+            accessibilityLabel="Distraction-Free Mode"
+          >
+            <MaterialCommunityIcons
+              name={distractionFree ? "eye-off" : "eye"}
+              size={18}
+              color={distractionFree ? "#C084FC" : "#F8FAFC"}
             />
           </Pressable>
 
@@ -895,7 +940,8 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
       </View>
 
       {/* ── 3. Bottom Glassmorphism Control Dock ─────────────────────────── */}
-      <View style={styles.dockContainer}>
+      {!distractionFree ? (
+        <View style={styles.dockContainer}>
         {/* Mic Toggle Button */}
         <Pressable
           onPress={toggleMicrophone}
@@ -1007,6 +1053,18 @@ export const RoomLiveStage: React.FC<RoomLiveStageProps> = ({
           <Text style={styles.dockBtnLabel}>Chat</Text>
         </Pressable>
       </View>
+      ) : (
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            setDistractionFree(false);
+          }}
+          style={styles.floatingShowControlsBtn}
+        >
+          <MaterialCommunityIcons name="eye-outline" size={16} color="#FFFFFF" />
+          <Text style={styles.floatingShowControlsText}>Show Live Controls</Text>
+        </Pressable>
+      )}
 
       {/* ── Reaction Picker Modal ────────────────────────────────────────── */}
       <Modal
@@ -2322,6 +2380,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 4,
     marginTop: 2,
+  },
+  floatingShowControlsBtn: {
+    position: "absolute",
+    bottom: 24,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.3)",
+    zIndex: 999,
+  },
+  floatingShowControlsText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   dockContainer: {
     flexDirection: "row",

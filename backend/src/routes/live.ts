@@ -28,6 +28,127 @@ function getRoomServiceClient(): RoomServiceClient | null {
  * Count who is currently connected to a LiveKit session and push that number
  * to every client watching the room. Silently returns when the session is gone.
  */
+export const CURATED_LIVE_WORKSHOPS = [
+  {
+    id: "10000000-0000-4000-8000-000000000001",
+    sessionId: "10000000-0000-4000-8000-000000000001",
+    roomId: "20000000-0000-4000-8000-000000000001",
+    title: "Full-Stack System Design: Live WebSocket & Microservices Architecture",
+    description: "Hands-on architectural breakdown of real-time messaging, WebRTC signaling, Redis pub/sub, and low-latency scaling.",
+    topic: "Computer Science",
+    category: "coding",
+    media: "video" as const,
+    status: "live" as const,
+    starts_at: new Date(Date.now() - 25 * 60000).toISOString(),
+    is_open_session: false,
+    host: {
+      id: "30000000-0000-4000-8000-000000000001",
+      name: "Tanvir Rahman",
+      username: "tanvir_dev",
+      avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
+      role: "Lead Systems Architect & Peer Mentor",
+    },
+    room_name: "Advanced Distributed Systems",
+    participant_count: 24,
+    tags: ["Live Coding", "WebRTC", "Microservices", "Screen Share"],
+  },
+  {
+    id: "10000000-0000-4000-8000-000000000002",
+    sessionId: "10000000-0000-4000-8000-000000000002",
+    roomId: "20000000-0000-4000-8000-000000000002",
+    title: "Figma to Code: Building Accessible Design Systems & Tokens",
+    description: "Live design audit, fluid typography, dark mode tokens, and automated SVG component pipelines with React Native.",
+    topic: "UI/UX Design",
+    category: "design",
+    media: "video" as const,
+    status: "live" as const,
+    starts_at: new Date(Date.now() - 10 * 60000).toISOString(),
+    is_open_session: true,
+    host: {
+      id: "30000000-0000-4000-8000-000000000002",
+      name: "Anika Tabassum",
+      username: "anika_ux",
+      avatar_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
+      role: "Senior Product Designer",
+    },
+    room_name: "Design Guild & Studio",
+    participant_count: 17,
+    tags: ["UI/UX", "Design Systems", "Figma", "Accessibility"],
+  },
+  {
+    id: "10000000-0000-4000-8000-000000000003",
+    sessionId: "10000000-0000-4000-8000-000000000003",
+    roomId: "20000000-0000-4000-8000-000000000003",
+    title: "Cracking FAANG Coding Interviews: Dynamic Programming Patterns",
+    description: "Mastering memoization vs tabulation, knapsack variants, and interval scheduling with live mock walkthroughs.",
+    topic: "Computer Science",
+    category: "coding",
+    media: "video" as const,
+    status: "scheduled" as const,
+    starts_at: new Date(Date.now() + 2 * 3600000).toISOString(),
+    duration_minutes: 90,
+    host: {
+      id: "30000000-0000-4000-8000-000000000003",
+      name: "Fahim Shahriar",
+      username: "fahim_algo",
+      avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
+      role: "ICPC Regional Finalist",
+    },
+    room_name: "Competitive Coding Hub",
+    participant_count: 53,
+    user_rsvp: false,
+    tags: ["DSA", "Dynamic Programming", "Interview Prep", "Live Q&A"],
+  },
+  {
+    id: "10000000-0000-4000-8000-000000000004",
+    sessionId: "10000000-0000-4000-8000-000000000004",
+    roomId: "20000000-0000-4000-8000-000000000004",
+    title: "Generative AI on Campus: Building RAG Agents with Vector Embeddings",
+    description: "Step-by-step implementation of retrieval augmented generation with local vector databases and LangChain / Gemini models.",
+    topic: "AI & Machine Learning",
+    category: "ai",
+    media: "video" as const,
+    status: "scheduled" as const,
+    starts_at: new Date(Date.now() + 26 * 3600000).toISOString(),
+    duration_minutes: 75,
+    host: {
+      id: "30000000-0000-4000-8000-000000000004",
+      name: "Dr. Nabila Karim",
+      username: "nabila_ai",
+      avatar_url: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200",
+      role: "AI Research Fellow",
+    },
+    room_name: "AI & Neural Networks Lab",
+    participant_count: 88,
+    user_rsvp: false,
+    tags: ["AI", "LLMs", "RAG", "Embeddings", "Gemini API"],
+  },
+  {
+    id: "10000000-0000-4000-8000-000000000005",
+    sessionId: "10000000-0000-4000-8000-000000000005",
+    roomId: "20000000-0000-4000-8000-000000000005",
+    title: "Mid-Term Exam Sprint: Calculus III & Vector Analysis Master Review",
+    description: "High-yield problem solving, Green's & Stokes' theorem derivations, and exam strategy session before finals.",
+    topic: "Mathematics",
+    category: "exam",
+    media: "audio" as const,
+    status: "scheduled" as const,
+    starts_at: new Date(Date.now() + 50 * 3600000).toISOString(),
+    duration_minutes: 60,
+    host: {
+      id: "30000000-0000-4000-8000-000000000005",
+      name: "Mahmud Hasan",
+      username: "mahmud_math",
+      avatar_url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200",
+      role: "Graduate Teaching Assistant",
+    },
+    room_name: "STEM Exam Prep Guild",
+    participant_count: 42,
+    user_rsvp: false,
+    tags: ["Calculus", "Exam Prep", "Problem Solving", "Audio Stage"],
+  },
+];
+
 async function emitRoomPresence(sessionId: string): Promise<void> {
   try {
     const { data: session } = await admin
@@ -434,6 +555,73 @@ live.post(
     }
       
     if (!member) {
+      // Check if this is a curated / campus-wide showcase workshop
+      const curatedMatch = CURATED_LIVE_WORKSHOPS.find(
+        (w) => w.id === paramId || w.sessionId === paramId || w.roomId === paramId
+      );
+      if (curatedMatch) {
+        const { data: profile } = await admin
+          .from("profiles")
+          .select("full_name, username, avatar_url")
+          .eq("id", req.userId!)
+          .maybeSingle();
+
+        const participantName = profile?.full_name || (profile?.username ? `@${profile.username}` : req.userId);
+        const iceConfig = await generateCloudflareIceServers();
+        const hasLiveKit = Boolean(env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_URL);
+
+        let token = `webrtc_session_${paramId}`;
+        let provider: "livekit" | "webrtc" = "webrtc";
+        let liveUrl = "";
+
+        if (hasLiveKit) {
+          try {
+            const at = new AccessToken(env.LIVEKIT_API_KEY!, env.LIVEKIT_API_SECRET!, {
+              identity: req.userId!,
+              name: participantName,
+              ttl: "4h",
+              metadata: JSON.stringify({
+                sessionId: paramId,
+                roomId: curatedMatch.roomId,
+                role: "member",
+                isHost: false,
+                fullName: profile?.full_name || null,
+                username: profile?.username || null,
+                avatarUrl: profile?.avatar_url || null,
+                workshopTitle: curatedMatch.title,
+              }),
+            });
+
+            at.addGrant({
+              roomJoin: true,
+              room: `skillbridge-session-${paramId}`,
+              canSubscribe: true,
+              canPublish: true,
+              canPublishData: true,
+            });
+
+            token = await at.toJwt();
+            provider = "livekit";
+            liveUrl = env.LIVEKIT_URL!;
+          } catch (e) {
+            logger.warn({ err: (e as Error).message }, "LiveKit token generation fallback for curated workshop");
+          }
+        }
+
+        return res.json({
+          provider,
+          url: liveUrl,
+          token,
+          iceServers: iceConfig.iceServers,
+          canPublish: true,
+          isHost: false,
+          role: "member",
+          sessionId: paramId,
+          roomName: curatedMatch.room_name || `skillbridge-session-${paramId}`,
+          participantName,
+        });
+      }
+
       return res.status(403).json({
         error: "Join the learning room first",
         code: "MEMBERSHIP_REQUIRED",
